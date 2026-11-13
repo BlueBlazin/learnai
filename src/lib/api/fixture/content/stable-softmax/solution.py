@@ -1,0 +1,8 @@
+{{import}}
+
+
+def softmax(logits: {{T}}, dim: int = -1) -> {{T}}:
+    """Return softmax along `dim`. Same shape and dtype as `logits`."""
+    shifted = logits - logits.max(dim=dim, keepdim=True).values
+    weights = torch.exp(shifted)
+    return weights / weights.sum(dim=dim, keepdim=True)

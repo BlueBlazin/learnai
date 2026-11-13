@@ -1,0 +1,305 @@
+/*
+ * Prose: the typeset reading surface used by statements, hints, and editorials.
+ * Set like a technical text: a serif body on a fixed measure, booktabs tables,
+ * italic run-in example heads, display math with room around it. Rules and
+ * whitespace carry the structure; nothing is boxed except code listings.
+ */
+
+.prose {
+  font-family: var(--font-serif);
+  font-size: var(--text-prose);
+  line-height: var(--text-prose--line-height);
+  font-optical-sizing: auto;
+  font-variant-numeric: lining-nums proportional-nums;
+  color: var(--foreground);
+  max-width: var(--container-measure);
+  text-wrap: pretty;
+  hanging-punctuation: first;
+  overflow-wrap: break-word;
+}
+
+.prose[data-size="compact"] {
+  font-size: var(--text-md);
+  line-height: var(--text-md--line-height);
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+.prose p,
+.prose ul,
+.prose ol,
+.prose blockquote,
+.prose table,
+.prose figure,
+.prose .callout {
+  margin-block: 0 0.9em;
+}
+
+/* Headings: one family, hierarchy from size, weight, and posture. */
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  font-family: var(--font-serif);
+  color: var(--foreground);
+  text-wrap: balance;
+  break-after: avoid;
+}
+
+.prose h1 {
+  font-size: var(--text-xl);
+  line-height: var(--text-xl--line-height);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-block: 1.6em 0.5em;
+}
+
+.prose h2 {
+  font-size: var(--text-lg);
+  line-height: var(--text-lg--line-height);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  margin-block: 1.9em 0.45em;
+}
+
+/* Example and sub-section heads are italic, the way a textbook sets them. */
+.prose h3 {
+  font-size: var(--text-prose);
+  line-height: var(--text-prose--line-height);
+  font-weight: 500;
+  font-style: italic;
+  margin-block: 1.5em 0.3em;
+}
+
+.prose h4 {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 600;
+  margin-block: 1.4em 0.3em;
+}
+
+.prose strong {
+  font-weight: 650;
+}
+
+.prose a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-thickness: 0.06em;
+  text-underline-offset: 0.18em;
+  cursor: pointer;
+}
+
+.prose a:hover {
+  text-decoration-thickness: 0.1em;
+}
+
+/* Inline code: the mono face is distinction enough; no pill behind it. */
+.prose :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  font-variant-ligatures: none;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+/* Lists: markers hang in the margin of the list, numbers in tabular figures. */
+.prose ul,
+.prose ol {
+  padding-inline-start: 1.5em;
+}
+
+.prose ul {
+  list-style: none;
+}
+
+.prose ul > li {
+  position: relative;
+}
+
+.prose ul > li::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -1.05em;
+  top: 0.8em;
+  width: 0.36em;
+  height: 1.5px;
+  background: var(--muted-foreground);
+}
+
+.prose ol {
+  list-style: decimal;
+}
+
+.prose ol > li::marker {
+  font-family: var(--font-sans);
+  font-size: 0.82em;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.prose li {
+  margin-block: 0.25em;
+  padding-inline-start: 0.15em;
+}
+
+.prose li > p {
+  margin-block: 0 0.4em;
+}
+
+.prose li > ul,
+.prose li > ol {
+  margin-block: 0.25em;
+}
+
+/* Tables: booktabs. Heavy rules top and bottom, one light rule under the head. */
+.prose .table-scroll {
+  overflow-x: auto;
+  margin-block: 1.3em 1.4em;
+}
+
+.prose table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  border-top: 1.5px solid var(--rule);
+  border-bottom: 1.5px solid var(--rule);
+  font-size: 0.9em;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.prose th {
+  font-weight: 600;
+  text-align: start;
+  vertical-align: bottom;
+  padding: 0.5em 1em 0.45em 0;
+  border-bottom: 0.75px solid var(--rule);
+  white-space: nowrap;
+}
+
+.prose td {
+  vertical-align: top;
+  padding: 0.38em 1em 0.38em 0;
+}
+
+.prose tbody tr:first-child td {
+  padding-top: 0.55em;
+}
+
+.prose tbody tr:last-child td {
+  padding-bottom: 0.55em;
+}
+
+.prose th:last-child,
+.prose td:last-child {
+  padding-inline-end: 0;
+}
+
+.prose th[align="right"],
+.prose td[align="right"] {
+  text-align: end;
+}
+
+.prose th[align="center"],
+.prose td[align="center"] {
+  text-align: center;
+}
+
+/* Quotations and callouts share one device: an indent and a hairline. */
+.prose blockquote {
+  margin-inline: 0;
+  padding-inline-start: 1.1em;
+  border-inline-start: 1.5px solid var(--border);
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.prose .callout {
+  padding-inline-start: 1.1em;
+  border-inline-start: 1.5px solid var(--callout-ink, var(--primary));
+  font-size: 0.94em;
+  line-height: 1.6;
+}
+
+.prose .callout[data-kind="warning"] {
+  --callout-ink: var(--warn);
+}
+
+.prose .callout[data-kind="tip"] {
+  --callout-ink: var(--pass);
+}
+
+.prose .callout-label {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--callout-ink, var(--primary));
+  margin-block: 0 0.2em;
+}
+
+.prose .callout > :last-child {
+  margin-bottom: 0;
+}
+
+/* Inline math followed by punctuation stays together (see remark-callouts.ts). */
+.prose .math-nowrap {
+  white-space: nowrap;
+}
+
+/* Math. KaTeX is sized to sit with Literata's x-height. */
+.prose .katex {
+  font-size: 1.04em;
+}
+
+.prose .katex-display {
+  margin-block: 1.25em 1.35em;
+  padding-block: 0.15em;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.prose .katex-display > .katex {
+  font-size: 1.1em;
+}
+
+/* Figures */
+.prose figure {
+  margin-inline: 0;
+}
+
+.prose img {
+  max-width: 100%;
+  height: auto;
+}
+
+.prose figcaption {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: var(--text-sm--line-height);
+  color: var(--muted-foreground);
+  margin-top: 0.6em;
+}
+
+.prose hr {
+  border: 0;
+  height: 1px;
+  width: 4rem;
+  background: var(--rule);
+  margin: 2em 0;
+}
+
+.prose .code-block {
+  margin-block: 1.1em 1.3em;
+}

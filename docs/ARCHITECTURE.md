@@ -164,8 +164,15 @@ non-prefixed stdout line and all stderr as diagnostic log output.
 - Case `status`: `pass | fail | error | timeout | skipped`.
 - Final `status`: `accepted | wrong_answer | runtime_error | time_limit | import_error | harness_error`.
   Precedence when mixed: import_error, runtime_error, time_limit, wrong_answer.
-- Hidden cases report their id and status but a generic name ("Hidden case 3") and no
-  expected values in `detail`.
+- Hidden cases report their id and status but a generic name ("Hidden case 3"). They
+  keep the one-line `message` and drop `detail`.
+- `end` may carry optional `message` and `detail` (used for `import_error` and
+  `harness_error`: the traceback). Core forwards them on the `end` RunEvent as
+  `message: string | null` and `detail: string | null`.
+- A skipped case emits `case_end` with no preceding `case_start`.
+- Output printed while the solution module is imported arrives as non-prefixed log lines.
+- `start.env` also carries `platform`.
+- With no saved solution file, `ws run` judges the starter and says so.
 
 ### 3.7 CLI
 

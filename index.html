@@ -3,7 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Whetstone</title>
+    <script>
+      // Apply the saved theme before first paint so launch never flashes the wrong one.
+      (() => {
+        var preference = "system";
+        try {
+          var saved = JSON.parse(localStorage.getItem("whetstone.theme") || "null");
+          if (saved && saved.state && saved.state.preference) preference = saved.state.preference;
+        } catch (error) {}
+        var dark =
+          preference === "dark" ||
+          (preference === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
+      })();
+    </script>
   </head>
 
   <body>

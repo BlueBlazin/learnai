@@ -1,0 +1,46 @@
+import type { RunMode, Verdict } from "@/lib/api";
+import { formatDuration, pluralize } from "@/lib/format";
+
+export interface RunOutcome {
+  verdict: Verdict;
+  mode: RunMode | null;
+  passed: number;
+  total: number;
+  durationMs: number;
+}
+
+/** The sentence under a verdict: what happened, in plain words, with the counts. */
+export function summarizeRun({ verdict, mode, passed, total, durationMs }: RunOutcome): string {
+  const of = `${passed} of ${pluralize(total, "case")} passed`;
+  switch (verdict) {
+    case "accepted": {
+      const noun = mode === "run" ? "public case" : "case";
+      const passedAll = total === 1 ? `The ${noun} passed` : `All ${pluralize(total, noun)} passed`;
+      const suffix = mode === "run" ? " Submit to run the hidden cases." : "";
+      return `${passedAll} in ${formatDuration(durationMs)}.${suffix}`;
+    }
+    case "wrong_answer":
+      return `${of}.`;
+    case "runtime_error":
+      return `Your code raised an exception. ${of}.`;
+    case "time_limit":
+      return `A case ran past its time limit. ${of}.`;
+    case "import_error":
+      return "Your solution could not be imported, so no cases ran.";
+    case "harness_error":
+      return "The judge did not start. This is a problem with the environment, not with your code.";
+    case "canceled":
+      return total === 0
+        ? "Canceled before any case ran."
+        : `${passed} of ${pluralize(total, "case")} had passed when you canceled.`;
+  }
+}
+
+/** "Python 3.15.2, torch 2.15.0, mps" from the run's environment record. */
+export function describeEnv(env: Record<string, string>): string {
+  return Object.entries(env)
+    .map(([key, value]) =>
+      key === "device" || key === "platform" ? value : `${key === "python" ? "Python" : key} ${value}`,
+    )
+    .join(", ");
+}

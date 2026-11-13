@@ -1,0 +1,203 @@
+/*
+ * Whetstone design tokens. Rationale lives in docs/DESIGN.md.
+ * Every color, size, and radius used by a component resolves to a token here.
+ */
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* Colors (values are defined per theme below) */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-rule: var(--rule);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-pass: var(--pass);
+  --color-pass-subtle: var(--pass-subtle);
+  --color-fail: var(--fail);
+  --color-fail-subtle: var(--fail-subtle);
+  --color-warn: var(--warn);
+  --color-warn-subtle: var(--warn-subtle);
+  --color-straw: var(--straw);
+  --color-straw-foreground: var(--straw-foreground);
+  --color-code: var(--code);
+
+  /* One elevation, used only by layers that float above the page. */
+  --shadow-sm: var(--shadow-float);
+  --shadow-md: var(--shadow-float);
+  --shadow-lg: var(--shadow-float);
+}
+
+/* `static` emits every variable even when no utility uses it: prose.css and the
+   CodeMirror theme read these with var(). */
+@theme static {
+  /* Type families */
+  --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Literata Variable", "Iowan Old Style", Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-heading: var(--font-serif);
+
+  /* Radii: small and few. Controls use md, floating layers use xl. */
+  --radius-sm: 0.125rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.3125rem;
+  --radius-xl: 0.4375rem;
+  --radius-2xl: 0.5rem;
+  --radius-3xl: 0.5rem;
+  --radius-4xl: 0.5rem;
+
+  /* Layout */
+  --container-measure: 40rem; /* statement measure: about 68 characters of body serif */
+  --container-page: 60rem; /* home and settings column */
+  --spacing-titlebar: 2.75rem;
+  --spacing-toolbar: 2.5rem;
+  --spacing-gutter: 2.5rem;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --default-transition-duration: 120ms;
+  --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Type scale. UI sizes sit below the 17px reading size; display sizes follow a
+     roughly 1.2 progression above it. */
+  --text-*: initial;
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-md: 1rem;
+  --text-md--line-height: 1.5rem;
+  --text-prose: 1.0625rem;
+  --text-prose--line-height: 1.75rem;
+  --text-lg: 1.1875rem;
+  --text-lg--line-height: 1.625rem;
+  --text-xl: 1.4375rem;
+  --text-xl--line-height: 1.875rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.125rem;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 2.5rem;
+  --text-4xl: 3rem;
+  --text-4xl--line-height: 3rem;
+  --text-code: 0.8125rem;
+  --text-code--line-height: 1.3125rem;
+}
+
+/* Light: cool stone paper, blue-black ink, temper blue. */
+:root {
+  --radius: 0.3125rem;
+
+  --background: oklch(0.972 0.004 255);
+  --paper: oklch(0.993 0.002 255);
+  --foreground: oklch(0.25 0.022 262);
+  --card: var(--paper);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.995 0.002 255);
+  --popover-foreground: var(--foreground);
+
+  --primary: oklch(0.43 0.125 262);
+  --primary-foreground: oklch(0.985 0.003 255);
+  --secondary: oklch(0.945 0.006 255);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.953 0.005 255);
+  --muted-foreground: oklch(0.49 0.018 258);
+  --faint: oklch(0.66 0.012 258);
+  --accent: oklch(0.94 0.008 258);
+  --accent-foreground: var(--foreground);
+
+  --border: oklch(0.895 0.007 255);
+  --rule: oklch(0.25 0.022 262);
+  --input: oklch(0.86 0.008 255);
+  --ring: oklch(0.56 0.13 262);
+
+  --pass: oklch(0.49 0.105 158);
+  --pass-subtle: oklch(0.955 0.028 158);
+  --fail: oklch(0.51 0.17 27);
+  --fail-subtle: oklch(0.955 0.022 27);
+  --warn: oklch(0.53 0.11 68);
+  --warn-subtle: oklch(0.955 0.035 85);
+  --destructive: var(--fail);
+
+  --straw: oklch(0.93 0.075 96);
+  --straw-foreground: oklch(0.42 0.075 80);
+  --code: oklch(0.96 0.005 255);
+
+  /* Syntax: four inks, shared by CodeMirror and shiki. */
+  --syntax-keyword: oklch(0.43 0.125 262);
+  --syntax-string: oklch(0.44 0.085 158);
+  --syntax-number: oklch(0.45 0.13 318);
+  --syntax-comment: oklch(0.56 0.014 258);
+  --syntax-function: oklch(0.25 0.022 262);
+  --syntax-punctuation: oklch(0.45 0.018 258);
+  --editor-selection: oklch(0.43 0.125 262 / 16%);
+  --editor-active-line: oklch(0.25 0.022 262 / 3.5%);
+
+  --shadow-float: 0 1px 2px oklch(0.25 0.022 262 / 8%), 0 8px 24px oklch(0.25 0.022 262 / 10%);
+
+  color-scheme: light;
+}
+
+/* Dark: blued steel, not black. Same hues, lifted. */
+.dark {
+  --background: oklch(0.185 0.012 260);
+  --paper: oklch(0.212 0.013 260);
+  --foreground: oklch(0.9 0.008 255);
+  --popover: oklch(0.245 0.014 260);
+
+  --primary: oklch(0.77 0.095 262);
+  --primary-foreground: oklch(0.19 0.02 262);
+  --secondary: oklch(0.265 0.014 260);
+  --muted: oklch(0.25 0.013 260);
+  --muted-foreground: oklch(0.71 0.014 258);
+  --faint: oklch(0.52 0.014 258);
+  --accent: oklch(0.275 0.016 260);
+
+  --border: oklch(0.295 0.014 260);
+  --rule: oklch(0.78 0.01 255);
+  --input: oklch(0.34 0.015 260);
+  --ring: oklch(0.68 0.11 262);
+
+  --pass: oklch(0.77 0.12 158);
+  --pass-subtle: oklch(0.29 0.04 158);
+  --fail: oklch(0.74 0.14 25);
+  --fail-subtle: oklch(0.29 0.045 25);
+  --warn: oklch(0.8 0.11 80);
+  --warn-subtle: oklch(0.3 0.04 80);
+
+  --straw: oklch(0.38 0.055 92);
+  --straw-foreground: oklch(0.87 0.09 94);
+  --code: oklch(0.24 0.013 260);
+
+  --syntax-keyword: oklch(0.77 0.095 262);
+  --syntax-string: oklch(0.79 0.09 158);
+  --syntax-number: oklch(0.79 0.09 318);
+  --syntax-comment: oklch(0.6 0.014 258);
+  --syntax-function: oklch(0.93 0.008 255);
+  --syntax-punctuation: oklch(0.72 0.014 258);
+  --editor-selection: oklch(0.77 0.095 262 / 22%);
+  --editor-active-line: oklch(0.9 0.008 255 / 4%);
+
+  --shadow-float: 0 1px 2px oklch(0 0 0 / 30%), 0 10px 28px oklch(0 0 0 / 35%);
+
+  color-scheme: dark;
+}

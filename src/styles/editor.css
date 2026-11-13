@@ -1,0 +1,46 @@
+/*
+ * Syntax token classes shared by CodeMirror (via its highlight style) and by
+ * shiki (via its CSS-variables theme). One palette, both themes.
+ */
+
+:root {
+  --shiki-foreground: var(--foreground);
+  --shiki-background: transparent;
+  --shiki-token-constant: var(--syntax-number);
+  --shiki-token-string: var(--syntax-string);
+  --shiki-token-comment: var(--syntax-comment);
+  --shiki-token-keyword: var(--syntax-keyword);
+  --shiki-token-parameter: var(--foreground);
+  --shiki-token-function: var(--syntax-function);
+  --shiki-token-string-expression: var(--syntax-string);
+  --shiki-token-punctuation: var(--syntax-punctuation);
+  --shiki-token-link: var(--primary);
+}
+
+/* The editor fills its panel; CodeMirror needs an explicit height chain. */
+.code-editor,
+.code-editor .cm-editor {
+  height: 100%;
+}
+
+.code-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+/* Static listings with line numbers (submission snapshots, references). */
+.code-block[data-line-numbers] code {
+  counter-reset: line;
+}
+
+.code-block[data-line-numbers] .code-line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 2.25em;
+  margin-right: 1.25em;
+  text-align: right;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  -webkit-user-select: none;
+}

@@ -1,0 +1,121 @@
+/* Base rules and native-window behavior. */
+
+@layer base {
+  * {
+    @apply border-border;
+    outline-color: var(--ring);
+  }
+
+  html {
+    @apply font-sans;
+    height: 100%;
+    /* A desktop window, not a web page: no rubber-banding, no page scroll. */
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-synthesis: none;
+  }
+
+  body {
+    @apply bg-background text-foreground text-sm;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    /* Chrome is not selectable; reading surfaces opt back in with .selectable. */
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: default;
+    font-feature-settings: "ss01" 0;
+  }
+
+  #root {
+    height: 100%;
+  }
+
+  ::selection {
+    background: var(--editor-selection);
+  }
+
+  /* One focus treatment everywhere: a crisp 2px ring, keyboard only. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+
+  input,
+  textarea,
+  [contenteditable="true"] {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+  }
+
+  a,
+  button,
+  img {
+    -webkit-user-drag: none;
+  }
+
+  /* Native scrollbars (code listings, the editor): thin, quiet, no track. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--input);
+    background-clip: padding-box;
+    border: 3px solid transparent;
+    border-radius: 5px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--faint);
+  }
+}
+
+@layer utilities {
+  /* Inherit every type property from the surrounding text (inline links). */
+  .type-inherit {
+    font: inherit;
+    letter-spacing: inherit;
+  }
+
+  .selectable {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: auto;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  /* Window drag regions for an overlay title bar. Harmless in a browser. */
+  .drag-region {
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  .no-drag {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

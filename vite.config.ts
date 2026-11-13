@@ -17,6 +17,11 @@ export default defineConfig(() => ({
     },
   },
 
+  build: {
+    // The bundle is loaded from disk inside the app, never over a network.
+    chunkSizeWarningLimit: 2500,
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
