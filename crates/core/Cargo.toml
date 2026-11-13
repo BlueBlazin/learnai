@@ -1,0 +1,7 @@
+[package]
+name = "whetstone-core"
+description = "Whetstone application logic (no Tauri dependency)"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

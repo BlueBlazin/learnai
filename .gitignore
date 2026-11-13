@@ -1,0 +1,33 @@
+# Node / Vite
+node_modules/
+dist/
+dist-ssr/
+*.local
+*.tsbuildinfo
+
+# Rust / Tauri
+target/
+src-tauri/gen/schemas/
+
+# Python
+python/.venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Whetstone user data and local state
+workspace/
+.whetstone/
+
+# Logs
+*.log
+
+# OS and editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.sw?

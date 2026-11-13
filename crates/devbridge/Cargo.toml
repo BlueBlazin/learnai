@@ -1,0 +1,9 @@
+[package]
+name = "whetstone-devbridge"
+description = "Dev-only HTTP bridge exposing whetstone-core to a plain browser"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+whetstone-core.workspace = true
