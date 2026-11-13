@@ -1,0 +1,12 @@
+id = "bpe-encode"
+title = "Byte-Level BPE Encoding"
+track = "tokenization"
+order = 10
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["tokenizer", "bpe", "utf-8", "bytes"]
+prerequisites = []
+requires = "cpu"
+entry = ["encode", "decode"]
+time_limit_s = 10

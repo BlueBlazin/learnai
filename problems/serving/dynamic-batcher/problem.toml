@@ -1,0 +1,12 @@
+id = "dynamic-batcher"
+title = "Dynamic Batching Policy"
+track = "serving"
+order = 10
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["batching", "scheduling", "latency", "throughput"]
+prerequisites = []
+requires = "cpu"
+entry = ["DynamicBatcher"]
+time_limit_s = 5

@@ -1,0 +1,4 @@
+id = "tokenization"
+title = "Tokenization"
+description = "How text becomes the integer ids a model actually sees: byte-level BPE encoding and decoding, specified exactly enough to match a production tokenizer id for id."
+order = 20

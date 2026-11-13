@@ -1,0 +1,4 @@
+id = "serving"
+title = "Serving Systems"
+description = "The machinery around the model that turns it into a service: batching policies, token streaming, and the edge cases that decide latency and correctness under real traffic."
+order = 120

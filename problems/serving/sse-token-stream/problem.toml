@@ -1,0 +1,12 @@
+id = "sse-token-stream"
+title = "Streaming Tokens over Server-Sent Events"
+track = "serving"
+order = 20
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["service"]
+tags = ["streaming", "sse", "asgi", "http"]
+prerequisites = []
+requires = "cpu"
+entry = ["make_app"]
+time_limit_s = 15
