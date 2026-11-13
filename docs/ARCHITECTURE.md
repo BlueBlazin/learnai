@@ -119,6 +119,27 @@ time_limit_s = 10                # default per-case limit
 `forbidden` (optional): a list of dotted names the solution must not call, for example
 `["torch.softmax", "torch.nn.functional.softmax"]`. A violation fails the case.
 
+Optional `assets/` directory: figures for the statement (SVG preferred, PNG allowed),
+referenced from Markdown as `![caption](assets/<file>)`. SVG figures must read well in
+both light and dark themes (use `currentColor`, no fixed backgrounds).
+
+**Paths.** A path is a curated, ordered study plan stored at `paths/<id>.toml` in the
+content root:
+
+```toml
+id = "inference-75"
+title = "Inference 75"
+description = "One sentence."
+
+[[stages]]
+title = "Numerics and tensors"
+description = "One sentence."
+problems = ["stable-softmax", "rmsnorm"]
+```
+
+A problem id that does not exist in the catalog is skipped and reported as a catalog
+issue; it never breaks the path.
+
 ### 3.4 Judge types
 
 | judge | checks | determinism rule |
@@ -251,6 +272,10 @@ interface Submission { id: number; problemId: string; framework: Framework; mode
 interface StoredCase extends CaseResult { name: string; public: boolean; }
 interface SubmissionDetail extends Submission { code: string; cases: StoredCase[]; metrics: Metric[]; }
 
+interface PathStage { title: string; description: string; problems: string[]; }  // existing ids only
+interface Path { id: string; title: string; description: string; stages: PathStage[];
+                 problemCount: number; solvedCount: number; }
+
 interface FrameworkEnv { framework: Framework; installed: boolean; version: string | null; }
 interface EnvStatus { uv: string | null; python: string | null; frameworks: FrameworkEnv[];
                       root: string; }
@@ -278,6 +303,8 @@ Commands (Tauri command names are snake_case; the `Backend` interface uses camel
 | `env_install` | `framework` + event sink | stream of `{type:"log",...}` then `{type:"done", ok}` |
 | `get_stats` | | `Stats` |
 
+| `list_paths` | | `Path[]` |
+| `get_problem_asset` | `id, path` | `string`: a `data:` URL. `path` is relative to the problem's `assets/` directory and may not escape it; only `.svg` and `.png` |
 | `list_catalog_issues` | | `{ path: string; message: string }[]` (malformed problems) |
 
 Rules: only `submit` runs are stored as submissions with a code snapshot; `run` results
