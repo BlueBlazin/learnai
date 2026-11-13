@@ -1,0 +1,12 @@
+id = "rmsnorm"
+title = "RMSNorm"
+track = "foundations"
+order = 20
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["normalization", "numerics", "llama"]
+prerequisites = []
+requires = "cpu"
+entry = ["rms_norm"]
+time_limit_s = 10

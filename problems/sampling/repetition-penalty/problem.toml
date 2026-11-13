@@ -1,0 +1,12 @@
+id = "repetition-penalty"
+title = "Vectorized Repetition Penalty"
+track = "sampling"
+order = 20
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "speed"]
+tags = ["sampling", "repetition-penalty", "scatter", "vectorization", "batching"]
+prerequisites = []
+requires = "cpu"
+entry = ["apply_repetition_penalty"]
+time_limit_s = 10

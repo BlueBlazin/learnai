@@ -1,0 +1,12 @@
+id = "speculative-sampling-step"
+title = "Speculative Sampling: One Verification Step"
+track = "speculative"
+order = 10
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["statistical", "numeric"]
+tags = ["speculative-decoding", "rejection-sampling", "sampling", "inverse-cdf"]
+prerequisites = []
+requires = "cpu"
+entry = ["speculative_step"]
+time_limit_s = 10

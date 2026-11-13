@@ -1,0 +1,12 @@
+id = "causal-self-attention"
+title = "Causal Self-Attention"
+track = "transformer"
+order = 10
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["attention", "causal-mask", "transformer"]
+prerequisites = ["stable-softmax"]
+requires = "cpu"
+entry = ["causal_self_attention"]
+time_limit_s = 10

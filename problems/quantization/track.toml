@@ -1,0 +1,4 @@
+id = "quantization"
+title = "Quantization and Compression"
+description = "Making weights and activations smaller without changing what the model says: integer quantization schemes, their rounding rules, and the error they introduce."
+order = 70

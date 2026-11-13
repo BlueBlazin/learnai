@@ -1,0 +1,4 @@
+id = "kv-cache"
+title = "KV Cache and Attention Memory"
+description = "Reusing attention keys and values so that each token is computed once: cached decoding loops and the bookkeeping that keeps generation linear instead of quadratic."
+order = 50

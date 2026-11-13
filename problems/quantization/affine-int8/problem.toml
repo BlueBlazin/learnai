@@ -1,0 +1,12 @@
+id = "affine-int8"
+title = "Affine int8 Quantization"
+track = "quantization"
+order = 10
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["quantization", "int8", "rounding", "numerics"]
+prerequisites = []
+requires = "cpu"
+entry = ["quant_params", "quantize", "dequantize"]
+time_limit_s = 10

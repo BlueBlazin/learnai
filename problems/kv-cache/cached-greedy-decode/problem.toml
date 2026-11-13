@@ -1,0 +1,12 @@
+id = "cached-greedy-decode"
+title = "Greedy Decoding with a KV Cache"
+track = "kv-cache"
+order = 10
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["cost", "numeric"]
+tags = ["kv-cache", "greedy-decoding", "generation-loop", "eos", "prefill"]
+prerequisites = []
+requires = "cpu"
+entry = ["greedy_decode"]
+time_limit_s = 10

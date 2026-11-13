@@ -1,0 +1,12 @@
+id = "top-p-filtering"
+title = "Nucleus (Top-p) Filtering"
+track = "sampling"
+order = 10
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["sampling", "top-p", "nucleus", "sorting", "scatter"]
+prerequisites = []
+requires = "cpu"
+entry = ["top_p_filter"]
+time_limit_s = 10

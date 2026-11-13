@@ -1,0 +1,12 @@
+id = "rope"
+title = "Rotary Position Embeddings (RoPE)"
+track = "transformer"
+order = 20
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["rope", "positional-encoding", "attention", "llama"]
+prerequisites = ["causal-self-attention"]
+requires = "cpu"
+entry = ["apply_rope"]
+time_limit_s = 10

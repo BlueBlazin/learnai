@@ -1,0 +1,4 @@
+id = "sampling"
+title = "Sampling and Decoding"
+description = "Turning logits into tokens: the filters, penalties, and samplers that sit between the model's output and the text, written the way inference engines vectorize them."
+order = 40

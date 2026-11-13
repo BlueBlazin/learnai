@@ -1,0 +1,4 @@
+id = "transformer"
+title = "Transformer Forward Pass"
+description = "The pieces of a decoder-only transformer's forward pass, written from the formulas: attention, masking, and positional encoding, each with the bugs that silently corrupt generation."
+order = 30
