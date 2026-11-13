@@ -10,3 +10,30 @@ prerequisites = []
 requires = "cpu"
 entry = ["softmax", "log_softmax"]
 time_limit_s = 10
+# The statement's rule, enforced by the harness: no built-in softmax, log_softmax, or logsumexp.
+forbidden = [
+    "torch.softmax",
+    "torch.log_softmax",
+    "torch.logsumexp",
+    "torch.nn.functional.softmax",
+    "torch.nn.functional.log_softmax",
+    "torch.Tensor.softmax",
+    "torch.Tensor.log_softmax",
+    "torch.Tensor.logsumexp",
+    "torch.special.softmax",
+    "torch.special.log_softmax",
+    "torch.special.logsumexp",
+    "jax.nn.softmax",
+    "jax.nn.log_softmax",
+    "jax.nn.logsumexp",
+    "jax.scipy.special.softmax",
+    "jax.scipy.special.log_softmax",
+    "jax.scipy.special.logsumexp",
+    "mlx.core.softmax",
+    "mlx.core.logsumexp",
+    "mlx.core.array.logsumexp",
+    "mlx.nn.softmax",
+    "mlx.nn.log_softmax",
+    "mlx.nn.Softmax",
+    "mlx.nn.LogSoftmax",
+]

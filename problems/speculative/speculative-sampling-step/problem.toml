@@ -10,3 +10,25 @@ prerequisites = []
 requires = "cpu"
 entry = ["speculative_step"]
 time_limit_s = 10
+# The statement's rule, enforced by the harness: randomness is an input, never drawn here.
+forbidden = [
+    "torch.rand",
+    "torch.rand_like",
+    "torch.randn",
+    "torch.multinomial",
+    "torch.bernoulli",
+    "torch.Tensor.multinomial",
+    "torch.Tensor.uniform_",
+    "torch.Tensor.bernoulli",
+    "jax.random.uniform",
+    "jax.random.categorical",
+    "jax.random.bernoulli",
+    "jax.random.choice",
+    "mlx.core.random.uniform",
+    "mlx.core.random.categorical",
+    "mlx.core.random.bernoulli",
+    "random.random",
+    "numpy.random.default_rng",
+    "numpy.random.rand",
+    "numpy.random.random",
+]

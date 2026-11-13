@@ -21,6 +21,31 @@ def exception_line(exc: BaseException) -> str:
     return lines[-1] if lines else type(exc).__name__
 
 
+def user_location(exc: BaseException, user_path: str) -> str | None:
+    """``solution.py line 12, in softmax``: the innermost frame in the learner's file."""
+    for frame in reversed(traceback.extract_tb(exc.__traceback__)):
+        if _same_file(frame.filename, user_path):
+            return f"{os.path.basename(frame.filename)} line {frame.lineno}, in {frame.name}"
+    if isinstance(exc, SyntaxError) and exc.filename and _same_file(exc.filename, user_path):
+        return f"{os.path.basename(exc.filename)} line {exc.lineno}"
+    return None
+
+
+def hidden_error_message(exc: BaseException, user_path: str, limit: int = 200) -> str:
+    """All a hidden case says about an exception, on one line.
+
+    The learner's own exception type and message (cut to ``limit`` characters) and the
+    line in their own file that was running. Nothing from the test: no frames of
+    tests.py, no source lines, no argument values beyond what the exception itself
+    says.
+    """
+    text = " ".join(exception_line(exc).split())
+    if len(text) > limit:
+        text = text[: limit - 3].rstrip() + "..."
+    where = user_location(exc, user_path)
+    return f"{text} ({where})" if where else text
+
+
 def raised_in(exc: BaseException, path: str) -> bool:
     """True when the innermost frame of the traceback is in ``path``."""
     frames = traceback.extract_tb(exc.__traceback__)

@@ -28,6 +28,31 @@ def test_integer_and_bool_arrays_keep_their_kind(fw):
     assert flags.dtype.kind == "b"
 
 
+@pytest.mark.parametrize("dtype", [np.int8, np.uint8, np.int16, np.int32])
+def test_narrow_integer_arrays_keep_their_dtype(fw, dtype):
+    if fw.name == "python":
+        pytest.skip("lists have no dtype")
+    info = np.iinfo(dtype)
+    array = np.array([info.min, -1 if info.min < 0 else 1, 0, info.max], dtype=dtype)
+    tensor = fw.tensor(array)
+    assert str(tensor.dtype).split(".")[-1] == np.dtype(dtype).name  # the tensor itself
+    back = fw.numpy(tensor)
+    assert back.dtype == dtype and back.tolist() == array.tolist()
+    # The recursive conversion that ctx.call uses follows the same rule.
+    (nested,) = fw.to_framework([array])
+    assert fw.numpy(nested).dtype == dtype
+
+
+def test_64_bit_integers_become_the_framework_default(fw):
+    if fw.name == "python":
+        pytest.skip("lists have no dtype")
+    wide = fw.name == "torch"
+    assert fw.numpy(fw.tensor(np.arange(3))).dtype == (np.int64 if wide else np.int32)
+    unsigned = fw.numpy(fw.tensor(np.arange(3, dtype=np.uint64)))
+    assert unsigned.dtype == (np.uint64 if wide else np.uint32)
+    assert fw.numpy(fw.tensor(np.arange(3, dtype=np.int8), dtype=np.int64)).dtype.kind == "i"
+
+
 def test_explicit_dtype_is_respected(fw):
     if fw.name == "python":
         pytest.skip("lists have no dtype")

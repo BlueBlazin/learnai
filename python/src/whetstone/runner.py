@@ -14,7 +14,13 @@ from whetstone import protocol
 
 
 def harness_command(
-    problem_dir: Path, solution: Path, framework: str, mode: str, case: str | None = None
+    problem_dir: Path,
+    solution: Path,
+    framework: str,
+    mode: str,
+    case: str | None = None,
+    *,
+    reveal: bool = False,
 ) -> list[str]:
     """The harness command for the interpreter that is already running (no uv needed)."""
     command = [
@@ -26,6 +32,8 @@ def harness_command(
     ]  # fmt: skip
     if case is not None:
         command += ["--case", case]
+    if reveal:
+        command.append("--reveal")
     return command
 
 

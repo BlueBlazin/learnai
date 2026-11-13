@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
+import sys
 import tomllib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -28,11 +30,20 @@ from whetstone.problem import (
 )
 
 ID_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+#: The same pattern as whetstone.judge.forbidden.NAME_PATTERN, which is not imported
+#: here because the judge package pulls in numpy and the CLI should start fast.
+FORBIDDEN_NAME = re.compile(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)+$")
 PLACEHOLDER = "TODO(author)"
 #: A full submit should finish in a few seconds. Process startup and framework imports
 #: are a fixed cost, so the warning looks at what the author controls: the cases.
 SLOW_CASES_S = 3.0
 REJECTED = ("wrong_answer", "runtime_error", "time_limit")
+#: Judges whose cases depend on real time: `speed` measures it and `service` waits on
+#: sockets with timeouts. Their harness runs are not mixed into the parallel batch,
+#: where other runs compete for the cores; they run one at a time once it is done.
+TIMING_SENSITIVE_JUDGES = ("speed", "service")
+#: Importing every framework to resolve `forbidden` names takes a few seconds.
+FORBIDDEN_CHECK_TIMEOUT_S = 120
 
 _REQUIRED_KEYS: dict[str, type | tuple[type, ...]] = {
     "id": str,
@@ -88,10 +99,12 @@ def check_metadata(directory: Path, catalog_ids: dict[str, list[Path]]) -> tuple
             err(f"problem.toml: missing key `{key}`")
         elif not isinstance(raw[key], kind) or isinstance(raw[key], bool):
             err(f"problem.toml: `{key}` has the wrong type")
-    for key in ("frameworks", "judges", "tags", "prerequisites", "entry"):
+    for key in ("frameworks", "judges", "tags", "prerequisites", "entry", "forbidden"):
         value = raw.get(key)
         if isinstance(value, list) and not all(isinstance(item, str) for item in value):
             err(f"problem.toml: `{key}` must be a list of strings")
+    if "forbidden" in raw and not isinstance(raw["forbidden"], list):
+        err("problem.toml: `forbidden` must be a list of dotted names")
     if report.errors:
         return report, None
 
@@ -140,6 +153,14 @@ def check_metadata(directory: Path, catalog_ids: dict[str, list[Path]]) -> tuple
     for name in problem.entry:
         if not name.isidentifier():
             err(f"problem.toml: entry {name!r} is not a valid Python name")
+    if len(set(problem.forbidden)) != len(problem.forbidden):
+        err("problem.toml: forbidden contains duplicates")
+    for name in problem.forbidden:
+        if not FORBIDDEN_NAME.match(name):
+            err(
+                f"problem.toml: forbidden name {name!r} must be a dotted name such as "
+                "`torch.softmax` or `torch.Tensor.softmax`"
+            )
     for prerequisite in problem.prerequisites:
         if prerequisite == problem.id:
             err("problem.toml: a problem cannot be its own prerequisite")
@@ -280,8 +301,46 @@ def _judge(report: Report, problem: Problem, job: _Job, result: runner.RunResult
             report.checks.append(f"{job.label} rejected ({verdict})")
 
 
+def is_timing_sensitive(problem: Problem) -> bool:
+    """Whether this problem's harness runs must not share the machine with others."""
+    return any(judge in TIMING_SENSITIVE_JUDGES for judge in problem.judges)
+
+
+def check_forbidden(names: tuple[str, ...]) -> dict[str, str]:
+    """Resolve and guard every forbidden name in a fresh interpreter.
+
+    Returns ``{name: what is wrong}``. A separate process, because it imports every
+    framework the names mention and patches them.
+    """
+    command = [sys.executable, "-P", "-m", "whetstone.judge.forbidden", *names]
+    try:
+        proc = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=FORBIDDEN_CHECK_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return {"forbidden": f"the check did not finish in {FORBIDDEN_CHECK_TIMEOUT_S} s"}
+    # Imported late: see FORBIDDEN_NAME.
+    from whetstone.judge.forbidden import parse_check_output
+
+    result = parse_check_output(proc.stdout)
+    if result is None:
+        tail = (proc.stderr or proc.stdout).strip().splitlines()[-1:]
+        return {"forbidden": "the check failed to run" + (f": {tail[0]}" if tail else "")}
+    return {str(name): str(problem) for name, problem in result.items()}
+
+
 def validate(root: Path, directories: list[Path], jobs: int | None = None) -> list[Report]:
-    """Validate the given problem directories against the catalog under ``root``."""
+    """Validate the given problem directories against the catalog under ``root``.
+
+    Harness runs execute ``jobs`` at a time, except those of timing-sensitive problems
+    (``TIMING_SENSITIVE_JUDGES``), which run one after another once the parallel batch
+    has finished, so that nothing else competes with a measurement.
+    """
     catalog_ids: dict[str, list[Path]] = {}
     for path in problem_dirs(root):
         try:
@@ -293,20 +352,41 @@ def validate(root: Path, directories: list[Path], jobs: int | None = None) -> li
             catalog_ids.setdefault(path.name, []).append(path)
 
     reports: list[Report] = []
-    work: list[tuple[Report, Problem, _Job]] = []
+    parallel: list[tuple[Report, Problem, _Job]] = []
+    serial: list[tuple[Report, Problem, _Job]] = []
+    guarded: list[tuple[Report, Problem]] = []
     for directory in directories:
         report, problem = check_metadata(directory, catalog_ids)
         reports.append(report)
         if problem is None or not report.ok:
             continue  # behavioral checks on a malformed problem only add noise
-        work.extend((report, problem, job) for job in _jobs(problem))
+        if problem.forbidden:
+            guarded.append((report, problem))
+        queue = serial if is_timing_sensitive(problem) else parallel
+        queue.extend((report, problem, job) for job in _jobs(problem))
 
     def execute(item: tuple[Report, Problem, _Job]) -> runner.RunResult:
         _, problem, job = item
-        return runner.run(runner.harness_command(problem.path, job.path, job.framework, "submit"))
+        # Authors see hidden cases by their real ids ("first failing case ...").
+        command = runner.harness_command(
+            problem.path, job.path, job.framework, "submit", reveal=True
+        )
+        return runner.run(command)
 
-    workers = jobs or min(4, os.cpu_count() or 1)
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        for item, result in zip(work, pool.map(execute, work), strict=True):
+    workers = max(1, jobs or min(4, os.cpu_count() or 1))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        unresolved = pool.map(lambda item: check_forbidden(item[1].forbidden), guarded)
+        results = pool.map(execute, parallel)
+        for (report, problem), problems in zip(guarded, unresolved, strict=True):
+            for name, what in problems.items():
+                report.errors.append(f"problem.toml: forbidden name `{name}`: {what}")
+            if not problems:
+                report.checks.append(
+                    f"forbidden: {len(problem.forbidden)} names resolve and can be guarded"
+                )
+        for item, result in zip(parallel, results, strict=True):
             _judge(item[0], item[1], item[2], result)
+    # The pool is idle now: timing-sensitive runs get the machine to themselves.
+    for item in serial:
+        _judge(item[0], item[1], item[2], execute(item))
     return reports

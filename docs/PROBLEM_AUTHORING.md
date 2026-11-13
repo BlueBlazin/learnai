@@ -50,6 +50,12 @@ of `--reference`, `--starter`, `--mutant <name>`, or `--solution <path>`; with n
 them they judge `workspace/<id>/<framework>.py`. `--case <id>` runs a single case and
 `--events` prints the raw protocol.
 
+`ws run` and `ws submit` show what a learner sees: a hidden case is `hidden-3` /
+"Hidden case 3", with its one-line message and nothing else. Add `--reveal` while you
+write a problem to see hidden cases under their real ids and names, with the failure
+detail. `--case` takes the id as it is displayed: `--case hidden-3`, or
+`--reveal --case very_negative`. `ws validate` always reports real ids.
+
 ### What `ws validate` enforces
 
 For every framework the problem lists:
@@ -79,12 +85,20 @@ Metadata must be complete and consistent:
   framework, and for no other; a starter is not identical to its reference.
 - At least one mutant exists, and line 1 of every mutant is `# BUG: <what is wrong>`.
 - The tests define at least one public and at least one hidden case.
+- Every name in `forbidden` (section 4.1) resolves to a real attribute that the harness
+  can guard, in every framework the names mention. A typo, or a function that a
+  framework release renamed, fails validation instead of silently enforcing nothing.
 - Nothing contains `TODO(author)`.
 
 It warns (without failing) when the cases of a reference submit take more than 3
 seconds in total.
-Harness runs execute in parallel (`-j N`, default 4). If a speed-judged problem flakes
-under parallel load, check it with `-j 1` and widen its factor.
+
+Harness runs execute in parallel (`-j N`, default 4), with one exception that needs no
+flag: problems whose `judges` include `speed` or `service` are timing-sensitive, so
+their runs are held back and executed one at a time after the parallel batch has
+finished, with nothing else competing for the machine. That is why `judges` must list
+every judge type the tests use. If a speed case still flakes, the gap it measures is
+too small: widen `max_ratio` or make the input larger (section 5.5).
 
 ## 2. Directory format
 
@@ -110,7 +124,7 @@ description = "One or two sentences shown on the track page."
 order = 10
 ```
 
-`problem.toml` (every key is required):
+`problem.toml` (every key is required, except `forbidden`):
 
 ```toml
 id = "stable-softmax"
@@ -125,6 +139,10 @@ prerequisites = []                # problem ids
 requires = "cpu"                  # cpu | mlx-gpu | cuda
 entry = ["softmax", "log_softmax"]        # names the solution must define
 time_limit_s = 10                 # per-case limit
+forbidden = [                     # optional: calls the statement rules out (section 4.1)
+    "torch.softmax", "torch.nn.functional.softmax", "torch.Tensor.softmax",
+    "jax.nn.softmax", "mlx.core.softmax",
+]
 ```
 
 A solution that fails to import, or lacks an `entry` name, gets the `import_error`
@@ -202,7 +220,16 @@ def very_negative(ctx):
   `public=False` (the default): runs on Submit only; the learner sees "Hidden case N",
   the one-line failure message, and never the detail.
 - `id`: defaults to the function name. Ids are stable identifiers; do not rename them
-  casually.
+  casually: the id seeds the case's random generator. An id of the form `hidden-N` is
+  reserved.
+
+**What leaves the harness for a hidden case.** Neither the id nor the name: a function
+called `masked_logits` would tell the learner what the hidden test checks. On the wire,
+in the app, and in `ws run` / `ws submit`, a hidden case is `hidden-N` and "Hidden case
+N", where N counts the hidden cases of `tests.py` in definition order (all of them,
+whatever the framework, so `hidden-3` is the same test for everyone). Inserting or
+reordering hidden cases renumbers the ones after it. So name hidden cases and their
+functions for yourself and for reviewers, as descriptively as public ones.
 - `time_limit_s`: overrides the problem's per-case limit.
 - `frameworks`: restricts the case to some solution frameworks. Rarely needed.
 
@@ -239,7 +266,18 @@ needs. A good split is 3 to 5 public and 4 to 8 hidden.
 `ctx.call`, `ctx.expected`, and `ctx.baseline` convert for you: every numpy array in the
 arguments (also inside lists, tuples, and dicts) becomes a tensor of the target
 framework, and every tensor in the result becomes a numpy array. Python scalars, lists
-of ints, strings, and other objects pass through unchanged. Kit objects such as `TinyLM`
+of ints, strings, and other objects pass through unchanged.
+
+> [!NOTE]
+> **Dtypes of converted inputs.** Floating arrays arrive as float32. Integer arrays
+> **keep their dtype**: an `np.int8` array arrives as an int8 tensor, `np.uint8` as
+> uint8, `np.int32` as int32, in every framework. The one exception is 64-bit integers,
+> numpy's default (`np.array([1, 2])`, `ctx.randint`, `np.arange`): they become the
+> framework's default integer, int64 in torch and int32 in JAX and MLX. So to hand a
+> solution int8 codes, pass an int8 array to `ctx.call`; to hand it ordinary token ids,
+> pass the int64 array numpy gives you. Section 6 has the full rules.
+
+ Kit objects such as `TinyLM`
 are rebound to the target framework, and the oracle and baseline always get a fresh twin
 with its own counters, so calling `ctx.expected` never pollutes the counters the
 solution is judged by.
@@ -289,8 +327,94 @@ failure with `check.that(condition, message, detail)`, put the specifics in `det
 Plain `assert` works too (it counts as a failed case), but its text becomes the message,
 so prefer `check.that`.
 
-An exception raised by the solution is an `error` (verdict `runtime_error`), reported
-with a traceback trimmed to the learner's own frames.
+An exception raised by the solution is an `error` (verdict `runtime_error`).
+
+- In a **public** case the message is the exception line and the detail is a traceback
+  trimmed to the learner's own frames (or to the frames of `tests.py` when the
+  learner's file is not on the stack at all).
+- In a **hidden** case there is no detail, like for every hidden outcome: a traceback
+  through `tests.py` would show the test's source and inputs. Everything the learner
+  needs to debug their own code goes into the one-line message: their exception type
+  and text (cut to 200 characters), then the innermost line of their own file that
+  was running.
+
+  ```
+  IndexError: index 8 is out of bounds for dimension 1 with size 8 (torch.py line 14, in top_p_filter)
+  ```
+
+  When the exception was raised outside the learner's file and none of their frames
+  is on the stack (the test tripped over a returned value), the message is the
+  exception line alone. Note that the exception text is the learner's own: a solution
+  can always print or raise what it was given, so hidden inputs are not secret from a
+  learner who goes looking. What stays hidden is what the test is called, what it
+  expects, and how it is written.
+
+When the solution fails to import, the verdict is `import_error`; the message and the
+traceback are on the run's final `end` event, once, and every case is reported as
+skipped with the one-line reason only.
+
+### 4.1 Forbidden calls
+
+When the statement says "do not call your framework's built-in `softmax`", list the
+calls in `problem.toml` and the harness enforces the sentence:
+
+```toml
+forbidden = [
+    "torch.softmax", "torch.log_softmax", "torch.logsumexp",
+    "torch.nn.functional.softmax", "torch.nn.functional.log_softmax",
+    "torch.Tensor.softmax", "torch.Tensor.log_softmax", "torch.Tensor.logsumexp",
+    "jax.nn.softmax", "jax.nn.log_softmax", "jax.nn.logsumexp",
+    "mlx.core.softmax", "mlx.core.logsumexp", "mlx.core.array.logsumexp",
+    "mlx.nn.softmax", "mlx.nn.log_softmax", "mlx.nn.Softmax", "mlx.nn.LogSoftmax",
+]
+```
+
+A name is the full dotted path, starting at the package, of one of:
+
+| kind | example | what is guarded |
+|---|---|---|
+| a function in a module | `torch.softmax`, `jax.nn.softmax`, `time.sleep` | calling it, under any alias: `from torch import softmax`, `F.softmax` when it is the same object, private re-exports |
+| a method on a tensor or other class | `torch.Tensor.softmax` | `x.softmax(-1)` |
+| a class | `torch.nn.RMSNorm`, `mlx.nn.RoPE` | constructing it (also through a subclass) |
+
+How it works, so you can predict it:
+
+- Each name is replaced, for the whole run, by a guard that inspects the call stack.
+  If a frame of the **solution file** is on the stack, the case fails with
+  `` `torch.softmax` is not allowed in this problem (called at torch.py line 6, in
+  softmax) `` and the verdict is `wrong_answer`. The message is the same in hidden
+  cases. Catching the exception does not help: the violation is recorded, and the case
+  fails even if the solution then computes the right answer another way.
+- Any other caller gets the original function. The oracle, the same-framework
+  reference (`ctx.baseline`, `ctx.check_speed`), your tests, and the kit are not the
+  solution file, so they are unaffected. **References must not need a forbidden call**
+  all the same: `ws validate` judges each reference as a solution, and it would fail.
+- The guard is transitive. `torch.nn.Softmax(dim)(x)` ends up in
+  `torch.nn.functional.softmax`, so it is caught without being listed. The price: do
+  not forbid a low-level utility that allowed library functions use internally
+  (forbidding `time.monotonic` in a JAX problem fails correct solutions, because JAX
+  reads the clock while it compiles). Forbid the specific shortcut, and let
+  `ws validate` confirm that the references still pass.
+- Names from all frameworks go in one list. Only the names of packages that are
+  loaded are guarded, and the list is checked again before every case, so a JAX
+  solution that imports torch to borrow its `softmax` is caught as well.
+- List every spelling a learner would reach for. Different objects need separate
+  entries: `torch.softmax`, `torch.nn.functional.softmax`, `torch.special.softmax`, and
+  the method `torch.Tensor.softmax` are four functions. Aliases of one object
+  (`jax.nn.logsumexp` is `jax.scipy.special.logsumexp`) need one entry, and listing
+  both is harmless.
+- `mlx.core.array` is an immutable type, so its methods cannot be guarded at run time.
+  For those names only (`mlx.core.array.logsumexp`), the harness scans the solution's
+  source before running anything and fails every case if it finds
+  `<expression>.logsumexp` where the expression is not an imported module. This is
+  cruder than the run-time guard (it also flags a method of the same name on the
+  learner's own class), so list MLX array methods only when they really are the
+  shortcut.
+- It is a guard against taking the shortcut, not a sandbox. Code written to defeat it
+  can; the tests still have to make sure the answer is right.
+
+Every problem with a `forbidden` list needs a mutant that takes the shortcut (section
+11), and the statement must still state the rule in words.
 
 ### The `check` helpers
 
@@ -299,7 +423,7 @@ with a traceback trimmed to the learner's own frames.
 | helper | use |
 |---|---|
 | `check.allclose(got, expected, *, rtol=1e-4, atol=1e-6, label="output", dtype=False)` | Float comparison. NaN matches NaN; infinities must match exactly. |
-| `check.equal(got, expected, *, label="output")` | Exact equality: int/bool/token arrays (integer width ignored), lists, strings, dicts. |
+| `check.equal(got, expected, *, label="output")` | Exact equality: int/bool/token arrays (integer width ignored), lists, strings, dicts. A list of 0-d tensors is a list of scalars (see below). |
 | `check.match(got, expected, ...)` | Dispatches to the two above by structure; what `ctx.check` uses. |
 | `check.shape(got, shape, *, label)` | Shape only. |
 | `check.finite(got, *, label)` | No NaN or infinity. |
@@ -312,6 +436,16 @@ with a traceback trimmed to the learner's own frames.
 | `check.at_most(name, value, limit, *, unit=None)` | Bound a measured value and report it as a metric. |
 
 Always pass a `label` that names the quantity (`label="tokens"`); it starts the message.
+
+**Lists of scalar tensors.** A solution that collects scalar tensors (`tokens.append(
+logits.argmax())`) returns a list of 0-d tensors, which `ctx.call` turns into a list of
+0-d arrays. `check.equal` and `ctx.check` compare such a list as a list of scalars:
+each 0-d array counts as the number it holds, so it equals `[5, 6, 7]`, a list of 0-d
+arrays from the oracle, or `np.array([5, 6, 7])`, and a mismatch is reported once, with
+its position, as for any list. Nothing else is coerced: an array with one or more
+dimensions inside a list (`[tensor([5]), ...]`) is compared as an array and fails on
+shape against a scalar. If the statement requires Python ints rather than scalar
+tensors, assert that separately (`check.that(all(type(t) is int for t in tokens), ...)`).
 
 ## 5. The seven judge types
 
@@ -530,9 +664,9 @@ say so in the statement.
 | member | meaning |
 |---|---|
 | `sim.now()` | Virtual seconds since the start (starts at 0). |
-| `sim.call_at(when, fn, *args)`, `sim.call_later(delay, fn, *args)` | Schedule a plain callback; returns a handle with `cancel()`. |
+| `sim.call_at(when, fn, *args, priority=0)`, `sim.call_later(delay, fn, *args, priority=0)` | Schedule a plain callback; returns a handle with `cancel()`. |
 | `sim.spawn(coro)` | Start a coroutine as a task. An exception escaping it fails `run()`. |
-| `sim.spawn_at(when, make)` | At time `when`, call `make()` and start the coroutine it returns. |
+| `sim.spawn_at(when, make, priority=0)` | At time `when`, call `make()` and start the coroutine it returns. |
 | `sim.sleep(delay)` | Awaitable; the same as `asyncio.sleep(delay)`. |
 | `sim.run(until=None)` | Run until idle (nothing ready, no timer pending), or until virtual time `until`. Tasks blocked forever on a queue do not keep it alive. |
 | `sim.run_until_complete(awaitable)` | Run until it finishes and return its result; fails with a deadlock message if the simulation goes idle first. |
@@ -540,6 +674,32 @@ say so in the statement.
 | `sim.trace.of(kind)`, `.values(kind, field)`, `.times(kind)` | Query the trace. |
 | `sim.trace.latencies(start_kind, end_kind, key="id")` | Per-item latency; fails if an item never finished. |
 | `percentile(values, q)` | Nearest-rank percentile (an actual observation; no interpolation). |
+
+**Order within one instant.** Events that share a virtual time are where schedulers
+differ, so the order is defined:
+
+- Timers due at exactly the same time fire in the order they were scheduled, first
+  scheduled first, whoever scheduled them (`sim.call_at`, `sim.call_later`,
+  `sim.spawn_at`, `asyncio.sleep`, `loop.call_later`, a `wait_for` timeout).
+- `priority=` on `sim.call_at`, `sim.call_later`, and `sim.spawn_at` overrides that:
+  among timers due at the same time, a lower priority runs first, and schedule order
+  breaks ties within a priority. Timers created by plain asyncio code have priority 0.
+  Use it to state a rule such as "a completion is delivered before an arrival at the
+  same instant" in one place, instead of relying on the order of your loops.
+- One step of the simulation: everything that is ready runs first in, first out
+  (`call_soon` callbacks, tasks woken by a future or a queue, tasks just spawned); when
+  nothing is ready, time jumps to the next timer and all timers due at that instant
+  become ready together, in (priority, schedule) order.
+- Two consequences. A coroutine started with `spawn_at` begins after the other timers
+  of its instant have fired, because the timer only creates the task. A timer
+  scheduled during instant `t` for `t` itself (`call_later(0, ...)`) runs after
+  everything already ready, whatever its priority.
+- "The same time" means equal floats: `0.1 + 0.2` is not `0.3`. Build times that must
+  coincide from the same arithmetic, or count in a unit that is exact (the
+  `dynamic-batcher` problem counts integer milliseconds).
+
+If the outcome of a problem depends on the order of simultaneous events, the statement
+must specify that order, and a case must exercise a tie.
 
 The kit's `SimModel(sim, base_s=, per_item_s=, max_batch_size=, fn=)` is a fake model
 server: `await model(batch)` takes `base_s + per_item_s * len(batch)` virtual seconds,
@@ -632,6 +792,20 @@ Starlette is available to solutions and references; so is any raw ASGI callable.
 service cases few (starting a server costs about 0.1 s each) and reuse one
 `with ctx.serve()` block for several requests.
 
+> [!WARNING]
+> **A send after a disconnect does not fail.** Once the client has gone, uvicorn's
+> `send` returns without doing anything: it does not raise (in uvicorn 0.54, both HTTP
+> implementations start `send` with `if self.disconnected: return`). The ASGI
+> specification only says a server *should* raise `OSError` there. So a streaming
+> solution cannot detect a closed connection by sending; it has to watch `receive()`,
+> which returns `{"type": "http.disconnect"}` when the client is gone (after the
+> request body has been read, the next `await receive()` blocks until then). If a
+> problem requires stopping on disconnect, say this in the statement, write the
+> reference with a `receive()` watcher next to the sender, and test it by closing the
+> response early and observing a side effect (the token source was closed, no further
+> token was requested), never by expecting an exception. `problems/serving/
+> sse-token-stream` does all three.
+
 ## 6. The framework adapter
 
 `ctx.fw` is the adapter for the solution's framework and `ctx.oracle_fw` for the
@@ -652,8 +826,18 @@ when a test builds tensors itself or hands a kit object to the solution.
 Conversion rules:
 
 - Floating arrays become float32 unless `dtype` is given.
-- Integer arrays become the framework's default integer type: int64 in torch, int32 in
-  JAX and MLX. Bool stays bool. Exact comparisons ignore integer width.
+- Integer arrays keep their dtype. int8, uint8, int16, uint16, int32, and uint32 arrive
+  unchanged in every framework, without `dtype=`. This is what `ctx.call`,
+  `ctx.expected`, and `ctx.baseline` do too, since they convert with `fw.tensor`.
+- 64-bit integers are the exception, because they are numpy's default and usually mean
+  "an integer", not "64 bits": int64 becomes the framework's default integer (int64 in
+  torch, int32 in JAX and MLX, where 64-bit integers are unavailable or unidiomatic),
+  and uint64 stays uint64 in torch and becomes uint32 in JAX and MLX. To force a
+  width, pass `dtype=` (`fw.tensor(ids, dtype=np.int64)` gives MLX an int64 tensor).
+- Bool stays bool. Exact comparisons (`check.equal`) ignore integer width, so a result
+  may come back as int32 from one framework and int64 from another.
+- A consequence for torch: indices for `gather`, `scatter`, and `take_along_dim` must be
+  int64 there, so pass index arrays as numpy's default int64, not as `np.int32`.
 - The `python` adapter turns arrays into nested lists and numpy scalars into Python
   scalars; results come back unchanged.
 - Inputs are copied. A solution that works in place cannot corrupt the array the test
@@ -661,6 +845,29 @@ Conversion rules:
 
 Torch solutions receive CPU tensors. MLX uses its default device (the GPU on Apple
 silicon). JAX runs on the CPU.
+
+### Sorting and ties
+
+When a specification breaks ties by index ("equal probabilities are ranked by token
+index, lowest first"), each reference needs a stable sort, and each framework spells it
+differently:
+
+- torch: `torch.sort(x, stable=True)` and `torch.argsort(x, stable=True)`. The default
+  is not stable.
+- JAX: `jnp.sort` and `jnp.argsort` are stable by default (`stable=True`).
+- MLX: `mx.sort` and `mx.argsort` are stable, and you may rely on it. It is documented
+  behavior in MLX 0.32.4, the version this project uses ("The sort is stable, meaning
+  equal elements preserve their relative order. `NaN` values are placed at the end.",
+  in the docstring and on the `mlx.core.argsort` page of the official documentation);
+  the CPU backend implements it with `std::stable_sort` plus an explicit index
+  tie-break (`mlx/backend/cpu/sort.cpp`), and the GPU agrees with numpy's stable sort
+  on tie-heavy inputs. The guarantee belongs to that version: re-read the docstring
+  (`print(mx.argsort.__doc__)`) when the MLX pin changes. There is no `stable=` or
+  `descending=` argument: sort the negated values for a descending order that still
+  ranks ties by lowest index, as `problems/sampling/top-p-filtering` does.
+
+Whatever the framework, a case must contain ties when the tie rule matters, and a
+mutant must break them the other way.
 
 ## 7. The kit
 
@@ -753,7 +960,8 @@ Style:
   result".
 - American English. Present tense. Address the reader as "you" only in instructions.
 - State the rule of the exercise when a built-in would trivialize it ("do not call your
-  framework's built-in `softmax`").
+  framework's built-in `softmax`"), and make the harness enforce it with `forbidden`
+  in `problem.toml` (section 4.1).
 - Framework-neutral: describe tensors, not `torch.Tensor`s. Framework specifics belong
   in the starter's type hints.
 - No hints in the statement. The statement specifies; `hints.md` helps.
@@ -845,7 +1053,13 @@ spent in cases, and warns when the cases take more than 3 s.
   should use under 5 percent of it. Lower it (2 to 5) when a wrong solution's typical
   failure is an infinite loop.
 - Statistical cases dominate their problem's budget: N calls into a tensor framework.
-  Measure, then pick N.
+  Keep each statistical case under about 3 s in **every** framework, measured with
+  `ws submit <id> -f <framework> --reference` for each one, not only torch: the same
+  cases of `speculative-sampling-step` take 0.15 s in torch, 1.3 s in JAX, and 2.4 s in
+  MLX, because per-call overhead (dispatch in JAX, a GPU round trip in MLX whenever a
+  value is read back) dominates tiny tensors. Measure first, then pick N; if the slowest framework cannot afford the N
+  that the bound needs (section 5.3), make the per-call work smaller (a smaller
+  vocabulary, fewer operations) rather than loosening `delta`.
 
 How time limits work, so you can predict the learner's experience: when a case exceeds
 its limit, the harness interrupts it, reports `timeout`, and continues with the next
@@ -885,16 +1099,63 @@ What makes a good mutant:
 - **It fails for the right reason.** Prefer mutants that produce a wrong answer over
   ones that crash. Avoid mutants that hang: they make validation slow.
 
+- **One mutant takes the forbidden shortcut.** If the problem has a `forbidden` list
+  (section 4.1), include a mutant that produces the right numbers by calling the
+  built-in (`mutants/uses_builtin.py`). It is the test that the list works: it must be
+  rejected, and `ws submit <id> --mutant uses_builtin` must show the "is not allowed in
+  this problem" message. Mutants are written in the oracle framework, so for a rule
+  that only concerns another framework's built-in (`mlx.nn.RoPE`), the mutant borrows
+  it from torch code.
+
 Aim for 4 to 7 mutants per problem. When a real learner submission is wrongly accepted
 later, it becomes a mutant, together with the case that rejects it.
 
-## 12. Checklist before you open a pull request
+## 12. Lint
+
+`ruff check problems/<track>/<id>` must be clean; `problems/ruff.toml` holds the
+settings (line length 100; starters may have unused imports). Two rules of ruff's
+default set surprise authors of otherwise idiomatic code:
+
+- **RUF007, successive pairs.** `zip(xs, xs[1:])` is flagged; write
+  `itertools.pairwise(xs)`. This comes up in every tokenizer and merge loop.
+
+  ```python
+  from itertools import pairwise
+
+  for left, right in pairwise(tokens): ...
+  ```
+
+- **TRY004, the exception type after a type check.** When the only thing an
+  `isinstance` test decides is whether to raise, the exception must be `TypeError`.
+  Raising another built-in exception there (`ValueError`, usually) is flagged, in the
+  `if not isinstance(...)` form and in the `else` of an `if isinstance(...)`:
+
+  ```python
+  if not isinstance(max_tokens, int):
+      raise TypeError("max_tokens must be an int")      # ValueError here is flagged
+  ```
+
+  So specify `TypeError` for wrongly typed arguments in the statement, and `ValueError`
+  for values out of range. Two things are not flagged, and are the way out when the
+  specification needs something else: a custom exception class
+  (`raise BadRequest(...)`), and a condition that tests more than the type
+  (`if isinstance(n, bool) or not isinstance(n, int) or n < 1: raise ValueError(...)`).
+
+Fix the code rather than adding `# noqa`; a learner reads references and mutants as
+examples of good style.
+
+## 13. Checklist before you open a pull request
 
 - `ws validate <id> -v` passes, with no warning.
 - `ruff check problems/<track>/<id>` is clean.
 - `ws run <id> -f <each framework> --starter` shows a failure a beginner can act on.
 - `ws submit <id> --mutant <each>`: every mutant fails for the reason its `# BUG:` line
   gives, and the failure message would make sense to a learner.
+- `ws submit <id> --mutant <one>` without `--reveal` shows nothing about the hidden
+  cases beyond "Hidden case N" and a message free of expected values.
+- If the statement forbids a call: `forbidden` lists every spelling of it in every
+  framework, and a mutant takes the shortcut.
+- Every statistical case takes under about 3 s in every framework.
 - The first public case is the statement's worked example.
 - No expected values appear in any failure message of a hidden case.
 - The statement specifies every choice that affects the output, and its Constraints

@@ -35,6 +35,8 @@ class Problem:
     entry: tuple[str, ...]
     time_limit_s: float
     raw: dict[str, Any]
+    #: Optional. Dotted names the solution must not call (see judge/forbidden.py).
+    forbidden: tuple[str, ...] = ()
 
     @property
     def oracle_framework(self) -> str:
@@ -100,6 +102,7 @@ def load_problem(path: str | os.PathLike[str]) -> Problem:
         entry=_strings(raw.get("entry")),
         time_limit_s=float(number("time_limit_s", 10.0)),
         raw=raw,
+        forbidden=_strings(raw.get("forbidden")),
     )
 
 

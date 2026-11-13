@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Any
 
 _ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
+#: The ids hidden cases get on the wire (``hidden-1``, ``hidden-2``, ...); a real case id
+#: must not look like one.
+_OPAQUE_PATTERN = re.compile(r"^hidden-\d+$")
 
 # The list that @case appends to while a tests.py file is being loaded.
 _collecting: list[Case] | None = None
@@ -43,8 +46,11 @@ def case(
                   statement of what is checked ("handles logits near 1e4").
     public        True: runs on Run and Submit, name and details are shown.
                   False (default): runs on Submit only; the learner sees
-                  "Hidden case N" and the failure message, never the details.
-    id            stable identifier; defaults to the function name.
+                  "Hidden case N" (id ``hidden-N``) and the one-line failure
+                  message, never the name, the id, or the details.
+    id            stable identifier; defaults to the function name. It seeds the
+                  case's random generator and never leaves the harness for a
+                  hidden case.
     time_limit_s  overrides the problem's per-case limit.
     frameworks    restrict the case to these solution frameworks (rarely needed).
 
@@ -59,6 +65,8 @@ def case(
         case_id = id if id is not None else fn.__name__
         if not _ID_PATTERN.match(case_id):
             raise ValueError(f"case id {case_id!r} may only contain letters, digits, _ . -")
+        if _OPAQUE_PATTERN.match(case_id):
+            raise ValueError(f"case id {case_id!r} is reserved for hidden cases on the wire")
         if _collecting is not None:
             if any(existing.id == case_id for existing in _collecting):
                 raise ValueError(f"duplicate case id {case_id!r}")
@@ -75,6 +83,28 @@ def case(
         return fn
 
     return register
+
+
+def wire_identity(cases: Sequence[Case], *, reveal: bool = False) -> dict[str, tuple[str, str]]:
+    """Map each case id to the ``(id, name)`` that may leave the harness.
+
+    Public cases keep theirs. A hidden case becomes ``("hidden-N", "Hidden case N")``,
+    N counting the hidden cases of the whole tests file in definition order, so that
+    neither the function name nor the description leaks what the hidden tests check.
+    ``cases`` must therefore be the complete list ``load_cases`` returned, not a
+    selection. ``reveal=True`` (authors: ``ws validate``, ``--reveal``) keeps the real
+    id and name of hidden cases too.
+    """
+    identity: dict[str, tuple[str, str]] = {}
+    hidden = 0
+    for item in cases:
+        if item.public or reveal:
+            identity[item.id] = (item.id, item.name)
+        if not item.public:
+            hidden += 1
+            if not reveal:
+                identity[item.id] = (f"hidden-{hidden}", f"Hidden case {hidden}")
+    return identity
 
 
 def load_cases(tests_path: Path) -> list[Case]:

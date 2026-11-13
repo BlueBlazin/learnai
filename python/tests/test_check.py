@@ -108,6 +108,52 @@ def test_equal_on_python_values():
     assert "expected: {'a': 1}" in fails(check.equal, {"a": 2}, {"a": 1}).detail
 
 
+def test_equal_treats_a_list_of_0d_arrays_as_a_list_of_scalars():
+    # What a solution returns when it collects scalar tensors: [logits.argmax(), ...].
+    tokens = [np.array(5, dtype=np.int32), np.array(6), np.int64(7)]
+    check.equal(tokens, [5, 6, 7])
+    check.equal([5, 6, 7], tokens)
+    check.equal(tokens, np.array([5, 6, 7]))
+    check.equal((np.array(True), np.array(False)), [True, False])
+    check.equal([[np.array(1), np.array(2)], [np.array(3)]], [[1, 2], [3]])
+    failure = fails(check.equal, tokens, [5, 9, 7], label="tokens")
+    assert failure.message == (
+        "tokens: differs from the expected result (first difference at position 1)"
+    )
+    # The detail shows numbers, not `array(6)`.
+    assert "position 1: expected 9, got 6" in failure.detail
+    assert "got[0:10] = [5, 6, 7]" in failure.detail and "array(" not in failure.detail
+    assert fails(check.equal, tokens, [5, 6]).message == "output: expected 2 items, got 3"
+
+
+def test_equal_never_squeezes_an_array_inside_a_list_into_a_scalar():
+    # A one-element tensor is not a scalar: `bool(array([5]) == 5)` used to let it pass.
+    failure = fails(check.equal, [np.array([5]), np.array(6)], [5, 6], label="tokens")
+    assert failure.message == "tokens[0]: shape mismatch: expected (), got (1,)"
+    failure = fails(check.equal, [np.array([1, 2]), np.array([3, 9])], [[1, 2], [3, 4]], label="t")
+    assert failure.message == (
+        "t[1]: 1 of 2 values differ from the expected result (first at index [1])"
+    )
+    check.equal([np.array([1, 2]), np.array([3, 4])], [np.array([1, 2]), [3, 4]])
+
+
+def test_match_compares_a_list_of_scalar_tensors_as_one_sequence():
+    oracle = [np.array(3, dtype=np.int64), np.array(1, dtype=np.int64)]
+    check.match([np.array(3, dtype=np.int32), np.array(1, dtype=np.int32)], oracle)
+    check.match([3, 1], oracle)
+    failure = fails(check.match, [np.array(3), np.array(2)], oracle, label="tokens")
+    assert failure.message == (
+        "tokens: differs from the expected result (first difference at position 1)"
+    )
+    assert "expected 2 items" in fails(check.match, [np.array(3)], oracle).message
+    assert "expected a list of 2 scalars, got a ndarray" in (
+        fails(check.match, np.array([3, 1]), oracle).message
+    )
+    floats = [np.array(0.5, dtype=F32), np.array(0.25, dtype=F32)]
+    check.match([np.array(0.5000001, dtype=F32), 0.25], floats)
+    assert "1 of 2 values differ" in fails(check.match, [0.5, 0.75], floats).message
+
+
 def test_match_dispatches_on_structure():
     expected = (np.array([0.5, 0.25], dtype=F32), np.array([3, 1]), {"n": 2, "tokens": [1, 2]})
     check.match((np.array([0.5, 0.25], dtype=F32), np.array([3, 1]), {"n": 2, "tokens": [1, 2]}),

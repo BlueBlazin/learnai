@@ -31,6 +31,125 @@ def test_callbacks_run_in_time_order_and_can_be_canceled():
         assert order == ["a", "b", "c"]
 
 
+def test_same_instant_callbacks_run_in_schedule_order():
+    # asyncio alone orders timers by time only; equal times came out in heap order.
+    with SimClock() as sim:
+        order = []
+        for i in range(50):
+            sim.call_at(1.0, order.append, i)
+        sim.call_at(0.5, order.append, "early")
+        sim.run()
+        assert order == ["early", *range(50)]
+
+
+def test_schedule_order_holds_across_every_way_of_scheduling():
+    with SimClock() as sim:
+        order = []
+
+        async def sleeper(name):
+            await asyncio.sleep(2.0)
+            order.append(name)
+
+        async def spawned(name):
+            order.append(name)
+
+        sim.call_at(2.0, order.append, "call_at")
+        sim.spawn(sleeper("sleep"))  # its timer is created when the task first runs
+        sim.call_later(2.0, order.append, "call_later")
+        sim.loop.call_at(2.0, order.append, "loop.call_at")
+        sim.spawn_at(2.0, lambda: spawned("spawn_at"))
+        sim.loop.call_later(2.0, order.append, "loop.call_later")
+        sim.run()
+        # Timers fire in schedule order. The two coroutines run after the plain
+        # callbacks of the instant: the sleeper is woken, and the spawned task is
+        # created, by their timers, and both then wait their turn in the ready queue.
+        assert order == [
+            "call_at", "call_later", "loop.call_at", "loop.call_later", "spawn_at", "sleep",
+        ]  # fmt: skip
+        assert sim.now() == 2.0
+
+
+def test_priority_orders_callbacks_of_one_instant():
+    with SimClock() as sim:
+        order = []
+        sim.call_at(1.0, order.append, "default-1")
+        sim.call_at(1.0, order.append, "late", priority=5)
+        sim.call_at(1.0, order.append, "first", priority=-1)
+        sim.call_later(1.0, order.append, "default-2")
+        sim.call_at(1.0, order.append, "first-too", priority=-1)
+        sim.call_at(0.5, order.append, "earlier time wins over priority", priority=99)
+        sim.run()
+        assert order == [
+            "earlier time wins over priority",
+            "first", "first-too", "default-1", "default-2", "late",
+        ]  # fmt: skip
+        with pytest.raises(TypeError):
+            sim.call_at(2.0, order.append, "x", priority=0.5)
+
+
+def test_spawn_at_starts_tasks_in_order_and_honors_priority():
+    with SimClock() as sim:
+        started = []
+
+        async def client(i):
+            started.append(i)
+
+        for i in range(5):
+            sim.spawn_at(1.0, lambda i=i: client(i))
+        sim.spawn_at(1.0, lambda: client("urgent"), priority=-1)
+        sim.run()
+        assert started == ["urgent", 0, 1, 2, 3, 4]
+
+
+def test_a_timer_scheduled_during_its_own_instant_runs_after_what_is_ready():
+    with SimClock() as sim:
+        order = []
+
+        def first():
+            order.append("first")
+            sim.loop.call_soon(order.append, "soon")
+            sim.call_later(0, order.append, "zero-delay", priority=-10)
+
+        sim.call_at(1.0, first)
+        sim.call_at(1.0, order.append, "second")
+        sim.run()
+        assert order == ["first", "second", "soon", "zero-delay"]
+        assert sim.now() == 1.0
+
+
+def test_same_instant_order_is_identical_on_every_run():
+    def simulate():
+        with SimClock() as sim:
+            log = []
+
+            async def worker(i):
+                await sim.sleep(0.25 * (i % 3))
+                log.append(("woke", i, sim.now()))
+                await sim.sleep(0.5)
+                log.append(("done", i, sim.now()))
+
+            for i in range(30):
+                sim.spawn_at(0.25 * (i % 4), lambda i=i: worker(i))
+            sim.run()
+            return log
+
+    first = simulate()
+    assert all(simulate() == first for _ in range(5))
+    # Within one instant, workers wake in the order their sleeps were started.
+    at_half = [i for kind, i, when in first if kind == "woke" and when == 0.5]
+    assert at_half == sorted(at_half, key=lambda i: (-(i % 3), i))
+
+
+def test_canceled_timers_do_not_disturb_the_order():
+    with SimClock() as sim:
+        order = []
+        handles = [sim.call_at(1.0, order.append, i) for i in range(200)]
+        for handle in handles[::2]:
+            handle.cancel()  # enough to make asyncio rebuild its timer heap
+        sim.run()
+        assert order == list(range(1, 200, 2))
+
+
 def test_plain_asyncio_code_runs_on_virtual_time():
     async def worker(queue, log):
         while True:

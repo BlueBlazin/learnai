@@ -8,12 +8,40 @@ Solutions use ordinary asyncio (``asyncio.sleep``, ``asyncio.Queue``,
 ``asyncio.wait_for``, ``loop.call_later``, ``loop.time()``) or the clock object the
 test hands them; either way they are driven by virtual time. What they must not do is
 touch the real clock (``time.sleep``, ``time.monotonic``) or real I/O.
+
+Order within one virtual instant
+--------------------------------
+Timers due at exactly the same virtual time fire in the order they were scheduled
+(first scheduled, first run), whoever scheduled them: ``sim.call_at``,
+``sim.call_later``, ``sim.spawn_at``, ``asyncio.sleep``, ``loop.call_later``, a
+``wait_for`` timeout. ``sim.call_at``, ``sim.call_later``, and ``sim.spawn_at`` also
+take ``priority=`` (default 0): among timers due at the same time, a lower priority
+runs first, and schedule order breaks ties within a priority. Timers that plain
+asyncio code creates have priority 0.
+
+"The same time" means equal floats. ``0.1 + 0.2`` and ``0.3`` are different instants,
+so build times that must coincide from the same arithmetic (or use exact values such
+as integers or multiples of a power of two).
+
+One step of the simulation, at virtual time ``t``:
+
+1. everything that is ready runs, first in, first out (``call_soon`` callbacks, tasks
+   woken by a future or a queue, tasks just spawned);
+2. when nothing is ready, time jumps to the next timer; all timers due at that instant
+   become ready together, ordered by (priority, schedule order), and step 1 repeats.
+
+Consequences worth knowing: a coroutine started by ``spawn_at`` begins running after
+the other timers of its instant have fired (the timer only creates the task); and a
+timer scheduled *during* instant ``t`` for time ``t`` itself (``call_later(0, ...)``)
+runs after everything already ready, whatever its priority.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import heapq
+import itertools
 import math
 import selectors
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
@@ -62,6 +90,49 @@ class _VirtualSelector(selectors.BaseSelector):
         return self._keys
 
 
+class _OrderedTimerHandle(asyncio.TimerHandle):
+    """A timer that sorts by (time, priority, schedule order).
+
+    asyncio keeps timers in a heap ordered by time alone, which leaves the order of
+    timers due at the same time to the shape of the heap. The extra keys make that
+    order defined and stable.
+    """
+
+    __slots__ = ("_order",)
+
+    def __init__(self, when: float, priority: int, sequence: int, *args: Any) -> None:
+        super().__init__(when, *args)
+        self._order = (priority, sequence)
+
+    def _key(self) -> tuple[float, int, int]:
+        return (self._when, *self._order)
+
+    def __lt__(self, other: object) -> bool:
+        if isinstance(other, _OrderedTimerHandle):
+            return self._key() < other._key()
+        return NotImplemented
+
+    def __le__(self, other: object) -> bool:
+        if isinstance(other, _OrderedTimerHandle):
+            return self._key() <= other._key()
+        return NotImplemented
+
+    def __gt__(self, other: object) -> bool:
+        if isinstance(other, _OrderedTimerHandle):
+            return self._key() > other._key()
+        return NotImplemented
+
+    def __ge__(self, other: object) -> bool:
+        if isinstance(other, _OrderedTimerHandle):
+            return self._key() >= other._key()
+        return NotImplemented
+
+    # Defining ordering methods must not make the handle unhashable or change what
+    # equality means; asyncio relies on both.
+    __eq__ = asyncio.TimerHandle.__eq__
+    __hash__ = asyncio.TimerHandle.__hash__
+
+
 class _VirtualLoop(asyncio.SelectorEventLoop):
     def __init__(self) -> None:
         selector = _VirtualSelector()
@@ -70,9 +141,39 @@ class _VirtualLoop(asyncio.SelectorEventLoop):
         self.virtual_time = 0.0
         #: While set, the loop stops instead of advancing past this virtual time.
         self.horizon: float | None = None
+        self._sequence = itertools.count()
 
     def time(self) -> float:
         return self.virtual_time
+
+    def call_at(  # type: ignore[override]
+        self, when: float, callback: Callable[..., Any], *args: Any, context: Any = None
+    ) -> asyncio.TimerHandle:
+        return self.call_at_priority(when, 0, callback, *args, context=context)
+
+    def call_at_priority(
+        self,
+        when: float,
+        priority: int,
+        callback: Callable[..., Any],
+        *args: Any,
+        context: Any = None,
+    ) -> asyncio.TimerHandle:
+        """``call_at`` with a defined order among timers due at the same time.
+
+        Every timer of this loop comes through here (``call_later``, ``asyncio.sleep``,
+        and timeouts all end in ``call_at``), so all of them carry a sequence number.
+        """
+        if when is None:
+            raise TypeError("when cannot be None")
+        if isinstance(priority, bool) or not isinstance(priority, int):
+            raise TypeError("priority must be an int")
+        self._check_closed()
+        timer = _OrderedTimerHandle(when, priority, next(self._sequence), callback, args, self,
+                                    context)  # fmt: skip
+        heapq.heappush(self._scheduled, timer)
+        timer._scheduled = True
+        return timer
 
     def advance_to_next_timer(self, timeout: float) -> None:
         """Advance virtual time by ``timeout``, the wait asyncio computed for the next timer.
@@ -181,13 +282,21 @@ class SimClock:
         """Current virtual time in seconds; starts at 0."""
         return self.loop.time()
 
-    def call_at(self, when: float, fn: Callable[..., Any], *args: Any) -> asyncio.TimerHandle:
-        """Call ``fn(*args)`` at virtual time ``when``. Returns a handle with ``cancel()``."""
-        return self.loop.call_at(when, fn, *args)
+    def call_at(
+        self, when: float, fn: Callable[..., Any], *args: Any, priority: int = 0
+    ) -> asyncio.TimerHandle:
+        """Call ``fn(*args)`` at virtual time ``when``. Returns a handle with ``cancel()``.
 
-    def call_later(self, delay: float, fn: Callable[..., Any], *args: Any) -> asyncio.TimerHandle:
-        """Call ``fn(*args)`` after ``delay`` virtual seconds."""
-        return self.loop.call_later(delay, fn, *args)
+        Callbacks due at the same time run in the order they were scheduled; a lower
+        ``priority`` runs first (see the module docstring).
+        """
+        return self.loop.call_at_priority(when, priority, fn, *args)
+
+    def call_later(
+        self, delay: float, fn: Callable[..., Any], *args: Any, priority: int = 0
+    ) -> asyncio.TimerHandle:
+        """Call ``fn(*args)`` after ``delay`` virtual seconds (same ordering rule)."""
+        return self.loop.call_at_priority(self.now() + delay, priority, fn, *args)
 
     def sleep(self, delay: float) -> Awaitable[None]:
         """Awaitable that completes after ``delay`` virtual seconds."""
@@ -199,9 +308,16 @@ class SimClock:
         task.add_done_callback(self._on_task_done)
         return task
 
-    def spawn_at(self, when: float, make: Callable[[], Coroutine[Any, Any, Any]]) -> None:
-        """At virtual time ``when``, call ``make()`` and start the coroutine it returns."""
-        self.loop.call_at(when, lambda: self.spawn(make()))
+    def spawn_at(
+        self, when: float, make: Callable[[], Coroutine[Any, Any, Any]], *, priority: int = 0
+    ) -> None:
+        """At virtual time ``when``, call ``make()`` and start the coroutine it returns.
+
+        Tasks spawned for the same time start in the order of their ``spawn_at`` calls
+        (lower ``priority`` first). The coroutine begins running once the timers due at
+        that instant have fired.
+        """
+        self.loop.call_at_priority(when, priority, lambda: self.spawn(make()))
 
     # -- running -----------------------------------------------------------------
 

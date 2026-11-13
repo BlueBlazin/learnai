@@ -52,11 +52,20 @@ def test_run_mode_executes_public_cases_only(sum_list):
 
 
 def test_single_case_selection(sum_list):
-    run = run_harness(sum_list, SOLUTIONS / "good.py", case="negatives")
-    assert list(run.statuses) == ["negatives"]
+    run = run_harness(sum_list, SOLUTIONS / "good.py", case="empty")
+    assert list(run.statuses) == ["empty"]
     assert run.end["total"] == 1
-    # A hidden case cannot be selected in run mode.
-    run = run_harness(sum_list, SOLUTIONS / "good.py", mode="run", case="negatives")
+    # A hidden case is selected by the id it has on the wire...
+    run = run_harness(sum_list, SOLUTIONS / "good.py", case="hidden-2")
+    assert list(run.statuses) == ["hidden-2"]
+    assert run.start["cases"] == [{"id": "hidden-2", "name": "Hidden case 2", "public": False}]
+    # ...its real id selects nothing (it would confirm a guess), except for an author...
+    run = run_harness(sum_list, SOLUTIONS / "good.py", case="long_list")
+    assert run.end["status"] == "harness_error"
+    run = run_harness(sum_list, SOLUTIONS / "good.py", case="long_list", extra=["--reveal"])
+    assert list(run.statuses) == ["long_list"]
+    # ...and a hidden case cannot be selected in run mode at all.
+    run = run_harness(sum_list, SOLUTIONS / "good.py", mode="run", case="hidden-1")
     assert run.end["status"] == "harness_error"
     assert run.returncode != 0
 
@@ -66,17 +75,101 @@ def test_single_case_selection(sum_list):
 
 def test_hidden_cases_are_redacted(sum_list):
     run = run_harness(sum_list, SOLUTIONS / "wrong_on_negatives.py")
-    names = {c["id"]: c["name"] for c in run.start["cases"]}
-    assert names["short"] == "sums a short list"
-    assert names["negatives"] == "Hidden case 1"
-    assert names["long_list"] == "Hidden case 2"
-    failed = run.case("negatives")
+    assert run.start["cases"] == [
+        {"id": "short", "name": "sums a short list", "public": True},
+        {"id": "empty", "name": "sums an empty list", "public": True},
+        {"id": "hidden-1", "name": "Hidden case 1", "public": False},
+        {"id": "hidden-2", "name": "Hidden case 2", "public": False},
+    ]
+    assert [e["id"] for e in run.of("case_start")] == ["short", "empty", "hidden-1", "hidden-2"]
+    failed = run.case("hidden-1")
     assert failed["status"] == "fail"
     assert failed["message"] == "total: differs from the expected result"
     assert failed["detail"] is None  # the detail would have shown the expected value
     assert "-10" not in json.dumps(failed)
     assert run.end["status"] == "wrong_answer"
     assert (run.end["passed"], run.end["total"]) == (3, 4)
+    # Neither the function names nor the descriptions of hidden tests leave the harness.
+    for leak in ("negatives", "long_list", "negative numbers", "a long list"):
+        assert leak not in run.stdout
+
+
+def test_hidden_ids_are_stable_whatever_else_runs(sum_list):
+    # hidden-2 is the second hidden case of the file, also when it runs alone.
+    alone = run_harness(sum_list, SOLUTIONS / "wrong_on_negatives.py", case="hidden-1")
+    assert alone.statuses == {"hidden-1": "fail"}
+    alone = run_harness(sum_list, SOLUTIONS / "wrong_on_negatives.py", case="hidden-2")
+    assert alone.statuses == {"hidden-2": "pass"}
+
+
+def test_a_real_case_id_cannot_look_like_an_opaque_one(sum_list, tmp_path):
+    problem = tmp_path / "sum-list"
+    shutil.copytree(sum_list, problem)
+    tests = (problem / "tests.py").read_text()
+    (problem / "tests.py").write_text(tests.replace("public=True)", 'public=True, id="hidden-1")', 1))
+    run = run_harness(problem, SOLUTIONS / "good.py")
+    assert run.end["status"] == "harness_error"
+    assert "'hidden-1' is reserved for hidden cases" in run.end["message"]
+
+
+def test_reveal_shows_authors_the_real_hidden_cases(sum_list):
+    run = run_harness(sum_list, SOLUTIONS / "wrong_on_negatives.py", extra=["--reveal"])
+    names = {c["id"]: c["name"] for c in run.start["cases"]}
+    assert names["negatives"] == "negative numbers" and names["long_list"] == "a long list"
+    failed = run.case("negatives")
+    assert failed["status"] == "fail"
+    assert "expected: -10" in failed["detail"]
+
+
+def test_hidden_errors_say_what_and_where_in_the_learners_file_only(sum_list, tmp_path):
+    solution = tmp_path / "python.py"
+    solution.write_text(
+        "def helper(xs):\n"
+        "    return {}[min(xs)]\n"
+        "\n"
+        "\n"
+        "def total(xs):\n"
+        "    if any(x < 0 for x in xs):\n"
+        "        return helper(xs)\n"
+        "    if len(xs) > 10:\n"
+        "        raise ValueError('x' * 500)\n"
+        "    return sum(xs)\n"
+    )
+    run = run_harness(sum_list, solution)
+    case = run.case("hidden-1")
+    assert case["status"] == "error"
+    # The learner's exception type and message, and the line in their own file.
+    assert case["message"] == "KeyError: -7 (python.py line 2, in helper)"
+    assert case["detail"] is None  # no traceback: it could show the test's source
+    long = run.case("hidden-2")
+    assert long["status"] == "error" and long["detail"] is None
+    assert long["message"].startswith("ValueError: xxxx")
+    assert long["message"].endswith("... (python.py line 9, in total)")
+    assert len(long["message"]) < 250  # the exception text is cut to 200 characters
+    assert "tests.py" not in run.stdout and "ctx." not in run.stdout
+    assert run.end["status"] == "runtime_error"
+    # An author gets the full traceback.
+    revealed = run_harness(sum_list, solution, extra=["--reveal"])
+    assert 'File "python.py", line 7, in total' in revealed.case("negatives")["detail"]
+
+
+def test_hidden_error_outside_the_learners_file_has_no_location(sum_list, tmp_path):
+    # The solution returns something the test then trips over: the exception is raised
+    # in tests.py, so there is no line of the learner's to point at, and no test source.
+    problem = tmp_path / "sum-list"
+    shutil.copytree(sum_list, problem)
+    tests = (problem / "tests.py").read_text()
+    tests = tests.replace(
+        'check.equal(ctx.call("total", xs), ctx.expected("total", xs), label="total")',
+        'check.equal(ctx.call("total", xs) + 0, ctx.expected("total", xs), label="total")',
+    )
+    (problem / "tests.py").write_text(tests)
+    solution = tmp_path / "python.py"
+    solution.write_text("def total(xs):\n    return None if min(xs, default=0) < 0 else sum(xs)\n")
+    run = run_harness(problem, solution)
+    case = run.case("hidden-1")
+    assert case["status"] == "error" and case["detail"] is None
+    assert case["message"] == "TypeError: unsupported operand type(s) for +: 'NoneType' and 'int'"
 
 
 def test_public_failures_show_expected_and_got(sum_list, tmp_path):
@@ -87,7 +180,7 @@ def test_public_failures_show_expected_and_got(sum_list, tmp_path):
     assert public["status"] == "fail"
     assert public["message"] == "total: differs from the expected result"
     assert "expected: 6" in public["detail"] and "got: 7" in public["detail"]
-    assert run.case("negatives")["detail"] is None
+    assert run.case("hidden-1")["detail"] is None
 
 
 # -- output capture -----------------------------------------------------------------
@@ -105,7 +198,7 @@ def test_capture_is_fd_level_and_per_case(sum_list):
     assert '@@WS@@ {"event":"end"' in out  # captured as data, not parsed as protocol
     assert "python print 0\n" in run.case("empty")["stdout"]
     assert "python print 3\n" not in run.case("empty")["stdout"]
-    assert "python print 50\n" in run.case("long_list")["stdout"]
+    assert "python print 50\n" in run.case("hidden-2")["stdout"]
     # Import-time output belongs to no case: it arrives as a diagnostic log line.
     assert run.logs == ["printed at import time"]
     assert len(run.of("end")) == 1
@@ -142,7 +235,7 @@ def test_sys_exit_in_a_solution_is_an_error_not_a_crash(sum_list):
     run = run_harness(sum_list, SOLUTIONS / "calls_sys_exit.py")
     assert run.case("empty")["status"] == "error"
     assert run.case("empty")["message"] == "SystemExit: 3"
-    assert run.case("negatives")["status"] == "pass"
+    assert run.case("hidden-1")["status"] == "pass"
     assert run.end["status"] == "runtime_error"
 
 
@@ -179,11 +272,14 @@ def test_import_errors(sum_list, solution, message, in_detail):
         assert text in end["detail"]
     assert "whetstone" not in end["detail"]
     assert (end["passed"], end["total"]) == (0, 4)
-    # Every case is reported, as skipped, and carries the same explanation.
+    # Every case is reported, as skipped, with the one-line reason. The traceback is
+    # on the `end` event only; repeating it on every case would be noise.
     assert set(run.statuses.values()) == {"skipped"}
     assert len(run.statuses) == 4
-    assert run.case("short")["message"] == "not run: " + message
-    assert run.case("short")["detail"] == end["detail"]
+    for case in run.of("case_end"):
+        assert case["message"] == "not run: " + message
+        assert case["detail"] is None
+    assert "hidden-1" in run.statuses and "negatives" not in run.statuses
     assert run.of("case_start") == []
 
 
@@ -192,12 +288,12 @@ def test_import_errors(sum_list, solution, message, in_detail):
 
 def test_soft_time_limit_stops_a_python_loop_and_continues(sum_list):
     run = run_harness(sum_list, SOLUTIONS / "hangs_on_negatives.py")
-    case = run.case("negatives")
+    case = run.case("hidden-1")
     assert case["status"] == "timeout"
     assert case["message"] == "time limit exceeded (1 s)"
     assert 1000 <= case["duration_ms"] < 1400
     assert case["stdout"] == "about to spin\n"
-    assert run.case("long_list")["status"] == "pass"  # later cases still ran
+    assert run.case("hidden-2")["status"] == "pass"  # later cases still ran
     assert run.end["status"] == "time_limit"
     assert (run.end["passed"], run.end["total"]) == (3, 4)
     assert run.returncode == 0
@@ -205,11 +301,11 @@ def test_soft_time_limit_stops_a_python_loop_and_continues(sum_list):
 
 def test_hard_time_limit_kills_a_solution_that_swallows_the_timeout(sum_list):
     run = run_harness(sum_list, SOLUTIONS / "swallows_timeout.py")
-    case = run.case("negatives")
+    case = run.case("hidden-1")
     assert case["status"] == "timeout"
     assert "time limit exceeded (1 s)" in case["message"]
     assert case["stdout"] == "about to spin\n"  # recovered from the capture file
-    assert run.case("long_list")["status"] == "skipped"
+    assert run.case("hidden-2")["status"] == "skipped"
     assert run.statuses["short"] == "pass"
     assert run.end["status"] == "time_limit"
     assert (run.end["passed"], run.end["total"]) == (2, 4)
@@ -229,10 +325,10 @@ def test_import_that_never_finishes(sum_list):
 def test_verdict_precedence_with_mixed_outcomes(sum_list):
     run = run_harness(sum_list, SOLUTIONS / "mixed_failures.py")
     assert run.statuses == {
-        "short": "pass", "empty": "error", "negatives": "timeout", "long_list": "fail",
+        "short": "pass", "empty": "error", "hidden-1": "timeout", "hidden-2": "fail",
     }  # fmt: skip
     assert run.end["status"] == "runtime_error"
-    run = run_harness(sum_list, SOLUTIONS / "mixed_failures.py", case="long_list")
+    run = run_harness(sum_list, SOLUTIONS / "mixed_failures.py", case="hidden-2")
     assert run.end["status"] == "wrong_answer"
 
 
@@ -241,11 +337,11 @@ def test_verdict_precedence_with_mixed_outcomes(sum_list):
 
 def test_process_death_still_produces_an_end_event(sum_list):
     run = run_harness(sum_list, SOLUTIONS / "exits_process.py")
-    case = run.case("negatives")
+    case = run.case("hidden-1")
     assert case["status"] == "error"
     assert case["message"] == "the process exited with code 7 while running this case"
     assert case["stdout"] == "dying now\n"
-    assert run.case("long_list")["status"] == "skipped"
+    assert run.case("hidden-2")["status"] == "skipped"
     assert run.end["status"] == "runtime_error"
     assert (run.end["passed"], run.end["total"]) == (2, 4)
     assert run.returncode == 0

@@ -10,3 +10,12 @@ prerequisites = []
 requires = "cpu"
 entry = ["normalize"]
 time_limit_s = 10
+forbidden = [
+    "torch.nn.functional.normalize",
+    "torch.linalg.norm",
+    "torch.Tensor.norm",
+    "torch.nn.CosineSimilarity",
+    "jax.numpy.linalg.norm",
+    "mlx.core.linalg.norm",
+    "mlx.core.array.rsqrt",
+]

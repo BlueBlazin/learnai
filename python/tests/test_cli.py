@@ -63,9 +63,18 @@ def test_run_renders_public_cases(capsys, fixture_root):
 def test_submit_renders_failures_from_the_same_events(capsys, fixture_root):
     code, out, _ = ws(capsys, "submit", "sum-list", "--mutant", "absolute_values")
     assert code == 1
-    assert "FAIL  negatives" in out and "Hidden case 1" in out
+    assert "FAIL  hidden-1" in out and "Hidden case 1" in out
     assert "total: differs from the expected result" in out
     assert "Wrong answer  3/4 passed" in out
+    # What the hidden tests are called and what they check is not printed...
+    assert "negatives" not in out and "negative numbers" not in out and "expected:" not in out
+
+    # ...unless an author asks.
+    code, out, _ = ws(capsys, "submit", "sum-list", "--mutant", "absolute_values", "--reveal")
+    assert code == 1
+    assert "FAIL  negatives" in out and "negative numbers" in out and "expected: -10" in out
+    code, out, _ = ws(capsys, "submit", "sum-list", "--reference", "--case", "hidden-2")
+    assert code == 0 and "PASS  hidden-2" in out and "1/1 passed" in out
 
     code, out, _ = ws(
         capsys, "submit", "sum-list", "--solution", str(SOLUTIONS / "raises_on_empty.py")
@@ -144,6 +153,8 @@ def test_fixture_catalog_passes_validation(capsys, fixture_root):
         "mutant never_times_out rejected (wrong_answer)",
         "mutant no_terminator rejected (wrong_answer)",
         "mutant slightly_biased rejected (wrong_answer)",
+        "mutant uses_builtin rejected (wrong_answer)",
+        "forbidden: 7 names resolve and can be guarded",
     ):
         assert line in out
 
@@ -152,7 +163,9 @@ def test_the_exemplar_problem_passes_validation(capsys, monkeypatch):
     monkeypatch.setenv("WHETSTONE_ROOT", str(REPO_ROOT))
     code, out, _ = ws(capsys, "validate", "stable-softmax", "-v")
     assert code == 0, out
-    assert out.count("rejected (") == 3 + 6  # three starters, six mutants
+    assert out.count("rejected (") == 3 + 7  # three starters, seven mutants
+    assert "mutant uses_builtin rejected (wrong_answer)" in out
+    assert "forbidden: 24 names resolve and can be guarded" in out
 
 
 def test_deliberately_broken_fixture_fails_validation(capsys, monkeypatch):
@@ -189,6 +202,106 @@ def test_validate_rejects_starters_and_mutants_that_do_not_even_import(scratch_r
     assert any("import_error" in e for e in errors)
 
 
+def test_validate_reports_hidden_cases_by_their_real_ids(scratch_root):
+    problem = scratch_root / "problems" / "basics" / "sum-list"
+    # Wrong on negative input only when judged as the solution (the oracle is this file too).
+    (problem / "reference" / "python.py").write_text(
+        "def total(xs):\n    return abs(sum(xs)) if __name__ == 'solution' else sum(xs)\n"
+    )
+    (error,) = [e for e in errors_for(scratch_root) if e.startswith("reference")]
+    assert "first failing case negatives" in error  # not "hidden-1": authors need the name
+
+
+def test_validate_checks_that_forbidden_names_resolve(scratch_root):
+    problem = scratch_root / "problems" / "basics" / "sum-list"
+    edit_toml(
+        problem,
+        "time_limit_s = 1",
+        'time_limit_s = 1\nforbidden = ["math.fsum", "math.fsun", "math.pi", "statistics.NoSuch.mean"]',
+    )
+    errors = errors_for(scratch_root)
+    assert errors == [
+        "problem.toml: forbidden name `math.fsun`: `fsun` does not exist",
+        "problem.toml: forbidden name `math.pi`: is not callable",
+        "problem.toml: forbidden name `statistics.NoSuch.mean`: `NoSuch` does not exist",
+    ]
+
+
+def test_validate_runs_the_forbidden_guard_against_reference_and_mutants(scratch_root):
+    problem = scratch_root / "problems" / "basics" / "sum-list"
+    edit_toml(problem, "time_limit_s = 1", 'time_limit_s = 1\nforbidden = ["math.fsum"]')
+    assert errors_for(scratch_root) == []
+    # A reference that needs the forbidden call is a broken problem, and validate says so.
+    (problem / "reference" / "python.py").write_text(
+        "import math\n\n\ndef total(xs):\n    return int(math.fsum(xs))\n"
+    )
+    (error,) = errors_for(scratch_root)
+    assert "reference (python): must be accepted, got wrong_answer" in error
+    assert "`math.fsum` is not allowed in this problem" in error
+
+
+class _Recorder:
+    """Stands in for runner.run: records when each harness run starts and ends."""
+
+    def __init__(self):
+        import threading
+
+        self.lock = threading.Lock()
+        self.active = 0
+        self.log = []  # (problem id, runs active while this one ran)
+
+    def __call__(self, command, on_event=None):
+        import time
+
+        problem = Path(command[command.index("--problem") + 1]).name
+        solution = Path(command[command.index("--solution") + 1])
+        with self.lock:
+            self.active += 1
+            peak = self.active
+        time.sleep(0.02)
+        with self.lock:
+            peak = max(peak, self.active)
+            self.active -= 1
+            self.log.append((problem, peak))
+        accepted = solution.parent.name == "reference"
+        cases = [{"id": "a", "public": True}, {"id": "b", "public": False}]
+        return gate.runner.RunResult(
+            start={"cases": cases},
+            cases=[{"id": c["id"], "status": "pass", "duration_ms": 1.0} for c in cases],
+            end={"status": "accepted" if accepted else "wrong_answer", "duration_ms": 2.0},
+        )
+
+
+def test_timing_sensitive_problems_validate_alone_after_the_parallel_batch(monkeypatch):
+    recorder = _Recorder()
+    monkeypatch.setattr(gate.runner, "run", recorder)
+    monkeypatch.setattr(gate, "check_forbidden", lambda names: {})
+    directories = gate.problem_dirs(CATALOG)
+    reports = gate.validate(CATALOG, directories, jobs=4)
+    assert all(report.ok for report in reports), [r.errors for r in reports]
+    assert len(reports) == 7  # every problem is still judged, and reported in catalog order
+    assert [r.problem_id for r in reports] == [d.name for d in directories]
+
+    sensitive = {"pairwise-distances", "sse-tokens"}  # the speed and the service fixture
+    order = [problem for problem, _ in recorder.log]
+    first_serial = min(i for i, problem in enumerate(order) if problem in sensitive)
+    assert set(order[first_serial:]) == sensitive  # nothing else runs once they start
+    assert set(order[:first_serial]).isdisjoint(sensitive)
+    assert all(peak == 1 for problem, peak in recorder.log if problem in sensitive)
+    assert max(peak for problem, peak in recorder.log if problem not in sensitive) > 1
+
+
+def test_which_judges_count_as_timing_sensitive():
+    from whetstone.problem import load_problem
+
+    verdicts = {d.name: gate.is_timing_sensitive(load_problem(d)) for d in gate.problem_dirs(CATALOG)}
+    assert verdicts == {
+        "sum-list": False, "dynamic-batcher": False, "greedy-decode": False,
+        "pairwise-distances": True, "sample-categorical": False, "sse-tokens": True,
+        "unit-normalize": False,
+    }  # fmt: skip
+
+
 def edit_toml(problem: Path, old: str, new: str) -> None:
     path = problem / "problem.toml"
     text = path.read_text()
@@ -216,6 +329,12 @@ def edit_toml(problem: Path, old: str, new: str) -> None:
         (lambda p: edit_toml(p, 'entry = ["total"]', "entry = []"), "entry is empty"),
         (lambda p: edit_toml(p, "time_limit_s = 1", ""), "missing key `time_limit_s`"),
         (lambda p: edit_toml(p, "order = 10", 'order = "first"'), "`order` has the wrong type"),
+        (lambda p: edit_toml(p, "order = 10", 'order = 10\nforbidden = "math.fsum"'),
+         "`forbidden` must be a list of dotted names"),
+        (lambda p: edit_toml(p, "order = 10", 'order = 10\nforbidden = ["fsum"]'),
+         "forbidden name 'fsum' must be a dotted name"),
+        (lambda p: edit_toml(p, "order = 10", 'order = 10\nforbidden = ["math.fsum", "math.fsum"]'),
+         "forbidden contains duplicates"),
         (lambda p: (p / "starter" / "python.py").unlink(), "starter/python.py: missing or empty"),
         (lambda p: (p / "reference" / "jax.py").write_text("x = 1\n"),
          "reference/jax.py: framework 'jax' is not in `frameworks`"),

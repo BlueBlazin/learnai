@@ -10,3 +10,7 @@ prerequisites = ["causal-self-attention"]
 requires = "cpu"
 entry = ["apply_rope"]
 time_limit_s = 10
+# The statement's rule, enforced by the harness: no built-in RoPE layer.
+forbidden = [
+    "mlx.nn.RoPE",
+]

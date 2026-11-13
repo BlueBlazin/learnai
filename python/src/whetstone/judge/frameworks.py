@@ -7,8 +7,11 @@ same test judges a torch, JAX, MLX, or plain-Python solution.
 Conversion rules (``tensor``):
 
 * floating arrays become float32 (the house dtype; pass ``dtype=`` to override);
-* integer arrays become the framework's default integer type: int64 in torch,
-  int32 in JAX and MLX; bool stays bool;
+* integer arrays keep their dtype: an int8 array arrives as an int8 tensor, uint8 as
+  uint8, int32 as int32. The one exception is 64-bit integers, numpy's default (what
+  ``np.array([1, 2])`` and ``ctx.randint`` produce): they become the framework's
+  default integer type, which is int64 in torch and int32 in JAX and MLX (uint64
+  likewise stays uint64 in torch and becomes uint32 in JAX and MLX). Bool stays bool;
 * the ``python`` adapter turns arrays into nested lists and numpy scalars into
   Python scalars.
 """
@@ -115,12 +118,20 @@ def _looks_like_foreign_tensor(obj: Any) -> bool:
     return module.split(".")[0] in ("torch", "jax", "jaxlib", "mlx")
 
 
-def _prepare(value: Any, dtype: Any) -> np.ndarray:
+def _prepare(value: Any, dtype: Any, *, wide_ints: bool) -> np.ndarray:
+    """The numpy array to hand to the framework, in the dtype the tensor will have.
+
+    ``wide_ints`` says whether the framework's default integer is 64 bits wide (torch)
+    or 32 (JAX without x64, MLX). Narrower integers are never widened: a problem about
+    int8 codes must be able to hand the solution int8 codes.
+    """
     array = np.asarray(value)
     if dtype is not None:
         return array.astype(dtype)
     if array.dtype.kind == "f" and array.dtype != np.float32:
         return array.astype(np.float32)
+    if array.dtype.kind in "iu" and array.dtype.itemsize == 8 and not wide_ints:
+        return array.astype(np.int32 if array.dtype.kind == "i" else np.uint32)
     return array
 
 
@@ -138,9 +149,7 @@ class TorchFramework(Framework):
         return isinstance(value, self.xp.Tensor)
 
     def tensor(self, value: Any, dtype: Any = None) -> Any:
-        array = _prepare(value, dtype)
-        if array.dtype.kind in "iu" and dtype is None:
-            array = array.astype(np.int64)
+        array = _prepare(value, dtype, wide_ints=True)
         # torch.tensor copies: a solution that works in place must not be able to
         # change the numpy array the test is about to hand to the oracle.
         return self.xp.tensor(array)
@@ -172,9 +181,7 @@ class JaxFramework(Framework):
         return isinstance(value, self._jax.Array)
 
     def tensor(self, value: Any, dtype: Any = None) -> Any:
-        array = _prepare(value, dtype)
-        if array.dtype.kind in "iu" and dtype is None:
-            array = array.astype(np.int32)
+        array = _prepare(value, dtype, wide_ints=False)
         return self.xp.asarray(array)
 
     def numpy(self, value: Any) -> np.ndarray:
@@ -204,9 +211,7 @@ class MlxFramework(Framework):
         return isinstance(value, self.xp.array)
 
     def tensor(self, value: Any, dtype: Any = None) -> Any:
-        array = _prepare(value, dtype)
-        if array.dtype.kind in "iu" and dtype is None:
-            array = array.astype(np.int32)
+        array = _prepare(value, dtype, wide_ints=False)
         return self.xp.array(array)
 
     def numpy(self, value: Any) -> np.ndarray:

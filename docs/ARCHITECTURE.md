@@ -116,6 +116,9 @@ entry = ["softmax"]              # names the solution must define
 time_limit_s = 10                # default per-case limit
 ```
 
+`forbidden` (optional): a list of dotted names the solution must not call, for example
+`["torch.softmax", "torch.nn.functional.softmax"]`. A violation fails the case.
+
 ### 3.4 Judge types
 
 | judge | checks | determinism rule |
@@ -134,10 +137,12 @@ time_limit_s = 10                # default per-case limit
 uv run --project <root>/python [--extra jax] [--extra mlx] -- \
   python -m whetstone.harness \
     --problem <abs problem dir> --solution <abs solution file> \
-    --framework torch|jax|mlx|python --mode run|submit [--case <case id>]
+    --framework torch|jax|mlx|python --mode run|submit [--case <case id>] [--reveal]
 ```
 
 - `run` executes public cases only; `submit` executes all cases.
+- `--case` takes an id listed in `start.cases`. `--reveal` (authors only) shows real
+  hidden-case ids and names.
 - Exit code 0 whenever the harness itself worked (even if cases failed); non-zero only
   for harness or usage failure.
 - The solution runs inside this subprocess. Core enforces an overall wall-clock limit
@@ -164,8 +169,10 @@ non-prefixed stdout line and all stderr as diagnostic log output.
 - Case `status`: `pass | fail | error | timeout | skipped`.
 - Final `status`: `accepted | wrong_answer | runtime_error | time_limit | import_error | harness_error`.
   Precedence when mixed: import_error, runtime_error, time_limit, wrong_answer.
-- Hidden cases report their id and status but a generic name ("Hidden case 3"). They
-  keep the one-line `message` and drop `detail`.
+- Hidden cases have the opaque id `hidden-N` and the name "Hidden case N", keep the
+  one-line `message`, and always have `detail: null`. For a hidden `error`, `message` is
+  the exception line plus the location in the solution file. Skipped cases have
+  `detail: null`.
 - `end` may carry optional `message` and `detail` (used for `import_error` and
   `harness_error`: the traceback). Core forwards them on the `end` RunEvent as
   `message: string | null` and `detail: string | null`.

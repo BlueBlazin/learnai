@@ -236,7 +236,13 @@ def equal(got: Any, expected: Any, *, label: str = "output", context: str | None
 
     For integer, bool, and token arrays (shape first, then values, integer width
     ignored) and for plain Python values (lists of tokens, strings, dicts).
+
+    A list or tuple of 0-d arrays (what a solution returns when it collects scalar
+    tensors, ``[logits.argmax() for ...]``) is compared as a list of scalars: each 0-d
+    array counts as the number it holds. An array with one or more dimensions inside a
+    list is never squeezed into a scalar; it is compared as an array, shape first.
     """
+    got, expected = _scalars(got), _scalars(expected)
     if isinstance(expected, np.ndarray) or isinstance(got, np.ndarray):
         want = np.asarray(expected)
         have = _coerce(got, label, context)
@@ -269,6 +275,11 @@ def equal(got: Any, expected: Any, *, label: str = "output", context: str | None
                 _join(context, f"expected: {_short(expected)}", f"     got: {_short(got)}"),
             )
         for i, (g, e) in enumerate(zip(got, expected, strict=True)):
+            if _holds_array(g) or _holds_array(e):
+                # Arrays inside a list: compare them as arrays (shape, then values), or
+                # element by element when they are nested deeper.
+                equal(g, e, label=f"{label}[{i}]", context=context)
+                continue
             if not _py_equal(g, e):
                 lo = max(0, i - 4)
                 raise CheckFailure(
@@ -286,6 +297,30 @@ def equal(got: Any, expected: Any, *, label: str = "output", context: str | None
             f"{label}: differs from the expected result",
             _join(context, f"expected: {_short(expected)}", f"     got: {_short(got)}"),
         )
+
+
+def _scalars(value: Any) -> Any:
+    """Replace 0-d arrays and numpy scalars inside lists and tuples by Python scalars.
+
+    The top-level value itself is left alone (a 0-d array result is an array result).
+    """
+    if isinstance(value, (list, tuple)):
+        return type(value)(_scalar_item(item) for item in value)
+    return value
+
+
+def _scalar_item(item: Any) -> Any:
+    if isinstance(item, np.generic) or (isinstance(item, np.ndarray) and item.ndim == 0):
+        return item.item()
+    if isinstance(item, (list, tuple)):
+        return type(item)(_scalar_item(inner) for inner in item)
+    return item
+
+
+def _holds_array(value: Any) -> bool:
+    if isinstance(value, np.ndarray):
+        return True
+    return isinstance(value, (list, tuple)) and any(_holds_array(item) for item in value)
 
 
 def _isnan(array: np.ndarray) -> np.ndarray:
@@ -344,6 +379,30 @@ def match(
         for key, value in expected.items():
             match(got[key], value, rtol=rtol, atol=atol, dtype=dtype,
                   label=f"{label}[{key!r}]", context=context)  # fmt: skip
+        return
+    if (
+        isinstance(expected, list)
+        and expected
+        and all(isinstance(item, (np.ndarray, np.generic)) and item.ndim == 0 for item in expected)
+    ):
+        # A list of scalar tensors is a list of scalars. Compare it as one sequence
+        # (one message, with the position) instead of as len(expected) tiny tensors.
+        if not isinstance(got, (list, tuple)):
+            raise CheckFailure(
+                f"{label}: expected a list of {len(expected)} scalars, got a "
+                f"{type(got).__name__}",
+                _join(context),
+            )
+        want = np.array([item.item() for item in expected])
+        have = _scalars(list(got))
+        if want.dtype.kind == "f":
+            if len(have) != len(want):
+                raise CheckFailure(
+                    f"{label}: expected {len(want)} values, got {len(have)}", _join(context)
+                )
+            allclose(have, want, rtol=rtol, atol=atol, label=label, context=context)
+        else:
+            equal(have, want.tolist(), label=label, context=context)
         return
     nested = isinstance(expected, tuple) or (
         isinstance(expected, list)

@@ -10,3 +10,11 @@ prerequisites = []
 requires = "cpu"
 entry = ["rms_norm"]
 time_limit_s = 10
+# The statement's rule, enforced by the harness: no built-in RMS normalization.
+forbidden = [
+    "torch.nn.RMSNorm",
+    "torch.nn.functional.rms_norm",
+    "torch.rms_norm",
+    "mlx.nn.RMSNorm",
+    "mlx.core.fast.rms_norm",
+]

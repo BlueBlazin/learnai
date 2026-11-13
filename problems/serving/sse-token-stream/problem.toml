@@ -10,3 +10,10 @@ prerequisites = []
 requires = "cpu"
 entry = ["make_app"]
 time_limit_s = 15
+# The statement's rule, enforced by the harness: the standard library only, no Starlette.
+forbidden = [
+    "starlette.applications.Starlette",
+    "starlette.routing.Router",
+    "starlette.responses.Response",
+    "starlette.responses.StreamingResponse",
+]

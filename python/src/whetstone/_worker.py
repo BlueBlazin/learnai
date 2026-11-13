@@ -23,7 +23,12 @@ from typing import Any
 from whetstone import protocol
 from whetstone.capture import FdCapture
 from whetstone.problem import Problem, ProblemError, load_problem
-from whetstone.tracebacks import exception_line, format_user_traceback, raised_in
+from whetstone.tracebacks import (
+    exception_line,
+    format_user_traceback,
+    hidden_error_message,
+    raised_in,
+)
 
 MIN_IMPORT_LIMIT_S = 10.0
 
@@ -80,6 +85,9 @@ class Worker:
         self.capture = FdCapture(args.capture_file)
         self.started_at = time.perf_counter()
         self.ended = False
+        #: Real case id -> the id that leaves the harness (opaque for hidden cases).
+        self.wire: dict[str, str] = {}
+        self.guard: Any = None  # forbidden-call guard, when the problem has a list
 
     # -- emitting --------------------------------------------------------------
 
@@ -118,7 +126,7 @@ class Worker:
         # prints while loading cannot reach the protocol stream.
         from whetstone.judge import frameworks
         from whetstone.judge.context import ModuleStore
-        from whetstone.judge.registry import load_cases
+        from whetstone.judge.registry import load_cases, wire_identity
 
         args = self.args
         try:
@@ -140,14 +148,18 @@ class Worker:
         except frameworks.FrameworkUnavailable as exc:
             raise HarnessFailure(str(exc)) from exc
 
-        all_cases = [c for c in load_cases(problem.tests_path) if c.applies_to(args.framework)]
-        hidden_names: dict[str, str] = {}
-        for case in all_cases:
-            if not case.public:
-                hidden_names[case.id] = f"Hidden case {len(hidden_names) + 1}"
-        cases = [c for c in all_cases if c.public or args.mode == "submit"]
+        all_cases = load_cases(problem.tests_path)
+        # What a hidden case is called and what it checks stays in this process: on
+        # the wire it is `hidden-N` / "Hidden case N" (unless an author asks to reveal).
+        identity = wire_identity(all_cases, reveal=args.reveal)
+        self.wire = {case_id: wire_id for case_id, (wire_id, _) in identity.items()}
+        cases = [
+            c
+            for c in all_cases
+            if c.applies_to(args.framework) and (c.public or args.mode == "submit")
+        ]
         if args.case is not None:
-            cases = [c for c in cases if c.id == args.case]
+            cases = [c for c in cases if self.wire[c.id] == args.case]
             if not cases:
                 raise HarnessFailure(
                     f"no case with id {args.case!r} in {args.mode} mode for {problem.id!r}"
@@ -168,12 +180,32 @@ class Worker:
                 "framework": args.framework,
                 "mode": args.mode,
                 "cases": [
-                    {"id": c.id, "name": hidden_names.get(c.id, c.name), "public": c.public}
+                    {"id": identity[c.id][0], "name": identity[c.id][1], "public": c.public}
                     for c in cases
                 ],
                 "env": env,
             }
         )
+
+        if problem.forbidden:
+            from whetstone.judge.forbidden import Guard
+
+            # In place before the solution is imported, so that `from torch import
+            # softmax` binds the guard, not the function.
+            self.guard = Guard(problem.forbidden, solution_path)
+            self.guard.install()
+            found = self.guard.scan_source()
+            if found is not None:
+                # A forbidden method that can only be detected in the source: nothing
+                # is run, and every case fails for that reason.
+                detail = self.guard.rule_text()
+                for case in cases:
+                    wire_id = self.wire[case.id]
+                    shown = detail if case.public or args.reveal else None
+                    self.emit({"event": "case_start", "id": wire_id})
+                    self.emit(self.case_end(wire_id, "fail", 0.0, found.message, shown, "", []))
+                self.end("wrong_answer", ["fail"] * len(cases), len(cases), [])
+                return 0
 
         solution, failure = self.import_solution(problem, solution_path)
         if solution is None:
@@ -181,8 +213,11 @@ class Worker:
             statuses = []
             for case in cases:
                 statuses.append("skipped")
+                # One line only: the traceback is on the `end` event, once.
                 self.emit(
-                    self.case_end(case.id, "skipped", 0.0, "not run: " + message, detail, "", [])
+                    self.case_end(
+                        self.wire[case.id], "skipped", 0.0, "not run: " + message, None, "", []
+                    )
                 )
             self.end("import_error", statuses, len(cases), [], message=message, detail=detail)
             return 0
@@ -222,8 +257,11 @@ class Worker:
             raise
         except BaseException as exc:  # noqa: BLE001 - a solution may raise anything
             module = None
+            line = exception_line(exc)
+            if type(exc).__name__ == "ForbiddenCall":
+                line = str(exc)
             failure = (
-                f"the solution failed to import: {exception_line(exc)}",
+                f"the solution failed to import: {line}",
                 format_user_traceback(exc, str(path)),
             )
         if module is not None:
@@ -240,6 +278,21 @@ class Worker:
         # Import-time prints belong to no case; surface them as diagnostic log lines.
         self.forward_captured_as_log()
         return module, failure
+
+    @staticmethod
+    def describe_error(
+        exc: BaseException, user_file: str, also_show: tuple[str, ...], shown: bool
+    ) -> tuple[str, str, str | None]:
+        """Status, message, and detail for an exception that escaped a case.
+
+        Public case: the exception line, and a traceback of the learner's frames (or
+        the test's, when the learner's file is not involved). Hidden case: everything
+        the learner needs to debug their own code fits the message (their exception
+        type and text, and the line of their file); there is no detail.
+        """
+        if shown:
+            return "error", exception_line(exc), format_user_traceback(exc, user_file, also_show)
+        return "error", hidden_error_message(exc, user_file), None
 
     def case_end(
         self,
@@ -270,10 +323,17 @@ class Worker:
         ctx = Context(store, case)
         status, message, detail = "pass", None, None
         user_file = str(solution_path)
+        wire_id = self.wire[case.id]
+        # Hidden cases keep the one-line message and never carry a detail: it could
+        # show expected values, the test's inputs, or its source.
+        shown = case.public or self.args.reveal
+        if self.guard is not None:
+            self.guard.install()  # picks up frameworks the solution imported since
+            self.guard.take()
 
-        self.emit({"event": "case_start", "id": case.id})
+        self.emit({"event": "case_start", "id": wire_id})
         self.capture.begin()
-        self.activity(phase="case", id=case.id, limit_s=limit)
+        self.activity(phase="case", id=wire_id, limit_s=limit)
         started = time.perf_counter()
         try:
             try:
@@ -287,32 +347,33 @@ class Worker:
             raise
         except CheckFailure as failure:
             status, message, detail = "fail", failure.message, failure.detail
-            if not case.public:
-                detail = None  # may contain expected values
         except AssertionError as exc:
             if raised_in(exc, user_file):
                 # The learner's own assert fired: that is a crash, not a wrong answer.
-                status, message = "error", exception_line(exc)
-                detail = format_user_traceback(exc, user_file)
+                status, message, detail = self.describe_error(exc, user_file, (), shown)
             else:
                 status = "fail"
                 text = str(exc).strip()
                 message = text.splitlines()[0] if text else "an assertion in the test failed"
                 rest = "\n".join(text.splitlines()[1:]).strip()
                 detail = rest or None
-                if not case.public:
-                    detail = None
         except BaseException as exc:  # noqa: BLE001 - includes SystemExit from the solution
-            status, message = "error", exception_line(exc)
-            also_show = (str(problem.tests_path),) if case.public else ()
-            detail = format_user_traceback(exc, user_file, also_show)
+            also_show = (str(problem.tests_path),)
+            status, message, detail = self.describe_error(exc, user_file, also_show, shown)
         duration_ms = (time.perf_counter() - started) * 1000
         self.activity(phase="idle")
         data, total = self.capture.take()
+        violations = self.guard.take() if self.guard is not None else []
+        if violations and status != "timeout":
+            # Also when the solution caught the exception and carried on: the rule of
+            # the exercise was broken either way.
+            status, message, detail = "fail", violations[0].message, self.guard.rule_text()
+        if not shown:
+            detail = None
         if message is not None:
             message = " ".join(message.split())  # one line
         return self.case_end(
-            case.id,
+            wire_id,
             status,
             duration_ms,
             message,
@@ -329,6 +390,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--framework", required=True)
     parser.add_argument("--mode", required=True, choices=["run", "submit"])
     parser.add_argument("--case", default=None)
+    parser.add_argument("--reveal", action="store_true")
     parser.add_argument("--capture-file", required=True)
     args = parser.parse_args(argv)
 

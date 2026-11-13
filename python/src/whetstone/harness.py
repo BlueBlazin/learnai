@@ -65,7 +65,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--solution", required=True, help="absolute path of the solution file")
     parser.add_argument("--framework", required=True, choices=["torch", "jax", "mlx", "python"])
     parser.add_argument("--mode", required=True, choices=["run", "submit"])
-    parser.add_argument("--case", default=None, help="run only the case with this id")
+    parser.add_argument(
+        "--case",
+        default=None,
+        help="run only the case with this id, as the start event lists it "
+        "(hidden cases: hidden-N, or the real id with --reveal)",
+    )
+    parser.add_argument(
+        "--reveal",
+        action="store_true",
+        help="for problem authors: report hidden cases with their real ids, names, and details",
+    )
     return parser
 
 

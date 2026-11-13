@@ -10,3 +10,15 @@ prerequisites = []
 requires = "cpu"
 entry = ["DynamicBatcher"]
 time_limit_s = 5
+# The statement's rule, enforced by the harness: no real clock, asyncio, threads, or sleeping.
+forbidden = [
+    "time.sleep",
+    "time.time",
+    "time.monotonic",
+    "time.perf_counter",
+    "asyncio.sleep",
+    "asyncio.run",
+    "asyncio.new_event_loop",
+    "asyncio.get_event_loop",
+    "threading.Thread",
+]
