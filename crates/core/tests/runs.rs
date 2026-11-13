@@ -45,6 +45,15 @@ fn end_of(events: &[RunEvent]) -> (Verdict, u32, u32, Option<i64>) {
     }
 }
 
+fn end_message(events: &[RunEvent]) -> (Option<String>, Option<String>) {
+    match events.last() {
+        Some(RunEvent::End {
+            message, detail, ..
+        }) => (message.clone(), detail.clone()),
+        other => panic!("not an end event: {other:?}"),
+    }
+}
+
 fn process_alive(pid: &str) -> bool {
     Command::new("kill")
         .args(["-0", pid])
@@ -156,10 +165,18 @@ fn accepted_submit_is_stored_and_solves_the_problem() {
         detail
             .cases
             .iter()
-            .map(|c| c.id.as_str())
+            .map(|c| (c.result.id.as_str(), c.name.as_str(), c.public))
             .collect::<Vec<_>>(),
-        ["c1", "c2", "h1"]
+        [
+            ("c1", "Small input", true),
+            ("c2", "Large input", true),
+            ("h1", "Hidden case 1", false)
+        ]
     );
+    let json = serde_json::to_value(&detail).expect("json");
+    assert_eq!(json["cases"][2]["id"], "h1");
+    assert_eq!(json["cases"][2]["name"], "Hidden case 1");
+    assert_eq!(json["cases"][2]["public"], false);
     assert_eq!(detail.metrics[0].value, 12.5);
     let json = serde_json::to_value(&detail).expect("json");
     assert_eq!(json["problemId"], "add-two");
@@ -221,7 +238,8 @@ fn failing_submit_is_stored_with_case_details_and_marks_attempted() {
         .get_submission(submission_id.expect("id"))
         .expect("detail");
     assert!(detail.code.contains("NotImplementedError"));
-    assert_eq!(detail.cases[1], failed);
+    assert_eq!(detail.cases[1].result, failed);
+    assert_eq!(detail.cases[1].name, "Large input");
 
     let problem = core.get_problem("add-two").expect("detail");
     assert_eq!(problem.summary.status, ProblemStatus::Attempted);
@@ -329,6 +347,12 @@ fn a_harness_that_dies_mid_run_ends_with_harness_error() {
         "{logs:?}"
     );
 
+    assert!(
+        end_message(&events)
+            .0
+            .is_some_and(|m| m.contains("exited with code 3 without reporting a result"))
+    );
+
     // The attempt is recorded with the cases that did finish.
     let detail = core
         .get_submission(submission_id.expect("id"))
@@ -354,9 +378,65 @@ fn a_harness_that_cannot_be_spawned_ends_with_harness_error() {
             .iter()
             .any(|l| l.contains("Could not start the judge"))
     );
+    let (message, detail) = end_message(&events);
+    assert!(
+        message.is_some_and(|m| m.contains("uv was not found") && m.contains("Install uv")),
+        "{events:?}"
+    );
+    assert_eq!(detail, None);
     assert!(
         core.list_submissions(None).expect("list").is_empty(),
         "a run that never launched is not an attempt"
+    );
+}
+
+#[test]
+fn an_import_error_forwards_message_and_detail_and_names_skipped_cases() {
+    let root = TestRoot::new();
+    let core = root.core("import-error");
+    let events = run(&core, RunMode::Submit);
+
+    let (verdict, passed, total, submission_id) = end_of(&events);
+    assert_eq!((verdict, passed, total), (Verdict::ImportError, 0, 3));
+    let (message, detail) = end_message(&events);
+    assert_eq!(
+        message.as_deref(),
+        Some("the solution failed to import: SyntaxError: invalid syntax")
+    );
+    assert_eq!(
+        detail.as_deref(),
+        Some("  File \"torch.py\", line 1\nSyntaxError: invalid syntax\n")
+    );
+
+    // Skipped cases report `case_end` with no `case_start`.
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, RunEvent::CaseStart { .. }))
+    );
+    let skipped = events
+        .iter()
+        .filter(
+            |e| matches!(e, RunEvent::CaseEnd { result } if result.status == CaseStatus::Skipped),
+        )
+        .count();
+    assert_eq!(skipped, 3);
+
+    // They are stored with the names announced at the start.
+    let detail = core
+        .get_submission(submission_id.expect("id"))
+        .expect("detail");
+    assert_eq!(
+        detail
+            .cases
+            .iter()
+            .map(|c| (c.name.as_str(), c.public, c.result.status))
+            .collect::<Vec<_>>(),
+        [
+            ("Small input", true, CaseStatus::Skipped),
+            ("Large input", true, CaseStatus::Skipped),
+            ("Hidden case 1", false, CaseStatus::Skipped)
+        ]
     );
 }
 

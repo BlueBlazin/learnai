@@ -5,14 +5,31 @@ import {
   createRouter,
   lazyRouteComponent,
 } from "@tanstack/react-router";
-import { ErrorState } from "@/components/app/states";
+import { lazy, type ReactNode, Suspense } from "react";
+import { ErrorState, LoadingLines } from "@/components/app/states";
 import { parseFilters, serializeFilters } from "@/lib/filters";
 import { type LibrarySearch, type ProblemSearch, STATEMENT_TABS, type StatementTab } from "@/lib/routes";
 import { HomeScreen } from "@/routes/home";
-import { LibraryScreen } from "@/routes/library";
-import { ProblemScreen } from "@/routes/problem";
 import { RootLayout } from "@/routes/root";
-import { SettingsScreen } from "@/routes/settings";
+
+// Home is the first screen and stays in the main bundle; every other screen is
+// its own chunk, loaded the first time it is opened.
+const LibraryScreen = lazy(() => import("@/routes/library").then((m) => ({ default: m.LibraryScreen })));
+const ProblemScreen = lazy(() => import("@/routes/problem").then((m) => ({ default: m.ProblemScreen })));
+const SettingsScreen = lazy(() => import("@/routes/settings").then((m) => ({ default: m.SettingsScreen })));
+
+function ScreenLoading() {
+  return (
+    <div className="h-full bg-paper px-gutter pt-10">
+      <LoadingLines lines={8} className="max-w-measure" />
+    </div>
+  );
+}
+
+/** Shows the loading lines while a screen's chunk arrives. */
+function Screen({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<ScreenLoading />}>{children}</Suspense>;
+}
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -30,7 +47,11 @@ const libraryRoute = createRoute({
   path: "/library",
   validateSearch: (search: Record<string, unknown>): LibrarySearch => serializeFilters(parseFilters(search)),
   component: function LibraryRoute() {
-    return <LibraryScreen search={libraryRoute.useSearch()} />;
+    return (
+      <Screen>
+        <LibraryScreen search={libraryRoute.useSearch()} />
+      </Screen>
+    );
   },
 });
 
@@ -48,14 +69,24 @@ const problemRoute = createRoute({
   component: function ProblemRoute() {
     const { problemId } = problemRoute.useParams();
     // Keyed by problem so editor, run, and scroll state never leak between problems.
-    return <ProblemScreen key={problemId} problemId={problemId} search={problemRoute.useSearch()} />;
+    return (
+      <Screen>
+        <ProblemScreen key={problemId} problemId={problemId} search={problemRoute.useSearch()} />
+      </Screen>
+    );
   },
 });
 
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
-  component: SettingsScreen,
+  component: function SettingsRoute() {
+    return (
+      <Screen>
+        <SettingsScreen />
+      </Screen>
+    );
+  },
 });
 
 /**
@@ -83,6 +114,7 @@ export const router = createRouter({
   // Hash routing works under any origin Tauri serves the app from.
   history: createHashHistory(),
   defaultPreload: false,
+  defaultPendingComponent: ScreenLoading,
   defaultErrorComponent: ({ error, reset }) => (
     <div className="h-full bg-paper px-gutter pt-10">
       <ErrorState title="This screen stopped working" error={error} onRetry={reset} />

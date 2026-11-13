@@ -100,8 +100,8 @@ export type RunEvent =
       metrics: Metric[];
       submissionId: number | null;
       /** Failure reason and traceback for import and harness failures (event protocol, section 3.6). */
-      message?: string | null;
-      detail?: string | null;
+      message: string | null;
+      detail: string | null;
     };
 
 export interface Submission {
@@ -118,10 +118,22 @@ export interface Submission {
   createdAt: string;
 }
 
+/** A case result as stored with a submission: the result plus the case's name and visibility. */
+export interface StoredCase extends CaseResult {
+  name: string;
+  public: boolean;
+}
+
 export interface SubmissionDetail extends Submission {
   code: string;
-  cases: CaseResult[];
+  cases: StoredCase[];
   metrics: Metric[];
+}
+
+/** A malformed track or problem that the catalog skipped. */
+export interface CatalogIssue {
+  path: string;
+  message: string;
 }
 
 export interface FrameworkEnv {

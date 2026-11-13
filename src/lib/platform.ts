@@ -4,11 +4,12 @@ export const IS_MAC =
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 /**
- * True when the Tauri window uses an overlay title bar, so the app bar must
- * leave room for the traffic lights and act as the drag region. This cannot be
- * detected at runtime; it mirrors tauri.conf.json through an env flag.
+ * True when the window uses an overlay title bar, so the app bar must leave
+ * room for the traffic lights and act as the drag region. tauri.conf.json sets
+ * `titleBarStyle: "Overlay"`, which only macOS honors, so this is exactly
+ * "inside Tauri on a Mac": no build flag to keep in sync.
  */
-export const TITLEBAR_OVERLAY = isTauri() && import.meta.env.VITE_TITLEBAR_OVERLAY === "1";
+export const TITLEBAR_OVERLAY = isTauri() && IS_MAC;
 
 /** Key glyphs for shortcut hints. */
 export const MOD_KEY = IS_MAC ? "⌘" : "Ctrl";

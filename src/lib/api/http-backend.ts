@@ -97,6 +97,8 @@ export class HttpBackend implements Backend {
           durationMs: 0,
           metrics: [],
           submissionId: null,
+          message: "Lost the connection to the devbridge.",
+          detail: null,
         }),
     );
     return runId;
@@ -129,4 +131,7 @@ export class HttpBackend implements Backend {
   }
 
   getStats = () => this.call<Awaited<ReturnType<Backend["getStats"]>>>("get_stats");
+
+  listCatalogIssues = () =>
+    this.call<Awaited<ReturnType<Backend["listCatalogIssues"]>>>("list_catalog_issues");
 }

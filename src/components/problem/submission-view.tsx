@@ -50,8 +50,8 @@ export function SubmissionView({
           <MetricList metrics={submission.metrics} />
           <CaseList
             ended
-            cases={submission.cases.map((result, index) => ({
-              info: { id: result.id, name: `Case ${index + 1}`, public: true },
+            cases={submission.cases.map(({ name, public: isPublic, ...result }) => ({
+              info: { id: result.id, name, public: isPublic },
               state: "done" as const,
               result,
             }))}

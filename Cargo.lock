@@ -4678,6 +4678,8 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tracing",
+ "tracing-subscriber",
  "whetstone-core",
 ]
 

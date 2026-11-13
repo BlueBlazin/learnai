@@ -6,5 +6,6 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   resolve: { alias: { "@": path.resolve(rootDir, "./src") } },
+  define: { __WHETSTONE_FIXTURES__: "true" },
   test: { include: ["src/**/*.test.ts"], environment: "node" },
 });

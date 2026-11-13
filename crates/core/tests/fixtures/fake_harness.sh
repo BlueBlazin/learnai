@@ -11,6 +11,7 @@
 #   hang        starts a case, then sleeps (with a child process) until killed
 #   slow-start  sleeps before reporting `start`
 #   linger      reports `end`, then keeps running
+#   import-error  every case is skipped (no `case_start`); `end` carries message and detail
 # In the hang scenario the child's pid is written to $FAKE_PIDFILE when that is set.
 
 problem= solution= framework= mode=run
@@ -103,6 +104,13 @@ case "$scenario" in
   slow-start)
     echo "resolving environment" >&2
     sleep 600
+    ;;
+  import-error)
+    start
+    for id in $ids; do
+      ev "{\"event\":\"case_end\",\"id\":\"$id\",\"status\":\"skipped\",\"duration_ms\":0.0,\"message\":\"not run: the solution failed to import\",\"detail\":null,\"stdout\":\"\",\"metrics\":[]}"
+    done
+    ev "{\"event\":\"end\",\"status\":\"import_error\",\"passed\":0,\"total\":$total,\"duration_ms\":3.0,\"metrics\":[],\"message\":\"the solution failed to import: SyntaxError: invalid syntax\",\"detail\":\"  File \\\"torch.py\\\", line 1\\nSyntaxError: invalid syntax\\n\"}"
     ;;
   linger)
     start

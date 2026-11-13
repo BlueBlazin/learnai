@@ -370,6 +370,10 @@ pub enum RunEvent {
         metrics: Vec<Metric>,
         /// Id of the stored submission, for `submit` runs that were stored.
         submission_id: Option<i64>,
+        /// Short reason the run as a whole failed (import and harness errors, limits).
+        message: Option<String>,
+        /// Longer text for that failure, such as a traceback.
+        detail: Option<String>,
     },
 }
 
@@ -399,6 +403,48 @@ pub struct Submission {
     pub created_at: String,
 }
 
+/// A case result as stored with a submission: the result plus the case's display name
+/// and visibility, so history reads the same as the live run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredCase {
+    /// The case result, flattened.
+    #[serde(flatten)]
+    pub result: CaseResult,
+    /// Display name (generic for hidden cases). Rows stored before names were kept
+    /// fall back to the case id.
+    #[serde(default)]
+    pub name: String,
+    /// Whether the case is public.
+    #[serde(default = "default_public")]
+    pub public: bool,
+}
+
+fn default_public() -> bool {
+    true
+}
+
+impl StoredCase {
+    /// Pairs a result with the case announced under the same id, if any.
+    pub fn new(result: CaseResult, info: Option<&CaseInfo>) -> Self {
+        Self {
+            name: info.map_or_else(|| result.id.clone(), |i| i.name.clone()),
+            public: info.is_none_or(|i| i.public),
+            result,
+        }
+    }
+}
+
+/// A malformed track or problem that the catalog skipped, or an inconsistency in it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogIssue {
+    /// The offending file or directory.
+    pub path: String,
+    /// What is wrong.
+    pub message: String,
+}
+
 /// A submission with its code snapshot and per-case results.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -408,8 +454,8 @@ pub struct SubmissionDetail {
     pub submission: Submission,
     /// The submitted code.
     pub code: String,
-    /// Per-case results.
-    pub cases: Vec<CaseResult>,
+    /// Per-case results, with names.
+    pub cases: Vec<StoredCase>,
     /// Run-level metrics.
     pub metrics: Vec<Metric>,
 }
@@ -505,13 +551,15 @@ mod tests {
                 limit: Some(4.0),
             }],
             submission_id: None,
+            message: Some("m".into()),
+            detail: None,
         };
         assert_eq!(
             json!(end),
             json!({
                 "type": "end", "verdict": "accepted", "passed": 2, "total": 2,
                 "durationMs": 1.5, "metrics": [{"name": "n", "value": 3.0, "limit": 4.0}],
-                "submissionId": null
+                "submissionId": null, "message": "m", "detail": null
             })
         );
         let case = RunEvent::CaseEnd {
@@ -542,6 +590,44 @@ mod tests {
                 text: "x".into()
             }),
             json!({"type": "log", "stream": "stderr", "text": "x"})
+        );
+    }
+
+    #[test]
+    fn stored_cases_are_flat_and_tolerate_old_rows() {
+        let result = CaseResult {
+            id: "c1".into(),
+            status: CaseStatus::Pass,
+            duration_ms: 2.0,
+            message: None,
+            detail: None,
+            stdout: String::new(),
+            metrics: vec![],
+        };
+        let info = CaseInfo {
+            id: "c1".into(),
+            name: "Hidden case 1".into(),
+            public: false,
+        };
+        let stored = StoredCase::new(result.clone(), Some(&info));
+        assert_eq!(
+            json!(stored),
+            json!({"id": "c1", "status": "pass", "durationMs": 2.0, "message": null,
+                   "detail": null, "stdout": "", "metrics": [],
+                   "name": "Hidden case 1", "public": false})
+        );
+        let unnamed = StoredCase::new(result.clone(), None);
+        assert_eq!((unnamed.name.as_str(), unnamed.public), ("c1", true));
+
+        // A row written before names were stored.
+        let old: StoredCase = serde_json::from_value(json!(result)).expect("old row");
+        assert_eq!((old.name.as_str(), old.public), ("", true));
+        assert_eq!(
+            json!(CatalogIssue {
+                path: "/r/problems/t/p/problem.toml".into(),
+                message: "title is empty".into()
+            }),
+            json!({"path": "/r/problems/t/p/problem.toml", "message": "title is empty"})
         );
     }
 

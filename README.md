@@ -18,10 +18,13 @@ Architecture and contracts: `docs/ARCHITECTURE.md`. Dependency versions: `docs/V
 ```sh
 # Front end and desktop shell
 pnpm install
-pnpm dev                                  # Vite dev server only, http://localhost:1420
+pnpm dev                                  # Vite dev server with sample data, http://localhost:1420
+pnpm dev:real                             # the real core and judge in a browser: devbridge + Vite
+pnpm dev:bridge                           # only the devbridge (whetstone-core over HTTP on 127.0.0.1:1421)
+pnpm dev:http                             # only Vite, pointed at a running devbridge
 pnpm tauri dev                            # desktop app with hot reload
 pnpm build                                # type-check and build the front end
-pnpm tauri build --debug --no-bundle      # compile the app without bundling
+pnpm tauri build --debug                  # build and bundle the app (target/debug/whetstone)
 
 # Rust workspace (src-tauri, crates/core, crates/devbridge)
 cargo check --workspace
@@ -34,6 +37,11 @@ uv run --project python ws
 uv run --project python pytest python/tests
 uv run --project python ruff check python
 ```
+
+The desktop app logs to stderr and to `~/Library/Logs/dev.whetstone.app/whetstone.log`:
+the content root, catalog problems that were skipped and why, and every finished run.
+Set `WHETSTONE_LOG=debug` to also log each command the window invokes. Builds made by
+the Tauri CLI leave the sample data out of the bundle.
 
 ## Layout
 

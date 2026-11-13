@@ -61,6 +61,8 @@ describe("runReducer", () => {
           durationMs: 10,
           metrics: [{ name: "model_tokens", value: 41, limit: 36 }],
           submissionId: 7,
+          message: null,
+          detail: null,
         }),
       ],
       state,
@@ -71,6 +73,33 @@ describe("runReducer", () => {
     expect(state.submissionId).toBe(7);
     expect(state.metrics).toHaveLength(1);
     expect(state.cases.map((c) => c.result?.status)).toEqual(["pass", "fail", "skipped"]);
+  });
+
+  it("carries the message and detail of an import error, with cases skipped without a start", () => {
+    const state = play([
+      begin,
+      event({ type: "start", cases, env: {} }),
+      ...cases.map((c) => event({ type: "caseEnd", result: result(c.id, "skipped") })),
+      event({
+        type: "end",
+        verdict: "import_error",
+        passed: 0,
+        total: 3,
+        durationMs: 2,
+        metrics: [],
+        submissionId: 8,
+        message: "the solution failed to import: SyntaxError: '(' was never closed",
+        detail: '  File "torch.py", line 1\n',
+      }),
+    ]);
+    expect(state.verdict).toBe("import_error");
+    expect(state.message).toContain("SyntaxError");
+    expect(state.detail).toContain("line 1");
+    expect(state.cases.map((c) => [c.state, c.result?.status])).toEqual([
+      ["done", "skipped"],
+      ["done", "skipped"],
+      ["done", "skipped"],
+    ]);
   });
 
   it("keeps case order from `start` regardless of completion order", () => {
@@ -104,6 +133,8 @@ describe("runReducer", () => {
         durationMs: 0,
         metrics: [],
         submissionId: null,
+        message: null,
+        detail: null,
       }),
     ]);
     expect(state.verdict).toBe("canceled");
@@ -120,6 +151,8 @@ describe("runReducer", () => {
       durationMs: 1,
       metrics: [],
       submissionId: null,
+      message: null,
+      detail: null,
     });
     const done = play([begin, event({ type: "start", cases, env: {} }), end]);
     expect(play([event({ type: "caseStart", id: "c1" })], done)).toBe(done);

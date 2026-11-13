@@ -5,6 +5,7 @@ import { AppLink } from "@/components/app/app-link";
 import { ConfirmDialog } from "@/components/app/confirm-dialog";
 import { IconButton } from "@/components/app/icon-button";
 import { MetaItem, MetaList } from "@/components/app/meta-list";
+import { Notice } from "@/components/app/notice";
 import { Page, PageHeader, Section } from "@/components/app/page";
 import { SHORTCUTS, ShortcutHint } from "@/components/app/shortcut-hint";
 import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
@@ -36,10 +37,12 @@ import { ResultsPanel } from "@/components/results/results-panel";
 import { RunProgress } from "@/components/results/run-progress";
 import { VerdictHeader } from "@/components/results/verdict-header";
 import { CaseMark, VerdictMark } from "@/components/results/verdict-mark";
+import { CatalogIssueList } from "@/components/settings/catalog-issue-list";
 import { EnvironmentPanel } from "@/components/settings/environment-panel";
 import { PathField } from "@/components/settings/path-field";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { Button } from "@/components/ui/button";
+import { EnvironmentNotice } from "@/components/workbench/environment-notice";
 import { SaveIndicator } from "@/components/workbench/save-indicator";
 import {
   type CaseResult,
@@ -55,6 +58,7 @@ import {
   type Verdict,
 } from "@/lib/api";
 import { initialRunState, type RunState } from "@/lib/api/run-state";
+import type { InstallState } from "@/lib/api/use-env-install";
 import { EMPTY_FILTERS, type LibraryFilters } from "@/lib/filters";
 import { routes } from "@/lib/routes";
 import type { ThemePreference } from "@/stores/theme";
@@ -377,9 +381,11 @@ const SUBMISSIONS: Submission[] = VERDICTS.slice(0, 4).map((verdict, index) => (
 const SUBMISSION_DETAIL: SubmissionDetail = {
   ...(SUBMISSIONS[1] as Submission),
   code: SAMPLE_CODE,
-  cases: CASES.map((c) => c.result),
+  cases: CASES.map((c) => ({ ...c.result, name: c.info.name, public: c.info.public })),
   metrics: [],
 };
+
+const IDLE_INSTALL: InstallState = { framework: null, status: "idle", log: [], message: null };
 
 function Specimen({ name, children }: { name: string; children: ReactNode }) {
   return (
@@ -786,6 +792,63 @@ export function DevComponentsScreen() {
               }}
               onInstall={() => {}}
             />
+          </div>
+        </Specimen>
+      </Section>
+
+      <Section title="First run and catalog health" aside="app/, workbench/, settings/">
+        <Specimen name="Notice: inline warning with an action, inline information, strip">
+          <div className="flex max-w-measure flex-col gap-3">
+            <Notice
+              action={
+                <Button variant="outline" size="xs">
+                  Fix it
+                </Button>
+              }
+            >
+              Something needs attention before this can work.
+            </Notice>
+            <Notice tone="info">Nothing is wrong; this is worth knowing.</Notice>
+            <Notice layout="strip">A strip sits under a toolbar and spans its pane.</Notice>
+          </div>
+        </Specimen>
+        <Specimen name="EnvironmentNotice: uv missing, not set up, framework missing, installing, install failed">
+          <div className="flex flex-col gap-3">
+            <EnvironmentNotice problem={{ kind: "uv-missing" }} install={IDLE_INSTALL} onInstall={() => {}} />
+            <EnvironmentNotice problem={{ kind: "not-set-up" }} install={IDLE_INSTALL} onInstall={() => {}} />
+            <EnvironmentNotice
+              problem={{ kind: "framework-missing", framework: "jax" }}
+              install={IDLE_INSTALL}
+              onInstall={() => {}}
+            />
+            <EnvironmentNotice
+              problem={{ kind: "framework-missing", framework: "mlx" }}
+              install={{ framework: "mlx", status: "running", log: [], message: null }}
+              onInstall={() => {}}
+            />
+            <EnvironmentNotice
+              problem={{ kind: "framework-missing", framework: "jax" }}
+              install={{ framework: "jax", status: "failed", log: [], message: "uv sync exited with code 2" }}
+              onInstall={() => {}}
+            />
+          </div>
+        </Specimen>
+        <Specimen name="CatalogIssueList: closed by default; nothing when the catalog is clean">
+          <div className="max-w-measure">
+            <CatalogIssueList
+              root="/Users/ada/Developer/whetstone"
+              issues={[
+                {
+                  path: "/Users/ada/Developer/whetstone/problems/sampling/min-p-draft/problem.toml",
+                  message: "missing starter/torch.py",
+                },
+                {
+                  path: "/Users/ada/Developer/whetstone/problems/serving/track.toml",
+                  message: "missing field `title`",
+                },
+              ]}
+            />
+            <CatalogIssueList issues={[]} />
           </div>
         </Specimen>
       </Section>

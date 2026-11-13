@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev"],
       "port": 1420
+    },
+    {
+      "name": "whetstone-real",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev:real"],
+      "port": 1420
     }
   ]
 }

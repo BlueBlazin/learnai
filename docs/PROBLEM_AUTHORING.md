@@ -758,6 +758,34 @@ Style:
   in the starter's type hints.
 - No hints in the statement. The statement specifies; `hints.md` helps.
 
+### Markdown the app renders
+
+Statements, hints, and editorials are rendered by the same component, which supports:
+
+- GFM tables, `$...$` and `$$...$$` math (KaTeX), and fenced code with a language tag
+  (`python`, `json`, `bash`). An untagged fence renders as a plain listing.
+- `##` for sections and `### Example N` for worked examples. Do not start a file with a
+  `#` heading; the app renders the title.
+- Callouts, written as GitHub alerts. Three kinds exist: `NOTE`, `TIP`, and `WARNING`.
+  The marker goes alone on the first line of a blockquote, and the text follows on the
+  next lines:
+
+  ```markdown
+  > [!NOTE]
+  > Masked entries are `-inf`, not a large negative number.
+
+  > [!TIP]
+  > Subtracting the maximum first keeps every exponent at or below zero.
+
+  > [!WARNING]
+  > With logits near `1e4`, `exp` overflows float32 and the result is NaN.
+  ```
+
+  Each renders as an indented block with a colored hairline and a small label ("Note",
+  "Tip", "Warning"). Any other marker, or a blockquote without one, renders as an
+  ordinary quotation. Use callouts sparingly: one or two per statement, for something
+  the reader must not miss.
+
 **Starters** contain the imports the learner will need, the exact signature with type
 hints, a docstring restating argument and return shapes, and `raise NotImplementedError`.
 For classes, give the constructor and method signatures. A starter must import

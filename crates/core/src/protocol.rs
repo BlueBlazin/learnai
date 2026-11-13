@@ -69,6 +69,12 @@ pub enum HarnessEvent {
         /// Run-level metrics.
         #[serde(default)]
         metrics: Vec<Metric>,
+        /// Why the run as a whole failed (`import_error`, `harness_error`).
+        #[serde(default)]
+        message: Option<String>,
+        /// Longer text for that failure: the traceback.
+        #[serde(default)]
+        detail: Option<String>,
     },
 }
 
@@ -166,9 +172,29 @@ mod tests {
                 status: Verdict::WrongAnswer,
                 passed: 4,
                 total: 5,
+                message: None,
+                detail: None,
                 ..
             })
         ));
+
+        let failed = r#"@@WS@@ {"event":"end","status":"import_error","passed":0,"total":2,"duration_ms":1.0,"metrics":[],"message":"the solution failed to import: SyntaxError","detail":"  File \"s.py\", line 1\n"}"#;
+        match parse_stdout_line(failed) {
+            StdoutLine::Event(HarnessEvent::End {
+                status,
+                message,
+                detail,
+                ..
+            }) => {
+                assert_eq!(status, Verdict::ImportError);
+                assert_eq!(
+                    message.as_deref(),
+                    Some("the solution failed to import: SyntaxError")
+                );
+                assert_eq!(detail.as_deref(), Some("  File \"s.py\", line 1\n"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
     #[test]

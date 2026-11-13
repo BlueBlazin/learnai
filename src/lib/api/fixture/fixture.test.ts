@@ -223,6 +223,12 @@ describe("FixtureBackend", () => {
     const stored = await backend.getSubmission(end.submissionId);
     expect(stored.code).toContain("def quantize");
     expect(stored.cases).toHaveLength(end.total);
+    // Stored cases carry the names announced at the start of the run.
+    const start = submit.find((e) => e.type === "start");
+    if (start?.type !== "start") throw new Error("expected a start event");
+    expect(stored.cases.map((c) => [c.id, c.name, c.public])).toEqual(
+      start.cases.map((c) => [c.id, c.name, c.public]),
+    );
 
     const detail = await backend.getProblem(id);
     expect(detail).toMatchObject({ status: "solved", solvedFrameworks: ["torch"], editorialUnlocked: true });

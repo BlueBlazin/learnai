@@ -1,5 +1,6 @@
 import type { Backend, StartRunArgs } from "../backend";
 import type {
+  CatalogIssue,
   Difficulty,
   EnvStatus,
   Framework,
@@ -168,7 +169,7 @@ export class FixtureBackend implements Backend {
         "submit",
         code,
       );
-      const cases = settle(plan.cases.map((c) => c.result));
+      const cases = plan.cases.map((c) => ({ ...c.result, name: c.info.name, public: c.info.public }));
       const verdict = plan.abort ?? verdictOf(cases);
       this.submissions.push({
         id: this.nextSubmissionId++,
@@ -261,7 +262,14 @@ export class FixtureBackend implements Backend {
         isCanceled: () => this.canceled.has(runId),
       });
       for await (const event of events) {
-        if (event.type === "caseEnd") results.push(event.result);
+        if (event.type === "caseEnd") {
+          const info = plan.cases.find((c) => c.info.id === event.result.id)?.info;
+          results.push({
+            ...event.result,
+            name: info?.name ?? event.result.id,
+            public: info?.public ?? true,
+          });
+        }
         if (event.type === "end" && args.mode === "submit" && event.verdict !== "canceled") {
           const id = this.nextSubmissionId++;
           this.submissions.push({
@@ -404,6 +412,15 @@ export class FixtureBackend implements Backend {
       };
     });
 
+  /** One sample issue, so the Settings notice can be seen without a broken catalog. */
+  listCatalogIssues = (): Promise<CatalogIssue[]> =>
+    this.respond(() => [
+      {
+        path: `${ROOT}/problems/sampling/min-p-draft/problem.toml`,
+        message: "missing starter/torch.py",
+      },
+    ]);
+
   /** Consecutive local days, ending today or yesterday, with an accepted submit. */
   private streak(): number {
     const days = new Set(
@@ -431,9 +448,4 @@ function dayKey(date: Date): string {
 /** A problem whose seeded outcome is a failure, for building failed history entries. */
 function failing(problem: FixtureProblem): FixtureProblem {
   return problem.scenario === "accepted" ? { ...problem, scenario: "wrong_answer" } : problem;
-}
-
-/** Stored results never contain cases that had not finished. */
-function settle(results: SubmissionDetail["cases"]): SubmissionDetail["cases"] {
-  return results.map((result) => ({ ...result }));
 }

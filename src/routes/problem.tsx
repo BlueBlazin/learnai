@@ -11,6 +11,7 @@ import { useGo } from "@/hooks/use-go";
 import { useRunShortcuts } from "@/hooks/use-run-shortcuts";
 import type { RunMode } from "@/lib/api";
 import { useEnvStatus, useProblem, useProblems, useTracks } from "@/lib/api/queries";
+import { useEnvInstall } from "@/lib/api/use-env-install";
 import { useRun } from "@/lib/api/use-run";
 import { useSolutionEditor } from "@/lib/api/use-solution-editor";
 import { neighbors } from "@/lib/continue";
@@ -24,6 +25,7 @@ export function ProblemScreen({ problemId, search }: { problemId: string; search
   const problems = useProblems();
   const tracks = useTracks();
   const env = useEnvStatus();
+  const { state: install, install: startInstall } = useEnvInstall();
 
   const savedFramework = usePreferences((state) => state.frameworkByProblem[problemId]);
   const lastFramework = usePreferences((state) => state.lastFramework);
@@ -141,7 +143,9 @@ export function ProblemScreen({ problemId, search }: { problemId: string; search
               frameworks={detail.frameworks}
               framework={framework}
               solvedFrameworks={detail.solvedFrameworks}
-              env={env.data?.frameworks}
+              env={env.data}
+              install={install}
+              onInstall={(target) => void startInstall(target)}
               editor={editor}
               busy={active}
               onFrameworkChange={(next) => setFramework(problemId, next)}

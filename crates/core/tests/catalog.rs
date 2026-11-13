@@ -223,6 +223,44 @@ fn duplicate_ids_across_tracks_keep_the_first() {
 }
 
 #[test]
+fn stray_files_and_half_written_problems_do_not_disturb_the_catalog() {
+    let root = TestRoot::new();
+    let problems = root.path().join("problems");
+    let before = root.core("happy").list_problems().expect("list").len();
+    let issues_before = root.core("happy").catalog_issues().len();
+
+    // Tool configuration and caches next to the tracks, and a stray file inside one.
+    fs::write(problems.join("ruff.toml"), "line-length = 100\n").expect("write");
+    fs::create_dir_all(problems.join(".ruff_cache/0.17.5")).expect("mkdir");
+    fs::write(problems.join(".ruff_cache/CACHEDIR.TAG"), "x").expect("write");
+    fs::write(problems.join("basics").join("notes.txt"), "todo\n").expect("write");
+    fs::create_dir_all(problems.join("basics").join("__pycache__")).expect("mkdir");
+
+    let core = root.core("happy");
+    assert_eq!(core.list_problems().expect("list").len(), before);
+    assert_eq!(core.catalog_issues().len(), issues_before);
+
+    // A problem directory an author is still writing: reported, never fatal.
+    let draft = problems.join("basics").join("half-written");
+    fs::create_dir_all(&draft).expect("mkdir");
+    assert_eq!(core.list_problems().expect("list").len(), before);
+    fs::write(
+        draft.join("problem.toml"),
+        "id = \"half-written\"\ntitle = ",
+    )
+    .expect("write");
+    assert_eq!(core.list_problems().expect("list").len(), before);
+    let wire = core.list_catalog_issues();
+    assert_eq!(wire.len(), issues_before + 1);
+    let issue = wire
+        .iter()
+        .find(|i| i.path.contains("half-written"))
+        .expect("issue for the draft");
+    assert!(issue.path.ends_with("problem.toml"));
+    assert!(!issue.message.is_empty());
+}
+
+#[test]
 fn reloading_a_large_catalog_is_cheap() {
     let root = TestRoot::new();
     let track = root.path().join("problems").join("bulk");

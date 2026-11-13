@@ -1,19 +1,34 @@
 import { CircleCheck, LoaderCircle, TriangleAlert } from "lucide-react";
+import type { ReactNode } from "react";
 import { MetaItem, MetaList } from "@/components/app/meta-list";
 import { OutputBlock } from "@/components/results/output-block";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { EnvStatus, Framework } from "@/lib/api";
 import type { InstallState } from "@/lib/api/use-env-install";
+import { UV_INSTALL_URL } from "@/lib/environment";
 import { FRAMEWORK_LABEL } from "@/lib/labels";
+import { openExternal } from "@/lib/platform";
 
-function Version({ value, missing }: { value: string | null; missing: string }) {
+function Version({
+  value,
+  missing,
+  action,
+}: {
+  value: string | null;
+  missing: string;
+  /** The fix, offered next to the explanation when the value is missing. */
+  action?: ReactNode;
+}) {
   return value ? (
     <span className="selectable tabular">{value}</span>
   ) : (
-    <span className="flex items-center gap-1.5 text-warn">
-      <TriangleAlert className="size-3.5" aria-hidden />
-      {missing}
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="flex items-center gap-1.5 text-warn">
+        <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
+        {missing}
+      </span>
+      {action}
     </span>
   );
 }
@@ -32,14 +47,38 @@ export function EnvironmentPanel({
   onInstall: (framework: Framework) => void;
 }) {
   const busy = install.status === "running";
+  // Without uv nothing can be installed; say so once, at the top, instead of failing per framework.
+  const blocked = env.uv === null;
   return (
     <div className="flex flex-col gap-6">
       <MetaList layout="rows" className="text-sm">
         <MetaItem label="uv">
-          <Version value={env.uv} missing="Not found. Install uv, then reopen Whetstone." />
+          <Version
+            value={env.uv}
+            missing="Not found. Install uv, then reopen Whetstone."
+            action={
+              <Button variant="outline" size="xs" onClick={() => openExternal(UV_INSTALL_URL)}>
+                How to install uv
+              </Button>
+            }
+          />
         </MetaItem>
         <MetaItem label="Python">
-          <Version value={env.python} missing="Not found. uv installs it on the first run." />
+          <Version
+            value={env.python}
+            missing={
+              blocked
+                ? "Unavailable until uv is installed."
+                : "Not set up yet. The first run sets it up, or do it now."
+            }
+            action={
+              blocked ? null : (
+                <Button variant="outline" size="xs" disabled={busy} onClick={() => onInstall("torch")}>
+                  Set up now
+                </Button>
+              )
+            }
+          />
         </MetaItem>
       </MetaList>
 
@@ -70,11 +109,12 @@ export function EnvironmentPanel({
                   )}
                 </TableCell>
                 <TableCell className="pr-0 text-right">
-                  {entry.installed ? null : (
+                  {/* Python comes with the environment itself; there is nothing separate to install. */}
+                  {entry.installed || entry.framework === "python" ? null : (
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={busy}
+                      disabled={busy || blocked}
                       onClick={() => onInstall(entry.framework)}
                     >
                       {installing ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : null}

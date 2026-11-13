@@ -108,6 +108,18 @@ impl Core {
         self.catalog().issues().to_vec()
     }
 
+    /// `list_catalog_issues`: the same issues in wire form.
+    pub fn list_catalog_issues(&self) -> Vec<crate::model::CatalogIssue> {
+        self.catalog()
+            .issues()
+            .iter()
+            .map(|issue| crate::model::CatalogIssue {
+                path: issue.path.to_string_lossy().into_owned(),
+                message: issue.message.clone(),
+            })
+            .collect()
+    }
+
     fn summarize(
         &self,
         problem: &ProblemMeta,

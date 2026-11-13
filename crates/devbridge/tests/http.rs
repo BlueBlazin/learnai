@@ -183,6 +183,8 @@ async fn full_run_over_http_and_sse() {
         (Some(3), Some(3))
     );
     assert_eq!(end["durationMs"], 42.0);
+    assert_eq!(end["message"], Value::Null);
+    assert_eq!(end["detail"], Value::Null);
     let submission_id = end["submissionId"].as_i64().expect("submissionId");
     let case_end = events
         .iter()
@@ -221,6 +223,13 @@ async fn full_run_over_http_and_sse() {
         .await;
     assert_eq!(submission["code"], code);
     assert_eq!(submission["cases"].as_array().expect("cases").len(), 3);
+    assert_eq!(
+        submission["cases"][2],
+        json!({
+            "id": "h1", "status": "pass", "durationMs": 1.5, "message": null, "detail": null,
+            "stdout": "", "metrics": [], "name": "Hidden case 1", "public": false
+        })
+    );
     let detail = bridge.call("get_problem", json!({"id": "add-two"})).await;
     assert_eq!(detail["status"], "solved");
     assert_eq!(detail["solvedFrameworks"], json!(["torch"]));
@@ -240,6 +249,16 @@ async fn full_run_over_http_and_sse() {
             "byDifficulty": {"easy": [1, 1], "medium": [0, 1], "hard": [0, 1]}
         })
     );
+
+    // Malformed problems in the fixture catalog are listed, as path and message.
+    let issues = bridge.call("list_catalog_issues", json!({})).await;
+    let issues = issues.as_array().expect("issues");
+    assert!(!issues.is_empty());
+    assert!(issues.iter().all(|i| {
+        i.as_object().is_some_and(|o| o.len() == 2)
+            && i["path"].is_string()
+            && i["message"].is_string()
+    }));
 
     // Reset.
     let reset = bridge

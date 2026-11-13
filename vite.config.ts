@@ -11,15 +11,15 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 // https://vite.dev/config/
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss()],
+  define: {
+    // The Tauri CLI sets TAURI_ENV_PLATFORM for `tauri dev` and `tauri build`. Those
+    // always talk to the real core, so the fixture backend and its data are compiled out.
+    __WHETSTONE_FIXTURES__: JSON.stringify(!process.env.TAURI_ENV_PLATFORM),
+  },
   resolve: {
     alias: {
       "@": path.resolve(rootDir, "./src"),
     },
-  },
-
-  build: {
-    // The bundle is loaded from disk inside the app, never over a network.
-    chunkSizeWarningLimit: 2500,
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

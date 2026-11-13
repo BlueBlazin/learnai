@@ -15,7 +15,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::{CoreError, Result};
-use crate::model::{CaseResult, Framework, Metric, RunMode, Submission, SubmissionDetail, Verdict};
+use crate::model::{Framework, Metric, RunMode, StoredCase, Submission, SubmissionDetail, Verdict};
 
 /// Schema migrations, applied in order. Never edit an entry that has shipped; append.
 const MIGRATIONS: &[&str] = &[
@@ -72,8 +72,8 @@ pub struct NewSubmission<'a> {
     pub created_at: &'a str,
     /// The submitted code.
     pub code: &'a str,
-    /// Per-case results.
-    pub cases: &'a [CaseResult],
+    /// Per-case results, with names.
+    pub cases: &'a [StoredCase],
     /// Run-level metrics.
     pub metrics: &'a [Metric],
 }
@@ -164,10 +164,15 @@ impl Store {
             ),
             params![id],
             |row| {
+                let mut cases: Vec<StoredCase> = json_column(row, 11)?;
+                // Rows stored before names were kept: show the id rather than nothing.
+                for case in cases.iter_mut().filter(|c| c.name.is_empty()) {
+                    case.name.clone_from(&case.result.id);
+                }
                 Ok(SubmissionDetail {
                     submission: submission_from_row(row)?,
                     code: row.get(10)?,
-                    cases: json_column(row, 11)?,
+                    cases,
                     metrics: json_column(row, 12)?,
                 })
             },
@@ -295,7 +300,7 @@ fn json_column<T: DeserializeOwned>(row: &Row<'_>, index: usize) -> rusqlite::Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::CaseStatus;
+    use crate::model::{CaseInfo, CaseResult, CaseStatus};
 
     fn submission<'a>(
         problem: &'a str,
@@ -321,15 +326,22 @@ mod tests {
     #[test]
     fn submissions_round_trip_newest_first() -> Result<()> {
         let store = Store::open_in_memory()?;
-        let cases = vec![CaseResult {
-            id: "c1".into(),
-            status: CaseStatus::Fail,
-            duration_ms: 3.0,
-            message: Some("off by one".into()),
-            detail: None,
-            stdout: "hi\n".into(),
-            metrics: vec![],
-        }];
+        let cases = vec![StoredCase::new(
+            CaseResult {
+                id: "c1".into(),
+                status: CaseStatus::Fail,
+                duration_ms: 3.0,
+                message: Some("off by one".into()),
+                detail: None,
+                stdout: "hi\n".into(),
+                metrics: vec![],
+            },
+            Some(&CaseInfo {
+                id: "c1".into(),
+                name: "Hidden case 1".into(),
+                public: false,
+            }),
+        )];
         let metrics = vec![Metric {
             name: "tokens".into(),
             value: 37.0,
@@ -361,6 +373,23 @@ mod tests {
             store.get_submission(999),
             Err(CoreError::SubmissionNotFound(999))
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn cases_stored_without_names_fall_back_to_the_id() -> Result<()> {
+        let store = Store::open_in_memory()?;
+        let id = store.insert_submission(&submission("a", Framework::Torch, Verdict::Accepted))?;
+        store.conn().execute(
+            "UPDATE submissions SET cases = ?1 WHERE id = ?2",
+            params![
+                r#"[{"id":"c1","status":"pass","durationMs":1.0,"message":null,"detail":null,"stdout":"","metrics":[]}]"#,
+                id
+            ],
+        )?;
+        let detail = store.get_submission(id)?;
+        assert_eq!(detail.cases[0].name, "c1");
+        assert!(detail.cases[0].public);
         Ok(())
     }
 

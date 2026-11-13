@@ -137,8 +137,8 @@ function applyEvent(state: RunState, event: RunEvent): RunState {
         durationMs: event.durationMs,
         metrics: event.metrics,
         submissionId: event.submissionId,
-        message: event.message ?? null,
-        detail: event.detail ?? null,
+        message: event.message,
+        detail: event.detail,
         // A case still marked running when the run ends never produced a result.
         cases: state.cases.map((c) => (c.state === "running" ? { ...c, state: "pending" } : c)),
       };

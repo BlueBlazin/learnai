@@ -17,6 +17,7 @@ const COMMANDS: &[&str] = &[
     "env_status",
     "env_install",
     "get_stats",
+    "list_catalog_issues",
 ];
 
 fn main() {

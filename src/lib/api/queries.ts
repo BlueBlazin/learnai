@@ -38,6 +38,7 @@ export const keys = {
   reference: (id: string, framework: Framework) => ["reference", id, framework] as const,
   env: ["env"] as const,
   stats: ["stats"] as const,
+  catalogIssues: ["catalogIssues"] as const,
 };
 
 /** Everything a stored submission or a status change can affect. */
@@ -105,6 +106,10 @@ export function useEnvStatus() {
 
 export function useStats() {
   return useQuery({ queryKey: keys.stats, queryFn: () => backend.getStats() });
+}
+
+export function useCatalogIssues() {
+  return useQuery({ queryKey: keys.catalogIssues, queryFn: () => backend.listCatalogIssues() });
 }
 
 export function useUnlockEditorial(id: string) {

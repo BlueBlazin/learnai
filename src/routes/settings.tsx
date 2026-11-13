@@ -1,10 +1,11 @@
 import { Page, PageHeader, Section } from "@/components/app/page";
 import { ErrorState, LoadingLines } from "@/components/app/states";
+import { CatalogIssueList } from "@/components/settings/catalog-issue-list";
 import { EnvironmentPanel } from "@/components/settings/environment-panel";
 import { PathField } from "@/components/settings/path-field";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { backend } from "@/lib/api";
-import { useEnvStatus } from "@/lib/api/queries";
+import { useCatalogIssues, useEnvStatus } from "@/lib/api/queries";
 import { useEnvInstall } from "@/lib/api/use-env-install";
 import { useThemeStore } from "@/stores/theme";
 
@@ -16,6 +17,7 @@ const BACKEND_NOTE = {
 
 export function SettingsScreen() {
   const env = useEnvStatus();
+  const issues = useCatalogIssues();
   const { state: install, install: startInstall } = useEnvInstall();
   const { preference, setPreference } = useThemeStore();
 
@@ -53,6 +55,7 @@ export function SettingsScreen() {
               Solutions are plain files under <span className="selectable font-mono">workspace/</span>. Edit
               them in any editor; Whetstone re-reads the open file when its window regains focus.
             </p>
+            <CatalogIssueList issues={issues.data ?? []} root={env.data.root} />
           </div>
         ) : (
           <LoadingLines lines={1} />

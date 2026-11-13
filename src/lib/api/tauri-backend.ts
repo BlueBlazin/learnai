@@ -52,4 +52,6 @@ export class TauriBackend implements Backend {
   }
 
   getStats = () => call<Awaited<ReturnType<Backend["getStats"]>>>("get_stats");
+
+  listCatalogIssues = () => call<Awaited<ReturnType<Backend["listCatalogIssues"]>>>("list_catalog_issues");
 }

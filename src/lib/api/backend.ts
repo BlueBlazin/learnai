@@ -1,4 +1,5 @@
 import type {
+  CatalogIssue,
   EnvStatus,
   Framework,
   InstallEvent,
@@ -55,6 +56,9 @@ export interface Backend {
   envInstall(framework: Framework, onEvent: (event: InstallEvent) => void): Promise<void>;
 
   getStats(): Promise<Stats>;
+
+  /** Malformed tracks and problems the catalog skipped. Empty when everything loaded. */
+  listCatalogIssues(): Promise<CatalogIssue[]>;
 }
 
 export const LOCAL_TARGET = "local";

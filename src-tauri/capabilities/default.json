@@ -5,6 +5,7 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
     "opener:default",
     "allow-list-tracks",
     "allow-list-problems",
@@ -20,6 +21,7 @@
     "allow-get-reference",
     "allow-env-status",
     "allow-env-install",
-    "allow-get-stats"
+    "allow-get-stats",
+    "allow-list-catalog-issues"
   ]
 }

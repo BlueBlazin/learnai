@@ -6,6 +6,9 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "vite",
+    "dev:bridge": "cargo run -p whetstone-devbridge",
+    "dev:http": "VITE_BACKEND=http vite",
+    "dev:real": "sh -c 'cargo run -p whetstone-devbridge & bridge=$!; trap \"kill $bridge 2>/dev/null\" EXIT INT TERM; VITE_BACKEND=http vite'",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",

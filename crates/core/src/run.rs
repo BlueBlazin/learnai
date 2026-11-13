@@ -12,7 +12,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::harness::HarnessJob;
-use crate::model::{CaseResult, CaseStatus, LogStream, Metric, RunEvent, RunMode, Verdict};
+use crate::model::{
+    CaseInfo, CaseStatus, LogStream, Metric, RunEvent, RunMode, StoredCase, Verdict,
+};
 use crate::protocol::{HarnessEvent, StdoutLine, parse_stdout_line, stringify_env};
 use crate::sink::SharedSink;
 use crate::store::{NewSubmission, Store};
@@ -124,10 +126,48 @@ enum Interruption {
 struct Run {
     plan: RunPlan,
     began: Instant,
-    /// Number of cases announced by `start`.
-    announced: usize,
-    results: Vec<CaseResult>,
+    /// Cases announced by `start`, for naming stored results.
+    announced: Vec<CaseInfo>,
+    results: Vec<StoredCase>,
     ended: bool,
+}
+
+/// How a run finished, as far as the `end` event is concerned.
+struct Outcome {
+    verdict: Verdict,
+    metrics: Vec<Metric>,
+    /// The harness's own `(passed, total, duration_ms)`; without it the numbers are
+    /// derived from what was observed.
+    reported: Option<(u32, u32, f64)>,
+    /// False when the harness process never started.
+    launched: bool,
+    message: Option<String>,
+    detail: Option<String>,
+}
+
+impl Outcome {
+    /// An outcome decided by core rather than reported by the harness.
+    fn from_core(verdict: Verdict, launched: bool, message: Option<String>) -> Self {
+        Self {
+            verdict,
+            metrics: Vec::new(),
+            reported: None,
+            launched,
+            message,
+            detail: None,
+        }
+    }
+}
+
+/// What to tell the user when the judge process could not be started.
+fn launch_failure(error: &std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        "uv was not found, so the judge cannot run. Install uv \
+         (https://docs.astral.sh/uv/), then reopen Whetstone."
+            .to_owned()
+    } else {
+        format!("The judge could not be started: {error}")
+    }
 }
 
 impl Run {
@@ -135,7 +175,7 @@ impl Run {
         Self {
             plan,
             began: Instant::now(),
-            announced: 0,
+            announced: Vec::new(),
             results: Vec::new(),
             ended: false,
         }
@@ -174,7 +214,11 @@ impl Run {
             Ok(process) => process,
             Err(e) => {
                 self.log(LogStream::Stderr, format!("Could not start the judge: {e}"));
-                self.end(Verdict::HarnessError, Vec::new(), None, false);
+                self.end(Outcome::from_core(
+                    Verdict::HarnessError,
+                    false,
+                    Some(launch_failure(&e)),
+                ));
                 return;
             }
         };
@@ -195,7 +239,7 @@ impl Run {
             }
             Some(Interruption::Canceled) => {
                 process.finish(Duration::ZERO);
-                self.end(Verdict::Canceled, Vec::new(), None, false);
+                self.end(Outcome::from_core(Verdict::Canceled, false, None));
             }
             Some(Interruption::TimedOut { limit, started }) => {
                 process.finish(Duration::ZERO);
@@ -204,25 +248,25 @@ impl Run {
                 } else {
                     "Starting the judge"
                 };
-                self.log(
-                    LogStream::Stderr,
-                    format!(
-                        "{phase} exceeded the overall limit of {:.1} s and was killed.",
-                        limit.as_secs_f64()
-                    ),
+                let message = format!(
+                    "{phase} exceeded the overall limit of {:.1} s and was killed.",
+                    limit.as_secs_f64()
                 );
-                self.end(Verdict::TimeLimit, Vec::new(), None, true);
+                self.log(LogStream::Stderr, message.clone());
+                self.end(Outcome::from_core(Verdict::TimeLimit, true, Some(message)));
             }
             Some(Interruption::Exited) => {
                 let how = match process.finish(grace) {
                     Some(code) => format!("exited with code {code}"),
                     None => "was killed by a signal".to_owned(),
                 };
-                self.log(
-                    LogStream::Stderr,
-                    format!("The judge {how} without reporting a result."),
-                );
-                self.end(Verdict::HarnessError, Vec::new(), None, true);
+                let message = format!("The judge {how} without reporting a result.");
+                self.log(LogStream::Stderr, message.clone());
+                self.end(Outcome::from_core(
+                    Verdict::HarnessError,
+                    true,
+                    Some(message),
+                ));
             }
         }
     }
@@ -252,7 +296,7 @@ impl Run {
                 Message::Stdout(line) => match parse_stdout_line(&line) {
                     StdoutLine::Log(text) => self.log(LogStream::Stdout, text),
                     StdoutLine::Event(HarnessEvent::Start { cases, env }) => {
-                        self.announced = cases.len();
+                        self.announced.clone_from(&cases);
                         if !started {
                             started = true;
                             limit = self
@@ -275,17 +319,29 @@ impl Run {
                         total,
                         duration_ms,
                         metrics,
+                        message,
+                        detail,
                     }) => {
                         if !self.ended {
-                            self.end(status, metrics, Some((passed, total, duration_ms)), true);
+                            self.end(Outcome {
+                                verdict: status,
+                                metrics,
+                                reported: Some((passed, total, duration_ms)),
+                                launched: true,
+                                message,
+                                detail,
+                            });
                             // Give the process a moment to exit by itself, then stop waiting.
                             deadline = Instant::now() + self.plan.limits.exit_grace;
                         }
                     }
                     StdoutLine::Event(event) => {
                         if let Some(result) = event.into_case_result() {
+                            // A skipped case arrives with no `case_start`; either way
+                            // the name comes from the announcement.
                             if !self.ended {
-                                self.results.push(result.clone());
+                                let info = self.announced.iter().find(|c| c.id == result.id);
+                                self.results.push(StoredCase::new(result.clone(), info));
                             }
                             self.emit(RunEvent::CaseEnd { result });
                         }
@@ -301,27 +357,25 @@ impl Run {
     }
 
     /// Stores the submission if appropriate and emits the single `end` event.
-    ///
-    /// `reported` carries the harness's own `(passed, total, duration_ms)`; without it
-    /// the numbers are derived from what was observed. `launched` is false when the
-    /// harness process never started.
-    fn end(
-        &mut self,
-        verdict: Verdict,
-        metrics: Vec<Metric>,
-        reported: Option<(u32, u32, f64)>,
-        launched: bool,
-    ) {
+    fn end(&mut self, outcome: Outcome) {
         if self.ended {
             return;
         }
+        let Outcome {
+            verdict,
+            metrics,
+            reported,
+            launched,
+            message,
+            detail,
+        } = outcome;
         let (passed, total, duration_ms) = reported.unwrap_or_else(|| {
             let passed = self
                 .results
                 .iter()
-                .filter(|r| r.status == CaseStatus::Pass)
+                .filter(|r| r.result.status == CaseStatus::Pass)
                 .count();
-            let total = self.announced.max(self.results.len());
+            let total = self.announced.len().max(self.results.len());
             (
                 u32::try_from(passed).unwrap_or(u32::MAX),
                 u32::try_from(total).unwrap_or(u32::MAX),
@@ -361,6 +415,16 @@ impl Run {
             None
         };
 
+        tracing::info!(
+            problem = %self.plan.problem_id,
+            framework = %self.plan.job.framework,
+            mode = %self.plan.job.mode,
+            %verdict,
+            passed,
+            total,
+            submission = ?submission_id,
+            "run finished"
+        );
         self.emit(RunEvent::End {
             verdict,
             passed,
@@ -368,6 +432,8 @@ impl Run {
             duration_ms,
             metrics,
             submission_id,
+            message,
+            detail,
         });
         self.ended = true;
     }

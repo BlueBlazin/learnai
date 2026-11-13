@@ -6,20 +6,26 @@ import { SHORTCUTS } from "@/components/app/shortcut-hint";
 import { ErrorState, LoadingLines } from "@/components/app/states";
 import { CodeEditor } from "@/components/editor/code-editor";
 import { FrameworkSwitcher } from "@/components/problem/framework-switcher";
-import type { Framework, FrameworkEnv } from "@/lib/api";
+import type { EnvStatus, Framework } from "@/lib/api";
+import type { InstallState } from "@/lib/api/use-env-install";
 import type { SolutionEditor } from "@/lib/api/use-solution-editor";
+import { environmentProblem } from "@/lib/environment";
 import { FRAMEWORK_LABEL } from "@/lib/labels";
+import { EnvironmentNotice } from "./environment-notice";
 import { SaveIndicator } from "./save-indicator";
 
 /**
  * The right-hand top panel: a toolbar (framework, save state, reset, Run,
- * Submit) over the code editor.
+ * Submit) over the code editor. When the environment cannot run the chosen
+ * framework, a notice under the toolbar says why and offers the fix.
  */
 export function EditorPane({
   frameworks,
   framework,
   solvedFrameworks,
   env,
+  install,
+  onInstall,
   editor,
   busy,
   onFrameworkChange,
@@ -29,7 +35,10 @@ export function EditorPane({
   frameworks: Framework[];
   framework: Framework;
   solvedFrameworks: Framework[];
-  env?: FrameworkEnv[];
+  /** Environment status, when known. */
+  env?: EnvStatus;
+  install: InstallState;
+  onInstall: (framework: Framework) => void;
   editor: SolutionEditor;
   /** True while a run is in flight: Run and Submit are unavailable. */
   busy: boolean;
@@ -38,6 +47,7 @@ export function EditorPane({
   onSubmit: () => void;
 }) {
   const ready = editor.code !== undefined;
+  const problem = environmentProblem(env, framework);
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-toolbar shrink-0 items-center gap-2 border-b bg-background px-3">
@@ -46,7 +56,7 @@ export function EditorPane({
           value={framework}
           onChange={onFrameworkChange}
           solved={solvedFrameworks}
-          env={env}
+          env={env?.frameworks}
           disabled={busy}
         />
         <SaveIndicator state={editor.saveState} className="pl-1" />
@@ -85,6 +95,7 @@ export function EditorPane({
           </ActionButton>
         </div>
       </div>
+      {problem ? <EnvironmentNotice problem={problem} install={install} onInstall={onInstall} /> : null}
       <div className="min-h-0 flex-1 bg-paper">
         {editor.error ? (
           <ErrorState title="The solution file could not be read" error={editor.error} className="px-4" />

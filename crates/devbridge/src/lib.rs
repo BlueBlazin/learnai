@@ -221,6 +221,7 @@ fn dispatch(bridge: &Bridge, command: &str, body: &[u8]) -> Result<Value, ApiErr
             Ok(json!({ "jobId": job_id }))
         }
         "get_stats" => reply(core.get_stats()?),
+        "list_catalog_issues" => reply(core.list_catalog_issues()),
         other => Err(ApiError::new(
             StatusCode::NOT_FOUND,
             format!("unknown command `{other}`"),
