@@ -4,14 +4,14 @@ import Markdown, { type Components } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import { Button } from "@/components/ui/button";
+import { InlineButton } from "@/components/app/inline-button";
 import { openExternal } from "@/lib/platform";
 import { CodeBlockContent } from "./code-block-content";
-import { remarkCallouts } from "./remark-callouts";
+import { remarkProse } from "./remark-prose";
 
 const CALLOUT_LABEL: Record<string, string> = { note: "Note", tip: "Tip", warning: "Warning" };
 
-const remarkPlugins = [remarkGfm, remarkMath, remarkCallouts];
+const remarkPlugins = [remarkGfm, remarkMath, remarkProse];
 const rehypePlugins = [[rehypeKatex, { throwOnError: false, strict: false }]] as ComponentProps<
   typeof Markdown
 >["rehypePlugins"];
@@ -32,13 +32,7 @@ const components: Components = {
     </div>
   ),
   a: ({ node: _node, href, children }) => (
-    <Button
-      variant="link"
-      className="type-inherit h-auto rounded-sm p-0 whitespace-normal"
-      onClick={() => href && openExternal(href)}
-    >
-      {children}
-    </Button>
+    <InlineButton onClick={() => href && openExternal(href)}>{children}</InlineButton>
   ),
   aside: ({ node: _node, children, ...props }) => {
     const kind = (props as { "data-kind"?: string })["data-kind"] ?? "note";

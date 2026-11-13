@@ -1,11 +1,15 @@
 /**
- * Prose-specific Markdown transforms. First, GitHub-style alerts become callouts:
+ * The Markdown transforms prose needs beyond GFM and math, as one remark plugin.
+ *
+ * GitHub-style alerts become callouts:
  *
  *     > [!NOTE]
  *     > Text of the note.
  *
  * The blockquote becomes an `<aside class="callout" data-kind="note">`. Kinds:
  * note, tip, warning. Anything else stays an ordinary quotation.
+ *
+ * And punctuation that follows inline math is bound to it (`bindMathPunctuation`).
  */
 
 interface Node {
@@ -14,9 +18,6 @@ interface Node {
   children?: Node[];
   data?: { hName?: string; hProperties?: Record<string, unknown> };
 }
-
-export const CALLOUT_KINDS = ["note", "tip", "warning"] as const;
-export type CalloutKind = (typeof CALLOUT_KINDS)[number];
 
 const MARKER = /^\[!(NOTE|TIP|WARNING)\][ \t]*\n?/i;
 
@@ -71,6 +72,6 @@ function bindMathPunctuation(children: Node[]): Node[] {
   return out;
 }
 
-export function remarkCallouts() {
+export function remarkProse() {
   return (tree: unknown) => visit(tree as Node);
 }

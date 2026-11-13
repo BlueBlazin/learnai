@@ -1,8 +1,9 @@
 import { ArrowLeft } from "lucide-react";
 import { MetaItem, MetaList } from "@/components/app/meta-list";
+import { Section } from "@/components/app/page";
 import { ErrorState, LoadingLines } from "@/components/app/states";
 import { CodeBlock } from "@/components/prose/code-block";
-import { CaseList } from "@/components/results/case-row";
+import { CaseList } from "@/components/results/case-list";
 import { MetricList } from "@/components/results/metric-list";
 import { VerdictHeader } from "@/components/results/verdict-header";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,7 @@ export function SubmissionView({
             total={submission.total}
             durationMs={submission.durationMs}
           />
-          <MetaList className="border-y border-border py-2.5">
+          <MetaList ruled>
             <MetaItem label="Submitted">{formatDateTime(submission.createdAt)}</MetaItem>
             <MetaItem label="Framework">{FRAMEWORK_LABEL[submission.framework]}</MetaItem>
             <MetaItem label="Target">{submission.target}</MetaItem>
@@ -56,10 +57,9 @@ export function SubmissionView({
               result,
             }))}
           />
-          <section className="border-t border-rule pt-3">
-            <h2 className="pb-3 text-sm font-semibold">Code as submitted</h2>
+          <Section title="Code as submitted" className="pb-0">
             <CodeBlock code={submission.code} language="python" lineNumbers />
-          </section>
+          </Section>
         </>
       )}
     </div>

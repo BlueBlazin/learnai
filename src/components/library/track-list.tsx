@@ -27,7 +27,14 @@ function TrackButton({
       onClick={onSelect}
     >
       <span className="flex items-baseline justify-between gap-3">
-        <span className={cn("truncate text-sm", active ? "font-semibold" : "font-medium")}>{title}</span>
+        <span
+          className={cn(
+            "min-w-0 text-sm text-pretty whitespace-normal",
+            active ? "font-semibold" : "font-medium",
+          )}
+        >
+          {title}
+        </span>
         <span className="tabular shrink-0 text-xs text-muted-foreground">
           {solved} / {total}
         </span>

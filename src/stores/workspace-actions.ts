@@ -17,13 +17,3 @@ export const useWorkspaceActions = create<WorkspaceActionsStore>()((set) => ({
   actions: null,
   setActions: (actions) => set({ actions }),
 }));
-
-interface PaletteStore {
-  open: boolean;
-  setOpen: (open: boolean) => void;
-}
-
-export const useCommandPalette = create<PaletteStore>()((set) => ({
-  open: false,
-  setOpen: (open) => set({ open }),
-}));

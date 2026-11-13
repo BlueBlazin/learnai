@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { remarkCallouts } from "./remark-callouts";
+import { remarkProse } from "./remark-prose";
 
 const text = (value: string) => ({ type: "text", value });
 const paragraph = (...children: unknown[]) => ({ type: "paragraph", children });
 
-describe("remarkCallouts", () => {
+describe("remarkProse", () => {
   it("turns a marked blockquote into a callout and strips the marker", () => {
     const tree = {
       type: "root",
       children: [{ type: "blockquote", children: [paragraph(text("[!WARNING]\nMind the scale."))] }],
     };
-    remarkCallouts()(tree);
+    remarkProse()(tree);
     const quote = tree.children[0] as {
       data?: { hName?: string; hProperties?: Record<string, unknown> };
       children: { children: { value: string }[] }[];
@@ -25,7 +25,7 @@ describe("remarkCallouts", () => {
       type: "root",
       children: [{ type: "blockquote", children: [paragraph(text("Just a quote."))] }],
     };
-    remarkCallouts()(tree);
+    remarkProse()(tree);
     expect((tree.children[0] as { data?: unknown }).data).toBeUndefined();
   });
 
@@ -41,8 +41,8 @@ describe("remarkCallouts", () => {
         ),
       ],
     };
-    remarkCallouts()(tree);
-    remarkCallouts()(tree);
+    remarkProse()(tree);
+    remarkProse()(tree);
     const children = (
       tree.children[0] as { children: { type: string; value?: string; children?: { value?: string }[] }[] }
     ).children;

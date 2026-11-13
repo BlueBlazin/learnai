@@ -1,6 +1,8 @@
+import { createLazyRoute, getRouteApi } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { AppLink } from "@/components/app/app-link";
+import { ScreenMessage } from "@/components/app/page";
 import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
 import { ResultsPanel } from "@/components/results/results-panel";
 import { Button } from "@/components/ui/button";
@@ -19,7 +21,10 @@ import { type ProblemSearch, routes, type StatementTab } from "@/lib/routes";
 import { preferredFramework, usePreferences } from "@/stores/preferences";
 import { useWorkspaceActions } from "@/stores/workspace-actions";
 
-export function ProblemScreen({ problemId, search }: { problemId: string; search: ProblemSearch }) {
+const route = getRouteApi("/problems/$problemId");
+
+function ProblemScreen({ problemId }: { problemId: string }) {
+  const search = route.useSearch();
   const go = useGo();
   const problem = useProblem(problemId);
   const problems = useProblems();
@@ -30,12 +35,19 @@ export function ProblemScreen({ problemId, search }: { problemId: string; search
   const savedFramework = usePreferences((state) => state.frameworkByProblem[problemId]);
   const lastFramework = usePreferences((state) => state.lastFramework);
   const setFramework = usePreferences((state) => state.setFramework);
+  const markFrameworkUsed = usePreferences((state) => state.markFrameworkUsed);
   const framework = problem.data
     ? preferredFramework(problem.data.frameworks, savedFramework, lastFramework)
     : null;
 
   const editor = useSolutionEditor(problemId, framework);
   const run = useRun(problemId);
+
+  // Editing or running counts as working in this framework; it becomes the default elsewhere.
+  const edited = editor.saveState !== "saved";
+  useEffect(() => {
+    if (edited && framework) markFrameworkUsed(problemId, framework);
+  }, [edited, framework, markFrameworkUsed, problemId]);
   const columns = useDefaultLayout({ id: "whetstone.workspace.columns" });
   const rows = useDefaultLayout({ id: "whetstone.workspace.rows" });
 
@@ -44,11 +56,12 @@ export function ProblemScreen({ problemId, search }: { problemId: string; search
   const start = useCallback(
     async (mode: RunMode) => {
       if (!framework || active) return;
+      markFrameworkUsed(problemId, framework);
       // The judge reads the file on disk: save before running.
       await flush();
       await startRun(framework, mode);
     },
-    [active, flush, framework, startRun],
+    [active, flush, framework, markFrameworkUsed, problemId, startRun],
   );
   const onRun = useCallback(() => void start("run"), [start]);
   const onSubmit = useCallback(() => void start("submit"), [start]);
@@ -80,30 +93,30 @@ export function ProblemScreen({ problemId, search }: { problemId: string; search
 
   if (problem.error) {
     return (
-      <div className="h-full bg-paper px-gutter pt-10">
+      <ScreenMessage>
         <ErrorState
           title="This problem could not be opened"
           error={problem.error}
           onRetry={() => void problem.refetch()}
         />
         <AppLink to={routes.library()}>Back to the library</AppLink>
-      </div>
+      </ScreenMessage>
     );
   }
   if (!problem.data) {
     return (
-      <div className="h-full bg-paper px-gutter pt-10">
+      <ScreenMessage>
         <LoadingLines lines={8} className="max-w-measure" />
-      </div>
+      </ScreenMessage>
     );
   }
   if (!framework) {
     return (
-      <div className="h-full bg-paper px-gutter pt-10">
+      <ScreenMessage>
         <EmptyState title="This problem lists no frameworks">
           Its problem.toml has an empty frameworks list, so there is nothing to write a solution in.
         </EmptyState>
-      </div>
+      </ScreenMessage>
     );
   }
 
@@ -178,3 +191,11 @@ export function ProblemScreen({ problemId, search }: { problemId: string; search
     </ResizablePanelGroup>
   );
 }
+
+/** Keyed by problem so editor, run, and scroll state never leak between problems. */
+function ProblemRoute() {
+  const { problemId } = route.useParams();
+  return <ProblemScreen key={problemId} problemId={problemId} />;
+}
+
+export const Route = createLazyRoute("/problems/$problemId")({ component: ProblemRoute });

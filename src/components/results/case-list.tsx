@@ -1,13 +1,14 @@
 import { cn } from "cn";
-import { ChevronRight } from "lucide-react";
+import { DisclosureChevron } from "@/components/app/disclosure-chevron";
+import { RuledList } from "@/components/app/ruled-list";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { CaseInfo, CaseResult } from "@/lib/api";
 import { formatDuration } from "@/lib/format";
+import { CaseMark } from "./case-mark";
 import { MetricList } from "./metric-list";
 import { OutputBlock } from "./output-block";
-import { CaseMark } from "./verdict-mark";
 
-export type CaseDisplayState = "pending" | "running" | "done" | "not-run";
+type CaseDisplayState = "pending" | "running" | "done" | "not-run";
 
 function hasDetail(result: CaseResult | null): result is CaseResult {
   return (
@@ -30,23 +31,18 @@ function Summary({
   const mark = state === "done" && result ? result.status : state === "done" ? "not-run" : state;
   return (
     <span className="flex h-8 w-full items-center gap-2.5 px-3 text-left text-sm">
-      <ChevronRight
-        className={cn(
-          "size-3 shrink-0 text-faint transition-transform group-data-panel-open/case:rotate-90",
-          !expandable && "invisible",
-        )}
-        aria-hidden
-      />
+      <DisclosureChevron className={expandable ? undefined : "invisible"} />
       <CaseMark status={mark} />
       <span
+        title={info.name}
         className={cn(
-          "shrink-0",
+          "min-w-0 truncate",
           state === "pending" || state === "not-run" ? "text-muted-foreground" : "text-foreground",
         )}
       >
         {info.name}
       </span>
-      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-data-panel-open/case:invisible">
+      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-data-panel-open/disclosure:invisible">
         {result?.message ?? (state === "not-run" ? "Not run" : null)}
       </span>
       {result && result.status !== "skipped" ? (
@@ -63,7 +59,7 @@ function Summary({
  * failure reason, and time; opens to the full message, detail, captured output,
  * and metrics when there is anything to show.
  */
-export function CaseRow({
+function CaseRow({
   info,
   state,
   result,
@@ -77,15 +73,15 @@ export function CaseRow({
   const failed = result?.status === "fail" || result?.status === "error" || result?.status === "timeout";
   if (!hasDetail(result)) {
     return (
-      <li className="border-b border-border/70 last:border-b-0">
+      <li>
         <Summary info={info} state={state} result={result} expandable={false} />
       </li>
     );
   }
   return (
-    <li className="border-b border-border/70 last:border-b-0">
+    <li>
       <Collapsible defaultOpen={defaultOpen}>
-        <CollapsibleTrigger className="group/case block w-full rounded-sm outline-none hover:bg-accent/60 focus-visible:bg-accent">
+        <CollapsibleTrigger className="group/disclosure block w-full rounded-sm outline-none hover:bg-accent/60 focus-visible:bg-accent">
           <Summary info={info} state={state} result={result} expandable />
         </CollapsibleTrigger>
         <CollapsibleContent>
@@ -118,7 +114,7 @@ export function CaseList({
     (c) => c.result && c.result.status !== "pass" && c.result.status !== "skipped",
   );
   return (
-    <ol className="border-y border-border/70">
+    <RuledList ordered>
       {cases.map((c, index) => (
         <CaseRow
           key={c.info.id}
@@ -128,6 +124,6 @@ export function CaseList({
           defaultOpen={index === firstFailure}
         />
       ))}
-    </ol>
+    </RuledList>
   );
 }

@@ -9,8 +9,9 @@
   html {
     @apply font-sans;
     height: 100%;
-    /* A desktop window, not a web page: no rubber-banding, no page scroll. */
-    overflow: hidden;
+    /* A desktop window, not a web page: no rubber-banding, no page scroll. `clip`
+       (not `hidden`) also stops the page being scrolled by focus or by script. */
+    overflow: clip;
     overscroll-behavior: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -21,7 +22,7 @@
   body {
     @apply bg-background text-foreground text-sm;
     height: 100%;
-    overflow: hidden;
+    overflow: clip;
     overscroll-behavior: none;
     /* Chrome is not selectable; reading surfaces opt back in with .selectable. */
     user-select: none;
@@ -97,17 +98,14 @@
   .tabular {
     font-variant-numeric: tabular-nums lining-nums;
   }
+}
 
-  /* Window drag regions for an overlay title bar. Harmless in a browser. */
-  .drag-region {
-    -webkit-app-region: drag;
-    app-region: drag;
-  }
-
-  .no-drag {
-    -webkit-app-region: no-drag;
-    app-region: no-drag;
-  }
+/* A theme change is instant: see stores/theme.ts. */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

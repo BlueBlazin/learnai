@@ -34,7 +34,7 @@ export function ProblemHeader({
       <h1 className="selectable mt-2.5 font-serif text-2xl font-medium tracking-tight text-balance @2xl:text-3xl">
         {problem.title}
       </h1>
-      <MetaList className="mt-5 border-y border-border py-2.5">
+      <MetaList ruled className="mt-5">
         <MetaItem label="Difficulty">
           <DifficultyMark difficulty={problem.difficulty} />
         </MetaItem>

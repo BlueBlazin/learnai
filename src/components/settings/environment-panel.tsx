@@ -1,35 +1,20 @@
-import { CircleCheck, LoaderCircle, TriangleAlert } from "lucide-react";
+import { CircleCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { MetaItem, MetaList } from "@/components/app/meta-list";
+import { Notice } from "@/components/app/notice";
 import { OutputBlock } from "@/components/results/output-block";
-import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { EnvStatus, Framework } from "@/lib/api";
 import type { InstallState } from "@/lib/api/use-env-install";
-import { UV_INSTALL_URL } from "@/lib/environment";
 import { FRAMEWORK_LABEL } from "@/lib/labels";
-import { openExternal } from "@/lib/platform";
+import { InstallButton, UvGuideButton } from "./install-actions";
 
-function Version({
-  value,
-  missing,
-  action,
-}: {
-  value: string | null;
-  missing: string;
-  /** The fix, offered next to the explanation when the value is missing. */
-  action?: ReactNode;
-}) {
+/** A version string, or the reason there is none with the action that fixes it. */
+function Version({ value, missing, action }: { value: string | null; missing: string; action?: ReactNode }) {
   return value ? (
     <span className="selectable tabular">{value}</span>
   ) : (
-    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <span className="flex items-center gap-1.5 text-warn">
-        <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
-        {missing}
-      </span>
-      {action}
-    </span>
+    <Notice action={action}>{missing}</Notice>
   );
 }
 
@@ -56,11 +41,7 @@ export function EnvironmentPanel({
           <Version
             value={env.uv}
             missing="Not found. Install uv, then reopen Whetstone."
-            action={
-              <Button variant="outline" size="xs" onClick={() => openExternal(UV_INSTALL_URL)}>
-                How to install uv
-              </Button>
-            }
+            action={<UvGuideButton />}
           />
         </MetaItem>
         <MetaItem label="Python">
@@ -73,9 +54,13 @@ export function EnvironmentPanel({
             }
             action={
               blocked ? null : (
-                <Button variant="outline" size="xs" disabled={busy} onClick={() => onInstall("torch")}>
+                <InstallButton
+                  installing={busy && install.framework === "torch"}
+                  disabled={busy}
+                  onClick={() => onInstall("torch")}
+                >
                   Set up now
-                </Button>
+                </InstallButton>
               )
             }
           />
@@ -111,15 +96,14 @@ export function EnvironmentPanel({
                 <TableCell className="pr-0 text-right">
                   {/* Python comes with the environment itself; there is nothing separate to install. */}
                   {entry.installed || entry.framework === "python" ? null : (
-                    <Button
-                      variant="outline"
+                    <InstallButton
                       size="sm"
+                      installing={installing}
                       disabled={busy || blocked}
                       onClick={() => onInstall(entry.framework)}
                     >
-                      {installing ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : null}
-                      {installing ? "Installing" : `Install ${FRAMEWORK_LABEL[entry.framework]}`}
-                    </Button>
+                      Install {FRAMEWORK_LABEL[entry.framework]}
+                    </InstallButton>
                   )}
                 </TableCell>
               </TableRow>
@@ -134,16 +118,12 @@ export function EnvironmentPanel({
             {install.log.length > 0 ? install.log.join("\n") : "Starting"}
           </OutputBlock>
           {install.status === "succeeded" ? (
-            <p className="flex items-center gap-2 text-sm text-pass">
-              <CircleCheck className="size-3.5" aria-hidden />
-              {FRAMEWORK_LABEL[install.framework]} installed.
-            </p>
+            <Notice tone="pass">{FRAMEWORK_LABEL[install.framework]} installed.</Notice>
           ) : null}
           {install.status === "failed" ? (
-            <p className="flex items-center gap-2 text-sm text-fail">
-              <TriangleAlert className="size-3.5" aria-hidden />
+            <Notice tone="fail">
               {install.message ?? "The install failed. The log above has the details."}
-            </p>
+            </Notice>
           ) : null}
         </div>
       ) : null}

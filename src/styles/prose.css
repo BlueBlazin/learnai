@@ -192,6 +192,13 @@
   padding: 0.38em 1em 0.38em 0;
 }
 
+/* Code in a cell stays whole: a call or a list broken mid-token is unreadable.
+   A table too wide for the measure scrolls sideways instead. */
+.prose th code,
+.prose td code {
+  white-space: nowrap;
+}
+
 .prose tbody tr:first-child td {
   padding-top: 0.55em;
 }
@@ -253,7 +260,7 @@
   margin-bottom: 0;
 }
 
-/* Inline math followed by punctuation stays together (see remark-callouts.ts). */
+/* Inline math followed by punctuation stays together (see remark-prose.ts). */
 .prose .math-nowrap {
   white-space: nowrap;
 }

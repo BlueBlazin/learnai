@@ -1,4 +1,4 @@
-import { cn } from "cn";
+import { RuledList } from "@/components/app/ruled-list";
 import { VerdictMark } from "@/components/results/verdict-mark";
 import { Button } from "@/components/ui/button";
 import type { Submission } from "@/lib/api";
@@ -22,9 +22,9 @@ export function SubmissionList({
   className?: string;
 }) {
   return (
-    <ul className={cn("flex flex-col border-y border-border/70", className)}>
+    <RuledList className={className}>
       {submissions.map((submission) => (
-        <li key={submission.id} className="border-b border-border/70 last:border-b-0">
+        <li key={submission.id}>
           <Button
             variant="ghost"
             className="h-auto w-full justify-start gap-4 rounded-sm px-2 py-2 text-left font-normal"
@@ -32,7 +32,10 @@ export function SubmissionList({
           >
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               {titles ? (
-                <span className="truncate font-serif text-md text-foreground">
+                <span
+                  className="truncate font-serif text-md text-foreground"
+                  title={titles.get(submission.problemId) ?? submission.problemId}
+                >
                   {titles.get(submission.problemId) ?? submission.problemId}
                 </span>
               ) : null}
@@ -62,6 +65,6 @@ export function SubmissionList({
           </Button>
         </li>
       ))}
-    </ul>
+    </RuledList>
   );
 }

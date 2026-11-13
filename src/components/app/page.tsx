@@ -11,6 +11,11 @@ export function Page({ children, className }: { children: ReactNode; className?:
   );
 }
 
+/** A screen that has only a state to show: loading, failed, or nothing there. */
+export function ScreenMessage({ children }: { children: ReactNode }) {
+  return <div className="h-full bg-paper px-gutter pt-10">{children}</div>;
+}
+
 /** The title block at the top of a page: a serif title and an optional sentence under it. */
 export function PageHeader({
   title,

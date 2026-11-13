@@ -1,6 +1,7 @@
+import { useEffect, useState } from "react";
 import { isTauri } from "@/lib/api";
 
-export const IS_MAC =
+const IS_MAC =
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 /**
@@ -10,6 +11,39 @@ export const IS_MAC =
  * "inside Tauri on a Mac": no build flag to keep in sync.
  */
 export const TITLEBAR_OVERLAY = isTauri() && IS_MAC;
+
+/**
+ * True while the app bar must keep clear of the traffic lights: an overlay title
+ * bar, and the window is not in fullscreen (macOS hides the lights there).
+ */
+export function useTrafficLightInset(): boolean {
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    if (!TITLEBAR_OVERLAY) return;
+    let live = true;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/window")
+      .then(async ({ getCurrentWindow }) => {
+        const current = getCurrentWindow();
+        const sync = () =>
+          void current
+            .isFullscreen()
+            .then((value) => live && setFullscreen(value))
+            .catch(() => {});
+        sync();
+        // Entering and leaving fullscreen resizes the window.
+        const stop = await current.onResized(sync);
+        if (live) unlisten = stop;
+        else stop();
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+      unlisten?.();
+    };
+  }, []);
+  return TITLEBAR_OVERLAY && !fullscreen;
+}
 
 /** Key glyphs for shortcut hints. */
 export const MOD_KEY = IS_MAC ? "⌘" : "Ctrl";

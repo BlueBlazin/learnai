@@ -3,16 +3,18 @@ import type { ReactNode } from "react";
 
 /**
  * Label and value pairs. `inline` sets them in a wrapping row, the way a paper
- * sets its metadata strip (problem headers, submission headers); `rows` stacks
- * them with aligned labels (Settings).
+ * sets its metadata strip (problem headers, submission headers), and `ruled`
+ * draws that strip's hairlines; `rows` stacks them with aligned labels (Settings).
  */
 export function MetaList({
   children,
   layout = "inline",
+  ruled = false,
   className,
 }: {
   children: ReactNode;
   layout?: "inline" | "rows";
+  ruled?: boolean;
   className?: string;
 }) {
   return (
@@ -21,6 +23,7 @@ export function MetaList({
       className={cn(
         "group/meta text-xs",
         layout === "inline" ? "flex flex-wrap gap-x-7 gap-y-1.5" : "flex flex-col gap-2.5",
+        ruled && "border-y border-border py-2.5",
         className,
       )}
     >

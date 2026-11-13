@@ -1,8 +1,8 @@
+import { createLazyRoute } from "@tanstack/react-router";
 import { Page, PageHeader, Section } from "@/components/app/page";
 import { ErrorState, LoadingLines } from "@/components/app/states";
-import { CatalogIssueList } from "@/components/settings/catalog-issue-list";
+import { ContentPanel } from "@/components/settings/content-panel";
 import { EnvironmentPanel } from "@/components/settings/environment-panel";
-import { PathField } from "@/components/settings/path-field";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { backend } from "@/lib/api";
 import { useCatalogIssues, useEnvStatus } from "@/lib/api/queries";
@@ -15,7 +15,7 @@ const BACKEND_NOTE = {
   fixture: "Showing sample data. Nothing here touches your files.",
 } as const;
 
-export function SettingsScreen() {
+function SettingsScreen() {
   const env = useEnvStatus();
   const issues = useCatalogIssues();
   const { state: install, install: startInstall } = useEnvInstall();
@@ -49,14 +49,7 @@ export function SettingsScreen() {
 
       <Section title="Content" aside="Problems, your solutions, and the Python project live here.">
         {env.data ? (
-          <div className="flex max-w-measure flex-col gap-2">
-            <PathField path={env.data.root} label="Content root" />
-            <p className="text-xs text-muted-foreground">
-              Solutions are plain files under <span className="selectable font-mono">workspace/</span>. Edit
-              them in any editor; Whetstone re-reads the open file when its window regains focus.
-            </p>
-            <CatalogIssueList issues={issues.data ?? []} root={env.data.root} />
-          </div>
+          <ContentPanel root={env.data.root} issues={issues.data ?? []} />
         ) : (
           <LoadingLines lines={1} />
         )}
@@ -64,3 +57,5 @@ export function SettingsScreen() {
     </Page>
   );
 }
+
+export const Route = createLazyRoute("/settings")({ component: SettingsScreen });

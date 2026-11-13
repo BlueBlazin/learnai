@@ -1,12 +1,10 @@
-import { LoaderCircle } from "lucide-react";
 import { AppLink } from "@/components/app/app-link";
 import { Notice } from "@/components/app/notice";
-import { Button } from "@/components/ui/button";
+import { InstallButton, UvGuideButton } from "@/components/settings/install-actions";
 import type { Framework } from "@/lib/api";
 import type { InstallState } from "@/lib/api/use-env-install";
-import { type EnvironmentProblem, UV_INSTALL_URL } from "@/lib/environment";
+import type { EnvironmentProblem } from "@/lib/environment";
 import { FRAMEWORK_LABEL } from "@/lib/labels";
-import { openExternal } from "@/lib/platform";
 import { routes } from "@/lib/routes";
 
 /**
@@ -18,22 +16,18 @@ export function EnvironmentNotice({
   problem,
   install,
   onInstall,
+  layout = "strip",
 }: {
   problem: EnvironmentProblem;
   install: InstallState;
   /** Installs a framework; `torch` also sets up the base environment. */
   onInstall: (framework: Framework) => void;
+  /** `strip` under the editor toolbar; `inline` as a line on a page. */
+  layout?: "strip" | "inline";
 }) {
   if (problem.kind === "uv-missing") {
     return (
-      <Notice
-        layout="strip"
-        action={
-          <Button variant="outline" size="xs" onClick={() => openExternal(UV_INSTALL_URL)}>
-            How to install uv
-          </Button>
-        }
-      >
+      <Notice layout={layout} action={<UvGuideButton />}>
         uv was not found, so solutions cannot run. Install uv, then reopen Whetstone.
       </Notice>
     );
@@ -45,14 +39,13 @@ export function EnvironmentNotice({
   const label = problem.kind === "framework-missing" ? `Install ${FRAMEWORK_LABEL[target]}` : "Set up now";
   return (
     <Notice
-      layout="strip"
+      layout={layout}
       action={
         <>
           {failed ? <AppLink to={routes.settings()}>See the log in Settings</AppLink> : null}
-          <Button variant="outline" size="xs" disabled={installing} onClick={() => onInstall(target)}>
-            {installing ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : null}
-            {installing ? "Installing" : failed ? "Try again" : label}
-          </Button>
+          <InstallButton installing={installing} disabled={installing} onClick={() => onInstall(target)}>
+            {failed ? "Try again" : label}
+          </InstallButton>
         </>
       }
     >

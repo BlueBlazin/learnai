@@ -81,7 +81,12 @@ export function CodeEditorView({ value, onChange, readOnly = false, label, class
       }),
     });
     view.current = editor;
+    // The mono face is bundled but loads on first use. CodeMirror caches character
+    // and line metrics, so measure again once the real font is in.
+    let live = true;
+    void document.fonts?.ready.then(() => live && editor.requestMeasure());
     return () => {
+      live = false;
       editor.destroy();
       view.current = null;
     };

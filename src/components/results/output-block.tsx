@@ -26,7 +26,7 @@ export function OutputBlock({
         // biome-ignore lint/a11y/noNoninteractiveTabindex: scrollable regions must be keyboard reachable.
         tabIndex={0}
         className={cn(
-          "selectable overflow-auto rounded-md bg-code px-3 py-2 font-mono text-xs whitespace-pre",
+          "selectable overflow-auto rounded-md bg-listing px-3 py-2 font-mono text-xs whitespace-pre",
           size === "tall" ? "max-h-80" : "max-h-56",
           tone === "fail" ? "text-fail" : "text-foreground",
         )}

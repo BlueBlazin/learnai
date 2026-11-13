@@ -36,7 +36,9 @@
   --color-warn-subtle: var(--warn-subtle);
   --color-straw: var(--straw);
   --color-straw-foreground: var(--straw-foreground);
-  --color-code: var(--code);
+  /* Named `listing`, not `code`: `text-code` is the code type size, and a color of
+     the same name would make that utility set both (text the color of its block). */
+  --color-listing: var(--code);
 
   /* One elevation, used only by layers that float above the page. */
   --shadow-sm: var(--shadow-float);

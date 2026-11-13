@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { DisclosureChevron } from "@/components/app/disclosure-chevron";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { CatalogIssue } from "@/lib/api";
 import { pluralize } from "@/lib/format";
@@ -14,11 +14,8 @@ export function CatalogIssueList({ issues, root }: { issues: CatalogIssue[]; roo
   const relative = (path: string) => (prefix && path.startsWith(prefix) ? path.slice(prefix.length) : path);
   return (
     <Collapsible>
-      <CollapsibleTrigger className="group/issues flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground">
-        <ChevronRight
-          className="size-3 shrink-0 text-faint transition-transform group-data-panel-open/issues:rotate-90"
-          aria-hidden
-        />
+      <CollapsibleTrigger className="group/disclosure flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground">
+        <DisclosureChevron />
         {pluralize(issues.length, "catalog entry", "catalog entries")} could not be loaded and{" "}
         {issues.length === 1 ? "is" : "are"} hidden
       </CollapsibleTrigger>

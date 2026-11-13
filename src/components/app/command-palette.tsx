@@ -15,8 +15,9 @@ import { useGo } from "@/hooks/use-go";
 import { useProblems, useTracks } from "@/lib/api/queries";
 import { isModKey } from "@/lib/platform";
 import { type RouteTarget, routes } from "@/lib/routes";
+import { useCommandPalette } from "@/stores/command-palette";
 import { type ThemePreference, useThemeStore } from "@/stores/theme";
-import { useCommandPalette, useWorkspaceActions } from "@/stores/workspace-actions";
+import { useWorkspaceActions } from "@/stores/workspace-actions";
 import { SHORTCUTS, ShortcutHint } from "./shortcut-hint";
 
 /** Every whitespace-separated term must appear in the item; stricter and more predictable than fuzzy matching. */

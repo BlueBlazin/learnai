@@ -1,59 +1,39 @@
-import {
-  createHashHistory,
-  createRootRoute,
-  createRoute,
-  createRouter,
-  lazyRouteComponent,
-} from "@tanstack/react-router";
-import { lazy, type ReactNode, Suspense } from "react";
+import { createHashHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
+import { ScreenMessage } from "@/components/app/page";
 import { ErrorState, LoadingLines } from "@/components/app/states";
 import { parseFilters, serializeFilters } from "@/lib/filters";
 import { type LibrarySearch, type ProblemSearch, STATEMENT_TABS, type StatementTab } from "@/lib/routes";
 import { HomeScreen } from "@/routes/home";
 import { RootLayout } from "@/routes/root";
 
-// Home is the first screen and stays in the main bundle; every other screen is
-// its own chunk, loaded the first time it is opened.
-const LibraryScreen = lazy(() => import("@/routes/library").then((m) => ({ default: m.LibraryScreen })));
-const ProblemScreen = lazy(() => import("@/routes/problem").then((m) => ({ default: m.ProblemScreen })));
-const SettingsScreen = lazy(() => import("@/routes/settings").then((m) => ({ default: m.SettingsScreen })));
-
 function ScreenLoading() {
   return (
-    <div className="h-full bg-paper px-gutter pt-10">
+    <ScreenMessage>
       <LoadingLines lines={8} className="max-w-measure" />
-    </div>
+    </ScreenMessage>
   );
-}
-
-/** Shows the loading lines while a screen's chunk arrives. */
-function Screen({ children }: { children: ReactNode }) {
-  return <Suspense fallback={<ScreenLoading />}>{children}</Suspense>;
 }
 
 const rootRoute = createRootRoute({
   component: RootLayout,
   notFoundComponent: () => (
-    <div className="h-full bg-paper px-gutter pt-10">
+    <ScreenMessage>
       <ErrorState title="There is no such screen" error="The address does not match any part of Whetstone." />
-    </div>
+    </ScreenMessage>
   ),
 });
 
+// Home is the first screen and stays in the main bundle. Every other screen is
+// its own chunk: the route's critical half (path, search validation) is defined
+// here, and `.lazy()` loads the half that renders (a `createLazyRoute` exported
+// from the screen's module) while the router is still on the previous screen.
 const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomeScreen });
 
 const libraryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/library",
   validateSearch: (search: Record<string, unknown>): LibrarySearch => serializeFilters(parseFilters(search)),
-  component: function LibraryRoute() {
-    return (
-      <Screen>
-        <LibraryScreen search={libraryRoute.useSearch()} />
-      </Screen>
-    );
-  },
-});
+}).lazy(() => import("@/routes/library").then((module) => module.Route));
 
 const problemRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -66,39 +46,20 @@ const problemRoute = createRoute({
       ...(Number.isInteger(submission) && submission > 0 ? { submission } : {}),
     };
   },
-  component: function ProblemRoute() {
-    const { problemId } = problemRoute.useParams();
-    // Keyed by problem so editor, run, and scroll state never leak between problems.
-    return (
-      <Screen>
-        <ProblemScreen key={problemId} problemId={problemId} search={problemRoute.useSearch()} />
-      </Screen>
-    );
-  },
-});
+}).lazy(() => import("@/routes/problem").then((module) => module.Route));
 
-const settingsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/settings",
-  component: function SettingsRoute() {
-    return (
-      <Screen>
-        <SettingsScreen />
-      </Screen>
-    );
-  },
-});
+const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings" }).lazy(() =>
+  import("@/routes/settings").then((module) => module.Route),
+);
 
 /**
  * Development only: every composed component in its states. The whole route,
  * including its import, is dropped from production builds.
  */
 const devComponentsRoute = import.meta.env.DEV
-  ? createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/dev/components",
-      component: lazyRouteComponent(() => import("@/routes/dev-components"), "DevComponentsScreen"),
-    })
+  ? createRoute({ getParentRoute: () => rootRoute, path: "/dev/components" }).lazy(() =>
+      import("@/routes/dev-components").then((module) => module.Route),
+    )
   : null;
 
 const routeTree = rootRoute.addChildren([
@@ -116,9 +77,9 @@ export const router = createRouter({
   defaultPreload: false,
   defaultPendingComponent: ScreenLoading,
   defaultErrorComponent: ({ error, reset }) => (
-    <div className="h-full bg-paper px-gutter pt-10">
+    <ScreenMessage>
       <ErrorState title="This screen stopped working" error={error} onRetry={reset} />
-    </div>
+    </ScreenMessage>
   ),
   scrollRestoration: false,
 });

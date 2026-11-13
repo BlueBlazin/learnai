@@ -1,21 +1,28 @@
-import { Play } from "lucide-react";
+import { createLazyRoute } from "@tanstack/react-router";
+import { Lock, Play } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { ActionButton } from "@/components/app/action-button";
 import { AppLink } from "@/components/app/app-link";
 import { ConfirmDialog } from "@/components/app/confirm-dialog";
+import { CopyButton } from "@/components/app/copy-button";
+import { DisclosureChevron } from "@/components/app/disclosure-chevron";
 import { IconButton } from "@/components/app/icon-button";
+import { InlineButton } from "@/components/app/inline-button";
 import { MetaItem, MetaList } from "@/components/app/meta-list";
 import { Notice } from "@/components/app/notice";
-import { Page, PageHeader, Section } from "@/components/app/page";
+import { Page, PageHeader, ScreenMessage, Section } from "@/components/app/page";
+import { RuledList } from "@/components/app/ruled-list";
 import { SHORTCUTS, ShortcutHint } from "@/components/app/shortcut-hint";
 import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
 import { CodeEditor } from "@/components/editor/code-editor";
 import { ContinueEntry } from "@/components/home/continue-entry";
+import { GettingStarted } from "@/components/home/getting-started";
 import { ProgressSummary } from "@/components/home/progress-summary";
 import { TrackProgress } from "@/components/home/track-progress";
 import { FilterSelect } from "@/components/library/filter-select";
-import { LibraryFilterBar } from "@/components/library/library-filters";
+import { LibraryFilterBar } from "@/components/library/library-filter-bar";
 import { TrackList } from "@/components/library/track-list";
+import { TrackSection } from "@/components/library/track-section";
 import { DifficultyMark } from "@/components/problem/difficulty-mark";
 import { EditorialPanel } from "@/components/problem/editorial-panel";
 import { FrameworkList } from "@/components/problem/framework-list";
@@ -30,19 +37,23 @@ import { SubmissionList } from "@/components/problem/submission-list";
 import { SubmissionView } from "@/components/problem/submission-view";
 import { CodeBlock } from "@/components/prose/code-block";
 import { Prose } from "@/components/prose/prose";
-import { CaseList } from "@/components/results/case-row";
+import { CaseList } from "@/components/results/case-list";
+import { CaseMark } from "@/components/results/case-mark";
 import { MetricList } from "@/components/results/metric-list";
 import { OutputBlock } from "@/components/results/output-block";
 import { ResultsPanel } from "@/components/results/results-panel";
 import { RunProgress } from "@/components/results/run-progress";
 import { VerdictHeader } from "@/components/results/verdict-header";
-import { CaseMark, VerdictMark } from "@/components/results/verdict-mark";
+import { VerdictMark } from "@/components/results/verdict-mark";
 import { CatalogIssueList } from "@/components/settings/catalog-issue-list";
+import { ContentPanel } from "@/components/settings/content-panel";
 import { EnvironmentPanel } from "@/components/settings/environment-panel";
+import { InstallButton, UvGuideButton } from "@/components/settings/install-actions";
 import { PathField } from "@/components/settings/path-field";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { Button } from "@/components/ui/button";
 import { EnvironmentNotice } from "@/components/workbench/environment-notice";
+import { PaneToolbar } from "@/components/workbench/pane-toolbar";
 import { SaveIndicator } from "@/components/workbench/save-indicator";
 import {
   type CaseResult,
@@ -111,12 +122,19 @@ const TRACKS: Track[] = [
   {
     id: "foundations",
     title: "Numerical Foundations",
-    description: "",
+    description: "Float32 arithmetic, stable reductions, and the normalizations every layer depends on.",
     order: 1,
     problemCount: 14,
     solvedCount: 11,
   },
-  { id: "attention", title: "Attention", description: "", order: 2, problemCount: 15, solvedCount: 4 },
+  {
+    id: "attention",
+    title: "Attention",
+    description: "Scaled dot-product attention, masks, and the shapes that go wrong.",
+    order: 2,
+    problemCount: 15,
+    solvedCount: 4,
+  },
   { id: "serving", title: "Serving", description: "", order: 3, problemCount: 14, solvedCount: 0 },
 ];
 
@@ -397,7 +415,7 @@ function Specimen({ name, children }: { name: string; children: ReactNode }) {
 }
 
 /** Development only: every composed component, in every state it has. */
-export function DevComponentsScreen() {
+function DevComponentsScreen() {
   const [filters, setFilters] = useState<LibraryFilters>(EMPTY_FILTERS);
   const [track, setTrack] = useState<string | null>("attention");
   const [framework, setFramework] = useState<Framework>("torch");
@@ -533,9 +551,24 @@ export function DevComponentsScreen() {
             </AppLink>
           </div>
         </Specimen>
+        <Specimen name="InlineButton (in a sentence), CopyButton, InstallButton (idle, installing), UvGuideButton">
+          <div className="flex items-center gap-4">
+            <p className="text-sm">
+              A sentence with <InlineButton onClick={() => {}}>a button set as text</InlineButton> in it.
+            </p>
+            <CopyButton text="copied from the components page" label="Copy sample" />
+            <InstallButton installing={false} onClick={() => {}}>
+              Install JAX
+            </InstallButton>
+            <InstallButton installing disabled>
+              Install JAX
+            </InstallButton>
+            <UvGuideButton />
+          </div>
+        </Specimen>
         <Specimen name="LibraryFilterBar, FilterSelect">
           <div className="flex flex-col gap-3">
-            <LibraryFilterBar filters={filters} onChange={setFilters} />
+            <LibraryFilterBar filters={filters} onChange={setFilters} summary="12 of 196 problems" />
             <FilterSelect
               label="Judge"
               anyLabel="Any judge"
@@ -550,9 +583,14 @@ export function DevComponentsScreen() {
             <TrackList tracks={TRACKS} selected={track} onSelect={setTrack} />
           </div>
         </Specimen>
-        <Specimen name="ThemePicker, PathField">
+        <Specimen name="TrackSection: all problems, and narrowed by a filter">
+          <TrackSection track={TRACKS[1] as Track} problems={PROBLEMS} filtered={false} />
+          <TrackSection track={TRACKS[0] as Track} problems={PROBLEMS.slice(0, 1)} filtered />
+        </Specimen>
+        <Specimen name="ThemePicker, PathField, ContentPanel">
           <div className="flex max-w-measure flex-col gap-3">
             <ThemePicker value={theme} onChange={setTheme} />
+            <ContentPanel root="/Users/ada/Developer/whetstone" issues={[]} />
             <PathField
               label="Content root"
               path="/Users/ada/Developer/whetstone/a/very/long/path/that/keeps/going/and/going/until/it/truncates"
@@ -723,7 +761,13 @@ export function DevComponentsScreen() {
       </Section>
 
       <Section title="Home and settings" aside="home/, settings/">
-        <Specimen name="ContinueEntry: resuming, and up next">
+        <Specimen name="ContinueEntry: first run, resuming, and up next">
+          <ContinueEntry
+            problem={PROBLEMS[1] as ProblemSummary}
+            track={TRACKS[1]}
+            firstRun
+            onOpen={() => {}}
+          />
           <ContinueEntry
             problem={PROBLEMS[2] as ProblemSummary}
             track={TRACKS[1]}
@@ -752,9 +796,15 @@ export function DevComponentsScreen() {
             />
           </div>
         </Specimen>
-        <Specimen name="TrackProgress">
-          <div className="max-w-measure">
+        <Specimen name="TrackProgress: progress, and contents (first run)">
+          <div className="grid grid-cols-2 gap-10">
             <TrackProgress tracks={TRACKS} />
+            <TrackProgress tracks={TRACKS} variant="contents" />
+          </div>
+        </Specimen>
+        <Specimen name="GettingStarted (first run)">
+          <div className="max-w-measure">
+            <GettingStarted />
           </div>
         </Specimen>
         <Specimen name="EnvironmentPanel: one framework missing, install running; uv missing, install failed">
@@ -797,7 +847,7 @@ export function DevComponentsScreen() {
       </Section>
 
       <Section title="First run and catalog health" aside="app/, workbench/, settings/">
-        <Specimen name="Notice: inline warning with an action, inline information, strip">
+        <Specimen name="Notice: inline warning with an action, information, success, failure, strip">
           <div className="flex max-w-measure flex-col gap-3">
             <Notice
               action={
@@ -809,10 +859,12 @@ export function DevComponentsScreen() {
               Something needs attention before this can work.
             </Notice>
             <Notice tone="info">Nothing is wrong; this is worth knowing.</Notice>
+            <Notice tone="pass">MLX installed.</Notice>
+            <Notice tone="fail">The install failed. The log above has the details.</Notice>
             <Notice layout="strip">A strip sits under a toolbar and spans its pane.</Notice>
           </div>
         </Specimen>
-        <Specimen name="EnvironmentNotice: uv missing, not set up, framework missing, installing, install failed">
+        <Specimen name="EnvironmentNotice: uv missing, not set up, framework missing, installing, install failed; inline (Home)">
           <div className="flex flex-col gap-3">
             <EnvironmentNotice problem={{ kind: "uv-missing" }} install={IDLE_INSTALL} onInstall={() => {}} />
             <EnvironmentNotice problem={{ kind: "not-set-up" }} install={IDLE_INSTALL} onInstall={() => {}} />
@@ -829,6 +881,12 @@ export function DevComponentsScreen() {
             <EnvironmentNotice
               problem={{ kind: "framework-missing", framework: "jax" }}
               install={{ framework: "jax", status: "failed", log: [], message: "uv sync exited with code 2" }}
+              onInstall={() => {}}
+            />
+            <EnvironmentNotice
+              layout="inline"
+              problem={{ kind: "not-set-up" }}
+              install={IDLE_INSTALL}
               onInstall={() => {}}
             />
           </div>
@@ -854,7 +912,13 @@ export function DevComponentsScreen() {
       </Section>
 
       <Section title="States and layout" aside="app/">
-        <Specimen name="EmptyState, with and without an action">
+        <Specimen name="EmptyState: plain, with an action, with an icon">
+          <EmptyState
+            title="The editorial is locked"
+            icon={<Lock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />}
+          >
+            It opens when you solve the problem.
+          </EmptyState>
           <EmptyState title="No submissions yet">
             Submit runs your code against every case and keeps a copy here.
           </EmptyState>
@@ -880,9 +944,41 @@ export function DevComponentsScreen() {
         <Specimen name="LoadingLines">
           <LoadingLines lines={4} className="max-w-measure" />
         </Specimen>
+        <Specimen name="ScreenMessage: a whole screen that is loading, failed, or not there">
+          <div className="h-40 border">
+            <ScreenMessage>
+              <ErrorState
+                title="There is no such screen"
+                error="The address does not match any part of Whetstone."
+              />
+            </ScreenMessage>
+          </div>
+        </Specimen>
+        <Specimen name="RuledList: framed, and unframed and ordered; DisclosureChevron">
+          <div className="grid max-w-measure grid-cols-2 gap-10 text-sm">
+            <RuledList>
+              <li className="py-2">First row</li>
+              <li className="py-2">Second row</li>
+            </RuledList>
+            <RuledList ordered framed={false}>
+              <li className="flex items-center gap-2 py-2">
+                <DisclosureChevron />A row that opens
+              </li>
+              <li className="py-2">Second row</li>
+            </RuledList>
+          </div>
+        </Specimen>
+        <Specimen name="PaneToolbar">
+          <div className="max-w-measure border">
+            <PaneToolbar>
+              <FrameworkSwitcher frameworks={["python"]} value="python" onChange={() => {}} />
+              <SaveIndicator state="saved" />
+            </PaneToolbar>
+          </div>
+        </Specimen>
         <Specimen name="MetaList: inline and rows">
           <div className="flex flex-col gap-5">
-            <MetaList className="border-y border-border py-2.5">
+            <MetaList ruled>
               <MetaItem label="Difficulty">
                 <DifficultyMark difficulty="medium" />
               </MetaItem>
@@ -898,3 +994,5 @@ export function DevComponentsScreen() {
     </Page>
   );
 }
+
+export const Route = createLazyRoute("/dev/components")({ component: DevComponentsScreen });

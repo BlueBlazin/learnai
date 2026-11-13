@@ -3,7 +3,7 @@ import { SHORTCUTS, ShortcutHint } from "@/components/app/shortcut-hint";
 import { EmptyState, ErrorState } from "@/components/app/states";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { isActive, logText, type RunState } from "@/lib/api/run-state";
-import { CaseList } from "./case-row";
+import { CaseList } from "./case-list";
 import { MetricList } from "./metric-list";
 import { OutputBlock } from "./output-block";
 import { RunProgress } from "./run-progress";

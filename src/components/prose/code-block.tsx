@@ -1,6 +1,6 @@
-import { cn } from "cn";
 import { lazy, Suspense } from "react";
 import type { CodeBlockProps } from "./code-block-content";
+import { CodeFrame } from "./code-frame";
 
 const CodeBlockContent = lazy(() =>
   import("./code-block-content").then((m) => ({ default: m.CodeBlockContent })),
@@ -15,15 +15,7 @@ const CodeBlockContent = lazy(() =>
  */
 export function CodeBlock(props: CodeBlockProps) {
   return (
-    <Suspense
-      fallback={
-        <figure className={cn("code-block rounded-md bg-code", props.className)}>
-          <pre className="selectable overflow-x-auto px-4 py-3 font-mono text-code font-normal not-italic">
-            <code className="block w-fit min-w-full">{props.code.replace(/\n$/, "")}</code>
-          </pre>
-        </figure>
-      }
-    >
+    <Suspense fallback={<CodeFrame className={props.className}>{props.code.replace(/\n$/, "")}</CodeFrame>}>
       <CodeBlockContent {...props} />
     </Suspense>
   );

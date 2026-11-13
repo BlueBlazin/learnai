@@ -13,6 +13,7 @@ import type { Framework, ProblemDetail, ProblemSummary, Track } from "@/lib/api"
 import { useReference, useSubmission, useSubmissions, useUnlockEditorial } from "@/lib/api/queries";
 import type { StatementTab } from "@/lib/routes";
 import { usePreferences } from "@/stores/preferences";
+import { PaneToolbar } from "./pane-toolbar";
 
 /** The scrolling page inside each tab: paper background, generous margins that tighten in a narrow pane. */
 function PageScroll({ children }: { children: React.ReactNode }) {
@@ -64,7 +65,7 @@ export function StatementPane({
 
   return (
     <Tabs value={tab} onValueChange={(value) => onTabChange(value as StatementTab)} className="h-full">
-      <div className="flex h-toolbar shrink-0 items-stretch justify-between border-b bg-background pr-2 pl-6">
+      <PaneToolbar className="items-stretch justify-between pr-2 pl-6">
         <TabsList>
           <TabsTrigger value="statement">Statement</TabsTrigger>
           <TabsTrigger value="hints">Hints</TabsTrigger>
@@ -92,7 +93,7 @@ export function StatementPane({
             <ChevronRight />
           </IconButton>
         </div>
-      </div>
+      </PaneToolbar>
 
       <TabsContent value="statement">
         <PageScroll>

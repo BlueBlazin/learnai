@@ -74,7 +74,10 @@ steps of roughly 1.2.
 - Inline code is the mono face with no pill behind it. Code blocks are the one
   tinted block (`--code`).
 - Tables are booktabs: a 1.5px ink rule above and below, a hairline under the
-  head, no row or column rules, tabular figures.
+  head, no row or column rules, tabular figures. Code in a cell never breaks
+  mid-token; a table wider than the measure scrolls sideways.
+- Listings wider than the measure scroll sideways inside their block. Nothing in
+  prose is ever clipped.
 - Callouts (`> [!NOTE]`, `> [!TIP]`, `> [!WARNING]`) are an indent with a
   colored hairline and a small sans label. Ordinary quotations use the same
   indent in italic. Nothing is boxed.
@@ -105,9 +108,13 @@ black, with the same hues lifted.
 | `rule` | ink | `0.78 0.01 255` | section rules, booktabs rules |
 | `primary` | `0.43 0.125 262` | `0.77 0.095 262` | temper blue: the Submit button, links, caret |
 | `accent` | `0.94 0.008 258` | `0.275 0.016 260` | hover and selected rows |
-| `code` | `0.96 0.005 255` | `0.24 0.013 260` | listings and output blocks |
+| `code` | `0.96 0.005 255` | `0.24 0.013 260` | listings and output blocks (utility `bg-listing`; see below) |
 | `pass` / `fail` / `warn` | `0.49 0.105 158` / `0.51 0.17 27` / `0.53 0.11 68` | `0.77 0.12 158` / `0.74 0.14 25` / `0.80 0.11 80` | outcomes only |
 | `straw` | `0.93 0.075 96` | `0.38 0.055 92` | highlight |
+
+The listing surface is exposed to Tailwind as `listing`, not `code`: `text-code`
+is the code type size, and a color token of the same name would make that one
+utility set the text to the color of its own block.
 
 Syntax uses four inks shared by the editor and static listings
 (`--syntax-*`): keywords in temper blue, strings in green, numbers and
@@ -148,24 +155,45 @@ does not.
 
 - Transitions are 120ms with `cubic-bezier(0.2, 0, 0, 1)`, and only answer an
   action: hover, press, a disclosure opening, a popover appearing.
+- A theme change is instant. `stores/theme.ts` turns transitions off (the
+  `theme-switching` class) for the frame in which the colors change; otherwise
+  every control's hover transition would run at once, and restart at each level
+  of nesting.
 - Nothing animates on its own except the spinner on a running case and the run
   progress rule. There are no entrance animations and no staggered reveals.
 - `prefers-reduced-motion` removes all transitions and animations.
 
 ## 7. Native window behavior
 
-- The document never scrolls or rubber-bands; panes scroll inside
-  `ScrollArea`.
+- The document never scrolls or rubber-bands (`overflow: clip` on the root, so
+  not even focus can scroll it); panes scroll inside `ScrollArea`.
 - Chrome is not text-selectable and uses the default cursor. Reading surfaces,
   code, output, and paths opt in with `.selectable`.
-- Focus is one 2px ring in `--ring`, keyboard only.
+- Focus is one ring in `--ring`, keyboard only: the primitives' 3px halo on
+  controls, a 2px outline on everything else that can take focus.
 - The web context menu is suppressed on chrome inside Tauri and kept where text
   can be selected or edited. Web links open in the system browser.
-- The app bar carries `data-tauri-drag-region`. With an overlay title bar
-  (`VITE_TITLEBAR_OVERLAY=1`, mirroring `tauri.conf.json`) it reserves 96px on
-  the left for the traffic lights.
+- Title bar. `tauri.conf.json` sets `titleBarStyle: "Overlay"`, which only macOS
+  honors, so overlay mode is detected at runtime (`TITLEBAR_OVERLAY` in
+  `src/lib/platform.ts`: inside Tauri, on a Mac); there is no build flag. In
+  overlay mode the 44px app bar is the title bar:
+  - It carries `data-tauri-drag-region="deep"`: every part of the bar that is
+    not a link or a button drags the window, and a double-click zooms it. The
+    controls stay clickable because Tauri never starts a drag on them.
+  - It reserves 96px on the left for the traffic lights
+    (`useTrafficLightInset`), and gives that space back in fullscreen, where
+    macOS hides them.
+  - `trafficLightPosition: { x: 15, y: 24 }` centers the lights in the bar. The
+    `y` is not the distance from the top: tao sets the title bar container's
+    height to the button height plus `y` and leaves the buttons where they sit
+    inside it, so with macOS 26 and later metrics (14pt buttons, 9pt above the
+    container's bottom edge) their center lands at `y - 2` = 22px. Earlier
+    macOS versions have different title bar metrics, so the lights can sit a
+    few pixels off center there.
 - Shortcuts: Mod-K command palette, Mod-Enter run, Shift-Mod-Enter submit, `/`
   focuses library search.
+- Coming Back to the library returns to where the list was scrolled
+  (`useScrollMemory`); choosing another track starts from its top.
 
 ## 8. Components
 
@@ -180,21 +208,42 @@ Composed components, by area (all shown in their states at
 
 | Area | Components |
 |---|---|
-| `app/` | `AppShell`, `CommandPalette`, `AppLink`, `IconButton`, `ActionButton`, `ConfirmDialog`, `ShortcutHint`, `Page`, `PageHeader`, `Section`, `MetaList` / `MetaItem`, `EmptyState`, `ErrorState`, `LoadingLines` |
-| `prose/` | `Prose`, `CodeBlock` |
+| `app/` | `AppShell`, `CommandPalette`, `AppLink`, `InlineButton`, `IconButton`, `ActionButton`, `CopyButton`, `ConfirmDialog`, `ShortcutHint`, `Page`, `PageHeader`, `Section`, `ScreenMessage`, `MetaList` / `MetaItem`, `RuledList`, `DisclosureChevron`, `Notice`, `EmptyState`, `ErrorState`, `LoadingLines` |
+| `prose/` | `Prose`, `CodeBlock` (both lazy; `CodeFrame` is the block they share with their fallbacks) |
 | `editor/` | `CodeEditor` |
 | `problem/` | `DifficultyMark`, `StatusMark`, `JudgeList`, `FrameworkList`, `FrameworkSwitcher`, `ProgressRule`, `ProblemTable`, `ProblemHeader`, `HintList`, `EditorialPanel`, `SubmissionList`, `SubmissionView` |
-| `results/` | `ResultsPanel`, `VerdictHeader`, `VerdictMark`, `CaseMark`, `CaseRow` / `CaseList`, `MetricList`, `OutputBlock`, `RunProgress` |
+| `results/` | `ResultsPanel`, `VerdictHeader`, `VerdictMark`, `CaseMark`, `CaseList`, `MetricList`, `OutputBlock`, `RunProgress` |
 | `library/` | `LibraryFilterBar`, `FilterSelect`, `TrackList`, `TrackSection` |
-| `workbench/` | `StatementPane`, `EditorPane`, `SaveIndicator` |
-| `home/` | `ContinueEntry`, `ProgressSummary`, `TrackProgress` |
-| `settings/` | `EnvironmentPanel`, `ThemePicker`, `PathField` |
+| `workbench/` | `StatementPane`, `EditorPane`, `PaneToolbar`, `EnvironmentNotice`, `SaveIndicator` |
+| `home/` | `ContinueEntry`, `GettingStarted`, `ProgressSummary`, `TrackProgress` |
+| `settings/` | `EnvironmentPanel`, `InstallButton`, `UvGuideButton`, `ThemePicker`, `ContentPanel`, `PathField`, `CatalogIssueList` |
+
+Patterns that recur, and the one component that owns each:
+
+- Text that acts (a link in a sentence, a term with a tooltip): `InlineButton`;
+  in-app navigation is `AppLink`, which is built on it.
+- Rows separated by hairlines (submissions, cases, tracks, hints): `RuledList`.
+- A titled block under an ink rule, on a page or inside a pane: `Section`.
+- One line that needs attention, with its fix: `Notice` (tones warn, info,
+  pass, fail).
+- Nothing here, failed, or loading: `EmptyState`, `ErrorState`, `LoadingLines`;
+  for a whole screen, inside `ScreenMessage`.
+- Copy to the clipboard: `CopyButton`. A row that opens: `Collapsible` with
+  `DisclosureChevron`.
+
+Home has two states. Until anything has been attempted it is a title page:
+the first problem, how a problem works (`GettingStarted`), and what the tracks
+cover (`TrackProgress` as contents). After that it reports progress and recent
+submissions. It never shows a page of zeros.
 
 Conventions:
 
 - A pattern used twice is a component. Look in the table above before writing
   markup in a route.
-- Routes (`src/routes/`) contain layout and data wiring only.
+- Routes (`src/routes/`) contain layout and data wiring only. Every screen but
+  Home is its own chunk: `src/router.tsx` defines each route's path and search
+  validation, and the screen's module exports the rendering half as
+  `Route = createLazyRoute(path)({ component })`, loaded with `.lazy()`.
 - In-app links are built from `src/lib/routes.ts` and rendered with `AppLink`.
 - User-facing strings for enums live in `src/lib/labels.ts`; number, time, and
   metric formatting in `src/lib/format.ts`.

@@ -10,24 +10,28 @@ import { routes } from "@/lib/routes";
 
 /**
  * The problem to pick up next, as the opening of the home page: where you left
- * off if there is recent work, otherwise the first unsolved problem.
+ * off if there is recent work, otherwise the first unsolved problem. For someone
+ * who has not started (`firstRun`) it is the invitation to begin.
  */
 export function ContinueEntry({
   problem,
   track,
   lastSubmission,
+  firstRun = false,
   onOpen,
 }: {
   problem: ProblemSummary;
   track?: Track;
   /** The most recent submission on this problem, when it is the reason for the suggestion. */
   lastSubmission?: Submission;
+  /** Nothing has been attempted yet. */
+  firstRun?: boolean;
   onOpen: () => void;
 }) {
   return (
     <section aria-label="Continue" className="pb-12">
       <p className="text-sm text-muted-foreground">
-        {lastSubmission ? "Continue where you left off" : "Up next"}
+        {lastSubmission ? "Continue where you left off" : firstRun ? "Start here" : "Up next"}
       </p>
       <h1 className="selectable mt-2 max-w-measure font-serif text-3xl font-medium tracking-tight text-balance">
         <AppLink to={routes.problem(problem.id)} tone="quiet">
@@ -44,14 +48,21 @@ export function ContinueEntry({
             Last submitted {formatRelativeTime(lastSubmission.createdAt)}:{" "}
             {VERDICT_LABEL[lastSubmission.verdict].toLowerCase()}
           </span>
-        ) : (
+        ) : firstRun ? null : (
           <StatusMark status={problem.status} showLabel />
         )}
       </p>
-      <Button className="mt-6" onClick={onOpen}>
-        Open problem
-        <ArrowRight data-icon="inline-end" />
-      </Button>
+      <div className="mt-6 flex items-center gap-5">
+        <Button onClick={onOpen}>
+          {firstRun ? "Open the first problem" : "Open problem"}
+          <ArrowRight data-icon="inline-end" />
+        </Button>
+        {firstRun ? (
+          <span className="text-sm">
+            <AppLink to={routes.library()}>Browse the library</AppLink>
+          </span>
+        ) : null}
+      </div>
     </section>
   );
 }

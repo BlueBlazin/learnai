@@ -2,6 +2,13 @@ import type { Backend, StartRunArgs } from "./backend";
 import type { Framework, InstallEvent, RunEvent } from "./types";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:1421";
+/** How long the first load waits for the bridge before reporting it unreachable. */
+const CONNECT_TIMEOUT_MS = 30_000;
+/** Once the bridge has answered, a later outage is reported quickly. */
+const RECONNECT_TIMEOUT_MS = 2_000;
+/** The wait between probes doubles from the first value up to the second. */
+const CONNECT_RETRY_MS = [250, 1_000] as const;
+const POST_EMPTY = { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" } as const;
 
 /**
  * Devbridge transport (docs/ARCHITECTURE.md section 4.1). Commands are
@@ -17,15 +24,46 @@ export class HttpBackend implements Backend {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
   }
 
+  /** Resolves once the bridge has answered anything; see `connect`. */
+  private connected: Promise<void> | null = null;
+  private everConnected = false;
+
+  /**
+   * Waits for the bridge to accept connections. In development the UI usually
+   * loads while the bridge is still compiling, so the first load polls quietly
+   * (one request at a time, however many queries are waiting, and a plain GET
+   * that needs no CORS preflight) and the screens stay on their loading state. After `CONNECT_TIMEOUT_MS` the calls fail and
+   * the screens show their error state; "Try again" starts a new wait.
+   */
+  private connect(): Promise<void> {
+    this.connected ??= (async () => {
+      const deadline = Date.now() + (this.everConnected ? RECONNECT_TIMEOUT_MS : CONNECT_TIMEOUT_MS);
+      for (let delay: number = CONNECT_RETRY_MS[0]; ; delay = Math.min(delay * 2, CONNECT_RETRY_MS[1])) {
+        try {
+          // Any response, even an opaque one or an error status, means the bridge is listening.
+          await fetch(`${this.baseUrl}/`, { mode: "no-cors" });
+          this.everConnected = true;
+          return;
+        } catch {
+          if (Date.now() >= deadline) {
+            this.connected = null;
+            throw new Error(`Cannot reach the devbridge at ${this.baseUrl}. Is it running?`);
+          }
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    })();
+    return this.connected;
+  }
+
   private async call<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
+    await this.connect();
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}/api/${command}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(args),
-      });
+      response = await fetch(`${this.baseUrl}/api/${command}`, { ...POST_EMPTY, body: JSON.stringify(args) });
     } catch {
+      // The bridge went away after it had answered: the next call waits for it again.
+      this.connected = null;
       throw new Error(`Cannot reach the devbridge at ${this.baseUrl}. Is it running?`);
     }
     const text = await response.text();

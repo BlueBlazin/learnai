@@ -1,6 +1,6 @@
 import { cn } from "cn";
 import { Fragment } from "react";
-import { Button } from "@/components/ui/button";
+import { InlineButton } from "@/components/app/inline-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { JudgeKind } from "@/lib/api";
 import { JUDGE_DESCRIPTION, JUDGE_LABEL } from "@/lib/labels";
@@ -32,8 +32,9 @@ export function JudgeList({
           {index > 0 ? ", " : null}
           <Tooltip>
             <TooltipTrigger
-              render={<Button variant="link" />}
-              className="type-inherit h-auto rounded-sm p-0 text-foreground underline decoration-faint decoration-dotted underline-offset-4"
+              render={
+                <InlineButton className="text-foreground underline decoration-faint decoration-dotted underline-offset-4" />
+              }
             >
               {JUDGE_LABEL[judge]}
             </TooltipTrigger>

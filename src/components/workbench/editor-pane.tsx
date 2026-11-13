@@ -12,6 +12,7 @@ import type { SolutionEditor } from "@/lib/api/use-solution-editor";
 import { environmentProblem } from "@/lib/environment";
 import { FRAMEWORK_LABEL } from "@/lib/labels";
 import { EnvironmentNotice } from "./environment-notice";
+import { PaneToolbar } from "./pane-toolbar";
 import { SaveIndicator } from "./save-indicator";
 
 /**
@@ -50,7 +51,7 @@ export function EditorPane({
   const problem = environmentProblem(env, framework);
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-toolbar shrink-0 items-center gap-2 border-b bg-background px-3">
+      <PaneToolbar>
         <FrameworkSwitcher
           frameworks={frameworks}
           value={framework}
@@ -94,7 +95,7 @@ export function EditorPane({
             Submit
           </ActionButton>
         </div>
-      </div>
+      </PaneToolbar>
       {problem ? <EnvironmentNotice problem={problem} install={install} onInstall={onInstall} /> : null}
       <div className="min-h-0 flex-1 bg-paper">
         {editor.error ? (

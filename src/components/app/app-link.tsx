@@ -1,8 +1,8 @@
 import { Link, type LinkProps } from "@tanstack/react-router";
 import { cn } from "cn";
 import type { ReactNode } from "react";
-import { Button } from "@/components/ui/button";
 import type { RouteTarget } from "@/lib/routes";
+import { InlineButton } from "./inline-button";
 
 /**
  * In-app navigation. Composes the Button primitive with the router's Link so
@@ -23,18 +23,21 @@ export function AppLink({
   to: RouteTarget;
   tone?: "text" | "quiet";
   stretched?: boolean;
-  /** Keep the link on one line with an ellipsis; the parent must constrain its width. */
+  /**
+   * Keep the link on one line with an ellipsis; the parent must constrain its width.
+   * A text label is repeated as the native tooltip so nothing is hidden for good.
+   */
   truncate?: boolean;
   className?: string;
   children: ReactNode;
 }) {
   return (
-    <Button
+    <InlineButton
       nativeButton={false}
-      variant="link"
+      title={truncate && typeof children === "string" ? children : undefined}
       className={cn(
-        "type-inherit h-auto justify-start rounded-sm p-0",
-        truncate ? "block truncate text-left" : "whitespace-normal",
+        "justify-start",
+        truncate && "block truncate text-left whitespace-nowrap",
         tone === "quiet" && "text-foreground no-underline hover:text-primary hover:no-underline",
         stretched && "static after:absolute after:inset-0",
         className,
@@ -42,6 +45,6 @@ export function AppLink({
       render={<Link {...(to as unknown as LinkProps)} />}
     >
       {children}
-    </Button>
+    </InlineButton>
   );
 }

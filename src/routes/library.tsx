@@ -1,11 +1,13 @@
+import { createLazyRoute, getRouteApi } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef } from "react";
 import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
-import { LibraryFilterBar } from "@/components/library/library-filters";
+import { LibraryFilterBar } from "@/components/library/library-filter-bar";
 import { TrackList } from "@/components/library/track-list";
 import { TrackSection } from "@/components/library/track-section";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useGo } from "@/hooks/use-go";
+import { useScrollMemory } from "@/hooks/use-scroll-memory";
 import { useProblems, useTracks } from "@/lib/api/queries";
 import {
   activeFilterCount,
@@ -17,9 +19,12 @@ import {
   serializeFilters,
 } from "@/lib/filters";
 import { pluralize } from "@/lib/format";
-import { type LibrarySearch, routes } from "@/lib/routes";
+import { routes } from "@/lib/routes";
 
-export function LibraryScreen({ search }: { search: LibrarySearch }) {
+const route = getRouteApi("/library");
+
+function LibraryScreen() {
+  const search = route.useSearch();
   const go = useGo();
   const tracks = useTracks();
   const problems = useProblems();
@@ -46,9 +51,13 @@ export function LibraryScreen({ search }: { search: LibrarySearch }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // A new track selection starts from the top of the list.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when the track changes.
+  // Coming back from a problem returns to the same place in the list...
+  useScrollMemory(viewport, "library", Boolean(problems.data && tracks.data));
+  // ...while choosing another track starts from the top of it.
+  const shownTrack = useRef(filters.track);
   useEffect(() => {
+    if (shownTrack.current === filters.track) return;
+    shownTrack.current = filters.track;
     viewport.current?.querySelector("[data-slot=scroll-area-viewport]")?.scrollTo({ top: 0 });
   }, [filters.track]);
 
@@ -74,15 +83,19 @@ export function LibraryScreen({ search }: { search: LibrarySearch }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col bg-paper">
-        <div className="flex flex-col gap-2 border-b px-gutter py-3">
-          <LibraryFilterBar filters={filters} onChange={setFilters} searchRef={searchRef} />
-          <p className="tabular text-xs text-muted-foreground" role="status">
-            {!problems.data
-              ? "Loading the catalog"
-              : matches.length === total
-                ? pluralize(total, "problem")
-                : `${matches.length} of ${pluralize(total, "problem")}`}
-          </p>
+        <div className="border-b px-gutter pt-3 pb-2">
+          <LibraryFilterBar
+            filters={filters}
+            onChange={setFilters}
+            searchRef={searchRef}
+            summary={
+              !problems.data
+                ? "Loading the catalog"
+                : matches.length === total
+                  ? pluralize(total, "problem")
+                  : `${matches.length} of ${pluralize(total, "problem")}`
+            }
+          />
         </div>
 
         <ScrollArea className="min-h-0 flex-1" ref={viewport}>
@@ -91,7 +104,10 @@ export function LibraryScreen({ search }: { search: LibrarySearch }) {
               <ErrorState
                 title="The catalog could not be loaded"
                 error={error}
-                onRetry={() => void problems.refetch()}
+                onRetry={() => {
+                  void tracks.refetch();
+                  void problems.refetch();
+                }}
               />
             ) : !problems.data || !tracks.data ? (
               <LoadingLines lines={10} className="pt-6" />
@@ -123,3 +139,5 @@ export function LibraryScreen({ search }: { search: LibrarySearch }) {
     </div>
   );
 }
+
+export const Route = createLazyRoute("/library")({ component: LibraryScreen });

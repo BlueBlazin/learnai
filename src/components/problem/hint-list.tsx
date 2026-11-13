@@ -1,3 +1,4 @@
+import { RuledList } from "@/components/app/ruled-list";
 import { EmptyState } from "@/components/app/states";
 import { Prose } from "@/components/prose/prose";
 import { Button } from "@/components/ui/button";
@@ -22,17 +23,17 @@ export function HintList({
   const shown = Math.min(revealed, hints.length);
   return (
     <div className="max-w-measure">
-      <ol className="flex flex-col">
+      <RuledList ordered framed={false} className="border-b border-border/70">
         {hints.slice(0, shown).map((hint, index) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: hints are an ordered, static list.
-          <li key={index} className="border-b border-border py-5 first:pt-0">
+          <li key={index} className="py-5 first:pt-0">
             <p className="pb-1.5 text-xs font-semibold text-muted-foreground">
               Hint {index + 1} of {hints.length}
             </p>
             <Prose size="compact">{hint}</Prose>
           </li>
         ))}
-      </ol>
+      </RuledList>
       {shown < hints.length ? (
         <div className="flex flex-col items-start gap-2 pt-5">
           <p className="text-sm text-muted-foreground">
