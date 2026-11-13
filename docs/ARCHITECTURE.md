@@ -235,12 +235,14 @@ type RunEvent =
   | { type: "caseEnd"; result: CaseResult }
   | { type: "log"; stream: "stdout" | "stderr"; text: string }  // diagnostics
   | { type: "end"; verdict: Verdict; passed: number; total: number;
-      durationMs: number; metrics: Metric[]; submissionId: number | null };
+      durationMs: number; metrics: Metric[]; submissionId: number | null;
+      message: string | null; detail: string | null };          // import/harness errors
 
 interface Submission { id: number; problemId: string; framework: Framework; mode: RunMode;
                        verdict: Verdict; passed: number; total: number; durationMs: number;
                        target: string; createdAt: string; }               // ISO 8601
-interface SubmissionDetail extends Submission { code: string; cases: CaseResult[]; metrics: Metric[]; }
+interface StoredCase extends CaseResult { name: string; public: boolean; }
+interface SubmissionDetail extends Submission { code: string; cases: StoredCase[]; metrics: Metric[]; }
 
 interface FrameworkEnv { framework: Framework; installed: boolean; version: string | null; }
 interface EnvStatus { uv: string | null; python: string | null; frameworks: FrameworkEnv[];
@@ -305,6 +307,8 @@ Vite dev origin.
   `GET /api/jobs/<jobId>/events`, same rules, closing after `done`.
 
 `InstallEvent = { type: "log"; text: string } | { type: "done"; ok: boolean; message: string | null }`.
+The Tauri `env_install` command resolves with no value once the install has finished
+(after the `done` event).
 
 ## 5. Front end
 
