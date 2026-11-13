@@ -31,3 +31,11 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
+# A solution fixture that is deliberately not valid Python.
+extend-exclude = ["tests/fixtures/solutions/syntax_error.py"]
+
+[tool.ruff.lint.per-file-ignores]
+# Starters import their framework for the learner before any code uses it.
+"**/starter/*.py" = ["F401"]
+# Fixture solutions misbehave on purpose.
+"tests/fixtures/solutions/*.py" = ["S110", "BLE001"]

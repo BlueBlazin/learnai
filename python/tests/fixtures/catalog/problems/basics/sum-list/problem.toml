@@ -1,0 +1,12 @@
+id = "sum-list"
+title = "Sum a List"
+track = "basics"
+order = 10
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["fixture"]
+prerequisites = []
+requires = "cpu"
+entry = ["total"]
+time_limit_s = 1

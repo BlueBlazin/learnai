@@ -1,0 +1,9 @@
+# Lint settings for problem files: `ruff check problems/<track>/<id>`.
+line-length = 100
+
+[lint.per-file-ignores]
+# Starters import their framework for the learner before any code uses it.
+"**/starter/*.py" = ["F401"]
+
+[lint.isort]
+known-first-party = ["whetstone"]

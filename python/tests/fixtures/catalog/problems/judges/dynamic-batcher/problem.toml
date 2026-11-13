@@ -1,0 +1,12 @@
+id = "dynamic-batcher"
+title = "Dynamic Batcher"
+track = "judges"
+order = 10
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["fixture"]
+prerequisites = []
+requires = "cpu"
+entry = ["Batcher"]
+time_limit_s = 5

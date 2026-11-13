@@ -1,0 +1,4 @@
+id = "judges"
+title = "Judge Fixtures"
+description = "One miniature problem per judge type, for the judge's own tests."
+order = 20

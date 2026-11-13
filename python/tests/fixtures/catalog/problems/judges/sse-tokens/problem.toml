@@ -1,0 +1,12 @@
+id = "sse-tokens"
+title = "Token Streaming over SSE"
+track = "judges"
+order = 10
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["service"]
+tags = ["fixture"]
+prerequisites = []
+requires = "cpu"
+entry = ["app"]
+time_limit_s = 10

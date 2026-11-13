@@ -1,0 +1,12 @@
+id = "greedy-decode"
+title = "Greedy Decoding with a KV Cache"
+track = "judges"
+order = 10
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["fixture"]
+prerequisites = []
+requires = "cpu"
+entry = ["greedy_decode"]
+time_limit_s = 10

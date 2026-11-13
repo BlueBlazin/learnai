@@ -1,0 +1,12 @@
+id = "pairwise-distances"
+title = "Vectorized Pairwise Distances"
+track = "judges"
+order = 10
+difficulty = "easy"
+frameworks = ["torch", "mlx"]
+judges = ["numeric", "speed"]
+tags = ["fixture"]
+prerequisites = []
+requires = "cpu"
+entry = ["pairwise_sq_dists"]
+time_limit_s = 10

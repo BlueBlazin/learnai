@@ -1,0 +1,4 @@
+id = "basics"
+title = "Basics"
+description = "Fixture track for the judge's own tests."
+order = 10

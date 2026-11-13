@@ -1,0 +1,3 @@
+## The idea
+
+Accumulate.

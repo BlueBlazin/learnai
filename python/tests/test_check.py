@@ -1,0 +1,260 @@
+import math
+
+import numpy as np
+import pytest
+
+from whetstone.judge import CheckFailure, check
+
+F32 = np.float32
+
+
+def fails(fn, *args, **kwargs) -> CheckFailure:
+    with pytest.raises(CheckFailure) as info:
+        fn(*args, **kwargs)
+    return info.value
+
+
+# -- numeric ------------------------------------------------------------------------
+
+
+def test_allclose_accepts_float32_noise_and_rejects_real_errors():
+    expected = np.linspace(0.1, 5.0, 40, dtype=F32)
+    check.allclose(expected * F32(1 + 2e-6), expected)
+    failure = fails(check.allclose, expected * F32(1.01), expected, label="softmax")
+    assert failure.message.startswith("softmax: 40 of 40 values differ from the expected result")
+    assert "max abs error" in failure.message
+
+
+def test_shape_mismatch_is_stated_first_and_alone():
+    failure = fails(check.allclose, np.zeros((4,)), np.zeros((4, 8)), label="softmax")
+    assert failure.message == "softmax: shape mismatch: expected (4, 8), got (4,)"
+    assert "max abs error" not in failure.detail
+
+
+def test_detail_has_errors_worst_index_and_excerpts():
+    expected = np.arange(60, dtype=F32).reshape(3, 20)
+    got = expected.copy()
+    got[1, 13] += 0.5
+    got[0, 1] += 0.25
+    failure = fails(check.allclose, got, expected, label="y", context="call: f(x)")
+    assert failure.message == (
+        "y: 2 of 60 values differ from the expected result (max abs error 0.5 at index [1, 13])"
+    )
+    lines = failure.detail.splitlines()
+    assert lines[0] == "call: f(x)"
+    assert "tolerance: |got - expected| <= 1e-06 + 0.0001 * |expected|" in lines
+    assert "mismatched values: 2 of 60" in lines
+    assert "max abs error: 0.5 at index [1, 13] (expected 33, got 33.5)" in lines
+    assert any(
+        line.startswith("max rel error: 0.25 at index [0, 1] (expected 1, got 1.25)")
+        for line in lines
+    )
+    assert any(line.startswith("expected[1, 9:17] = ") for line in lines)
+    assert any(line.startswith("     got[1, 9:17] = ") and "33.5" in line for line in lines)
+
+
+def test_message_never_contains_expected_values():
+    failure = fails(check.allclose, np.array([1.0, 2.0]), np.array([1.0, 7.125]))
+    assert "7.125" not in failure.message
+    assert "7.125" in failure.detail
+
+
+def test_nan_and_infinity_handling():
+    expected = np.array([0.5, -np.inf, np.nan], dtype=F32)
+    check.allclose(np.array([0.5, -np.inf, np.nan], dtype=F32), expected)
+    failure = fails(check.allclose, np.array([np.nan, -np.inf, np.nan], dtype=F32), expected)
+    assert failure.message == (
+        "output: got NaN where a number is expected (1 of 3 values, first at index [0])"
+    )
+    failure = fails(check.allclose, np.array([0.5, np.inf, np.nan], dtype=F32), expected)
+    assert "1 of 3 values differ" in failure.message
+    failure = fails(check.allclose, np.array([np.inf, 1.0]), np.array([3.0, 1.0]))
+    assert failure.message.startswith("output: got infinity where a finite number is expected")
+    failure = fails(check.allclose, np.array([-50.0]), np.array([-np.inf]))
+    assert "1 of 1 values differ" in failure.message
+
+
+def test_none_and_non_numeric_results():
+    assert "got None" in fails(check.allclose, None, np.zeros(2), label="softmax").message
+    assert "non-numeric" in fails(check.allclose, ["a", "b"], np.zeros(2)).message
+
+
+def test_dtype_check_is_opt_in():
+    check.allclose(np.ones(2, dtype=np.float64), np.ones(2, dtype=F32))
+    failure = fails(check.allclose, np.ones(2, dtype=np.float64), np.ones(2, dtype=F32), dtype=True)
+    assert failure.message == "output: dtype mismatch: expected float32, got float64"
+
+
+def test_equal_on_arrays_ignores_integer_width():
+    check.equal(np.array([1, 2, 3], dtype=np.int32), np.array([1, 2, 3], dtype=np.int64))
+    failure = fails(check.equal, np.array([1, 9, 3]), np.array([1, 2, 3]), label="tokens")
+    assert failure.message == (
+        "tokens: 1 of 3 values differ from the expected result (first at index [1])"
+    )
+    assert "expected 2, got 9" in failure.detail
+    assert "shape mismatch" in fails(check.equal, np.array([1, 2]), np.array([1, 2, 3])).message
+
+
+def test_equal_on_python_values():
+    check.equal([1, 2, 3], [1, 2, 3])
+    check.equal("abc", "abc")
+    failure = fails(check.equal, [5, 6, 7, 8], [5, 6, 9, 8], label="tokens")
+    assert failure.message == (
+        "tokens: differs from the expected result (first difference at position 2)"
+    )
+    assert "position 2: expected 9, got 7" in failure.detail
+    assert fails(check.equal, [1], [1, 2]).message == "output: expected 2 items, got 1"
+    assert "got None" in fails(check.equal, None, [1]).message
+    assert "expected: {'a': 1}" in fails(check.equal, {"a": 2}, {"a": 1}).detail
+
+
+def test_match_dispatches_on_structure():
+    expected = (np.array([0.5, 0.25], dtype=F32), np.array([3, 1]), {"n": 2, "tokens": [1, 2]})
+    check.match((np.array([0.5, 0.25], dtype=F32), np.array([3, 1]), {"n": 2, "tokens": [1, 2]}),
+                expected)  # fmt: skip
+    failure = fails(
+        check.match,
+        (np.array([0.5, 0.75], dtype=F32), np.array([3, 1]), {"n": 2, "tokens": [1, 2]}),
+        expected,
+        label="out",
+    )
+    assert failure.message.startswith("out[0]: 1 of 2 values differ")
+    failure = fails(
+        check.match, (expected[0], np.array([3, 2]), expected[2]), expected, label="out"
+    )
+    assert failure.message.startswith("out[1]: 1 of 2 values differ")
+    failure = fails(check.match, (expected[0], expected[1], {"n": 2, "tokens": [1, 3]}), expected)
+    assert failure.message.startswith("output[2]['tokens']: differs")
+    assert "expected 3 values, got 2" in fails(check.match, expected[:2], expected).message
+    assert "expected a tensor, got a list" in fails(check.match, [0.5, 0.25], expected[0]).message
+    failure = fails(check.match, np.array([3.0, 1.0]), np.array([3, 1]), dtype=True)
+    assert "dtype mismatch" in failure.message
+
+
+def test_shape_finite_that_and_raises():
+    check.shape(np.zeros((2, 3)), (2, 3))
+    assert "expected (2, 3), got (3, 2)" in fails(check.shape, np.zeros((3, 2)), (2, 3)).message
+    check.finite(np.ones(3))
+    assert "non-finite" in fails(check.finite, np.array([1.0, np.inf])).message
+    check.that(True, "never shown")
+    assert fails(check.that, 0, "broken invariant", "why").detail == "why"
+    check.raises(ValueError, int, "x")
+    assert "nothing was raised" in fails(check.raises, ValueError, int, "3").message
+    assert "KeyError was raised" in fails(check.raises, ValueError, {}.__getitem__, "k").message
+
+
+# -- property -------------------------------------------------------------------------
+
+
+def test_forall_reports_the_first_failing_trial_and_how_to_replay_it(ctx):
+    seen = []
+
+    def prop(rng):
+        value = float(rng.random())
+        seen.append(value)
+        check.that(len(seen) < 4, "invariant broken", "the detail")
+
+    failure = fails(check.forall, prop, trials=10)
+    assert failure.message == "invariant broken (property failed on trial 4 of 10)"
+    assert f"np.random.default_rng([{ctx.seed}, 3])" in failure.detail
+    assert "the detail" in failure.detail
+    assert len(seen) == 4
+    # Replaying the reported seed reproduces the failing input exactly.
+    assert float(np.random.default_rng([ctx.seed, 3]).random()) == seen[3]
+
+
+def test_forall_points_ctx_helpers_at_the_trial_generator(ctx):
+    outer = ctx.rng
+    draws = []
+    check.forall(lambda rng: draws.append((ctx.rng is rng, float(ctx.uniform(1)[0]))), trials=3)
+    assert all(same for same, _ in draws)
+    assert len({value for _, value in draws}) == 3
+    assert ctx.rng is outer
+    again = []
+    check.forall(lambda rng: again.append(float(ctx.uniform(1)[0])), trials=3)
+    assert again == [value for _, value in draws]  # seeded: identical on every run
+
+
+# -- statistical ------------------------------------------------------------------------
+
+
+def test_distribution_accepts_correct_samplers_for_many_seeds():
+    probs = np.array([0.5, 0.3, 0.15, 0.04, 0.01])
+    for seed in range(200):
+        rng = np.random.default_rng(seed)
+        check.distribution(rng.choice(5, size=5000, p=probs), probs)
+
+
+def test_distribution_rejects_a_shifted_distribution():
+    probs = np.array([0.5, 0.3, 0.15, 0.04, 0.01])
+    wrong = np.array([0.44, 0.36, 0.15, 0.04, 0.01])
+    samples = np.random.default_rng(0).choice(5, size=20_000, p=wrong)
+    failure = fails(check.distribution, samples, probs, label="tokens")
+    assert failure.message.startswith(
+        "tokens: the empirical distribution does not match the target: outcome"
+    )
+    assert "20000 samples" in failure.message
+    assert "0.5" not in failure.message  # target probabilities stay in the detail
+    assert "<-- outside" in failure.detail
+    assert "false-failure probability below 1e-10" in failure.detail
+
+
+def test_distribution_threshold_is_the_documented_chernoff_bound():
+    # One outcome of K=2 with p = 0.5, N = 1000: fail iff N * KL(f || p) >= ln(2K / delta).
+    n, delta = 1000, 1e-10
+    threshold = math.log(4 / delta)
+
+    def statistic(count):
+        f = count / n
+        return n * (f * math.log(f / 0.5) + (1 - f) * math.log((1 - f) / 0.5))
+
+    boundary = next(c for c in range(500, 1000) if statistic(c) >= threshold)
+    check.distribution(counts=[boundary - 1, n - boundary + 1], probs=[0.5, 0.5], delta=delta)
+    fails(check.distribution, counts=[boundary, n - boundary], probs=[0.5, 0.5], delta=delta)
+    # The acceptance interval reported to the learner is that same boundary.
+    low, high = check._kl_interval(0.5, threshold / n)
+    assert (boundary - 1) / n <= high < boundary / n
+    assert math.isclose(low, 1 - high, abs_tol=1e-9)
+
+
+def test_distribution_impossible_outcomes_and_bad_samples():
+    fails(check.distribution, [0, 0, 1, 2], [0.5, 0.5, 0.0])  # outcome 2 has probability 0
+    failure = fails(check.distribution, [0, 1, 7], [0.5, 0.5])
+    assert failure.message == "samples: sample 2 is 7, which is not an outcome in range(2)"
+    with pytest.raises(ValueError):
+        check.distribution([0, 1], [0.5, 0.6])
+
+
+def test_mean_uses_a_hoeffding_bound():
+    rng = np.random.default_rng(1)
+    accepted = rng.random(10_000) < 0.3
+    check.mean(accepted, 0.3, low=0, high=1)
+    failure = fails(check.mean, accepted, 0.4, low=0, high=1, label="acceptance rate")
+    assert failure.message == (
+        "acceptance rate: the average over 10000 samples is not consistent with the target"
+    )
+    eps = math.sqrt(math.log(2 / 1e-10) / (2 * 10_000))
+    assert f"+/- {eps:.3g}" in failure.detail
+    assert "outside the possible range" in fails(check.mean, [0.5, 2.0], 0.5, low=0, high=1).message
+
+
+# -- cost --------------------------------------------------------------------------------
+
+
+def test_cost_reports_a_metric_and_enforces_the_bound(ctx):
+    counters = {"tokens_processed": 37, "forward_calls": 12}
+    check.cost(counters, "tokens_processed", at_most=37, unit="tokens")
+    assert ctx.metrics == [{"name": "tokens_processed", "value": 37, "unit": "tokens", "limit": 37}]
+    failure = fails(check.cost, counters, "tokens_processed", at_most=20, unit="tokens")
+    assert failure.message == "tokens_processed: 37 tokens exceeds the limit of 20 tokens"
+    assert ctx.metrics[0]["limit"] == 20  # reported even when the check fails
+    check.cost(counters, "forward_calls", exactly=12)
+    assert "expected exactly 11" in fails(check.cost, counters, "forward_calls", exactly=11).message
+    assert "below the required" in fails(check.cost, counters, "forward_calls", at_least=13).message
+
+
+def test_at_most(ctx):
+    check.at_most("p99_latency", 12.5, 50, unit="ms")
+    assert ctx.metrics == [{"name": "p99_latency", "value": 12.5, "unit": "ms", "limit": 50}]
+    failure = fails(check.at_most, "p99_latency", 80.0, 50, unit="ms")
+    assert failure.message == "p99_latency: 80 ms exceeds the limit of 50 ms"

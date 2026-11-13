@@ -1,0 +1,12 @@
+id = "unit-normalize"
+title = "Normalize to Unit Length"
+track = "judges"
+order = 10
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["fixture"]
+prerequisites = []
+requires = "cpu"
+entry = ["normalize"]
+time_limit_s = 10

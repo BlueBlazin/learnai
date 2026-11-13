@@ -1,0 +1,99 @@
+import numpy as np
+import pytest
+
+from whetstone.judge import CheckFailure, frameworks
+
+
+def test_float_arrays_become_float32_tensors_and_round_trip(fw):
+    x = np.arange(6, dtype=np.float64).reshape(2, 3) / 7
+    tensor = fw.tensor(x)
+    back = fw.numpy(tensor)
+    assert back.shape == (2, 3)
+    np.testing.assert_allclose(back, x.astype(np.float32))
+    if fw.name == "python":
+        assert isinstance(tensor, list) and isinstance(tensor[0][0], float)
+    else:
+        assert fw.is_tensor(tensor)
+        assert back.dtype == np.float32
+
+
+def test_integer_and_bool_arrays_keep_their_kind(fw):
+    ints = fw.numpy(fw.tensor(np.array([1, 2, 3], dtype=np.int64)))
+    assert ints.dtype.kind == "i" and ints.tolist() == [1, 2, 3]
+    if fw.name == "torch":
+        assert ints.dtype == np.int64
+    if fw.name in ("jax", "mlx"):
+        assert ints.dtype == np.int32
+    flags = fw.numpy(fw.tensor(np.array([True, False])))
+    assert flags.dtype.kind == "b"
+
+
+def test_explicit_dtype_is_respected(fw):
+    if fw.name == "python":
+        pytest.skip("lists have no dtype")
+    assert fw.numpy(fw.tensor(np.array([1.0, 2.0]), dtype=np.float16)).dtype == np.float16
+
+
+def test_recursive_conversion_leaves_other_values_alone(fw):
+    tree = {
+        "x": np.ones((2, 2)),
+        "items": [np.zeros(3), 5, "text"],
+        "pair": (np.float32(2.5), None),
+    }
+    converted = fw.to_framework(tree)
+    assert converted["items"][1:] == [5, "text"]
+    assert converted["pair"] == (2.5, None) and isinstance(converted["pair"][0], float)
+    back = fw.to_numpy(converted)
+    np.testing.assert_array_equal(np.asarray(back["x"]), np.ones((2, 2)))
+    assert back["items"][1:] == [5, "text"]
+    if fw.name != "python":
+        assert fw.is_tensor(converted["x"]) and fw.is_tensor(converted["items"][0])
+        assert isinstance(back["x"], np.ndarray)
+
+
+def test_inputs_are_copied_not_aliased(fw):
+    if fw.name != "torch":
+        pytest.skip("only torch can alias numpy memory")
+    x = np.zeros(3, dtype=np.float32)
+    fw.tensor(x).add_(1.0)
+    assert x.tolist() == [0.0, 0.0, 0.0]
+
+
+def test_wrong_tensor_type_is_reported_clearly(fw):
+    if fw.name == "python":
+        assert fw.to_numpy(np.ones(2)).tolist() == [1.0, 1.0]
+        return
+    with pytest.raises(CheckFailure) as failure:
+        fw.to_numpy(np.ones(2), what="`softmax`")
+    assert failure.value.message == (
+        f"`softmax` returned a numpy.ndarray, expected a {fw.tensor_type_name}"
+    )
+    other = frameworks.get("mlx" if fw.name == "torch" else "torch")
+    with pytest.raises(CheckFailure, match="expected a"):
+        fw.to_numpy((other.tensor(np.ones(2)),))
+
+
+def test_sync_accepts_nested_results(fw):
+    value = fw.tensor(np.ones((4, 4)))
+    fw.sync(value, [value, {"k": (value, 3)}], None)
+
+
+def test_kit_objects_are_rebound(fw):
+    class Kit:
+        def __init__(self, bound):
+            self.fw = bound
+
+        def with_framework(self, bound):
+            return Kit(bound)
+
+    here = Kit(fw)
+    assert fw.to_framework([here])[0] is here  # already bound: untouched
+    fresh = fw.to_framework([here], fresh_kit=True)[0]
+    assert fresh is not here and fresh.fw is fw  # reference calls get their own twin
+    elsewhere = Kit(object())
+    assert fw.to_framework({"m": elsewhere})["m"].fw is fw
+
+
+def test_unknown_framework():
+    with pytest.raises(ValueError):
+        frameworks.get("tensorflow")

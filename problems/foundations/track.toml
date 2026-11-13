@@ -1,0 +1,4 @@
+id = "foundations"
+title = "Foundations"
+description = "The numerical building blocks every inference stack is made of: stable normalization, attention, positional encoding. Small functions, exact specifications."
+order = 10

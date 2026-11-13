@@ -1,0 +1,12 @@
+id = "stable-softmax"
+title = "Numerically Stable Softmax"
+track = "foundations"
+order = 10
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["softmax", "numerics", "logits"]
+prerequisites = []
+requires = "cpu"
+entry = ["softmax", "log_softmax"]
+time_limit_s = 10
