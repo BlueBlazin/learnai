@@ -1,0 +1,170 @@
+//! One Tauri command per row of the command table in `docs/ARCHITECTURE.md` section 4.
+//!
+//! Each command only maps its arguments onto a [`Core`] method and converts the error to
+//! a string. Core calls block (files, SQLite, subprocesses), so they run on the blocking
+//! thread pool rather than on the main thread or an async worker.
+
+use tauri::State;
+use tauri::ipc::Channel;
+use whetstone_core::{
+    Core, EnvStatus, Framework, InstallEvent, ProblemDetail, ProblemSummary, RunEvent, RunMode,
+    SolutionFile, Stats, Submission, SubmissionDetail, Track,
+};
+
+/// Shared application state: the core, or the reason it could not be opened.
+pub struct AppState(pub Result<Core, String>);
+
+/// What every command returns: errors cross the IPC boundary as a message.
+type CommandResult<T> = Result<T, String>;
+
+/// Runs `call` against the core on the blocking thread pool.
+async fn with_core<T, F>(state: State<'_, AppState>, call: F) -> CommandResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce(Core) -> whetstone_core::Result<T> + Send + 'static,
+{
+    let core = state.0.clone()?;
+    tauri::async_runtime::spawn_blocking(move || call(core))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_tracks(state: State<'_, AppState>) -> CommandResult<Vec<Track>> {
+    with_core(state, |core| core.list_tracks()).await
+}
+
+#[tauri::command]
+pub async fn list_problems(state: State<'_, AppState>) -> CommandResult<Vec<ProblemSummary>> {
+    with_core(state, |core| core.list_problems()).await
+}
+
+#[tauri::command]
+pub async fn get_problem(state: State<'_, AppState>, id: String) -> CommandResult<ProblemDetail> {
+    with_core(state, move |core| core.get_problem(&id)).await
+}
+
+#[tauri::command]
+pub async fn read_solution(
+    state: State<'_, AppState>,
+    id: String,
+    framework: Framework,
+) -> CommandResult<SolutionFile> {
+    with_core(state, move |core| core.read_solution(&id, framework)).await
+}
+
+#[tauri::command]
+pub async fn write_solution(
+    state: State<'_, AppState>,
+    id: String,
+    framework: Framework,
+    code: String,
+) -> CommandResult<()> {
+    with_core(state, move |core| {
+        core.write_solution(&id, framework, &code)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn reset_solution(
+    state: State<'_, AppState>,
+    id: String,
+    framework: Framework,
+) -> CommandResult<SolutionFile> {
+    with_core(state, move |core| core.reset_solution(&id, framework)).await
+}
+
+#[tauri::command]
+pub async fn start_run(
+    state: State<'_, AppState>,
+    problem_id: String,
+    framework: Framework,
+    mode: RunMode,
+    target: String,
+    on_event: Channel<RunEvent>,
+) -> CommandResult<String> {
+    with_core(state, move |core| {
+        core.start_run(
+            &problem_id,
+            framework,
+            mode,
+            &target,
+            move |event: RunEvent| {
+                // The webview may be gone (window closed mid-run); there is no one to tell.
+                let _ = on_event.send(event);
+            },
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn cancel_run(state: State<'_, AppState>, run_id: String) -> CommandResult<()> {
+    with_core(state, move |core| {
+        core.cancel_run(&run_id);
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_submissions(
+    state: State<'_, AppState>,
+    problem_id: Option<String>,
+) -> CommandResult<Vec<Submission>> {
+    with_core(state, move |core| {
+        core.list_submissions(problem_id.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_submission(
+    state: State<'_, AppState>,
+    id: i64,
+) -> CommandResult<SubmissionDetail> {
+    with_core(state, move |core| core.get_submission(id)).await
+}
+
+#[tauri::command]
+pub async fn unlock_editorial(
+    state: State<'_, AppState>,
+    id: String,
+) -> CommandResult<ProblemDetail> {
+    with_core(state, move |core| core.unlock_editorial(&id)).await
+}
+
+#[tauri::command]
+pub async fn get_reference(
+    state: State<'_, AppState>,
+    id: String,
+    framework: Framework,
+) -> CommandResult<String> {
+    with_core(state, move |core| core.get_reference(&id, framework)).await
+}
+
+#[tauri::command]
+pub async fn env_status(state: State<'_, AppState>) -> CommandResult<EnvStatus> {
+    with_core(state, |core| core.env_status()).await
+}
+
+#[tauri::command]
+pub async fn env_install(
+    state: State<'_, AppState>,
+    framework: Framework,
+    on_event: Channel<InstallEvent>,
+) -> CommandResult<()> {
+    with_core(state, move |core| {
+        core.env_install(framework, move |event: InstallEvent| {
+            let _ = on_event.send(event);
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_stats(state: State<'_, AppState>) -> CommandResult<Stats> {
+    with_core(state, |core| core.get_stats()).await
+}

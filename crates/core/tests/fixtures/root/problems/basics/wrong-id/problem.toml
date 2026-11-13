@@ -1,0 +1,7 @@
+id = "some-other-id"
+title = "Wrong Id"
+track = "basics"
+difficulty = "easy"
+frameworks = ["torch"]
+judges = ["numeric"]
+entry = ["f"]

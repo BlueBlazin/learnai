@@ -1,0 +1,11 @@
+id = "echo-server"
+title = "Echo Server"
+track = "basics"
+order = 20
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["service", "simclock"]
+prerequisites = ["add-two"]
+requires = "mlx-gpu"
+entry = ["app"]
+time_limit_s = 0.05

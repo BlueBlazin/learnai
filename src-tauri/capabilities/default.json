@@ -1,10 +1,25 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Capability for the main window: core IPC (including channels), the opener plugin, and the Whetstone commands.",
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    "allow-list-tracks",
+    "allow-list-problems",
+    "allow-get-problem",
+    "allow-read-solution",
+    "allow-write-solution",
+    "allow-reset-solution",
+    "allow-start-run",
+    "allow-cancel-run",
+    "allow-list-submissions",
+    "allow-get-submission",
+    "allow-unlock-editorial",
+    "allow-get-reference",
+    "allow-env-status",
+    "allow-env-install",
+    "allow-get-stats"
   ]
 }

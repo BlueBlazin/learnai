@@ -262,11 +262,42 @@ Commands (Tauri command names are snake_case; the `Backend` interface uses camel
 | `env_install` | `framework` + event sink | stream of `{type:"log",...}` then `{type:"done", ok}` |
 | `get_stats` | | `Stats` |
 
+| `list_catalog_issues` | | `{ path: string; message: string }[]` (malformed problems) |
+
 Rules: only `submit` runs are stored as submissions with a code snapshot; `run` results
-are ephemeral. A problem is `solved` once any framework has an accepted submit, and
+are ephemeral. A canceled submit, or one whose process never launched, is not stored.
+`cancel_run` on an unknown or finished run is a no-op. `EnvStatus.frameworks` includes a
+`python` entry. The saved content-root setting lives in `root.json` in the Tauri app
+config directory (it cannot live in the database, which sits under the root). Overall
+run limit: 600 s until the harness `start` event (environment sync can be slow), then
+30 s + cases x `time_limit_s`. Streak: consecutive local days with an accepted submit,
+ending today or yesterday. A problem is `solved` once any framework has an accepted submit, and
 `attempted` once a solution file differs from the starter or any submit exists.
 Solutions live at `workspace/<problem id>/<framework>.py` so they can be edited in any
 editor; the app re-reads the file when the window regains focus.
+
+### 4.1 Transports
+
+**Tauri.** One `#[tauri::command]` per row above. JavaScript passes camelCase argument
+names (Tauri maps them to snake_case Rust parameters). Streaming commands take an extra
+argument `onEvent: Channel<RunEvent>` (or `Channel<InstallEvent>`); `start_run` returns
+the `runId` immediately and events flow over the channel until `end`. Errors are
+returned as a string message.
+
+**Devbridge (HTTP, dev and test only).** Listens on `127.0.0.1:1421`, CORS open to the
+Vite dev origin.
+
+- `POST /api/<command>` with a JSON object body of the camelCase arguments (empty object
+  when there are none). Success: `200` with the JSON result (`null` for no result).
+  Failure: `4xx/5xx` with `{"error": "<message>"}`.
+- `POST /api/start_run` returns `{"runId": "..."}`. Events:
+  `GET /api/runs/<runId>/events` as server-sent events, one `data: <RunEvent JSON>` per
+  event. The bridge buffers events per run and replays from the first event to a
+  subscriber that connects late; the stream closes after `end`.
+- `POST /api/env_install` returns `{"jobId": "..."}`; events at
+  `GET /api/jobs/<jobId>/events`, same rules, closing after `done`.
+
+`InstallEvent = { type: "log"; text: string } | { type: "done"; ok: boolean; message: string | null }`.
 
 ## 5. Front end
 

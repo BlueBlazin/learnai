@@ -1,0 +1,7 @@
+id = "lost"
+title = "Lost"
+track = "orphan"
+difficulty = "easy"
+frameworks = ["torch"]
+judges = ["numeric"]
+entry = ["f"]

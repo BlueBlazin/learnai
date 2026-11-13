@@ -1,0 +1,7 @@
+id = "no-starter"
+title = "No Starter"
+track = "basics"
+difficulty = "easy"
+frameworks = ["torch"]
+judges = ["numeric"]
+entry = ["f"]

@@ -1,0 +1,12 @@
+id = "add-two"
+title = "Add Two Tensors"
+track = "basics"
+order = 10
+difficulty = "easy"
+frameworks = ["torch", "jax"]
+judges = ["numeric"]
+tags = ["warmup"]
+prerequisites = []
+requires = "cpu"
+entry = ["add"]
+time_limit_s = 10

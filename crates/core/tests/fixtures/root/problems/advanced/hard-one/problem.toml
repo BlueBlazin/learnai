@@ -1,0 +1,9 @@
+id = "hard-one"
+title = "A Hard One"
+track = "advanced"
+order = 5
+difficulty = "hard"
+frameworks = ["torch"]
+judges = ["speed"]
+prerequisites = ["does-not-exist"]
+entry = ["solve"]
