@@ -1,0 +1,12 @@
+id = "priority-scheduler"
+title = "Priorities Without Starvation"
+track = "serving"
+order = 70
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["scheduling", "priority", "aging", "starvation", "continuous-batching"]
+prerequisites = ["continuous-batching-scheduler"]
+requires = "cpu"
+entry = ["effective_priority", "pick_next", "run"]
+time_limit_s = 5

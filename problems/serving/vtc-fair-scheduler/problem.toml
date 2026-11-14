@@ -1,0 +1,12 @@
+id = "vtc-fair-scheduler"
+title = "Fair Scheduling with Virtual Token Counters"
+track = "serving"
+order = 100
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["scheduling", "fairness", "multi-tenant", "vtc", "continuous-batching"]
+prerequisites = ["continuous-batching-scheduler"]
+requires = "cpu"
+entry = ["VTCScheduler"]
+time_limit_s = 5

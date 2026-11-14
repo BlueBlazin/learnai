@@ -1,0 +1,12 @@
+id = "chunked-prefill-scheduling"
+title = "Chunked Prefill Under a Token Budget"
+track = "serving"
+order = 90
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["scheduling", "chunked-prefill", "token-budget", "latency", "continuous-batching"]
+prerequisites = ["continuous-batching-scheduler"]
+requires = "cpu"
+entry = ["plan"]
+time_limit_s = 5

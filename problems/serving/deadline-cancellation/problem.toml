@@ -1,0 +1,12 @@
+id = "deadline-cancellation"
+title = "Deadlines and Cancellation"
+track = "serving"
+order = 80
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["scheduling", "cancellation", "deadlines", "asyncio", "continuous-batching"]
+prerequisites = ["continuous-batching-scheduler"]
+requires = "cpu"
+entry = ["Scheduler", "Canceled", "DeadlineExceeded"]
+time_limit_s = 5

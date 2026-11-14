@@ -1,0 +1,12 @@
+id = "continuous-batching-scheduler"
+title = "Continuous Batching"
+track = "serving"
+order = 60
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["scheduling", "batching", "continuous-batching", "latency", "asyncio"]
+prerequisites = ["dynamic-batcher"]
+requires = "cpu"
+entry = ["run"]
+time_limit_s = 5

@@ -1,0 +1,39 @@
+# BUG: a level is gained only after strictly more than aging_ms of waiting (ceil - 1 instead of floor), so a request that has waited exactly aging_ms is still at its old level.
+import asyncio
+
+
+def effective_priority(request, now_ms: float, aging_ms: float) -> int:
+    waited = now_ms - request.arrival_s
+    levels = -int(-waited // aging_ms) - 1 if waited > 0 else 0
+    return request.priority - levels
+
+
+def pick_next(waiting: list, now_ms: float, aging_ms: float):
+    best = min(waiting, key=lambda r: (effective_priority(r, now_ms, aging_ms), r.arrival_s))
+    waiting.remove(best)
+    return best
+
+
+async def run(engine, queue: asyncio.Queue, max_running: int, aging_ms: float) -> None:
+    loop = asyncio.get_running_loop()
+    waiting = []  # requests without a slot, in the order they left the queue
+    running = []  # ids of admitted, unfinished sequences, in admission order
+    while True:
+        if not waiting and not running and queue.empty():
+            waiting.append(await queue.get())
+        while not queue.empty():
+            waiting.append(queue.get_nowait())
+
+        # The priorities are evaluated now, when a slot is being handed out, because
+        # they change while requests wait.
+        now_ms = loop.time()
+        prefill = []
+        while waiting and len(running) + len(prefill) < max_running:
+            request = pick_next(waiting, now_ms, aging_ms)
+            engine.admit(request)
+            prefill.append((request.id, request.prompt_tokens))
+
+        result = await engine.step(prefill=prefill, decode=running)
+
+        finished = set(result.finished)
+        running = [i for i in [*running, *(i for i, _ in prefill)] if i not in finished]
