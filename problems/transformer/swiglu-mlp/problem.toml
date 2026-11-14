@@ -1,0 +1,12 @@
+id = "swiglu-mlp"
+title = "SwiGLU Feed-Forward"
+track = "transformer"
+order = 30
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["mlp", "swiglu", "activation", "llama"]
+prerequisites = ["gelu-silu-activations"]
+requires = "cpu"
+entry = ["swiglu"]
+time_limit_s = 10

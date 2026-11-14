@@ -1,0 +1,12 @@
+id = "last-position-head"
+title = "Unembedding Only What You Need"
+track = "transformer"
+order = 70
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "speed"]
+tags = ["logits", "unembedding", "prefill", "performance"]
+prerequisites = []
+requires = "cpu"
+entry = ["next_token_logits"]
+time_limit_s = 10

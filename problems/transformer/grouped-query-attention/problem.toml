@@ -1,0 +1,21 @@
+id = "grouped-query-attention"
+title = "Grouped-Query Attention"
+track = "transformer"
+order = 40
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["attention", "gqa", "kv-cache", "llama"]
+prerequisites = ["causal-self-attention"]
+requires = "cpu"
+entry = ["gqa"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: no built-in attention function or layer.
+forbidden = [
+    "torch.nn.functional.scaled_dot_product_attention",
+    "torch.nn.functional.multi_head_attention_forward",
+    "torch.nn.MultiheadAttention",
+    "jax.nn.dot_product_attention",
+    "mlx.core.fast.scaled_dot_product_attention",
+    "mlx.nn.MultiHeadAttention",
+]
