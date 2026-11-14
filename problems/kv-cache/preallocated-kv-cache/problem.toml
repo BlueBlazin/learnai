@@ -1,0 +1,12 @@
+id = "preallocated-kv-cache"
+title = "A Preallocated KV Cache"
+track = "kv-cache"
+order = 50
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["kv-cache", "preallocation", "static-shapes", "attention"]
+prerequisites = ["kv-cache-append"]
+requires = "cpu"
+entry = ["cache_init", "cache_write", "cache_attend"]
+time_limit_s = 10

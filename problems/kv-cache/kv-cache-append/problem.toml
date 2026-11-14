@@ -1,0 +1,12 @@
+id = "kv-cache-append"
+title = "Attention with an Appended Cache"
+track = "kv-cache"
+order = 20
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["kv-cache", "attention", "causal-mask", "decode-step"]
+prerequisites = ["causal-self-attention"]
+requires = "cpu"
+entry = ["attend_step"]
+time_limit_s = 10

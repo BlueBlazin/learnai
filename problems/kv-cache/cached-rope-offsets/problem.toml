@@ -1,0 +1,12 @@
+id = "cached-rope-offsets"
+title = "RoPE Positions Under a Cache"
+track = "kv-cache"
+order = 40
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["kv-cache", "rope", "positions", "batching"]
+prerequisites = ["rope", "kv-cache-append"]
+requires = "cpu"
+entry = ["rope_positions", "rotate_new"]
+time_limit_s = 10

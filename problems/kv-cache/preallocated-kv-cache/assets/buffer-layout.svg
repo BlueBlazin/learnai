@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 178">
+  <title>A preallocated cache buffer with a length field, before and after a write</title>
+  <desc>Two rows of eight slots numbered 0 to 7. In the first row slots 0 to 4 hold tokens and slots 5 to 7 are unused; a marker shows length 5. In the second row, after writing two tokens, slots 0 to 6 hold tokens, slots 5 and 6 are highlighted as new, slot 7 is unused, and the marker shows length 7. The shape of the buffer is the same in both rows.</desc>
+  <!-- Geometry: slots are 44 x 30, starting at x = 108. Slot j spans x = 108 + 44 j. Row 1 at y = 40, row 2 at y = 114. -->
+  <!-- Slot numbers -->
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="130" y="16">0</text>
+    <text x="174" y="16">1</text>
+    <text x="218" y="16">2</text>
+    <text x="262" y="16">3</text>
+    <text x="306" y="16">4</text>
+    <text x="350" y="16">5</text>
+    <text x="394" y="16">6</text>
+    <text x="438" y="16">7</text>
+    <text x="100" y="16" text-anchor="end">slot</text>
+  </g>
+  <!-- Row 1: length = 5 -->
+  <g>
+    <text x="100" y="60" font-size="13" text-anchor="end">before</text>
+    <rect x="108" y="40" width="220" height="30" style="fill: var(--figure-accent)" fill-opacity="0.3"/>
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)">
+      <text x="130" y="60"><tspan font-style="italic">k</tspan>₀</text>
+      <text x="174" y="60"><tspan font-style="italic">k</tspan>₁</text>
+      <text x="218" y="60"><tspan font-style="italic">k</tspan>₂</text>
+      <text x="262" y="60"><tspan font-style="italic">k</tspan>₃</text>
+      <text x="306" y="60"><tspan font-style="italic">k</tspan>₄</text>
+    </g>
+    <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+      <text x="350" y="60">?</text>
+      <text x="394" y="60">?</text>
+      <text x="438" y="60">?</text>
+    </g>
+    <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+      <line x1="152" y1="40" x2="152" y2="70"/>
+      <line x1="196" y1="40" x2="196" y2="70"/>
+      <line x1="240" y1="40" x2="240" y2="70"/>
+      <line x1="284" y1="40" x2="284" y2="70"/>
+      <line x1="372" y1="40" x2="372" y2="70"/>
+      <line x1="416" y1="40" x2="416" y2="70"/>
+    </g>
+    <rect x="108" y="40" width="352" height="30" fill="none" stroke="currentColor" stroke-width="1"/>
+    <!-- the length marker -->
+    <line x1="328" y1="34" x2="328" y2="84" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="328,72 324,80 332,80"/>
+    <text x="328" y="97" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">length = 5</text>
+  </g>
+  <!-- Row 2: after writing two tokens, length = 7 -->
+  <g>
+    <text x="100" y="134" font-size="13" text-anchor="end">after a write</text>
+    <text x="100" y="150" font-size="13" text-anchor="end">of 2 tokens</text>
+    <rect x="108" y="114" width="220" height="30" style="fill: var(--figure-accent)" fill-opacity="0.3"/>
+    <rect x="328" y="114" width="88" height="30" style="fill: var(--figure-straw)" fill-opacity="0.45"/>
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)">
+      <text x="130" y="134"><tspan font-style="italic">k</tspan>₀</text>
+      <text x="174" y="134"><tspan font-style="italic">k</tspan>₁</text>
+      <text x="218" y="134"><tspan font-style="italic">k</tspan>₂</text>
+      <text x="262" y="134"><tspan font-style="italic">k</tspan>₃</text>
+      <text x="306" y="134"><tspan font-style="italic">k</tspan>₄</text>
+      <text x="350" y="134"><tspan font-style="italic">k</tspan>₅</text>
+      <text x="394" y="134"><tspan font-style="italic">k</tspan>₆</text>
+    </g>
+    <text x="438" y="134" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">?</text>
+    <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+      <line x1="152" y1="114" x2="152" y2="144"/>
+      <line x1="196" y1="114" x2="196" y2="144"/>
+      <line x1="240" y1="114" x2="240" y2="144"/>
+      <line x1="284" y1="114" x2="284" y2="144"/>
+      <line x1="328" y1="114" x2="328" y2="144"/>
+      <line x1="372" y1="114" x2="372" y2="144"/>
+    </g>
+    <rect x="108" y="114" width="352" height="30" fill="none" stroke="currentColor" stroke-width="1"/>
+    <line x1="416" y1="108" x2="416" y2="158" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="416,146 412,154 420,154"/>
+    <text x="416" y="171" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">length = 7</text>
+    <text x="394" y="108" font-size="13" text-anchor="middle" style="fill: var(--figure-straw)">new</text>
+  </g>
+</svg>

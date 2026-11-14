@@ -1,0 +1,12 @@
+id = "sliding-window-cache"
+title = "A Rotating Cache That Keeps Its Sinks"
+track = "kv-cache"
+order = 80
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["kv-cache", "sliding-window", "ring-buffer", "attention-sinks"]
+prerequisites = ["preallocated-kv-cache"]
+requires = "cpu"
+entry = ["rotating_write"]
+time_limit_s = 10

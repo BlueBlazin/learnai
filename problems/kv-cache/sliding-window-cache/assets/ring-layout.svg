@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 212">
+  <title>The layout of a rotating cache with two sink slots, and the temporal order read from it</title>
+  <desc>A buffer of eight slots after eleven tokens were written with max_size 8 and keep 2. Slots 0 and 1 hold the sink tokens 0 and 1. Slots 2 to 7 form a ring that holds tokens 8, 9, 10, 5, 6, 7: the ring has wrapped. Slot 5 is outlined: it holds the oldest ring token and is where the next write goes. Below, the returned keys in temporal order: tokens 0, 1, then 5, 6, 7 from slots 5 to 7, then 8, 9, 10 from slots 2 to 4.</desc>
+  <!-- Geometry: slots are 44 x 30 starting at x = 108; slot j is centered at x = 130 + 44 j. Buffer row at y = 52, returned row at y = 150. -->
+  <g font-size="13" text-anchor="middle">
+    <text x="152" y="14">sinks (<tspan style="font-family: var(--figure-mono)">keep</tspan> = 2)</text>
+    <text x="328" y="14">ring of <tspan style="font-family: var(--figure-mono)">max_size − keep</tspan> = 6 slots</text>
+  </g>
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-muted)">
+    <polyline points="110,26 110,20 194,20 194,26"/>
+    <polyline points="198,26 198,20 458,20 458,26"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="100" y="44" text-anchor="end">slot</text>
+    <text x="130" y="44">0</text>
+    <text x="174" y="44">1</text>
+    <text x="218" y="44">2</text>
+    <text x="262" y="44">3</text>
+    <text x="306" y="44">4</text>
+    <text x="350" y="44">5</text>
+    <text x="394" y="44">6</text>
+    <text x="438" y="44">7</text>
+  </g>
+  <!-- The buffer: sinks, then the ring. Tokens 8, 9, 10 have overwritten 2, 3, 4. -->
+  <text x="100" y="72" font-size="13" text-anchor="end">buffer</text>
+  <rect x="108" y="52" width="88" height="30" style="fill: var(--figure-straw)" fill-opacity="0.45"/>
+  <rect x="196" y="52" width="264" height="30" style="fill: var(--figure-accent)" fill-opacity="0.3"/>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)">
+    <text x="130" y="72"><tspan font-style="italic">k</tspan>₀</text>
+    <text x="174" y="72"><tspan font-style="italic">k</tspan>₁</text>
+    <text x="218" y="72"><tspan font-style="italic">k</tspan>₈</text>
+    <text x="262" y="72"><tspan font-style="italic">k</tspan>₉</text>
+    <text x="306" y="72"><tspan font-style="italic">k</tspan>₁₀</text>
+    <text x="350" y="72"><tspan font-style="italic">k</tspan>₅</text>
+    <text x="394" y="72"><tspan font-style="italic">k</tspan>₆</text>
+    <text x="438" y="72"><tspan font-style="italic">k</tspan>₇</text>
+  </g>
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="152" y1="52" x2="152" y2="82"/>
+    <line x1="240" y1="52" x2="240" y2="82"/>
+    <line x1="284" y1="52" x2="284" y2="82"/>
+    <line x1="328" y1="52" x2="328" y2="82"/>
+    <line x1="372" y1="52" x2="372" y2="82"/>
+    <line x1="416" y1="52" x2="416" y2="82"/>
+  </g>
+  <rect x="108" y="52" width="352" height="30" fill="none" stroke="currentColor" stroke-width="1"/>
+  <line x1="196" y1="48" x2="196" y2="86" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <!-- Reading order: slot of each cached token, oldest first -->
+  <g fill="none" stroke-width="1.5">
+    <line x1="130" y1="84" x2="130" y2="148" style="stroke: var(--figure-straw)"/>
+    <line x1="174" y1="84" x2="174" y2="148" style="stroke: var(--figure-straw)"/>
+    <line x1="350" y1="84" x2="218" y2="148" style="stroke: var(--figure-accent)"/>
+    <line x1="394" y1="84" x2="262" y2="148" style="stroke: var(--figure-accent)"/>
+    <line x1="438" y1="84" x2="306" y2="148" style="stroke: var(--figure-accent)"/>
+    <line x1="218" y1="84" x2="350" y2="148" style="stroke: var(--figure-accent)" stroke-dasharray="4 3"/>
+    <line x1="262" y1="84" x2="394" y2="148" style="stroke: var(--figure-accent)" stroke-dasharray="4 3"/>
+    <line x1="306" y1="84" x2="438" y2="148" style="stroke: var(--figure-accent)" stroke-dasharray="4 3"/>
+  </g>
+  <text x="100" y="170" font-size="13" text-anchor="end">returned keys</text>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)">
+    <text x="130" y="170"><tspan font-style="italic">k</tspan>₀</text>
+    <text x="174" y="170"><tspan font-style="italic">k</tspan>₁</text>
+    <text x="218" y="170"><tspan font-style="italic">k</tspan>₅</text>
+    <text x="262" y="170"><tspan font-style="italic">k</tspan>₆</text>
+    <text x="306" y="170"><tspan font-style="italic">k</tspan>₇</text>
+    <text x="350" y="170"><tspan font-style="italic">k</tspan>₈</text>
+    <text x="394" y="170"><tspan font-style="italic">k</tspan>₉</text>
+    <text x="438" y="170"><tspan font-style="italic">k</tspan>₁₀</text>
+  </g>
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="152" y1="150" x2="152" y2="180"/>
+    <line x1="196" y1="150" x2="196" y2="180"/>
+    <line x1="240" y1="150" x2="240" y2="180"/>
+    <line x1="284" y1="150" x2="284" y2="180"/>
+    <line x1="328" y1="150" x2="328" y2="180"/>
+    <line x1="372" y1="150" x2="372" y2="180"/>
+    <line x1="416" y1="150" x2="416" y2="180"/>
+  </g>
+  <rect x="108" y="150" width="352" height="30" fill="none" stroke="currentColor" stroke-width="1"/>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="108" y="200">oldest</text>
+    <text x="460" y="200" text-anchor="end">newest</text>
+  </g>
+  <line x1="160" y1="196" x2="398" y2="196" fill="none" stroke-width="1" style="stroke: var(--figure-muted)"/>
+  <polygon points="406,196 398,199.5 398,192.5" style="fill: var(--figure-muted)"/>
+  <!-- The slot of the oldest ring entry: the next write goes here -->
+  <rect x="328" y="52" width="44" height="30" fill="none" stroke="currentColor" stroke-width="2"/>
+</svg>
