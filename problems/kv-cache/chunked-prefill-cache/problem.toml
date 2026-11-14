@@ -1,0 +1,12 @@
+id = "chunked-prefill-cache"
+title = "Prefill in Chunks"
+track = "kv-cache"
+order = 30
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["kv-cache", "prefill", "chunking", "memory"]
+prerequisites = ["cached-greedy-decode"]
+requires = "cpu"
+entry = ["prefill"]
+time_limit_s = 10

@@ -1,0 +1,12 @@
+id = "constrained-greedy-decode"
+title = "Constrained Decoding Loop"
+track = "constrained"
+order = 60
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["constrained-decoding", "structured-output", "token-mask", "kv-cache", "generation-loop"]
+prerequisites = ["cached-greedy-decode", "token-mask-apply"]
+requires = "cpu"
+entry = ["constrained_greedy"]
+time_limit_s = 5

@@ -1,0 +1,12 @@
+id = "prefix-cache-reuse"
+title = "Reusing a Cached Prefix"
+track = "kv-cache"
+order = 70
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["kv-cache", "prefix-caching", "prompt-cache", "generation-loop"]
+prerequisites = ["cached-greedy-decode"]
+requires = "cpu"
+entry = ["generate_with_store"]
+time_limit_s = 10
