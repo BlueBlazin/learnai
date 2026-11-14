@@ -1,0 +1,12 @@
+id = "openai-chat-endpoint"
+title = "An OpenAI-Compatible Chat Endpoint"
+track = "serving"
+order = 110
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["service"]
+tags = ["openai-api", "chat-completions", "streaming", "sse", "http"]
+prerequisites = ["sse-token-stream"]
+requires = "cpu"
+entry = ["make_app"]
+time_limit_s = 15

@@ -1,0 +1,12 @@
+id = "latency-metrics"
+title = "TTFT, ITL, and TPOT"
+track = "sizing"
+order = 30
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["benchmarking", "latency", "ttft", "tpot", "streaming"]
+prerequisites = []
+requires = "cpu"
+entry = ["request_metrics"]
+time_limit_s = 10

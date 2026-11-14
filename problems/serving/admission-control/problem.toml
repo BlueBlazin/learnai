@@ -1,0 +1,12 @@
+id = "admission-control"
+title = "Admission Control and Backpressure"
+track = "serving"
+order = 40
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["admission-control", "backpressure", "queueing", "overload"]
+prerequisites = []
+requires = "cpu"
+entry = ["Admission", "Admitted", "Rejected"]
+time_limit_s = 5

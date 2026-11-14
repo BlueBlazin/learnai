@@ -1,0 +1,12 @@
+id = "metrics-endpoint"
+title = "A Metrics Endpoint"
+track = "serving"
+order = 50
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["service"]
+tags = ["metrics", "prometheus", "observability", "histogram", "http"]
+prerequisites = ["latency-metrics"]
+requires = "cpu"
+entry = ["make_app"]
+time_limit_s = 15
