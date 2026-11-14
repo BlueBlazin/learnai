@@ -1,0 +1,12 @@
+id = "temperature-scaling"
+title = "Temperature"
+track = "sampling"
+order = 30
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["sampling", "temperature", "greedy", "logits", "broadcasting"]
+prerequisites = ["stable-softmax"]
+requires = "cpu"
+entry = ["apply_temperature"]
+time_limit_s = 10

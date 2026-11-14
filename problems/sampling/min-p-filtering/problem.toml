@@ -1,0 +1,12 @@
+id = "min-p-filtering"
+title = "Min-p Filtering"
+track = "sampling"
+order = 60
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["sampling", "min-p", "truncation", "softmax", "logits"]
+prerequisites = []
+requires = "cpu"
+entry = ["min_p_filter"]
+time_limit_s = 10

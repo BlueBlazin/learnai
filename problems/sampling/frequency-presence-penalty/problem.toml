@@ -1,0 +1,12 @@
+id = "frequency-presence-penalty"
+title = "Frequency and Presence Penalties"
+track = "sampling"
+order = 70
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["sampling", "frequency-penalty", "presence-penalty", "scatter-add", "logits"]
+prerequisites = ["repetition-penalty"]
+requires = "cpu"
+entry = ["count_generated", "apply_penalties"]
+time_limit_s = 10

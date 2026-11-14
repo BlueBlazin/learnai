@@ -1,0 +1,12 @@
+id = "top-k-filtering"
+title = "Top-k Filtering"
+track = "sampling"
+order = 40
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["sampling", "top-k", "sorting", "ties", "scatter"]
+prerequisites = []
+requires = "cpu"
+entry = ["top_k_filter"]
+time_limit_s = 10
