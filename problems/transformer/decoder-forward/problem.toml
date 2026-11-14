@@ -1,0 +1,17 @@
+id = "decoder-forward"
+title = "Full Decoder Forward Pass"
+track = "transformer"
+order = 60
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["forward-pass", "decoder", "rope", "gqa", "tied-embeddings", "llama"]
+prerequisites = ["pre-norm-block", "rope"]
+requires = "cpu"
+entry = ["forward"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: the kit's oracle is not a building block.
+forbidden = [
+    "whetstone.kit.decoder.decoder_forward_ref",
+    "whetstone.kit.decoder.decoder_block_ref",
+]

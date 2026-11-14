@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 172">
+  <title>Data flow of a pre-norm decoder block</title>
+  <desc>The residual stream runs in a straight line from the input x on the left to the output y on the right. Two branches leave it and rejoin it at an addition. The first branch passes through RMSNorm, with the gain input_layernorm, and then attention. The second branch leaves after the first addition, at the point called h, and passes through RMSNorm, with the gain post_attention_layernorm, and then the SwiGLU MLP. No norm sits on the stream itself.</desc>
+  <!-- Geometry: the stream is the line y = 40. Branches drop to y = 108, run right through two boxes, and rise into an adder on the stream. -->
+
+  <!-- The residual stream -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <line x1="34" y1="40" x2="216" y2="40"/>
+    <line x1="232" y1="40" x2="424" y2="40"/>
+    <line x1="440" y1="40" x2="452" y2="40"/>
+  </g>
+  <polygon points="461,40 452,43.2 452,36.8" style="fill: var(--figure-accent)"/>
+  <!-- adders -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <circle cx="224" cy="40" r="8"/>
+    <line x1="219" y1="40" x2="229" y2="40"/>
+    <line x1="224" y1="35" x2="224" y2="45"/>
+    <circle cx="432" cy="40" r="8"/>
+    <line x1="427" y1="40" x2="437" y2="40"/>
+    <line x1="432" y1="35" x2="432" y2="45"/>
+  </g>
+  <!-- taps -->
+  <circle cx="48" cy="40" r="2.5" style="fill: var(--figure-accent)"/>
+  <circle cx="256" cy="40" r="2.5" style="fill: var(--figure-accent)"/>
+  <g font-size="14" style="font-family: var(--figure-serif)">
+    <text x="20" y="45" text-anchor="middle" font-style="italic">x</text>
+    <text x="256" y="27" text-anchor="middle" font-style="italic">h</text>
+    <text x="470" y="45" text-anchor="middle" font-style="italic">y</text>
+  </g>
+  <text x="136" y="27" text-anchor="middle" font-size="13" style="fill: var(--figure-accent)">residual stream</text>
+
+  <!-- Branch 1: norm, then attention -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <polyline points="48,40 48,108 62,108"/>
+    <rect x="62" y="92" width="68" height="32" rx="3"/>
+    <line x1="130" y1="108" x2="135" y2="108"/>
+    <rect x="144" y="92" width="62" height="32" rx="3"/>
+    <polyline points="206,108 224,108 224,57"/>
+  </g>
+  <polygon points="144,108 135,111.2 135,104.8"/>
+  <polygon points="224,48 227.2,57 220.8,57"/>
+  <g font-size="13" text-anchor="middle">
+    <text x="96" y="112.5">RMSNorm</text>
+    <text x="175" y="112.5">attention</text>
+  </g>
+
+  <!-- Branch 2: norm, then MLP -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <polyline points="256,40 256,108 270,108"/>
+    <rect x="270" y="92" width="68" height="32" rx="3"/>
+    <line x1="338" y1="108" x2="343" y2="108"/>
+    <rect x="352" y="92" width="62" height="32" rx="3"/>
+    <polyline points="414,108 432,108 432,57"/>
+  </g>
+  <polygon points="352,108 343,111.2 343,104.8"/>
+  <polygon points="432,48 435.2,57 428.8,57"/>
+  <g font-size="13" text-anchor="middle">
+    <text x="304" y="112.5">RMSNorm</text>
+    <text x="383" y="112.5">SwiGLU</text>
+  </g>
+
+  <!-- Which gain each norm uses -->
+  <g font-size="13" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="62" y="148">input_layernorm</text>
+    <text x="270" y="148">post_attention_</text>
+    <text x="270" y="164">layernorm</text>
+  </g>
+</svg>

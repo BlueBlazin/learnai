@@ -1,0 +1,12 @@
+id = "moe-router-forward"
+title = "Mixture-of-Experts Layer"
+track = "transformer"
+order = 110
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["mixture-of-experts", "routing", "top-k", "swiglu", "mixtral"]
+prerequisites = ["swiglu-mlp"]
+requires = "cpu"
+entry = ["moe"]
+time_limit_s = 10

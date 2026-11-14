@@ -1,0 +1,12 @@
+id = "pre-norm-block"
+title = "A Pre-Norm Decoder Block"
+track = "transformer"
+order = 50
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["residual", "pre-norm", "rmsnorm", "transformer-block", "llama"]
+prerequisites = ["causal-self-attention", "rmsnorm"]
+requires = "cpu"
+entry = ["block"]
+time_limit_s = 10
