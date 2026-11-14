@@ -1,0 +1,12 @@
+id = "mlx-preallocated-kv-cache"
+title = "A Step-Allocated KV Cache"
+track = "mlx"
+order = 90
+difficulty = "medium"
+frameworks = ["mlx"]
+judges = ["numeric", "cost"]
+tags = ["mlx", "kv-cache", "memory", "buffer-cache", "slice-assignment"]
+prerequisites = ["preallocated-kv-cache"]
+requires = "mlx-gpu"
+entry = ["KVCache"]
+time_limit_s = 10

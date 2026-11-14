@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 232">
+  <title>Buffer length against tokens stored, for step allocation and for concatenation</title>
+  <desc>A plot with the number of tokens stored on the horizontal axis, from 0 to 768, and the length of the buffer on the vertical axis, from 0 to 768. The step-allocated cache is a staircase: the buffer has 256 slots until 256 tokens are stored, then 512, then 768, so it takes three shapes. Concatenation is the dashed diagonal: the buffer is exactly as long as the number of tokens, a new shape for every token.</desc>
+
+  <!-- Geometry: origin (60, 190); 768 tokens span 380 units in x and 160 units in y. -->
+
+  <!-- Axes -->
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="60" y1="190" x2="448" y2="190"/>
+    <line x1="60" y1="190" x2="60" y2="22"/>
+    <!-- ticks at 256, 512, 768 -->
+    <line x1="186.7" y1="190" x2="186.7" y2="195"/>
+    <line x1="313.3" y1="190" x2="313.3" y2="195"/>
+    <line x1="440" y1="190" x2="440" y2="195"/>
+    <line x1="55" y1="136.7" x2="60" y2="136.7"/>
+    <line x1="55" y1="83.3" x2="60" y2="83.3"/>
+    <line x1="55" y1="30" x2="60" y2="30"/>
+  </g>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <g text-anchor="middle">
+      <text x="60" y="209">0</text>
+      <text x="186.7" y="209">256</text>
+      <text x="313.3" y="209">512</text>
+      <text x="440" y="209">768</text>
+      <text x="250" y="228">tokens stored</text>
+    </g>
+    <g text-anchor="end">
+      <text x="50" y="141">256</text>
+      <text x="50" y="88">512</text>
+      <text x="50" y="35">768</text>
+    </g>
+    <text x="68" y="20">buffer length</text>
+  </g>
+
+  <!-- Concatenation: the buffer is as long as its contents -->
+  <line x1="60" y1="190" x2="440" y2="30" fill="none" stroke-width="1.5" stroke-dasharray="5 4" style="stroke: var(--figure-straw)"/>
+  <g font-size="13" style="fill: var(--figure-straw)">
+    <text x="306" y="150">concatenation:</text>
+    <text x="306" y="167">a new shape per token</text>
+  </g>
+
+  <!-- Step allocation: three shapes in 768 tokens -->
+  <path d="M60 136.7H186.7V83.3H313.3V30H440" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+  <g font-size="13" style="fill: var(--figure-accent)">
+    <text x="72" y="62">steps of 256:</text>
+    <text x="72" y="79">3 shapes in 768 tokens</text>
+  </g>
+</svg>

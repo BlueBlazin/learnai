@@ -1,0 +1,12 @@
+id = "mlx-weights-load"
+title = "Loading Weights into a Module Tree"
+track = "mlx"
+order = 60
+difficulty = "easy"
+frameworks = ["mlx"]
+judges = ["numeric", "cost"]
+tags = ["mlx", "safetensors", "weights", "module-tree", "lazy-evaluation", "bfloat16"]
+prerequisites = ["safetensors-parse"]
+requires = "mlx-gpu"
+entry = ["load_into"]
+time_limit_s = 10

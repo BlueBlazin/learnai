@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 232">
+  <title>Prompts of three lengths padded on the right to the buckets 16, 32, and 64</title>
+  <desc>Three rows of token cells. A prompt of 4 tokens occupies the first 4 cells of a row of 16; a prompt of 20 tokens the first 20 cells of a row of 32; a prompt of 40 tokens the first 40 cells of a row of 64. The remaining cells of each row are padding. In every row a marker points at the last prompt token, position T minus 1, where the logits are read.</desc>
+
+  <!-- Geometry: cells are 6 wide and 16 tall and start at x = 92; rows at y = 44, 100, 156. -->
+
+  <!-- Row labels: the prompt length and its bucket -->
+  <g font-size="13">
+    <text x="0" y="50"><tspan style="font-family: var(--figure-serif)" font-style="italic">T</tspan> = 4</text>
+    <text x="0" y="106"><tspan style="font-family: var(--figure-serif)" font-style="italic">T</tspan> = 20</text>
+    <text x="0" y="162"><tspan style="font-family: var(--figure-serif)" font-style="italic">T</tspan> = 40</text>
+  </g>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="0" y="66">bucket 16</text>
+    <text x="0" y="122">bucket 32</text>
+    <text x="0" y="178">bucket 64</text>
+  </g>
+
+  <!-- Prompt tokens: the first T cells of each row -->
+  <g stroke="none" style="fill: var(--figure-accent)" fill-opacity="0.35">
+    <rect x="92" y="44" width="24" height="16"/>
+    <rect x="92" y="100" width="120" height="16"/>
+    <rect x="92" y="156" width="240" height="16"/>
+  </g>
+
+  <!-- Cell grid: prompt cells in ink, padding cells dashed and faint -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <path d="M92 44h24v16h-24zM98 44v16M104 44v16M110 44v16"/>
+    <path d="M92 100h120v16h-120zM98 100v16M104 100v16M110 100v16M116 100v16M122 100v16M128 100v16M134 100v16M140 100v16M146 100v16M152 100v16M158 100v16M164 100v16M170 100v16M176 100v16M182 100v16M188 100v16M194 100v16M200 100v16M206 100v16"/>
+    <path d="M92 156h240v16h-240zM98 156v16M104 156v16M110 156v16M116 156v16M122 156v16M128 156v16M134 156v16M140 156v16M146 156v16M152 156v16M158 156v16M164 156v16M170 156v16M176 156v16M182 156v16M188 156v16M194 156v16M200 156v16M206 156v16M212 156v16M218 156v16M224 156v16M230 156v16M236 156v16M242 156v16M248 156v16M254 156v16M260 156v16M266 156v16M272 156v16M278 156v16M284 156v16M290 156v16M296 156v16M302 156v16M308 156v16M314 156v16M320 156v16M326 156v16"/>
+  </g>
+  <g fill="none" stroke-width="1" stroke-dasharray="2 2" style="stroke: var(--figure-muted)">
+    <path d="M116 44h72v16h-72M122 44v16M128 44v16M134 44v16M140 44v16M146 44v16M152 44v16M158 44v16M164 44v16M170 44v16M176 44v16M182 44v16"/>
+    <path d="M212 100h72v16h-72M218 100v16M224 100v16M230 100v16M236 100v16M242 100v16M248 100v16M254 100v16M260 100v16M266 100v16M272 100v16M278 100v16"/>
+    <path d="M332 156h144v16h-144M338 156v16M344 156v16M350 156v16M356 156v16M362 156v16M368 156v16M374 156v16M380 156v16M386 156v16M392 156v16M398 156v16M404 156v16M410 156v16M416 156v16M422 156v16M428 156v16M434 156v16M440 156v16M446 156v16M452 156v16M458 156v16M464 156v16M470 156v16"/>
+  </g>
+
+  <!-- The position that is read: the last prompt token -->
+  <g stroke="none" style="fill: var(--figure-straw)">
+    <polygon points="109.0,35 117.0,35 113.0,42"/>
+    <polygon points="205.0,91 213.0,91 209.0,98"/>
+    <polygon points="325.0,147 333.0,147 329.0,154"/>
+  </g>
+  <g font-size="13" style="fill: var(--figure-straw)">
+    <text x="121.0" y="39">read at <tspan style="font-family: var(--figure-serif)" font-style="italic">T</tspan> − 1 = 3</text>
+    <text x="217.0" y="95">read at <tspan style="font-family: var(--figure-serif)" font-style="italic">T</tspan> − 1 = 19</text>
+    <text x="337.0" y="151">read at <tspan style="font-family: var(--figure-serif)" font-style="italic">T</tspan> − 1 = 39</text>
+  </g>
+
+  <!-- Legend -->
+  <rect x="92" y="204" width="12" height="12" stroke="none" style="fill: var(--figure-accent)" fill-opacity="0.35"/>
+  <rect x="92" y="204" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1"/>
+  <rect x="222" y="204" width="12" height="12" fill="none" stroke-width="1" stroke-dasharray="2 2" style="stroke: var(--figure-muted)"/>
+  <g font-size="13">
+    <text x="110" y="215">prompt token</text>
+    <text x="240" y="215">padding, never read</text>
+  </g>
+</svg>

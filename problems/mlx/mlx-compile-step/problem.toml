@@ -1,0 +1,12 @@
+id = "mlx-compile-step"
+title = "Compiling a Decode Step"
+track = "mlx"
+order = 70
+difficulty = "medium"
+frameworks = ["mlx"]
+judges = ["numeric", "cost"]
+tags = ["mlx", "compile", "tracing", "greedy-decoding", "kv-cache"]
+prerequisites = ["mlx-lazy-eval-placement"]
+requires = "mlx-gpu"
+entry = ["make_step"]
+time_limit_s = 10

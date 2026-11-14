@@ -1,0 +1,12 @@
+id = "mlx-compile-shapes"
+title = "Compiling Without Retracing"
+track = "mlx"
+order = 80
+difficulty = "medium"
+frameworks = ["mlx"]
+judges = ["numeric", "cost"]
+tags = ["mlx", "compile", "tracing", "padding", "buckets", "captured-state", "sampling"]
+prerequisites = ["mlx-compile-step"]
+requires = "mlx-gpu"
+entry = ["make_sampler_step"]
+time_limit_s = 10
