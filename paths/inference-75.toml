@@ -13,12 +13,12 @@ problems = ["stable-softmax", "rmsnorm", "attention-mask-builder", "last-token-g
 [[stages]]
 title = "Text to tokens and back"
 description = "Encode, decode, and template text exactly as a production tokenizer does."
-problems = ["bpe-encode", "special-tokens-split", "streaming-detokenizer", "chat-template-render"]
+problems = ["bpe-encode", "special-tokens-split", "streaming-detokenizer", "chat-template-render", "tokenizer-json-load"]
 
 [[stages]]
 title = "The forward pass"
 description = "Build a current decoder-only model piece by piece, then match a real one."
-problems = ["causal-self-attention", "rope", "swiglu-mlp", "grouped-query-attention", "decoder-forward", "padded-batch-invariance", "moe-router-forward"]
+problems = ["causal-self-attention", "rope", "swiglu-mlp", "grouped-query-attention", "decoder-forward", "padded-batch-invariance", "moe-router-forward", "real-model-logits"]
 
 [[stages]]
 title = "Choosing the next token"
@@ -54,3 +54,8 @@ problems = ["param-count", "kv-cache-bytes", "memory-bandwidth-bound", "latency-
 title = "Serving"
 description = "Batch, admit, schedule, cancel, and stream under load."
 problems = ["dynamic-batcher", "sse-token-stream", "token-bucket-limiter", "admission-control", "continuous-batching-scheduler", "chunked-prefill-scheduling", "deadline-cancellation", "vtc-fair-scheduler", "openai-chat-endpoint"]
+
+[[stages]]
+title = "On the GPU"
+description = "Lazy evaluation, compilation, and static caches on MLX and CUDA."
+problems = ["mlx-lazy-eval-placement", "mlx-compile-step", "mlx-streaming-generate"]
