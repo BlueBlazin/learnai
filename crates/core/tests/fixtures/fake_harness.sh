@@ -12,6 +12,8 @@
 #   slow-start  sleeps before reporting `start`
 #   linger      reports `end`, then keeps running
 #   import-error  every case is skipped (no `case_start`); `end` carries message and detail
+#   hardware-missing  the last case needs CUDA and is skipped; ends `hardware_missing`
+#   assets-missing    the last case needs the asset `tiny` and is skipped; ends `assets_missing`
 # In the hang scenario the child's pid is written to $FAKE_PIDFILE when that is set.
 
 problem= solution= framework= mode=run
@@ -111,6 +113,25 @@ case "$scenario" in
       ev "{\"event\":\"case_end\",\"id\":\"$id\",\"status\":\"skipped\",\"duration_ms\":0.0,\"message\":\"not run: the solution failed to import\",\"detail\":null,\"stdout\":\"\",\"metrics\":[]}"
     done
     ev "{\"event\":\"end\",\"status\":\"import_error\",\"passed\":0,\"total\":$total,\"duration_ms\":3.0,\"metrics\":[],\"message\":\"the solution failed to import: SyntaxError: invalid syntax\",\"detail\":\"  File \\\"torch.py\\\", line 1\\nSyntaxError: invalid syntax\\n\"}"
+    ;;
+  hardware-missing)
+    last=${ids##* }
+    ev "{\"event\":\"start\",\"problem\":\"$(basename "$problem")\",\"framework\":\"$framework\",\"mode\":\"$mode\",\"cases\":[{\"id\":\"c1\",\"name\":\"Small input\",\"public\":true},{\"id\":\"$last\",\"name\":\"On the GPU\",\"public\":false,\"requires\":\"cuda\"}],\"env\":{\"python\":\"3.15.2\"},\"requires\":\"cuda\",\"requires_met\":false}"
+    pass c1
+    ev "{\"event\":\"case_end\",\"id\":\"$last\",\"status\":\"skipped\",\"duration_ms\":0,\"message\":\"skipped: needs an NVIDIA GPU (CUDA), which this machine does not have\",\"detail\":null,\"stdout\":\"\",\"metrics\":[],\"skip\":{\"kind\":\"hardware\",\"requires\":\"cuda\"}}"
+    ev "{\"event\":\"end\",\"status\":\"hardware_missing\",\"passed\":1,\"total\":2,\"skipped\":1,\"duration_ms\":9.0,\"metrics\":[],\"message\":\"1 of 1 cases that could run passed; 1 of 2 cases were skipped because they need an NVIDIA GPU (CUDA), which this machine does not have.\",\"missing_hardware\":\"cuda\"}"
+    ;;
+  assets-missing)
+    last=${ids##* }
+    start
+    for id in $ids; do
+      if [ "$id" = "$last" ]; then
+        ev "{\"event\":\"case_end\",\"id\":\"$id\",\"status\":\"skipped\",\"duration_ms\":0,\"message\":\"skipped: model asset \`tiny\` is not downloaded\",\"detail\":null,\"stdout\":\"\",\"metrics\":[],\"skip\":{\"kind\":\"asset\",\"asset\":\"tiny\"}}"
+      else
+        pass "$id"
+      fi
+    done
+    ev "{\"event\":\"end\",\"status\":\"assets_missing\",\"passed\":$((total - 1)),\"total\":$total,\"skipped\":1,\"duration_ms\":9.0,\"metrics\":[{\"name\":\"throughput\",\"value\":41.0,\"unit\":\"tok/s\",\"limit\":20,\"higher_is_better\":true}],\"message\":\"Model asset \`tiny\` is not downloaded; fetch it with \`ws assets fetch tiny\`.\",\"missing_assets\":[{\"name\":\"tiny\",\"repo\":\"fake/tiny\",\"size_mb\":0.5,\"fetch_command\":\"ws assets fetch tiny\"}]}"
     ;;
   linger)
     start

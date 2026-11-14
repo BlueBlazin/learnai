@@ -1,4 +1,14 @@
-import type { CaseInfo, CaseResult, Framework, Metric, RunEvent, RunMode, Verdict } from "./types";
+import type {
+  CaseInfo,
+  CaseResult,
+  Framework,
+  Metric,
+  MissingAsset,
+  Requires,
+  RunEvent,
+  RunMode,
+  Verdict,
+} from "./types";
 
 /**
  * idle      nothing has run in this workspace yet
@@ -33,10 +43,22 @@ export interface RunState {
   verdict: Verdict | null;
   passed: number;
   total: number;
+  /** Cases that were not run (missing hardware or model, or the run stopped early). */
+  skipped: number;
   durationMs: number;
   metrics: Metric[];
   submissionId: number | null;
-  /** Run-level failure reason and detail, sent with `end` for import and judge failures. */
+  /** Hardware the problem requires, and whether this machine has it; null until `start`. */
+  requires: Requires | null;
+  requiresMet: boolean | null;
+  /** With `assets_missing`: the models to download. */
+  missingAssets: MissingAsset[];
+  /** With `hardware_missing`: what this machine lacks. */
+  missingHardware: Requires | null;
+  /**
+   * Run-level reason and detail sent with `end`: the failure for import and judge
+   * failures, what was skipped and why for the not-judged verdicts.
+   */
   message: string | null;
   detail: string | null;
   /** Set when the run could not be started at all (transport or core error). */
@@ -64,9 +86,14 @@ export const initialRunState: RunState = {
   verdict: null,
   passed: 0,
   total: 0,
+  skipped: 0,
   durationMs: 0,
   metrics: [],
   submissionId: null,
+  requires: null,
+  requiresMet: null,
+  missingAssets: [],
+  missingHardware: null,
   message: null,
   detail: null,
   startError: null,
@@ -101,6 +128,8 @@ function applyEvent(state: RunState, event: RunEvent): RunState {
         phase: "running",
         preparingMessage: null,
         env: event.env,
+        requires: event.requires,
+        requiresMet: event.requiresMet,
         total: event.cases.length,
         cases: event.cases.map((info) => ({ info, state: "pending", result: null })),
       };
@@ -121,6 +150,7 @@ function applyEvent(state: RunState, event: RunEvent): RunState {
         phase: "running",
         cases,
         passed: cases.filter((c) => c.result?.status === "pass").length,
+        skipped: cases.filter((c) => c.result?.status === "skipped").length,
       };
     }
     case "log":
@@ -134,9 +164,12 @@ function applyEvent(state: RunState, event: RunEvent): RunState {
         verdict: event.verdict,
         passed: event.passed,
         total: event.total,
+        skipped: event.skipped,
         durationMs: event.durationMs,
         metrics: event.metrics,
         submissionId: event.submissionId,
+        missingAssets: event.missingAssets ?? [],
+        missingHardware: event.missingHardware ?? null,
         message: event.message,
         detail: event.detail,
         // A case still marked running when the run ends never produced a result.

@@ -101,6 +101,10 @@ pub fn run() {
             commands::list_catalog_issues,
             commands::list_paths,
             commands::get_problem_asset,
+            commands::list_assets,
+            commands::fetch_assets,
+            commands::cancel_asset_fetch,
+            commands::remove_asset,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

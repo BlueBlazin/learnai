@@ -17,7 +17,11 @@ export type Verdict =
   | "time_limit"
   | "import_error"
   | "harness_error"
-  | "canceled";
+  | "canceled"
+  /** Nothing that ran failed, but a case was skipped for a model that is not downloaded. */
+  | "assets_missing"
+  /** Nothing that ran failed, but this machine lacks hardware the problem requires. */
+  | "hardware_missing";
 
 export interface Track {
   id: string;
@@ -41,6 +45,8 @@ export interface ProblemSummary {
   requires: Requires;
   status: ProblemStatus;
   solvedFrameworks: Framework[];
+  /** Names of the model assets the problem declares. */
+  assets: string[];
 }
 
 export interface ProblemDetail extends ProblemSummary {
@@ -67,12 +73,29 @@ export interface Metric {
   value: number;
   unit?: string;
   limit?: number;
+  /** True for metrics where larger is better (throughput): the limit is a minimum. */
+  higherIsBetter?: boolean;
 }
 
 export interface CaseInfo {
   id: string;
   name: string;
   public: boolean;
+  /** Hardware the case needs; absent when it runs everywhere. */
+  requires?: Requires;
+}
+
+/** Why a case was not run. */
+export type Skip =
+  | { kind: "hardware"; requires: Requires }
+  | { kind: "asset"; asset: string }
+  | { kind: "aborted" };
+
+/** A model asset a run needed and did not find. */
+export interface MissingAsset {
+  name: string;
+  repo: string;
+  sizeMb: number;
 }
 
 export interface CaseResult {
@@ -83,11 +106,20 @@ export interface CaseResult {
   detail: string | null;
   stdout: string;
   metrics: Metric[];
+  /** Present when `status` is "skipped" and the judge said why. */
+  skip?: Skip;
 }
 
 export type RunEvent =
   | { type: "preparing"; message: string }
-  | { type: "start"; cases: CaseInfo[]; env: Record<string, string> }
+  | {
+      type: "start";
+      cases: CaseInfo[];
+      env: Record<string, string>;
+      /** Hardware the problem requires to be accepted, and whether this machine has it. */
+      requires: Requires;
+      requiresMet: boolean;
+    }
   | { type: "caseStart"; id: string }
   | { type: "caseEnd"; result: CaseResult }
   | { type: "log"; stream: "stdout" | "stderr"; text: string }
@@ -99,7 +131,16 @@ export type RunEvent =
       durationMs: number;
       metrics: Metric[];
       submissionId: number | null;
-      /** Failure reason and traceback for import and harness failures (event protocol, section 3.6). */
+      /** Cases that were not run. */
+      skipped: number;
+      /** With `assets_missing`: the assets to download. */
+      missingAssets?: MissingAsset[];
+      /** With `hardware_missing`: the hardware this machine lacks. */
+      missingHardware?: Requires;
+      /**
+       * Failure reason and traceback for import and harness failures, or what was
+       * skipped and why for the not-judged verdicts (event protocol, section 3.6).
+       */
       message: string | null;
       detail: string | null;
     };
@@ -112,6 +153,8 @@ export interface Submission {
   verdict: Verdict;
   passed: number;
   total: number;
+  /** Cases that were not run. */
+  skipped: number;
   durationMs: number;
   target: string;
   /** ISO 8601. */
@@ -176,6 +219,39 @@ export interface Stats {
 export type InstallEvent =
   | { type: "log"; text: string }
   | { type: "done"; ok: boolean; message: string | null };
+
+export type AssetState = "present" | "missing" | "incomplete";
+
+/** A model asset the catalog declares, with its state on disk. */
+export interface ModelAsset {
+  name: string;
+  repo: string;
+  revision: string;
+  files: string[];
+  /** Declared approximate download size. */
+  sizeMb: number;
+  state: AssetState;
+  /** Why it is incomplete. */
+  reason: string | null;
+  path: string;
+  bytesOnDisk: number;
+  /** Ids of the problems that declare it. */
+  problems: string[];
+}
+
+export interface AssetList {
+  modelsDir: string;
+  assets: ModelAsset[];
+}
+
+export type AssetEvent =
+  | { type: "preparing"; message: string }
+  | { type: "start"; asset: string; totalBytes: number }
+  | { type: "progress"; asset: string; file: string; doneBytes: number; totalBytes: number }
+  | { type: "assetEnd"; asset: string; ok: boolean; message: string | null }
+  | { type: "log"; text: string }
+  /** Always last. */
+  | { type: "done"; ok: boolean; canceled: boolean; message: string | null };
 
 export const FRAMEWORKS: readonly Framework[] = ["torch", "jax", "mlx", "python"];
 export const DIFFICULTIES: readonly Difficulty[] = ["easy", "medium", "hard"];

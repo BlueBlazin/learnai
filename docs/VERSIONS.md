@@ -138,8 +138,7 @@ UNVERIFIED: that `axum` 0.8.9 and `tower-http` 0.7.1 are compatible with each ot
 | `safetensors` (`models` extra) | 0.8.0 | | abi3 | https://pypi.org/project/safetensors/ |
 | `tokenizers` (`models` extra) | 0.23.3 | | abi3 | https://pypi.org/project/tokenizers/ |
 | `transformers` (`models` extra) | 5.23.0 | | pure Python | https://pypi.org/project/transformers/ |
-| `mlx-lm` (`models` extra, macOS only) | 0.32.2 | | pure Python | https://pypi.org/project/mlx-lm/ |
-| `mlx-lm` (optional) | 0.32.2 | >=3.11 | pure Python | https://pypi.org/project/mlx-lm/ |
+| `mlx-lm` (`models` extra, macOS only) | 0.32.2 | >=3.11 | pure Python | https://pypi.org/project/mlx-lm/ |
 | `numpy` | 2.5.4 | >=3.12 | cp312, cp313, cp314, cp315 | https://pypi.org/project/numpy/ |
 | `pytest` | 9.2.0 | >=3.10 | pure Python | https://pypi.org/project/pytest/ |
 | `httpx` | 0.28.1 | >=3.8 | pure Python | https://pypi.org/project/httpx/ |

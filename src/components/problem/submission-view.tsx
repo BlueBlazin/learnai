@@ -9,7 +9,8 @@ import { VerdictHeader } from "@/components/results/verdict-header";
 import { Button } from "@/components/ui/button";
 import type { SubmissionDetail } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
-import { FRAMEWORK_LABEL } from "@/lib/labels";
+import { FRAMEWORK_LABEL, isNotJudged } from "@/lib/labels";
+import { notJudgedReason } from "@/lib/run-summary";
 
 /** One stored submission: its verdict, case results, and the code as it was submitted. */
 export function SubmissionView({
@@ -41,8 +42,12 @@ export function SubmissionView({
             mode={submission.mode}
             passed={submission.passed}
             total={submission.total}
+            skipped={submission.skipped}
             durationMs={submission.durationMs}
           />
+          {isNotJudged(submission.verdict) ? (
+            <p className="selectable text-sm">{notJudgedReason(submission.verdict)}</p>
+          ) : null}
           <MetaList ruled>
             <MetaItem label="Submitted">{formatDateTime(submission.createdAt)}</MetaItem>
             <MetaItem label="Framework">{FRAMEWORK_LABEL[submission.framework]}</MetaItem>

@@ -1,8 +1,10 @@
+import { cn } from "cn";
 import type { ReactNode } from "react";
 import { SHORTCUTS, ShortcutHint } from "@/components/app/shortcut-hint";
 import { EmptyState, ErrorState } from "@/components/app/states";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { isActive, logText, type RunState } from "@/lib/api/run-state";
+import { isNotJudged } from "@/lib/labels";
 import { CaseList } from "./case-list";
 import { MetricList } from "./metric-list";
 import { OutputBlock } from "./output-block";
@@ -12,17 +14,22 @@ import { VerdictHeader } from "./verdict-header";
 /**
  * Everything a run reports, live: preparing, streaming case results, the
  * verdict with metrics and limits, failure detail, captured output, and the
- * canceled and judge-failure states.
+ * canceled and judge-failure states. A run that could not judge every case
+ * (a model is not downloaded, the hardware is missing) is set apart from a
+ * failure: its explanation is in body ink and `resolution` offers what fixes it.
  */
 export function ResultsPanel({
   run,
   onCancel,
   actions,
+  resolution,
 }: {
   run: RunState;
   onCancel: () => void;
   /** Controls shown beside the verdict, for example a link to the stored submission. */
   actions?: ReactNode;
+  /** Shown under the explanation of a not-judged run: the action that resolves it (a model download). */
+  resolution?: ReactNode;
 }) {
   if (run.phase === "idle") {
     return (
@@ -41,6 +48,7 @@ export function ResultsPanel({
   }
 
   const active = isActive(run);
+  const notJudged = run.verdict !== null && isNotJudged(run.verdict);
   const finished = run.cases.filter((c) => c.state === "done").length;
   const diagnostics = logText(run.logs);
   // Diagnostics matter when the judge failed and `end` carried no detail of its own.
@@ -69,13 +77,19 @@ export function ResultsPanel({
             mode={run.mode}
             passed={run.passed}
             total={run.total}
+            skipped={run.skipped}
             durationMs={run.durationMs}
             env={run.env}
             actions={actions}
           />
         ) : null}
 
-        {run.message ? <p className="selectable text-sm text-fail">{run.message}</p> : null}
+        {run.message ? (
+          <p className={cn("selectable max-w-measure text-sm", notJudged ? "text-foreground" : "text-fail")}>
+            {run.message}
+          </p>
+        ) : null}
+        {notJudged ? resolution : null}
         {run.detail ? <OutputBlock label="Detail">{run.detail}</OutputBlock> : null}
         <MetricList metrics={run.metrics} />
         {showDiagnostics ? (

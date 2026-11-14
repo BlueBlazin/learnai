@@ -24,6 +24,10 @@
     "allow-get-stats",
     "allow-list-catalog-issues",
     "allow-list-paths",
-    "allow-get-problem-asset"
+    "allow-get-problem-asset",
+    "allow-list-assets",
+    "allow-fetch-assets",
+    "allow-cancel-asset-fetch",
+    "allow-remove-asset"
   ]
 }

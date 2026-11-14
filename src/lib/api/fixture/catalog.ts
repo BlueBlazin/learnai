@@ -15,6 +15,11 @@ export type Scenario =
 export interface FixtureCase {
   name: string;
   public: boolean;
+  /**
+   * What the case cannot run without: the problem's model assets, or the
+   * hardware the problem requires. Absent: it runs everywhere.
+   */
+  needs?: "asset" | "hardware";
 }
 
 export type ProblemMeta = Omit<ProblemSummary, "status" | "solvedFrameworks">;
@@ -90,6 +95,11 @@ interface Authored {
   scenario?: Scenario;
   status: ProblemStatus;
   solved?: Framework[];
+  requires?: Requires;
+  /** Names of the model assets the problem declares. */
+  models?: string[];
+  /** What each case needs, public cases first, then hidden; shorter than the case list means "nothing". */
+  needs?: (FixtureCase["needs"] | null)[];
 }
 
 const AUTHORED: Authored[] = [
@@ -278,6 +288,77 @@ const AUTHORED: Authored[] = [
     hiddenCases: 3,
     status: "todo",
   },
+  // Real-model and hardware problems: a model that is downloaded, one that is not,
+  // one whose download stopped half way, and hardware this (fixture) Mac lacks.
+  {
+    id: "real-model-logits",
+    title: "Next-Token Logits from a Real Checkpoint",
+    track: "transformer",
+    order: 10,
+    difficulty: "medium",
+    frameworks: TENSOR_FRAMEWORKS,
+    judges: ["numeric", "cost"],
+    tags: ["real-model", "rmsnorm", "unembedding"],
+    entry: ["next_token_logits"],
+    publicCases: ["random hidden states, d = 8", "the checkpoint: one prompt"],
+    hiddenCases: 3,
+    status: "todo",
+    models: ["granite-4.0-350m"],
+    needs: [null, "asset", null, "asset", "asset"],
+  },
+  {
+    id: "lazy-safetensors-load",
+    title: "Load Only the Tensors You Need",
+    track: "memory",
+    order: 10,
+    difficulty: "medium",
+    frameworks: ["python"],
+    judges: ["cost"],
+    tags: ["real-model", "safetensors", "io"],
+    entry: ["load_tensors"],
+    publicCases: ["a file written in the test", "two tensors of the checkpoint"],
+    hiddenCases: 2,
+    status: "todo",
+    models: ["granite-4.0-1b"],
+    needs: [null, "asset", null, "asset"],
+  },
+  {
+    id: "mlx-8bit-linear",
+    title: "An 8-bit Linear Layer Without Dequantizing",
+    track: "mlx-gpu",
+    order: 10,
+    difficulty: "hard",
+    frameworks: ["mlx"],
+    judges: ["numeric", "cost"],
+    tags: ["real-model", "quantization", "mlx"],
+    entry: ["quantized_linear"],
+    publicCases: [
+      "one group, hand-written codes",
+      "two rows, three groups",
+      "layers.0.mlp.fc1 of the checkpoint",
+    ],
+    hiddenCases: 3,
+    status: "attempted",
+    requires: "mlx-gpu",
+    models: ["granite-4.2-3b-mlx-8bit"],
+    needs: [null, null, "asset", null, "asset", "asset"],
+  },
+  {
+    id: "cuda-device-placement",
+    title: "Build the Causal Bias on the Device",
+    track: "distributed",
+    order: 10,
+    difficulty: "easy",
+    frameworks: ["torch"],
+    judges: ["numeric", "property"],
+    tags: ["cuda", "devices"],
+    entry: ["causal_bias"],
+    publicCases: ["values for T = 4", "float32, no gradient"],
+    hiddenCases: 3,
+    status: "attempted",
+    requires: "cuda",
+    needs: [null, null, null, "hardware", "hardware"],
+  },
 ];
 
 /** Small deterministic hash so generated metadata is stable across reloads. */
@@ -372,6 +453,7 @@ function fillerProblems(track: FixtureTrack, startOrder: number): FixtureProblem
         tags: [track.id],
         prerequisites: [],
         requires,
+        assets: [],
       },
       statement: fillerStatement(title, track, entry),
       hints: [
@@ -411,7 +493,8 @@ function authoredProblem(spec: Authored): FixtureProblem {
       judges: spec.judges,
       tags: spec.tags,
       prerequisites: spec.prerequisites ?? [],
-      requires: "cpu",
+      requires: spec.requires ?? "cpu",
+      assets: spec.models ?? [],
     },
     statement: file(spec.id, "statement.md") ?? "",
     hints: (file(spec.id, "hints.md") ?? "")
@@ -428,7 +511,10 @@ function authoredProblem(spec: Authored): FixtureProblem {
         name: `Hidden case ${i + 1}`,
         public: false,
       })),
-    ],
+    ].map((fixtureCase, index): FixtureCase => {
+      const needs = spec.needs?.[index];
+      return needs ? { ...fixtureCase, needs } : fixtureCase;
+    }),
     starterTemplate: file(spec.id, "starter.py") ?? "",
     referenceTemplate: file(spec.id, "reference.py") ?? "",
     savedTemplate: saved,

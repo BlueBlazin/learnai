@@ -9,10 +9,11 @@ use crate::env::Environment;
 use crate::error::{CoreError, Result};
 use crate::harness::{HarnessCommand, HarnessJob, UvHarness};
 use crate::model::{
-    Difficulty, EnvStatus, Framework, InstallEvent, PathStage, ProblemDetail, ProblemStatus,
-    ProblemSummary, RunEvent, RunMode, SolutionFile, Stats, StudyPath, Submission,
-    SubmissionDetail, Track,
+    AssetEvent, AssetList, Difficulty, EnvStatus, Extra, Framework, InstallEvent, PathStage,
+    ProblemDetail, ProblemStatus, ProblemSummary, RunEvent, RunMode, SolutionFile, Stats,
+    StudyPath, Submission, SubmissionDetail, Track,
 };
+use crate::models::ModelAssets;
 use crate::paths::load_paths;
 use crate::progress::{current_streak, derive_status};
 use crate::run::{RunLimits, RunPlan, RunRegistry};
@@ -52,6 +53,7 @@ struct Inner {
     workspace: Workspace,
     store: Arc<Store>,
     env: Environment,
+    models: ModelAssets,
     targets: HashMap<String, Arc<dyn Target>>,
     runs: Arc<RunRegistry>,
     limits: RunLimits,
@@ -78,11 +80,13 @@ impl Core {
         let local: Arc<dyn Target> = Arc::new(LocalTarget::new(harness));
         let targets = HashMap::from([(local.name().to_owned(), local)]);
 
+        let env = Environment::new(uv, Arc::clone(&store));
         Ok(Self {
             inner: Arc::new(Inner {
                 catalog: Mutex::new(CatalogLoader::new(&root)),
                 workspace: Workspace::new(&root),
-                env: Environment::new(uv, Arc::clone(&store)),
+                models: ModelAssets::new(&root, env.clone()),
+                env,
                 store,
                 targets,
                 runs: Arc::new(RunRegistry::default()),
@@ -203,6 +207,7 @@ impl Core {
             requires: problem.requires,
             status,
             solved_frameworks,
+            assets: problem.assets.clone(),
         }
     }
 
@@ -400,12 +405,45 @@ impl Core {
         framework: Framework,
         sink: impl EventSink<InstallEvent>,
     ) -> Result<()> {
+        // An install is an exact sync; it must not run under a download that is
+        // installing the `models` extra at the same moment.
+        if self.inner.models.is_fetching() {
+            return Err(CoreError::FetchInProgress);
+        }
         self.inner.env.install(framework, Arc::new(sink))
     }
 
-    /// The optional frameworks currently enabled (passed as `--extra` to every uv command).
-    pub fn enabled_extras(&self) -> Result<Vec<Framework>> {
+    /// The extras known to be installed (passed as `--extra` to every uv command).
+    pub fn enabled_extras(&self) -> Result<Vec<Extra>> {
         self.inner.env.enabled_extras()
+    }
+
+    /// `list_assets`: every model asset the catalog declares, with its state on disk.
+    pub fn list_assets(&self) -> Result<AssetList> {
+        self.inner.models.list()
+    }
+
+    /// `fetch_assets`: starts downloading the named assets and returns the job id at
+    /// once. Events flow to `sink` and always finish with exactly one `done` event.
+    /// One fetch runs at a time; nothing is ever downloaded without this call.
+    pub fn fetch_assets(
+        &self,
+        names: &[String],
+        sink: impl EventSink<AssetEvent>,
+    ) -> Result<String> {
+        self.inner.models.fetch(names, Arc::new(sink))
+    }
+
+    /// `cancel_asset_fetch`: kills the fetch's process group. Completed files are
+    /// kept, so a later fetch resumes. An unknown or finished job is a no-op.
+    pub fn cancel_asset_fetch(&self, job_id: &str) {
+        self.inner.models.cancel(job_id);
+    }
+
+    /// `remove_asset`: deletes a declared asset's directory and returns the new
+    /// listing. Fails while a fetch is running.
+    pub fn remove_asset(&self, name: &str) -> Result<AssetList> {
+        self.inner.models.remove(name)
     }
 
     /// `get_stats`: solved counts and the day streak.

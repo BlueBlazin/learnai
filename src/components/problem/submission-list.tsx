@@ -6,8 +6,8 @@ import { formatDuration, formatRelativeTime } from "@/lib/format";
 import { FRAMEWORK_LABEL } from "@/lib/labels";
 
 /**
- * Stored submissions, newest first: verdict, cases passed, framework, time
- * taken, and when. With `titles`, each row also names its problem (Home).
+ * Stored submissions, newest first: verdict, cases passed (and skipped, when
+ * any were), framework, time taken, and when. With `titles`, each row also names its problem (Home).
  */
 export function SubmissionList({
   submissions,
@@ -43,6 +43,7 @@ export function SubmissionList({
                 <VerdictMark verdict={submission.verdict} />
                 <span className="tabular text-muted-foreground">
                   {submission.passed} / {submission.total}
+                  {submission.skipped > 0 ? `, ${submission.skipped} skipped` : null}
                 </span>
                 {titles ? (
                   <span className="text-muted-foreground">{FRAMEWORK_LABEL[submission.framework]}</span>

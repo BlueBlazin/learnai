@@ -60,6 +60,8 @@ pub struct ProblemMeta {
     pub entry: Vec<String>,
     /// Default per-case time limit in seconds.
     pub time_limit_s: f64,
+    /// Names of the model assets the problem declares (`[[assets]]`), in file order.
+    pub assets: Vec<String>,
     /// Absolute problem directory.
     pub dir: PathBuf,
 }
@@ -211,6 +213,15 @@ struct ProblemToml {
     entry: Vec<String>,
     #[serde(default = "default_time_limit")]
     time_limit_s: f64,
+    #[serde(default)]
+    assets: Vec<AssetToml>,
+}
+
+/// One `[[assets]]` table. Core needs only the name; the Python side owns the rest
+/// (repository, revision, files) and reports what is wrong with it.
+#[derive(Deserialize)]
+struct AssetToml {
+    name: String,
 }
 
 fn default_requires() -> Requires {
@@ -483,6 +494,7 @@ fn parse_problem(text: &str, dir: &Path) -> std::result::Result<ProblemMeta, Str
         requires: raw.requires,
         entry: raw.entry,
         time_limit_s: raw.time_limit_s,
+        assets: dedup(raw.assets.into_iter().map(|asset| asset.name).collect()),
         dir: dir.to_path_buf(),
     })
 }
@@ -558,5 +570,43 @@ mod tests {
             vec!["First hint.", "Second --- still second\nline two", "Third"]
         );
         assert!(split_hints("\n---\n").is_empty());
+    }
+
+    const BASE: &str = r#"
+id = "asset-vocab"
+title = "Read a Vocabulary Size"
+track = "real"
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+entry = ["vocab_size"]
+"#;
+
+    #[test]
+    fn declared_assets_are_read_by_name() {
+        let dir = Path::new("/r/problems/real/asset-vocab");
+        assert!(parse_problem(BASE, dir).expect("problem").assets.is_empty());
+
+        let text = format!(
+            r#"{BASE}
+[[assets]]
+name = "granite-4.0-350m"
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
+files = ["config.json", "*.safetensors"]
+size_mb = 712
+a_key_from_the_future = true
+
+[[assets]]
+name = "tiny-test-model"
+
+[[assets]]
+name = "granite-4.0-350m"
+"#
+        );
+        assert_eq!(
+            parse_problem(&text, dir).expect("problem").assets,
+            ["granite-4.0-350m", "tiny-test-model"]
+        );
     }
 }

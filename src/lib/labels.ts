@@ -1,4 +1,5 @@
 import type {
+  AssetState,
   CaseStatus,
   Difficulty,
   Framework,
@@ -8,8 +9,13 @@ import type {
   Verdict,
 } from "@/lib/api";
 
-/** How an outcome is colored. Color never carries the meaning alone: every use pairs it with an icon and a word. */
-export type Tone = "pass" | "fail" | "warn" | "neutral";
+/**
+ * How an outcome is colored. Color never carries the meaning alone: every use pairs
+ * it with an icon and a word. `plain` is body ink: an outcome that is neither a
+ * success nor a failure (a run that could not judge every case). `neutral` is
+ * secondary ink: nothing happened (canceled, skipped).
+ */
+export type Tone = "pass" | "fail" | "warn" | "plain" | "neutral";
 
 export const FRAMEWORK_LABEL: Record<Framework, string> = {
   torch: "PyTorch",
@@ -58,6 +64,19 @@ export const REQUIRES_LABEL: Record<Requires, string> = {
   cuda: "CUDA GPU",
 };
 
+/** Hardware as the object of "needs": "This problem needs an NVIDIA GPU (CUDA)". */
+export const REQUIRES_PHRASE: Record<Requires, string> = {
+  cpu: "a CPU",
+  "mlx-gpu": "an Apple GPU that MLX can use",
+  cuda: "an NVIDIA GPU (CUDA)",
+};
+
+export const ASSET_STATE_LABEL: Record<AssetState, string> = {
+  present: "Downloaded",
+  missing: "Not downloaded",
+  incomplete: "Incomplete",
+};
+
 export const VERDICT_LABEL: Record<Verdict, string> = {
   accepted: "Accepted",
   wrong_answer: "Wrong answer",
@@ -66,7 +85,14 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   import_error: "Import error",
   harness_error: "The judge could not run",
   canceled: "Canceled",
+  assets_missing: "Not judged: model not downloaded",
+  hardware_missing: "Not judged: hardware missing",
 };
+
+/** Verdicts that end a run without judging every case: neither a success nor a failure. */
+export function isNotJudged(verdict: Verdict): verdict is "assets_missing" | "hardware_missing" {
+  return verdict === "assets_missing" || verdict === "hardware_missing";
+}
 
 export const VERDICT_TONE: Record<Verdict, Tone> = {
   accepted: "pass",
@@ -76,6 +102,8 @@ export const VERDICT_TONE: Record<Verdict, Tone> = {
   import_error: "fail",
   harness_error: "warn",
   canceled: "neutral",
+  assets_missing: "plain",
+  hardware_missing: "plain",
 };
 
 export const CASE_STATUS_LABEL: Record<CaseStatus, string> = {
@@ -99,5 +127,6 @@ export const TONE_TEXT: Record<Tone, string> = {
   pass: "text-pass",
   fail: "text-fail",
   warn: "text-warn",
+  plain: "text-foreground",
   neutral: "text-muted-foreground",
 };

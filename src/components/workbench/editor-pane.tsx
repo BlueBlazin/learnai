@@ -1,4 +1,5 @@
 import { Play, RotateCcw } from "lucide-react";
+import type { ReactNode } from "react";
 import { ActionButton } from "@/components/app/action-button";
 import { ConfirmDialog } from "@/components/app/confirm-dialog";
 import { IconButton } from "@/components/app/icon-button";
@@ -18,7 +19,8 @@ import { SaveIndicator } from "./save-indicator";
 /**
  * The right-hand top panel: a toolbar (framework, save state, reset, Run,
  * Submit) over the code editor. When the environment cannot run the chosen
- * framework, a notice under the toolbar says why and offers the fix.
+ * framework, a notice under the toolbar says why and offers the fix; `notices`
+ * adds what else stands between a run and an accepted verdict.
  */
 export function EditorPane({
   frameworks,
@@ -32,6 +34,7 @@ export function EditorPane({
   onFrameworkChange,
   onRun,
   onSubmit,
+  notices,
 }: {
   frameworks: Framework[];
   framework: Framework;
@@ -46,6 +49,8 @@ export function EditorPane({
   onFrameworkChange: (framework: Framework) => void;
   onRun: () => void;
   onSubmit: () => void;
+  /** More strips under the toolbar: a model that is not downloaded, hardware this machine lacks. */
+  notices?: ReactNode;
 }) {
   const ready = editor.code !== undefined;
   const problem = environmentProblem(env, framework);
@@ -97,6 +102,7 @@ export function EditorPane({
         </div>
       </PaneToolbar>
       {problem ? <EnvironmentNotice problem={problem} install={install} onInstall={onInstall} /> : null}
+      {notices}
       <div className="min-h-0 flex-1 bg-paper">
         {editor.error ? (
           <ErrorState title="The solution file could not be read" error={editor.error} className="px-4" />

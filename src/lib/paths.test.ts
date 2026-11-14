@@ -20,6 +20,7 @@ const problem = (
   requires: "cpu",
   status,
   solvedFrameworks: status === "solved" ? ["torch"] : [],
+  assets: [],
   ...over,
 });
 
@@ -45,6 +46,7 @@ const submission = (problemId: string, id = 1): Submission => ({
   verdict: "wrong_answer",
   passed: 0,
   total: 1,
+  skipped: 0,
   durationMs: 1,
   target: "local",
   createdAt: "2026-11-14T10:00:00.000Z",

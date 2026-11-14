@@ -69,10 +69,10 @@ wire_enum! {
 
 impl Framework {
     /// The optional uv extra that provides this framework, if it is not a base dependency.
-    pub const fn extra(self) -> Option<&'static str> {
+    pub const fn extra(self) -> Option<Extra> {
         match self {
-            Framework::Jax => Some("jax"),
-            Framework::Mlx => Some("mlx"),
+            Framework::Jax => Some(Extra::Jax),
+            Framework::Mlx => Some(Extra::Mlx),
             Framework::Torch | Framework::Python => None,
         }
     }
@@ -177,6 +177,44 @@ wire_enum! {
         HarnessError => "harness_error",
         /// The user canceled the run.
         Canceled => "canceled",
+        /// Nothing that ran failed, but a case was skipped for a model asset that is
+        /// not downloaded. Not judged: neither accepted nor a failure.
+        AssetsMissing => "assets_missing",
+        /// Nothing that ran failed, but this machine lacks the hardware the problem
+        /// (or one of its cases) requires. Not judged.
+        HardwareMissing => "hardware_missing",
+    }
+}
+
+impl Verdict {
+    /// Whether the run ended without judging the solution on every case: nothing that
+    /// ran failed, but something was skipped for a missing asset or missing hardware.
+    pub const fn is_not_judged(self) -> bool {
+        matches!(self, Verdict::AssetsMissing | Verdict::HardwareMissing)
+    }
+}
+
+wire_enum! {
+    /// An optional dependency set (a uv extra) of the Python project.
+    Extra {
+        /// JAX.
+        Jax => "jax",
+        /// MLX.
+        Mlx => "mlx",
+        /// Downloading model assets (`ws assets fetch`) and authoring fixtures.
+        Models => "models",
+    }
+}
+
+wire_enum! {
+    /// Whether a model asset is usable.
+    AssetState {
+        /// The declared files are on disk at the declared revision.
+        Present => "present",
+        /// Nothing usable is on disk.
+        Missing => "missing",
+        /// A directory exists but it is another revision, lacks files, or is damaged.
+        Incomplete => "incomplete",
     }
 }
 
@@ -226,6 +264,9 @@ pub struct ProblemSummary {
     pub status: ProblemStatus,
     /// Frameworks with an accepted submit.
     pub solved_frameworks: Vec<Framework>,
+    /// Names of the model assets the problem declares.
+    #[serde(default)]
+    pub assets: Vec<String>,
 }
 
 /// Everything the problem screen needs.
@@ -275,6 +316,27 @@ pub struct Metric {
     /// Limit the value is judged against, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<f64>,
+    /// True for metrics where larger is better (throughput): the limit is then a
+    /// minimum. The harness writes `higher_is_better`.
+    #[serde(
+        default,
+        alias = "higher_is_better",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub higher_is_better: bool,
+}
+
+impl Metric {
+    /// A metric with no unit and no limit.
+    pub fn new(name: impl Into<String>, value: f64) -> Self {
+        Self {
+            name: name.into(),
+            value,
+            unit: None,
+            limit: None,
+            higher_is_better: false,
+        }
+    }
 }
 
 /// A case announced at the start of a run.
@@ -287,6 +349,65 @@ pub struct CaseInfo {
     pub name: String,
     /// Whether the case is public.
     pub public: bool,
+    /// Hardware the case needs; absent when it runs everywhere.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<Requires>,
+}
+
+impl CaseInfo {
+    /// A case that runs everywhere.
+    pub fn new(id: impl Into<String>, name: impl Into<String>, public: bool) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            public,
+            requires: None,
+        }
+    }
+}
+
+/// Why a case was not run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Skip {
+    /// The machine lacks the hardware the case requires.
+    Hardware {
+        /// The missing hardware.
+        requires: Requires,
+    },
+    /// A model asset the case needs is not downloaded.
+    Asset {
+        /// The asset's name.
+        asset: String,
+    },
+    /// The run stopped before reaching the case.
+    Aborted,
+}
+
+/// Reads an optional field, treating a value this build cannot interpret as absent.
+/// Additions to the protocol (a new skip kind, say) must never make a whole event or a
+/// stored row unreadable.
+pub(crate) fn lenient<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
+}
+
+/// A model asset a run needed and did not find.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MissingAsset {
+    /// Asset name.
+    pub name: String,
+    /// Hugging Face repository id.
+    #[serde(default)]
+    pub repo: String,
+    /// Declared approximate download size in megabytes. The harness writes `size_mb`.
+    #[serde(default, alias = "size_mb")]
+    pub size_mb: f64,
 }
 
 /// The result of one case.
@@ -307,6 +428,14 @@ pub struct CaseResult {
     pub stdout: String,
     /// Metrics reported for the case.
     pub metrics: Vec<Metric>,
+    /// Why the case was skipped; present exactly when `status` is `skipped` and the
+    /// harness said why.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub skip: Option<Skip>,
 }
 
 /// Which output stream a diagnostic line came from.
@@ -338,6 +467,10 @@ pub enum RunEvent {
         cases: Vec<CaseInfo>,
         /// Runtime environment description.
         env: BTreeMap<String, String>,
+        /// Hardware the problem requires to be accepted.
+        requires: Requires,
+        /// Whether this machine has it.
+        requires_met: bool,
     },
     /// A case began.
     CaseStart {
@@ -370,7 +503,16 @@ pub enum RunEvent {
         metrics: Vec<Metric>,
         /// Id of the stored submission, for `submit` runs that were stored.
         submission_id: Option<i64>,
-        /// Short reason the run as a whole failed (import and harness errors, limits).
+        /// Number of cases that were not run.
+        skipped: u32,
+        /// With `assets_missing`: the assets to download.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        missing_assets: Option<Vec<MissingAsset>>,
+        /// With `hardware_missing`: the hardware this machine lacks.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        missing_hardware: Option<Requires>,
+        /// Short reason the run as a whole failed (import and harness errors, limits),
+        /// or what was skipped and why for the not-judged verdicts.
         message: Option<String>,
         /// Longer text for that failure, such as a traceback.
         detail: Option<String>,
@@ -395,6 +537,9 @@ pub struct Submission {
     pub passed: u32,
     /// Number of cases.
     pub total: u32,
+    /// Number of cases that were not run.
+    #[serde(default)]
+    pub skipped: u32,
     /// Duration in milliseconds.
     pub duration_ms: f64,
     /// Name of the target the run executed on.
@@ -553,6 +698,98 @@ pub enum InstallEvent {
     },
 }
 
+/// A model asset declared by the catalog, with its state on disk.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelAsset {
+    /// Directory name under the models directory.
+    pub name: String,
+    /// Hugging Face repository id.
+    pub repo: String,
+    /// Pinned commit hash.
+    pub revision: String,
+    /// Declared file names or globs.
+    pub files: Vec<String>,
+    /// Declared approximate download size in megabytes.
+    pub size_mb: f64,
+    /// Whether the asset is usable.
+    pub state: AssetState,
+    /// Why the asset is incomplete.
+    pub reason: Option<String>,
+    /// Absolute directory of the asset (it may not exist).
+    pub path: String,
+    /// Bytes currently on disk.
+    pub bytes_on_disk: u64,
+    /// Ids of the problems that declare the asset.
+    pub problems: Vec<String>,
+}
+
+/// Every model asset the catalog declares.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetList {
+    /// Absolute directory that holds the assets.
+    pub models_dir: String,
+    /// Assets sorted by name.
+    pub assets: Vec<ModelAsset>,
+}
+
+/// An event in the stream produced by `fetch_assets`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum AssetEvent {
+    /// Progress before the fetch reports anything (environment sync).
+    Preparing {
+        /// Human-readable progress message.
+        message: String,
+    },
+    /// The file list of an asset is known and its download begins.
+    Start {
+        /// Asset name.
+        asset: String,
+        /// Size of the whole asset in bytes.
+        total_bytes: u64,
+    },
+    /// Download progress of an asset.
+    Progress {
+        /// Asset name.
+        asset: String,
+        /// File being downloaded.
+        file: String,
+        /// Bytes of the asset that are complete.
+        done_bytes: u64,
+        /// Size of the whole asset in bytes.
+        total_bytes: u64,
+    },
+    /// An asset finished. Emitted once per asset.
+    AssetEnd {
+        /// Asset name.
+        asset: String,
+        /// Whether it is now present.
+        ok: bool,
+        /// One line saying what went wrong.
+        message: Option<String>,
+    },
+    /// Diagnostic output.
+    Log {
+        /// One line of text, without the trailing newline.
+        text: String,
+    },
+    /// The fetch finished. Always the last event, emitted exactly once.
+    Done {
+        /// Whether every asset succeeded.
+        ok: bool,
+        /// Whether the fetch was canceled.
+        canceled: bool,
+        /// Failure reason, if any.
+        message: Option<String>,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -576,12 +813,13 @@ mod tests {
             total: 2,
             duration_ms: 1.5,
             metrics: vec![Metric {
-                name: "n".into(),
-                value: 3.0,
-                unit: None,
                 limit: Some(4.0),
+                ..Metric::new("n", 3.0)
             }],
             submission_id: None,
+            skipped: 0,
+            missing_assets: None,
+            missing_hardware: None,
             message: Some("m".into()),
             detail: None,
         };
@@ -590,7 +828,7 @@ mod tests {
             json!({
                 "type": "end", "verdict": "accepted", "passed": 2, "total": 2,
                 "durationMs": 1.5, "metrics": [{"name": "n", "value": 3.0, "limit": 4.0}],
-                "submissionId": null, "message": "m", "detail": null
+                "submissionId": null, "skipped": 0, "message": "m", "detail": null
             })
         );
         let case = RunEvent::CaseEnd {
@@ -602,6 +840,7 @@ mod tests {
                 detail: None,
                 stdout: String::new(),
                 metrics: vec![],
+                skip: None,
             },
         };
         assert_eq!(
@@ -634,12 +873,9 @@ mod tests {
             detail: None,
             stdout: String::new(),
             metrics: vec![],
+            skip: None,
         };
-        let info = CaseInfo {
-            id: "c1".into(),
-            name: "Hidden case 1".into(),
-            public: false,
-        };
+        let info = CaseInfo::new("c1", "Hidden case 1", false);
         let stored = StoredCase::new(result.clone(), Some(&info));
         assert_eq!(
             json!(stored),
@@ -659,6 +895,142 @@ mod tests {
                 message: "title is empty".into()
             }),
             json!({"path": "/r/problems/t/p/problem.toml", "message": "title is empty"})
+        );
+    }
+
+    #[test]
+    fn skipped_cases_and_not_judged_endings_match_the_contract() {
+        assert_eq!(json!(Verdict::AssetsMissing), json!("assets_missing"));
+        assert_eq!(
+            "hardware_missing".parse::<Verdict>(),
+            Ok(Verdict::HardwareMissing)
+        );
+        assert!(Verdict::AssetsMissing.is_not_judged());
+        assert!(Verdict::HardwareMissing.is_not_judged());
+        assert!(!Verdict::Accepted.is_not_judged());
+        assert!(!Verdict::Canceled.is_not_judged());
+
+        assert_eq!(
+            json!(Skip::Hardware {
+                requires: Requires::Cuda
+            }),
+            json!({"kind": "hardware", "requires": "cuda"})
+        );
+        assert_eq!(
+            json!(Skip::Asset {
+                asset: "granite".into()
+            }),
+            json!({"kind": "asset", "asset": "granite"})
+        );
+        assert_eq!(json!(Skip::Aborted), json!({"kind": "aborted"}));
+
+        // A skip kind from a newer harness is dropped, not an error.
+        let result: CaseResult = serde_json::from_value(json!({
+            "id": "c1", "status": "skipped", "durationMs": 0.0, "message": "m",
+            "detail": null, "stdout": "", "metrics": [], "skip": {"kind": "quota", "n": 3}
+        }))
+        .expect("unknown skip kind");
+        assert_eq!(result.skip, None);
+
+        let end = RunEvent::End {
+            verdict: Verdict::AssetsMissing,
+            passed: 2,
+            total: 3,
+            duration_ms: 1.0,
+            metrics: vec![Metric {
+                unit: Some("tok/s".into()),
+                limit: Some(20.0),
+                higher_is_better: true,
+                ..Metric::new("throughput", 41.0)
+            }],
+            submission_id: Some(7),
+            skipped: 1,
+            missing_assets: Some(vec![MissingAsset {
+                name: "granite".into(),
+                repo: "ibm/granite".into(),
+                size_mb: 712.0,
+            }]),
+            missing_hardware: None,
+            message: Some("m".into()),
+            detail: None,
+        };
+        assert_eq!(
+            json!(end),
+            json!({
+                "type": "end", "verdict": "assets_missing", "passed": 2, "total": 3,
+                "durationMs": 1.0, "submissionId": 7, "skipped": 1,
+                "metrics": [{"name": "throughput", "value": 41.0, "unit": "tok/s",
+                             "limit": 20.0, "higherIsBetter": true}],
+                "missingAssets": [{"name": "granite", "repo": "ibm/granite", "sizeMb": 712.0}],
+                "message": "m", "detail": null
+            })
+        );
+        assert_eq!(
+            json!(RunEvent::Start {
+                cases: vec![CaseInfo {
+                    requires: Some(Requires::Cuda),
+                    ..CaseInfo::new("c1", "On CUDA", true)
+                }],
+                env: BTreeMap::new(),
+                requires: Requires::Cuda,
+                requires_met: false,
+            }),
+            json!({"type": "start", "env": {}, "requires": "cuda", "requiresMet": false,
+                   "cases": [{"id": "c1", "name": "On CUDA", "public": true, "requires": "cuda"}]})
+        );
+    }
+
+    #[test]
+    fn assets_match_the_contract() {
+        let asset = ModelAsset {
+            name: "granite".into(),
+            repo: "ibm/granite".into(),
+            revision: "abc".into(),
+            files: vec!["config.json".into()],
+            size_mb: 712.0,
+            state: AssetState::Incomplete,
+            reason: Some("model.safetensors is missing".into()),
+            path: "/m/granite".into(),
+            bytes_on_disk: 12,
+            problems: vec!["p".into()],
+        };
+        assert_eq!(
+            json!(AssetList {
+                models_dir: "/m".into(),
+                assets: vec![asset]
+            }),
+            json!({"modelsDir": "/m", "assets": [{
+                "name": "granite", "repo": "ibm/granite", "revision": "abc",
+                "files": ["config.json"], "sizeMb": 712.0, "state": "incomplete",
+                "reason": "model.safetensors is missing", "path": "/m/granite",
+                "bytesOnDisk": 12, "problems": ["p"]
+            }]})
+        );
+        assert_eq!(
+            json!(AssetEvent::Progress {
+                asset: "granite".into(),
+                file: "model.safetensors".into(),
+                done_bytes: 5,
+                total_bytes: 10
+            }),
+            json!({"type": "progress", "asset": "granite", "file": "model.safetensors",
+                   "doneBytes": 5, "totalBytes": 10})
+        );
+        assert_eq!(
+            json!(AssetEvent::AssetEnd {
+                asset: "granite".into(),
+                ok: false,
+                message: Some("no network".into())
+            }),
+            json!({"type": "assetEnd", "asset": "granite", "ok": false, "message": "no network"})
+        );
+        assert_eq!(
+            json!(AssetEvent::Done {
+                ok: false,
+                canceled: true,
+                message: None
+            }),
+            json!({"type": "done", "ok": false, "canceled": true, "message": null})
         );
     }
 

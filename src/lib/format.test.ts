@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatBytes,
   formatDuration,
   formatMetricValue,
+  formatPercent,
   formatRelativeTime,
+  formatSizeMb,
   metricExceeded,
   metricLabel,
+  metricLimitPhrase,
   pluralize,
 } from "./format";
-import { describeEnv, summarizeRun } from "./run-summary";
+import { describeEnv, notJudgedReason, summarizeRun } from "./run-summary";
 
 describe("format", () => {
   it("formats durations across magnitudes", () => {
@@ -28,6 +32,41 @@ describe("format", () => {
     expect(metricExceeded({ name: "a", value: 41, limit: 36 })).toBe(true);
     expect(metricExceeded({ name: "a", value: 36, limit: 36 })).toBe(false);
     expect(metricExceeded({ name: "a", value: 99 })).toBe(false);
+  });
+
+  it("reads a limit the right way round", () => {
+    const throughput = { name: "throughput", unit: "tok/s", limit: 20, higherIsBetter: true };
+    // Higher is better: the limit is a floor.
+    expect(metricExceeded({ ...throughput, value: 41 })).toBe(false);
+    expect(metricExceeded({ ...throughput, value: 20 })).toBe(false);
+    expect(metricExceeded({ ...throughput, value: 12 })).toBe(true);
+    expect(metricLimitPhrase({ ...throughput, value: 41 })).toBe("at least");
+    expect(metricLimitPhrase({ ...throughput, value: 12 })).toBe("under the minimum of");
+    // Lower is better: a ceiling, as before.
+    expect(metricLimitPhrase({ name: "a", value: 36, limit: 36 })).toBe("limit");
+    expect(metricLimitPhrase({ name: "a", value: 41, limit: 36 })).toBe("over the limit of");
+  });
+
+  it("formats sizes in decimal units", () => {
+    expect(formatBytes(0)).toBe("0 kB");
+    expect(formatBytes(412_000)).toBe("412 kB");
+    expect(formatBytes(7_156_949)).toBe("7.2 MB");
+    expect(formatBytes(711_966_212)).toBe("712 MB");
+    expect(formatBytes(3_897_310_556)).toBe("3.90 GB");
+    expect(formatBytes(-5)).toBe("0 kB");
+    expect(formatSizeMb(712)).toBe("712 MB");
+    expect(formatSizeMb(3900)).toBe("3.9 GB");
+    expect(formatSizeMb(3.6)).toBe("3.6 MB");
+    expect(formatSizeMb(0.01)).toBe("under 0.1 MB");
+  });
+
+  it("never shows 100% before a download is finished", () => {
+    expect(formatPercent(0, 1000)).toBe("0%");
+    expect(formatPercent(304, 1000)).toBe("30%");
+    expect(formatPercent(999, 1000)).toBe("99%");
+    expect(formatPercent(1000, 1000)).toBe("100%");
+    expect(formatPercent(5, 0)).toBe("0%");
+    expect(formatPercent(2000, 1000)).toBe("100%");
   });
 
   it("formats relative times against a fixed clock", () => {
@@ -65,6 +104,19 @@ describe("run summary", () => {
       "Canceled before any case ran.",
     );
     expect(summarizeRun({ ...base, verdict: "harness_error", mode: "run" })).toContain("not with your code");
+  });
+
+  it("counts passed and skipped cases for a run that was not judged", () => {
+    expect(
+      summarizeRun({ ...base, passed: 2, total: 4, skipped: 2, verdict: "assets_missing", mode: "submit" }),
+    ).toBe("2 of 4 cases passed, 2 skipped.");
+    expect(
+      summarizeRun({ ...base, passed: 2, total: 3, skipped: 1, verdict: "hardware_missing", mode: "run" }),
+    ).toBe("2 of 3 cases passed, 1 skipped.");
+    // Neither reason calls it a failure.
+    expect(notJudgedReason("assets_missing")).toContain("Nothing that ran failed");
+    expect(notJudgedReason("assets_missing")).toContain("not downloaded");
+    expect(notJudgedReason("hardware_missing")).toContain("hardware");
   });
 
   it("describes the environment", () => {

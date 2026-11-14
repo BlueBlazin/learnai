@@ -69,6 +69,62 @@ describe("HttpBackend first load", () => {
     ]);
   });
 
+  it("posts the model asset commands with the contract's argument names", async () => {
+    const listing = { modelsDir: "/m", assets: [] };
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) =>
+      ok(url.endsWith("/cancel_asset_fetch") ? null : listing),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const backend = new HttpBackend("http://bridge");
+
+    await expect(backend.listAssets()).resolves.toEqual(listing);
+    await expect(backend.removeAsset("granite-4.0-350m")).resolves.toEqual(listing);
+    await expect(backend.cancelAssetFetch("job-1")).resolves.toBeUndefined();
+    const posts = fetchMock.mock.calls
+      .filter(([url]) => url.includes("/api/"))
+      .map(([url, init]) => [url, JSON.parse(String(init?.body))]);
+    expect(posts).toEqual([
+      ["http://bridge/api/list_assets", {}],
+      ["http://bridge/api/remove_asset", { name: "granite-4.0-350m" }],
+      ["http://bridge/api/cancel_asset_fetch", { jobId: "job-1" }],
+    ]);
+  });
+
+  it("streams asset events from the jobs endpoint until done", async () => {
+    vi.useRealTimers();
+    const sources: { url: string; onmessage?: (m: { data: string }) => void; closed: boolean }[] = [];
+    class FakeEventSource {
+      onmessage?: (message: { data: string }) => void;
+      onerror?: () => void;
+      closed = false;
+      constructor(readonly url: string) {
+        sources.push(this);
+      }
+      close() {
+        this.closed = true;
+      }
+    }
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ok({ jobId: "job 7" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const backend = new HttpBackend("http://bridge");
+
+    const events: unknown[] = [];
+    await expect(backend.fetchAssets(["tiny"], (event) => events.push(event))).resolves.toBe("job 7");
+    const post = fetchMock.mock.calls.find(([url]) => url.endsWith("/api/fetch_assets"));
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ names: ["tiny"] });
+
+    const source = sources[0];
+    expect(source?.url).toBe("http://bridge/api/jobs/job%207/events");
+    const done = { type: "done", ok: true, canceled: false, message: null };
+    source?.onmessage?.({ data: JSON.stringify({ type: "start", asset: "tiny", totalBytes: 2048 }) });
+    source?.onmessage?.({ data: JSON.stringify(done) });
+    // Nothing follows `done`, and the stream is closed.
+    source?.onmessage?.({ data: JSON.stringify({ type: "log", text: "late" }) });
+    expect(events).toEqual([{ type: "start", asset: "tiny", totalBytes: 2048 }, done]);
+    expect(source?.closed).toBe(true);
+  });
+
   it("passes the core's error message through", async () => {
     vi.stubGlobal(
       "fetch",

@@ -20,6 +20,10 @@ const COMMANDS: &[&str] = &[
     "list_catalog_issues",
     "list_paths",
     "get_problem_asset",
+    "list_assets",
+    "fetch_assets",
+    "cancel_asset_fetch",
+    "remove_asset",
 ];
 
 fn main() {

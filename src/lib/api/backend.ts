@@ -1,4 +1,6 @@
 import type {
+  AssetEvent,
+  AssetList,
   CatalogIssue,
   EnvStatus,
   Framework,
@@ -69,6 +71,19 @@ export interface Backend {
    * `assets/` directory and may not escape it; only `.svg` and `.png` are served.
    */
   getProblemAsset(id: string, path: string): Promise<string>;
+
+  /** Every model asset the catalog declares, with its state on disk. */
+  listAssets(): Promise<AssetList>;
+  /**
+   * Starts downloading the named assets and resolves with the job id as soon as
+   * the core accepts it. Events are delivered in order until a single `done`
+   * event; nothing follows it. One fetch runs at a time: a second call rejects.
+   */
+  fetchAssets(names: string[], onEvent: (event: AssetEvent) => void): Promise<string>;
+  /** Stops a fetch; files that were complete are kept. Unknown or finished jobs are ignored. */
+  cancelAssetFetch(jobId: string): Promise<void>;
+  /** Deletes a declared asset from disk and resolves with the new listing. */
+  removeAsset(name: string): Promise<AssetList>;
 }
 
 export const LOCAL_TARGET = "local";

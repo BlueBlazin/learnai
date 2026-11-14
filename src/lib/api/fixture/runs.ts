@@ -1,5 +1,39 @@
-import type { CaseInfo, CaseResult, Framework, Metric, RunEvent, RunMode, Verdict } from "../types";
+import type {
+  CaseInfo,
+  CaseResult,
+  Framework,
+  Metric,
+  MissingAsset,
+  Requires,
+  RunEvent,
+  RunMode,
+  Verdict,
+} from "../types";
 import { type FixtureProblem, hash, type Scenario } from "./catalog";
+
+/** What the machine has at the moment of a run: decides which cases are skipped. */
+export interface RunContext {
+  /** The problem's model assets that are not downloaded. */
+  missingAssets: MissingAsset[];
+  /** Hardware present on the machine. */
+  hardware: readonly Requires[];
+}
+
+const EVERYTHING: RunContext = { missingAssets: [], hardware: ["cpu", "mlx-gpu", "cuda"] };
+
+const HARDWARE_PHRASE: Record<Requires, string> = {
+  cpu: "a CPU",
+  "mlx-gpu": "an Apple GPU usable by MLX",
+  cuda: "an NVIDIA GPU (CUDA)",
+};
+
+function megabytes(sizeMb: number): string {
+  return sizeMb >= 1000 ? `${(sizeMb / 1000).toFixed(1)} GB` : `${Math.round(sizeMb)} MB`;
+}
+
+function describeAsset(asset: MissingAsset): string {
+  return `\`${asset.name}\` (${asset.repo}, about ${megabytes(asset.sizeMb)})`;
+}
 
 export interface PlannedCase {
   info: CaseInfo;
@@ -16,6 +50,11 @@ export interface RunPlan {
   /** When set, the run ends before any case starts (import and harness failures). */
   abort: Verdict | null;
   metrics: Metric[];
+  /** Hardware the problem requires, and whether the machine has it. */
+  requires: Requires;
+  requiresMet: boolean;
+  /** The problem's assets that are not downloaded. */
+  missingAssets: MissingAsset[];
 }
 
 const SCENARIOS: Scenario[] = [
@@ -129,15 +168,37 @@ export function buildPlan(
   framework: Framework,
   mode: RunMode,
   code: string,
+  context: RunContext = EVERYTHING,
 ): RunPlan {
   const scenario = resolveScenario(problem, code);
   const starter = /raise NotImplementedError/.test(code);
   const visible = problem.cases.filter((c) => mode === "submit" || c.public);
+  const requires = problem.meta.requires;
+  const requiresMet = context.hardware.includes(requires);
   const infos: CaseInfo[] = visible.map((c, i) => ({
     id: `c${i + 1}`,
     name: c.name,
     public: c.public,
+    ...(c.needs === "hardware" && requires !== "cpu" ? { requires } : {}),
   }));
+  /** Why a case cannot run on this machine right now, if it cannot. */
+  const skipOf = (index: number): Pick<CaseResult, "skip" | "message"> | null => {
+    const needs = visible[index]?.needs;
+    const asset = context.missingAssets[0];
+    if (needs === "asset" && asset) {
+      return {
+        skip: { kind: "asset", asset: asset.name },
+        message: `skipped: model asset ${describeAsset(asset)} is not downloaded; fetch it with \`ws assets fetch ${asset.name}\``,
+      };
+    }
+    if (needs === "hardware" && !requiresMet) {
+      return {
+        skip: { kind: "hardware", requires },
+        message: `skipped: needs ${HARDWARE_PHRASE[requires]}, which this machine does not have`,
+      };
+    }
+    return null;
+  };
   const plan: RunPlan = {
     preparing: ["Checking the Python environment", "Starting the judge"],
     env: envFor(framework),
@@ -145,6 +206,9 @@ export function buildPlan(
     logs: [],
     abort: null,
     metrics: [],
+    requires,
+    requiresMet,
+    missingAssets: context.missingAssets,
   };
 
   if (scenario === "harness_error") {
@@ -188,8 +252,12 @@ export function buildPlan(
       simulatedMs: ms,
     });
 
+    const skipped = skipOf(index);
+    if (skipped) {
+      return planned({ ...pass(info.id, 0), status: "skipped", ...skipped }, 0);
+    }
     if (timedOut) {
-      return planned({ ...pass(info.id, 0), status: "skipped" }, 0);
+      return planned({ ...pass(info.id, 0), status: "skipped", skip: { kind: "aborted" } }, 0);
     }
 
     switch (scenario) {
@@ -282,12 +350,34 @@ function caseMetrics(problem: FixtureProblem, perCase: boolean): Metric[] {
   return [];
 }
 
-/** Verdict precedence from the event protocol: import, runtime, time limit, wrong answer. */
-export function verdictOf(results: CaseResult[]): Verdict {
+/**
+ * Verdict precedence from the event protocol: runtime, time limit, wrong answer,
+ * then the two "not judged" endings (a case skipped for an asset, or hardware
+ * the problem requires that the machine lacks), then accepted.
+ */
+export function verdictOf(results: CaseResult[], requiresMet = true): Verdict {
   if (results.some((r) => r.status === "error")) return "runtime_error";
   if (results.some((r) => r.status === "timeout")) return "time_limit";
   if (results.some((r) => r.status === "fail")) return "wrong_answer";
+  if (results.some((r) => r.skip?.kind === "asset")) return "assets_missing";
+  if (!requiresMet || results.some((r) => r.skip?.kind === "hardware")) return "hardware_missing";
   return "accepted";
+}
+
+/** The explanation the judge sends with a not-judged ending. */
+function notJudgedMessage(verdict: Verdict, results: CaseResult[], plan: RunPlan): string | null {
+  const skipped = results.filter((r) => r.status === "skipped").length;
+  const ran = results.length - skipped;
+  const passed = results.filter((r) => r.status === "pass").length;
+  const counts = `${passed} of ${ran} cases that could run passed; ${skipped} of ${results.length} cases were skipped because`;
+  if (verdict === "assets_missing") {
+    const assets = plan.missingAssets;
+    return `${counts} a model asset is not downloaded: ${assets.map(describeAsset).join(", ")}. Fetch with \`ws assets fetch ${assets.map((a) => a.name).join(" ")}\`, then run again.`;
+  }
+  if (verdict === "hardware_missing") {
+    return `${counts} they need ${HARDWARE_PHRASE[plan.requires]}, which this machine does not have. The solution can only be accepted on a machine that runs every case.`;
+  }
+  return null;
 }
 
 export interface SimulationOptions {
@@ -308,12 +398,18 @@ export async function* simulateRun(
   let elapsed = 0;
   const failureLog = plan.abort ? (plan.logs.at(-1)?.text ?? null) : null;
   const end = (verdict: Verdict): RunEvent => ({
-    message: verdict === plan.abort ? (failureLog?.split("\n").at(-1) ?? null) : null,
+    message:
+      verdict === plan.abort
+        ? (failureLog?.split("\n").at(-1) ?? null)
+        : notJudgedMessage(verdict, finished, plan),
     detail: verdict === plan.abort ? failureLog : null,
     type: "end",
     verdict,
     passed: finished.filter((r) => r.status === "pass").length,
     total: plan.cases.length,
+    skipped: finished.filter((r) => r.status === "skipped").length,
+    ...(verdict === "assets_missing" ? { missingAssets: plan.missingAssets } : {}),
+    ...(verdict === "hardware_missing" ? { missingHardware: plan.requires } : {}),
     durationMs: Math.round(elapsed * 10) / 10,
     metrics: verdict === "accepted" ? plan.metrics : [],
     submissionId: null,
@@ -330,7 +426,13 @@ export async function* simulateRun(
     return yield end("harness_error");
   }
 
-  yield { type: "start", cases: plan.cases.map((c) => c.info), env: plan.env };
+  yield {
+    type: "start",
+    cases: plan.cases.map((c) => c.info),
+    env: plan.env,
+    requires: plan.requires,
+    requiresMet: plan.requiresMet,
+  };
   for (const log of plan.logs) yield { type: "log", ...log };
   if (plan.abort) return yield end(plan.abort);
 
@@ -348,5 +450,5 @@ export async function* simulateRun(
     yield { type: "caseEnd", result: planned.result };
   }
 
-  yield end(verdictOf(finished));
+  yield end(verdictOf(finished, plan.requiresMet));
 }

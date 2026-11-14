@@ -3,6 +3,8 @@ import {
   Ban,
   CircleCheck,
   CircleX,
+  Cpu,
+  HardDriveDownload,
   type LucideIcon,
   OctagonAlert,
   PackageX,
@@ -20,9 +22,15 @@ const VERDICT_ICON: Record<Verdict, LucideIcon> = {
   import_error: PackageX,
   harness_error: Unplug,
   canceled: Ban,
+  assets_missing: HardDriveDownload,
+  hardware_missing: Cpu,
 };
 
-/** A run's verdict as an icon and a word. Each verdict has its own icon, so color is never the only signal. */
+/**
+ * A run's verdict as an icon and a word. Each verdict has its own icon, so color
+ * is never the only signal. The two "not judged" verdicts are set in body ink:
+ * they are neither a success nor a failure of the learner's code.
+ */
 export function VerdictMark({
   verdict,
   showLabel = true,

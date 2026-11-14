@@ -44,10 +44,14 @@ const MIGRATIONS: &[&str] = &[
          key   TEXT PRIMARY KEY,
          value TEXT NOT NULL
      );",
+    // Version 2: cases that were not run (missing hardware or model assets).
+    "ALTER TABLE submissions ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0;",
 ];
 
-const SUBMISSION_COLUMNS: &str =
-    "id, problem_id, framework, mode, verdict, passed, total, duration_ms, target, created_at";
+const SUBMISSION_COLUMNS: &str = "id, problem_id, framework, mode, verdict, passed, total, duration_ms, target, created_at, skipped";
+
+/// Index of the first column after [`SUBMISSION_COLUMNS`] in a wider `SELECT`.
+const AFTER_SUBMISSION_COLUMNS: usize = 11;
 
 /// A submission about to be stored.
 #[derive(Debug, Clone)]
@@ -64,6 +68,8 @@ pub struct NewSubmission<'a> {
     pub passed: u32,
     /// Number of cases.
     pub total: u32,
+    /// Number of cases that were not run.
+    pub skipped: u32,
     /// Duration in milliseconds.
     pub duration_ms: f64,
     /// Target name.
@@ -123,8 +129,9 @@ impl Store {
         let conn = self.conn();
         conn.execute(
             "INSERT INTO submissions (problem_id, framework, mode, verdict, passed, total,
-                                      duration_ms, target, created_at, code, cases, metrics)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                                      duration_ms, target, created_at, code, cases, metrics,
+                                      skipped)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 new.problem_id,
                 new.framework.as_str(),
@@ -138,6 +145,7 @@ impl Store {
                 new.code,
                 serde_json::to_string(new.cases)?,
                 serde_json::to_string(new.metrics)?,
+                new.skipped,
             ],
         )?;
         Ok(conn.last_insert_rowid())
@@ -164,16 +172,16 @@ impl Store {
             ),
             params![id],
             |row| {
-                let mut cases: Vec<StoredCase> = json_column(row, 11)?;
+                let mut cases: Vec<StoredCase> = json_column(row, AFTER_SUBMISSION_COLUMNS + 1)?;
                 // Rows stored before names were kept: show the id rather than nothing.
                 for case in cases.iter_mut().filter(|c| c.name.is_empty()) {
                     case.name.clone_from(&case.result.id);
                 }
                 Ok(SubmissionDetail {
                     submission: submission_from_row(row)?,
-                    code: row.get(10)?,
+                    code: row.get(AFTER_SUBMISSION_COLUMNS)?,
                     cases,
-                    metrics: json_column(row, 12)?,
+                    metrics: json_column(row, AFTER_SUBMISSION_COLUMNS + 2)?,
                 })
             },
         )
@@ -182,6 +190,8 @@ impl Store {
     }
 
     /// Summarizes submissions per problem. A problem appears here once it has any submit.
+    /// Only an `accepted` submit solves a framework: `assets_missing` and
+    /// `hardware_missing` are stored attempts and nothing more.
     pub fn submission_progress(&self) -> Result<HashMap<String, SubmissionProgress>> {
         let conn = self.conn();
         let mut statement = conn.prepare(
@@ -199,7 +209,7 @@ impl Store {
         Ok(progress)
     }
 
-    /// Creation times of every accepted submission.
+    /// Creation times of every accepted submission (the streak counts only these).
     pub fn accepted_times(&self) -> Result<Vec<String>> {
         let conn = self.conn();
         let mut statement =
@@ -277,6 +287,7 @@ fn submission_from_row(row: &Row<'_>) -> rusqlite::Result<Submission> {
         duration_ms: row.get(7)?,
         target: row.get(8)?,
         created_at: row.get(9)?,
+        skipped: row.get(10)?,
     })
 }
 
@@ -300,7 +311,7 @@ fn json_column<T: DeserializeOwned>(row: &Row<'_>, index: usize) -> rusqlite::Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{CaseInfo, CaseResult, CaseStatus};
+    use crate::model::{CaseInfo, CaseResult, CaseStatus, Requires, Skip};
 
     fn submission<'a>(
         problem: &'a str,
@@ -314,6 +325,7 @@ mod tests {
             verdict,
             passed: 1,
             total: 2,
+            skipped: 0,
             duration_ms: 12.5,
             target: "local",
             created_at: "2026-11-14T10:00:00.000Z",
@@ -335,18 +347,13 @@ mod tests {
                 detail: None,
                 stdout: "hi\n".into(),
                 metrics: vec![],
+                skip: None,
             },
-            Some(&CaseInfo {
-                id: "c1".into(),
-                name: "Hidden case 1".into(),
-                public: false,
-            }),
+            Some(&CaseInfo::new("c1", "Hidden case 1", false)),
         )];
         let metrics = vec![Metric {
-            name: "tokens".into(),
-            value: 37.0,
             unit: Some("tokens".into()),
-            limit: None,
+            ..Metric::new("tokens", 37.0)
         }];
         let first = store.insert_submission(&NewSubmission {
             cases: &cases,
@@ -408,6 +415,105 @@ mod tests {
         assert!(progress["b"].solved_frameworks.is_empty());
         assert!(!progress.contains_key("c"));
         assert_eq!(store.accepted_times()?.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn not_judged_submits_are_stored_but_never_solve_or_extend_the_streak() -> Result<()> {
+        let store = Store::open_in_memory()?;
+        let skipped_case = StoredCase::new(
+            CaseResult {
+                id: "hidden-2".into(),
+                status: CaseStatus::Skipped,
+                duration_ms: 0.0,
+                message: Some("skipped: needs an NVIDIA GPU (CUDA)".into()),
+                detail: None,
+                stdout: String::new(),
+                metrics: vec![],
+                skip: Some(Skip::Hardware {
+                    requires: Requires::Cuda,
+                }),
+            },
+            None,
+        );
+        let hardware = store.insert_submission(&NewSubmission {
+            skipped: 1,
+            cases: std::slice::from_ref(&skipped_case),
+            ..submission("a", Framework::Torch, Verdict::HardwareMissing)
+        })?;
+        store.insert_submission(&NewSubmission {
+            skipped: 2,
+            ..submission("b", Framework::Python, Verdict::AssetsMissing)
+        })?;
+
+        let progress = store.submission_progress()?;
+        // Both problems have a submit (so they count as attempted), neither is solved.
+        assert!(progress["a"].solved_frameworks.is_empty());
+        assert!(progress["b"].solved_frameworks.is_empty());
+        assert!(store.accepted_times()?.is_empty());
+
+        let listed = store.list_submissions(None)?;
+        assert_eq!(
+            listed
+                .iter()
+                .map(|s| (s.verdict, s.skipped))
+                .collect::<Vec<_>>(),
+            vec![(Verdict::AssetsMissing, 2), (Verdict::HardwareMissing, 1)]
+        );
+        let detail = store.get_submission(hardware)?;
+        assert_eq!(detail.submission.skipped, 1);
+        assert_eq!(detail.cases, vec![skipped_case]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_version_1_database_is_migrated_in_place() -> Result<()> {
+        let tmp = tempfile::tempdir().map_err(|e| CoreError::io("create", Path::new("tmp"), e))?;
+        let path = tmp.path().join("state.db");
+        {
+            // The schema exactly as version 1 shipped it, with one row.
+            let conn = Connection::open(&path)?;
+            conn.execute_batch(MIGRATIONS[0])?;
+            conn.pragma_update(None, "user_version", 1)?;
+            conn.execute(
+                "INSERT INTO submissions (problem_id, framework, mode, verdict, passed, total,
+                                          duration_ms, target, created_at, code, cases, metrics)
+                 VALUES ('a', 'torch', 'submit', 'accepted', 5, 5, 12.5, 'local',
+                         '2026-11-01T10:00:00.000Z', 'code', '[]', '[]')",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES ('enabled_extras', '[\"mlx\"]')",
+                [],
+            )?;
+        }
+        let store = Store::open(&path)?;
+        let version: i64 = store
+            .conn()
+            .pragma_query_value(None, "user_version", |r| r.get(0))?;
+        assert_eq!(version, MIGRATIONS.len() as i64);
+
+        let old = &store.list_submissions(None)?[0];
+        assert_eq!(
+            (old.verdict, old.passed, old.skipped),
+            (Verdict::Accepted, 5, 0)
+        );
+        assert_eq!(store.get_submission(old.id)?.code, "code");
+        assert_eq!(
+            store.setting::<Vec<String>>("enabled_extras")?,
+            Some(vec!["mlx".into()])
+        );
+        assert_eq!(store.accepted_times()?.len(), 1);
+
+        // New rows carry the count, and reopening does not migrate twice.
+        let new = store.insert_submission(&NewSubmission {
+            skipped: 3,
+            ..submission("a", Framework::Torch, Verdict::AssetsMissing)
+        })?;
+        drop(store);
+        let store = Store::open(&path)?;
+        assert_eq!(store.get_submission(new)?.submission.skipped, 3);
+        assert_eq!(store.list_submissions(None)?.len(), 2);
         Ok(())
     }
 

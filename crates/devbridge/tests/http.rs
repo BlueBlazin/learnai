@@ -596,3 +596,157 @@ async fn cors_allows_only_the_dev_origin() {
         "http://localhost:1420"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn model_assets_over_http() {
+    let bridge = Bridge::start().await;
+
+    let listing = bridge.call("list_assets", json!({})).await;
+    let models_dir = bridge.root.path().join(".whetstone/models");
+    assert_eq!(listing["modelsDir"], models_dir.to_string_lossy().as_ref());
+    assert_eq!(
+        listing["assets"][1],
+        json!({
+            "name": "tiny", "repo": "fake/tiny",
+            "revision": "0123456789abcdef0123456789abcdef01234567",
+            "files": ["config.json"], "sizeMb": 0.5, "state": "missing", "reason": null,
+            "path": models_dir.join("tiny").to_string_lossy(), "bytesOnDisk": 0,
+            "problems": ["add-two"]
+        })
+    );
+    let problem = bridge.call("get_problem", json!({"id": "add-two"})).await;
+    assert_eq!(problem["assets"], json!(["tiny"]));
+
+    // A fetch returns its job id at once; the events replay on the jobs endpoint.
+    let job = bridge
+        .call("fetch_assets", json!({"names": ["tiny"]}))
+        .await;
+    let job_id = job["jobId"].as_str().expect("jobId");
+    let events = bridge.events(&format!("/api/jobs/{job_id}/events")).await;
+    assert_eq!(events[0]["type"], "preparing");
+    let protocol: Vec<&Value> = events
+        .iter()
+        .filter(|e| e["type"] != "log" && e["type"] != "preparing")
+        .collect();
+    assert_eq!(
+        protocol,
+        [
+            &json!({"type": "start", "asset": "tiny", "totalBytes": 2048}),
+            &json!({"type": "progress", "asset": "tiny", "file": "config.json",
+                    "doneBytes": 1024, "totalBytes": 2048}),
+            &json!({"type": "progress", "asset": "tiny", "file": "config.json",
+                    "doneBytes": 2048, "totalBytes": 2048}),
+            &json!({"type": "assetEnd", "asset": "tiny", "ok": true, "message": null}),
+            &json!({"type": "done", "ok": true, "canceled": false, "message": null}),
+        ]
+    );
+    assert_eq!(
+        bridge.events(&format!("/api/jobs/{job_id}/events")).await,
+        events,
+        "replay"
+    );
+    // Canceling a finished or unknown job is a no-op.
+    assert_eq!(
+        bridge
+            .call("cancel_asset_fetch", json!({"jobId": job_id}))
+            .await,
+        Value::Null
+    );
+    assert_eq!(
+        bridge
+            .call("cancel_asset_fetch", json!({"jobId": "nope"}))
+            .await,
+        Value::Null
+    );
+
+    let listing = bridge.call("list_assets", json!({})).await;
+    assert_eq!(listing["assets"][1]["state"], "present");
+
+    // Bad requests are 400s and delete or start nothing.
+    for (command, body) in [
+        ("fetch_assets", json!({"names": []})),
+        ("fetch_assets", json!({"names": ["--all"]})),
+        ("fetch_assets", json!({})),
+        ("remove_asset", json!({"name": "../state.db"})),
+        ("remove_asset", json!({"name": "state.db"})),
+        ("cancel_asset_fetch", json!({})),
+    ] {
+        let (status, value) = bridge.post(command, body.clone()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{command} {body}: {value}");
+        assert!(value["error"].is_string());
+    }
+    assert!(models_dir.join("tiny").is_dir());
+
+    let listing = bridge.call("remove_asset", json!({"name": "tiny"})).await;
+    assert_eq!(listing["assets"][1]["state"], "missing");
+    assert!(!models_dir.join("tiny").exists());
+
+    // One fetch at a time: a second one is a 409 while the first hangs.
+    fs::write(bridge.root.path().join("python/.fetch-scenario"), "hang").expect("write");
+    let job = bridge
+        .call("fetch_assets", json!({"names": ["tiny"]}))
+        .await;
+    let job_id = job["jobId"].as_str().expect("jobId").to_owned();
+    let (status, value) = bridge
+        .post("fetch_assets", json!({"names": ["other"]}))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{value}");
+    let (status, _) = bridge.post("remove_asset", json!({"name": "tiny"})).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    bridge
+        .call("cancel_asset_fetch", json!({"jobId": job_id}))
+        .await;
+    let events = bridge.events(&format!("/api/jobs/{job_id}/events")).await;
+    assert_eq!(
+        events.last(),
+        Some(&json!({"type": "done", "ok": false, "canceled": true, "message": null}))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_not_judged_submit_over_http() {
+    let bridge = Bridge::start().await;
+    bridge
+        .call(
+            "write_solution",
+            json!({"id": "add-two", "framework": "torch", "code": "# scenario: assets-missing\n"}),
+        )
+        .await;
+    let run = bridge
+        .call(
+            "start_run",
+            json!({"problemId": "add-two", "framework": "torch", "mode": "submit", "target": "local"}),
+        )
+        .await;
+    let run_id = run["runId"].as_str().expect("runId");
+    let events = bridge.events(&format!("/api/runs/{run_id}/events")).await;
+    let start = events.iter().find(|e| e["type"] == "start").expect("start");
+    assert_eq!(start["requires"], "cpu");
+    assert_eq!(start["requiresMet"], true);
+    let skipped = events
+        .iter()
+        .find(|e| e["type"] == "caseEnd" && e["result"]["status"] == "skipped")
+        .expect("skipped case");
+    assert_eq!(
+        skipped["result"]["skip"],
+        json!({"kind": "asset", "asset": "tiny"})
+    );
+    let end = events.last().expect("end");
+    assert_eq!(end["verdict"], "assets_missing");
+    assert_eq!(end["skipped"], 1);
+    assert_eq!(
+        end["missingAssets"],
+        json!([{"name": "tiny", "repo": "fake/tiny", "sizeMb": 0.5}])
+    );
+    assert_eq!(end["metrics"][0]["higherIsBetter"], true);
+    assert!(end.get("missingHardware").is_none());
+
+    let submission = bridge
+        .call("get_submission", json!({"id": end["submissionId"]}))
+        .await;
+    assert_eq!(submission["verdict"], "assets_missing");
+    assert_eq!(submission["skipped"], 1);
+    let problem = bridge.call("get_problem", json!({"id": "add-two"})).await;
+    assert_eq!(problem["status"], "attempted");
+    assert_eq!(bridge.call("get_stats", json!({})).await["solved"], 0);
+}

@@ -1,5 +1,5 @@
 import type { Backend, StartRunArgs } from "./backend";
-import type { Framework, InstallEvent, RunEvent } from "./types";
+import type { AssetEvent, Framework, InstallEvent, RunEvent } from "./types";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:1421";
 /** How long the first load waits for the bridge before reporting it unreachable. */
@@ -135,6 +135,7 @@ export class HttpBackend implements Backend {
           durationMs: 0,
           metrics: [],
           submissionId: null,
+          skipped: 0,
           message: "Lost the connection to the devbridge.",
           detail: null,
         }),
@@ -175,4 +176,27 @@ export class HttpBackend implements Backend {
 
   listPaths = () => this.call<Awaited<ReturnType<Backend["listPaths"]>>>("list_paths");
   getProblemAsset = (id: string, path: string) => this.call<string>("get_problem_asset", { id, path });
+
+  listAssets = () => this.call<Awaited<ReturnType<Backend["listAssets"]>>>("list_assets");
+  async fetchAssets(names: string[], onEvent: (event: AssetEvent) => void): Promise<string> {
+    const { jobId } = await this.call<{ jobId: string }>("fetch_assets", { names });
+    this.subscribe<AssetEvent>(
+      `/api/jobs/${encodeURIComponent(jobId)}/events`,
+      onEvent,
+      (event) => event.type === "done",
+      () =>
+        onEvent({
+          type: "done",
+          ok: false,
+          canceled: false,
+          message: "Lost the connection to the devbridge.",
+        }),
+    );
+    return jobId;
+  }
+  cancelAssetFetch = async (jobId: string) => {
+    await this.call<null>("cancel_asset_fetch", { jobId });
+  };
+  removeAsset = (name: string) =>
+    this.call<Awaited<ReturnType<Backend["removeAsset"]>>>("remove_asset", { name });
 }

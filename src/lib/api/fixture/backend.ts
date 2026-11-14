@@ -1,10 +1,14 @@
 import type { Backend, StartRunArgs } from "../backend";
 import type {
+  AssetEvent,
+  AssetList,
   CatalogIssue,
   Difficulty,
   EnvStatus,
   Framework,
   InstallEvent,
+  MissingAsset,
+  ModelAsset,
   Path,
   ProblemDetail,
   ProblemStatus,
@@ -16,9 +20,10 @@ import type {
   SubmissionDetail,
   Track,
 } from "../types";
+import { FIXTURE_HARDWARE, type FixtureAsset, fixtureAssets } from "./assets";
 import { buildCatalog, type FixtureProblem, hash, renderTemplate } from "./catalog";
 import { FIXTURE_PATHS } from "./paths";
-import { buildPlan, simulateRun, verdictOf } from "./runs";
+import { buildPlan, type RunContext, simulateRun, verdictOf } from "./runs";
 
 export interface FixtureOptions {
   /** Multiplier on every simulated delay. 0 makes the backend instantaneous (tests). */
@@ -27,6 +32,10 @@ export interface FixtureOptions {
 }
 
 const ROOT = "/Users/ada/Developer/whetstone";
+const MODELS_DIR = `${ROOT}/.whetstone/models`;
+/** A simulated download takes about this long whatever its size, in steps of this many. */
+const FETCH_STEPS = 48;
+const FETCH_STEP_MS = 180;
 const DAY_MS = 86_400_000;
 
 interface ProblemState {
@@ -57,8 +66,14 @@ export class FixtureBackend implements Backend {
     ["jax", "0.12.0.1"],
     ["mlx", null],
   ]);
+  private readonly models = new Map<string, FixtureAsset>(
+    fixtureAssets().map((asset) => [asset.name, asset]),
+  );
+  /** The fetch in flight; the core runs one at a time. */
+  private fetching: { jobId: string; canceled: boolean } | null = null;
   private nextSubmissionId = 1;
   private nextRunId = 1;
+  private nextJobId = 1;
 
   constructor(options: FixtureOptions = {}) {
     this.speed = options.speed ?? 1;
@@ -108,6 +123,17 @@ export class FixtureBackend implements Backend {
     if (!problem.meta.frameworks.includes(framework)) {
       throw new Error(`${problem.meta.id} does not support ${framework}`);
     }
+  }
+
+  /** What a run of `problem` would find on this machine right now. */
+  private runContext(problem: FixtureProblem): RunContext {
+    const missingAssets: MissingAsset[] = problem.meta.assets.flatMap((name) => {
+      const asset = this.models.get(name);
+      return asset && asset.state !== "present"
+        ? [{ name: asset.name, repo: asset.repo, sizeMb: asset.sizeMb }]
+        : [];
+    });
+    return { missingAssets, hardware: FIXTURE_HARDWARE };
   }
 
   private summary(problem: FixtureProblem): ProblemSummary {
@@ -170,9 +196,10 @@ export class FixtureBackend implements Backend {
         framework,
         "submit",
         code,
+        this.runContext(problem),
       );
       const cases = plan.cases.map((c) => ({ ...c.result, name: c.info.name, public: c.info.public }));
-      const verdict = plan.abort ?? verdictOf(cases);
+      const verdict = plan.abort ?? verdictOf(cases, plan.requiresMet);
       this.submissions.push({
         id: this.nextSubmissionId++,
         problemId: problem.meta.id,
@@ -181,6 +208,7 @@ export class FixtureBackend implements Backend {
         verdict,
         passed: cases.filter((c) => c.status === "pass").length,
         total: cases.length,
+        skipped: cases.filter((c) => c.status === "skipped").length,
         durationMs: Math.round(cases.reduce((sum, c) => sum + c.durationMs, 0) * 10) / 10,
         target: "local",
         createdAt: new Date(at).toISOString(),
@@ -255,7 +283,7 @@ export class FixtureBackend implements Backend {
     await this.sleep(30);
     const runId = `fixture-run-${this.nextRunId++}`;
     const code = this.solutionFile(args.problemId, args.framework).code;
-    const plan = buildPlan(problem, args.framework, args.mode, code);
+    const plan = buildPlan(problem, args.framework, args.mode, code, this.runContext(problem));
 
     void (async () => {
       const results: SubmissionDetail["cases"] = [];
@@ -282,6 +310,7 @@ export class FixtureBackend implements Backend {
             verdict: event.verdict,
             passed: event.passed,
             total: event.total,
+            skipped: event.skipped,
             durationMs: event.durationMs,
             target: args.target,
             createdAt: this.now().toISOString(),
@@ -461,6 +490,127 @@ export class FixtureBackend implements Backend {
       return `data:image/svg+xml;base64,${base64(svg)}`;
     });
 
+  // Model assets ------------------------------------------------------------
+
+  private assetList(): AssetList {
+    const assets: ModelAsset[] = [...this.models.values()]
+      .map((asset) => ({
+        name: asset.name,
+        repo: asset.repo,
+        revision: asset.revision,
+        files: asset.files,
+        sizeMb: asset.sizeMb,
+        state: asset.state,
+        reason: asset.reason,
+        path: `${MODELS_DIR}/${asset.name}`,
+        bytesOnDisk: asset.bytesOnDisk,
+        problems: this.catalog.problems
+          .filter((problem) => problem.meta.assets.includes(asset.name))
+          .map((problem) => problem.meta.id)
+          .sort(),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return { modelsDir: MODELS_DIR, assets };
+  }
+
+  listAssets = (): Promise<AssetList> => this.respond(() => this.assetList());
+
+  /**
+   * Plays a download: the environment check, then bytes arriving until the
+   * asset is complete. A fetch resumes from what is on disk, a cancel keeps it,
+   * and an asset marked `failsOnce` drops its connection on the first attempt.
+   */
+  async fetchAssets(names: string[], onEvent: (event: AssetEvent) => void): Promise<string> {
+    await this.sleep(30);
+    if (names.length === 0) throw new Error("name at least one model asset to download");
+    if (this.fetching) {
+      throw new Error("a model download is already running; wait for it to finish or cancel it");
+    }
+    const job = { jobId: `fixture-fetch-${this.nextJobId++}`, canceled: false };
+    this.fetching = job;
+
+    void (async () => {
+      const failures: string[] = [];
+      const finish = (event: AssetEvent) => {
+        this.fetching = null;
+        onEvent(event);
+      };
+      onEvent({ type: "preparing", message: "Checking the Python environment" });
+      await this.sleep(500);
+      for (const name of names) {
+        if (job.canceled) break;
+        const asset = this.models.get(name);
+        if (!asset) {
+          const known = [...this.models.keys()].sort().join(", ");
+          return finish({
+            type: "done",
+            ok: false,
+            canceled: false,
+            message: `ws assets fetch: no asset named ${name} in the catalog (known: ${known})`,
+          });
+        }
+        const total = asset.totalBytes;
+        onEvent({ type: "start", asset: name, totalBytes: total });
+        const step = Math.ceil(total / FETCH_STEPS);
+        const dropAt = asset.failsOnce ? asset.bytesOnDisk + (total - asset.bytesOnDisk) * 0.45 : null;
+        while (asset.bytesOnDisk < total && !job.canceled) {
+          await this.sleep(FETCH_STEP_MS);
+          if (job.canceled) break;
+          asset.bytesOnDisk = Math.min(total, asset.bytesOnDisk + step);
+          asset.state = asset.bytesOnDisk < total ? "incomplete" : asset.state;
+          asset.reason = "not downloaded yet: model.safetensors";
+          onEvent({
+            type: "progress",
+            asset: name,
+            file: "model.safetensors",
+            doneBytes: asset.bytesOnDisk,
+            totalBytes: total,
+          });
+          if (dropAt !== null && asset.bytesOnDisk >= dropAt) break;
+        }
+        if (job.canceled) break;
+        if (asset.bytesOnDisk < total) {
+          asset.failsOnce = false;
+          const message =
+            "model.safetensors: the connection was reset; fetch again to resume from the bytes already on disk";
+          failures.push(`${name}: ${message}`);
+          onEvent({ type: "assetEnd", asset: name, ok: false, message });
+          continue;
+        }
+        asset.state = "present";
+        asset.reason = null;
+        onEvent({ type: "assetEnd", asset: name, ok: true, message: null });
+      }
+      if (job.canceled) return finish({ type: "done", ok: false, canceled: true, message: null });
+      finish({
+        type: "done",
+        ok: failures.length === 0,
+        canceled: false,
+        message: failures.length > 0 ? failures.join("; ") : null,
+      });
+    })();
+
+    return job.jobId;
+  }
+
+  cancelAssetFetch = (jobId: string): Promise<void> =>
+    this.respond(() => {
+      if (this.fetching?.jobId === jobId) this.fetching.canceled = true;
+    });
+
+  removeAsset = (name: string): Promise<AssetList> =>
+    this.respond(() => {
+      const asset = this.models.get(name);
+      if (!asset) throw new Error(`\`${name}\` is not a model asset any problem declares`);
+      if (this.fetching) {
+        throw new Error("a model download is already running; wait for it to finish or cancel it");
+      }
+      asset.state = "missing";
+      asset.reason = null;
+      asset.bytesOnDisk = 0;
+      return this.assetList();
+    });
+
   /** Consecutive local days, ending today or yesterday, with an accepted submit. */
   private streak(): number {
     const days = new Set(
@@ -496,7 +646,12 @@ function dayKey(date: Date): string {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
-/** A problem whose seeded outcome is a failure, for building failed history entries. */
+/**
+ * A problem whose seeded outcome is not a solve, for building unsolved history
+ * entries. One with cases that need a model or hardware already ends "not
+ * judged" on the fixture machine; any other is made to fail.
+ */
 function failing(problem: FixtureProblem): FixtureProblem {
+  if (problem.cases.some((fixtureCase) => fixtureCase.needs)) return problem;
   return problem.scenario === "accepted" ? { ...problem, scenario: "wrong_answer" } : problem;
 }

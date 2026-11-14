@@ -10,3 +10,10 @@ prerequisites = []
 requires = "cpu"
 entry = ["add"]
 time_limit_s = 10
+
+[[assets]]
+name = "tiny"
+repo = "fake/tiny"
+revision = "0123456789abcdef0123456789abcdef01234567"
+files = ["config.json"]
+size_mb = 0.5

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { isTauri } from "@/lib/api";
 
-const IS_MAC =
+/** True on Apple hardware, where there is never an NVIDIA GPU. */
+export const IS_MAC =
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 /**

@@ -1,16 +1,18 @@
 import type { RunMode, Verdict } from "@/lib/api";
-import { formatDuration, pluralize } from "@/lib/format";
+import { formatDuration, formatNumber, pluralize } from "@/lib/format";
 
 export interface RunOutcome {
   verdict: Verdict;
   mode: RunMode | null;
   passed: number;
   total: number;
+  /** Cases that were not run. */
+  skipped?: number;
   durationMs: number;
 }
 
 /** The sentence under a verdict: what happened, in plain words, with the counts. */
-export function summarizeRun({ verdict, mode, passed, total, durationMs }: RunOutcome): string {
+export function summarizeRun({ verdict, mode, passed, total, skipped = 0, durationMs }: RunOutcome): string {
   const of = `${passed} of ${pluralize(total, "case")} passed`;
   switch (verdict) {
     case "accepted": {
@@ -33,7 +35,21 @@ export function summarizeRun({ verdict, mode, passed, total, durationMs }: RunOu
       return total === 0
         ? "Canceled before any case ran."
         : `${passed} of ${pluralize(total, "case")} had passed when you canceled.`;
+    case "assets_missing":
+    case "hardware_missing":
+      return `${of}, ${formatNumber(skipped)} skipped.`;
   }
+}
+
+/**
+ * Why a not-judged outcome is not a solve, in one sentence. Stored submissions
+ * keep no run-level message, so history says this where a live run shows the
+ * judge's own explanation.
+ */
+export function notJudgedReason(verdict: "assets_missing" | "hardware_missing"): string {
+  return verdict === "assets_missing"
+    ? "Nothing that ran failed. The skipped cases need a model that was not downloaded, so the solution was not judged on them."
+    : "Nothing that ran failed. The skipped cases need hardware this machine does not have; the solution can only be accepted on a machine that runs every case.";
 }
 
 /** "Python 3.15.2, torch 2.15.0, mps" from the run's environment record. */

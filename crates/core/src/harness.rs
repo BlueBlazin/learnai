@@ -6,7 +6,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use crate::model::{Framework, RunMode};
+use crate::model::{Extra, Framework, RunMode};
 use crate::uv::Uv;
 
 /// Everything needed to judge one solution once.
@@ -22,8 +22,8 @@ pub struct HarnessJob {
     pub mode: RunMode,
     /// Restrict the run to one case.
     pub case: Option<String>,
-    /// Enabled optional frameworks; passed as `--extra` to every `uv run`.
-    pub extras: Vec<Framework>,
+    /// Every installed extra; passed as `--extra` to every `uv run`.
+    pub extras: Vec<Extra>,
 }
 
 impl HarnessJob {
@@ -154,7 +154,7 @@ impl HarnessCommand for ProgramHarness {
 mod tests {
     use super::*;
 
-    fn job(extras: Vec<Framework>) -> HarnessJob {
+    fn job(extras: Vec<Extra>) -> HarnessJob {
         HarnessJob {
             problem_dir: "/r/problems/t/p".into(),
             solution: "/r/workspace/p/torch.py".into(),
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn uv_harness_matches_the_contract() {
         let harness = UvHarness::new(Uv::new("uv", "/r/python"));
-        let spec = harness.command(&job(vec![Framework::Jax, Framework::Mlx]));
+        let spec = harness.command(&job(vec![Extra::Jax, Extra::Mlx]));
         assert_eq!(
             spec.display(),
             "uv run --project /r/python --extra jax --extra mlx -- python -m whetstone.harness \

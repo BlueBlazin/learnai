@@ -1,13 +1,15 @@
 //! Locating uv and building its command lines.
 //!
-//! Every invocation passes the full set of enabled extras, so the result never depends
-//! on uv's exact/inexact defaults (see the uv notes in `docs/VERSIONS.md`).
+//! Every invocation passes the full set of enabled extras (optional frameworks, and
+//! `models` once it has been installed), so the result never depends on uv's
+//! exact/inexact defaults (see the uv notes in `docs/VERSIONS.md`) and no command
+//! removes what another one installed.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use crate::harness::CommandSpec;
-use crate::model::Framework;
+use crate::model::Extra;
 
 /// Environment variable that overrides the uv executable.
 pub const UV_ENV: &str = "WHETSTONE_UV";
@@ -38,7 +40,7 @@ impl Uv {
         &self.program
     }
 
-    fn spec(&self, subcommand: &str, extras: &[Framework], tail: &[&str]) -> CommandSpec {
+    fn spec(&self, subcommand: &str, extras: &[Extra], tail: &[&str]) -> CommandSpec {
         let mut args: Vec<OsString> = vec![
             subcommand.into(),
             "--project".into(),
@@ -57,7 +59,7 @@ impl Uv {
     }
 
     /// `uv run --project <project> [--extra ...] --`; append the command to run.
-    pub fn run(&self, extras: &[Framework]) -> CommandSpec {
+    pub fn run(&self, extras: &[Extra]) -> CommandSpec {
         self.spec("run", extras, &["--"])
     }
 
@@ -68,7 +70,7 @@ impl Uv {
     }
 
     /// `uv sync --project <project> [--extra ...]` with the full enabled set.
-    pub fn sync(&self, extras: &[Framework]) -> CommandSpec {
+    pub fn sync(&self, extras: &[Extra]) -> CommandSpec {
         self.spec("sync", extras, &[])
     }
 
@@ -82,9 +84,9 @@ impl Uv {
     }
 }
 
-/// The uv extra names for a set of frameworks: sorted, deduplicated, base frameworks dropped.
-pub fn extra_names(frameworks: &[Framework]) -> Vec<&'static str> {
-    let mut names: Vec<_> = frameworks.iter().filter_map(|f| f.extra()).collect();
+/// The uv extra names for a set of extras: sorted and deduplicated.
+pub fn extra_names(extras: &[Extra]) -> Vec<&'static str> {
+    let mut names: Vec<_> = extras.iter().map(|extra| extra.as_str()).collect();
     names.sort_unstable();
     names.dedup();
     names
@@ -124,12 +126,7 @@ mod tests {
     #[test]
     fn commands_carry_the_full_extra_set_in_a_stable_order() {
         let uv = Uv::new("uv", "/r/python");
-        let extras = [
-            Framework::Mlx,
-            Framework::Torch,
-            Framework::Jax,
-            Framework::Mlx,
-        ];
+        let extras = [Extra::Mlx, Extra::Jax, Extra::Mlx];
         assert_eq!(
             uv.sync(&extras).display(),
             "uv sync --project /r/python --extra jax --extra mlx"
@@ -139,6 +136,10 @@ mod tests {
             "uv run --project /r/python --extra jax --extra mlx --"
         );
         assert_eq!(uv.sync(&[]).display(), "uv sync --project /r/python");
+        assert_eq!(
+            uv.run(&[Extra::Models, Extra::Jax]).display(),
+            "uv run --project /r/python --extra jax --extra models --"
+        );
         assert_eq!(
             uv.run_no_sync().display(),
             "uv run --project /r/python --no-sync --"

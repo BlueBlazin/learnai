@@ -58,6 +58,14 @@ pub enum CoreError {
     #[error("an environment install is already running")]
     InstallInProgress,
 
+    /// A model asset fetch is already in progress.
+    #[error("a model download is already running; wait for it to finish or cancel it")]
+    FetchInProgress,
+
+    /// Model assets could not be listed.
+    #[error("{0}")]
+    Assets(String),
+
     /// A caller-supplied argument is invalid.
     #[error("{0}")]
     InvalidArgument(String),
@@ -117,6 +125,7 @@ impl CoreError {
             CoreError::FrameworkNotSupported { .. }
                 | CoreError::EditorialLocked(_)
                 | CoreError::InstallInProgress
+                | CoreError::FetchInProgress
                 | CoreError::InvalidArgument(_)
                 | CoreError::AssetTooLarge { .. }
         )

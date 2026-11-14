@@ -4,19 +4,31 @@ import { useDefaultLayout } from "react-resizable-panels";
 import { AppLink } from "@/components/app/app-link";
 import { ScreenMessage } from "@/components/app/page";
 import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
+import { AssetNoticeList, type NoticeAsset } from "@/components/models/asset-notice";
 import { ResultsPanel } from "@/components/results/results-panel";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { EditorPane } from "@/components/workbench/editor-pane";
+import { HardwareNotice } from "@/components/workbench/hardware-notice";
 import { StatementPane } from "@/components/workbench/statement-pane";
 import { useGo } from "@/hooks/use-go";
 import { useRunShortcuts } from "@/hooks/use-run-shortcuts";
 import type { RunMode } from "@/lib/api";
-import { useEnvStatus, useProblem, useProblems, useTracks } from "@/lib/api/queries";
+import {
+  useAssets,
+  useEnvStatus,
+  useProblem,
+  useProblems,
+  useSubmissions,
+  useTracks,
+} from "@/lib/api/queries";
+import { useAssetFetch } from "@/lib/api/use-asset-fetch";
 import { useEnvInstall } from "@/lib/api/use-env-install";
 import { useRun } from "@/lib/api/use-run";
 import { useSolutionEditor } from "@/lib/api/use-solution-editor";
 import { neighbors } from "@/lib/continue";
+import { missingHardware } from "@/lib/hardware";
+import { IS_MAC } from "@/lib/platform";
 import { type ProblemSearch, routes, type StatementTab } from "@/lib/routes";
 import { preferredFramework, usePreferences } from "@/stores/preferences";
 import { useWorkspaceActions } from "@/stores/workspace-actions";
@@ -42,6 +54,12 @@ function ProblemScreen({ problemId }: { problemId: string }) {
 
   const editor = useSolutionEditor(problemId, framework);
   const run = useRun(problemId);
+
+  // Models the problem declares: listed only when it declares any.
+  const declared = problem.data?.assets ?? [];
+  const assets = useAssets(declared.length > 0);
+  const fetch = useAssetFetch();
+  const submissions = useSubmissions(problemId);
 
   // Editing or running counts as working in this framework; it becomes the default elsewhere.
   const edited = editor.saveState !== "saved";
@@ -121,6 +139,17 @@ function ProblemScreen({ problemId }: { problemId: string }) {
   }
 
   const detail = problem.data;
+  // The declared models, with their state where the listing knows them.
+  const models: NoticeAsset[] = (assets.data?.assets ?? []).filter((asset) => declared.includes(asset.name));
+  // A run that skipped cases for a model names it itself, even if the listing has not loaded.
+  const skippedFor: NoticeAsset[] = run.state.missingAssets.map(
+    (missing) => models.find((model) => model.name === missing.name) ?? missing,
+  );
+  const lacking = missingHardware(detail.requires, {
+    run: run.state,
+    lastVerdict: submissions.data?.[0]?.verdict,
+    isMac: IS_MAC,
+  });
   return (
     <ResizablePanelGroup
       orientation="horizontal"
@@ -164,6 +193,12 @@ function ProblemScreen({ problemId }: { problemId: string }) {
               onFrameworkChange={(next) => setFramework(problemId, next)}
               onRun={onRun}
               onSubmit={onSubmit}
+              notices={
+                <>
+                  <AssetNoticeList assets={models} fetch={fetch} />
+                  {lacking ? <HardwareNotice requires={lacking} /> : null}
+                </>
+              }
             />
           </ResizablePanel>
           <ResizableHandle />
@@ -171,6 +206,14 @@ function ProblemScreen({ problemId }: { problemId: string }) {
             <ResultsPanel
               run={run.state}
               onCancel={run.cancel}
+              resolution={
+                <AssetNoticeList
+                  assets={skippedFor}
+                  fetch={fetch}
+                  layout="inline"
+                  whenPresent={`${run.state.mode === "run" ? "Run" : "Submit"} again to judge the skipped cases.`}
+                />
+              }
               actions={
                 run.state.submissionId !== null ? (
                   <Button

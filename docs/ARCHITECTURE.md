@@ -283,6 +283,7 @@ Skipped cases and the two "not judged" endings:
 exit code 0 when every asset succeeded, 1 when one failed, 2 for a usage error. A fetch
 is pinned to the declared revision, verified, and resumable per file. Full schemas:
 PROBLEM_AUTHORING section 15.
+Core passes `WHETSTONE_ROOT=<root>` to `ws assets` commands.
 
 `validate` is the quality gate. For every supported framework of a problem: the reference
 is accepted; the starter is not accepted. Every mutant is rejected. Metadata is complete
@@ -428,8 +429,10 @@ editor; the app re-reads the file when the window regains focus.
 Model assets: one fetch job at a time (a second `fetch_assets` fails with a clear
 message). Canceling kills the process group; completed files are kept, so a later fetch
 resumes. `cancel_asset_fetch` on an unknown or finished job is a no-op. `remove_asset`
-fails while a fetch is running. The app never downloads anything without an explicit
-click. `assets_missing` and `hardware_missing` submits are stored (with `skipped`) but
+fails while a fetch is running, and `env_install` and `fetch_assets` refuse to run at
+the same time (both change the one environment). Every uv call core makes passes the
+full set of installed extras, so no call removes another's packages. The app never
+downloads anything without an explicit click. `assets_missing` and `hardware_missing` submits are stored (with `skipped`) but
 never count as solved or toward the streak.
 
 ### 4.1 Transports

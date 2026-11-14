@@ -21,7 +21,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
-use whetstone_core::{Core, CoreError, Framework, InstallEvent, RunEvent, RunMode};
+use whetstone_core::{AssetEvent, Core, CoreError, Framework, InstallEvent, RunEvent, RunMode};
 
 use crate::events::{EventLog, LogRegistry};
 
@@ -59,7 +59,7 @@ impl From<CoreError> for ApiError {
     fn from(error: CoreError) -> Self {
         let status = match &error {
             CoreError::EditorialLocked(_) => StatusCode::FORBIDDEN,
-            CoreError::InstallInProgress => StatusCode::CONFLICT,
+            CoreError::InstallInProgress | CoreError::FetchInProgress => StatusCode::CONFLICT,
             e if e.is_not_found() => StatusCode::NOT_FOUND,
             e if e.is_invalid_request() => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
@@ -134,6 +134,24 @@ struct SubmissionIdArgs {
 #[serde(rename_all = "camelCase")]
 struct FrameworkArgs {
     framework: Framework,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FetchAssetsArgs {
+    names: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JobIdArgs {
+    job_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NameArgs {
+    name: String,
 }
 
 /// Parses the request body: a JSON object of camelCase arguments. An empty body counts
@@ -234,6 +252,22 @@ fn dispatch(bridge: &Bridge, command: &str, body: &[u8]) -> Result<Value, ApiErr
             let a: AssetArgs = args(body)?;
             reply(core.get_problem_asset(&a.id, &a.path)?)
         }
+        "list_assets" => reply(core.list_assets()?),
+        "fetch_assets" => {
+            let a: FetchAssetsArgs = args(body)?;
+            let log = EventLog::new();
+            let sink = Arc::clone(&log);
+            let job_id = core.fetch_assets(&a.names, move |event: AssetEvent| {
+                sink.push(&event, matches!(event, AssetEvent::Done { .. }));
+            })?;
+            bridge.jobs.insert(job_id.clone(), log);
+            Ok(json!({ "jobId": job_id }))
+        }
+        "cancel_asset_fetch" => {
+            core.cancel_asset_fetch(&args::<JobIdArgs>(body)?.job_id);
+            Ok(Value::Null)
+        }
+        "remove_asset" => reply(core.remove_asset(&args::<NameArgs>(body)?.name)?),
         other => Err(ApiError::new(
             StatusCode::NOT_FOUND,
             format!("unknown command `{other}`"),

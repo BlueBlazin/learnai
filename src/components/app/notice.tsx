@@ -21,19 +21,22 @@ const ICON_TONE: Record<NoticeTone, string> = {
 /**
  * One line that says something needs attention (or went well, or failed) and,
  * when possible, offers the action that fixes it. A strip under a toolbar
- * (`strip`) or a line in a page (`inline`); never a box.
+ * (`strip`) or a line in a page (`inline`); never a box. `footer` sits under the
+ * line, inside the same strip: the progress of the action once it is under way.
  */
 export function Notice({
   tone = "warn",
   layout = "inline",
   children,
   action,
+  footer,
   className,
 }: {
   tone?: NoticeTone;
   layout?: "inline" | "strip";
   children: ReactNode;
   action?: ReactNode;
+  footer?: ReactNode;
   className?: string;
 }) {
   const Icon = ICON[tone];
@@ -41,16 +44,19 @@ export function Notice({
     <div
       role="status"
       className={cn(
-        "flex items-center gap-2 text-sm",
+        "flex flex-col gap-1.5 text-sm",
         layout === "strip" && "shrink-0 border-b bg-background px-3 py-1.5",
         className,
       )}
     >
-      <Icon className={cn("size-3.5 shrink-0", ICON_TONE[tone])} aria-hidden />
-      <p className={cn("selectable min-w-0 flex-1", tone === "fail" ? "text-fail" : "text-foreground")}>
-        {children}
-      </p>
-      {action ? <div className="flex shrink-0 items-center gap-2">{action}</div> : null}
+      <div className="flex items-center gap-2">
+        <Icon className={cn("size-3.5 shrink-0", ICON_TONE[tone])} aria-hidden />
+        <p className={cn("selectable min-w-0 flex-1", tone === "fail" ? "text-fail" : "text-foreground")}>
+          {children}
+        </p>
+        {action ? <div className="flex shrink-0 items-center gap-2">{action}</div> : null}
+      </div>
+      {footer}
     </div>
   );
 }

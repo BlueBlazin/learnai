@@ -41,6 +41,7 @@ export const keys = {
   catalogIssues: ["catalogIssues"] as const,
   paths: ["paths"] as const,
   asset: (id: string, path: string) => ["asset", id, path] as const,
+  assets: ["assets"] as const,
 };
 
 /** Everything a stored submission or a status change can affect. */
@@ -135,5 +136,22 @@ export function useUnlockEditorial(id: string) {
   return useMutation({
     mutationFn: () => backend.unlockEditorial(id),
     onSuccess: (detail) => client.setQueryData(keys.problem(id), detail),
+  });
+}
+
+/**
+ * Model assets and their state on disk. `enabled` false skips the listing for
+ * screens that turn out not to need it (a problem that declares no asset).
+ */
+export function useAssets(enabled = true) {
+  return useQuery({ queryKey: keys.assets, queryFn: () => backend.listAssets(), enabled });
+}
+
+/** Deletes one downloaded asset; the listing the core returns replaces the cached one. */
+export function useRemoveAsset() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => backend.removeAsset(name),
+    onSuccess: (listing) => client.setQueryData(keys.assets, listing),
   });
 }

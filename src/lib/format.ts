@@ -41,8 +41,50 @@ export function metricLabel(name: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/**
+ * True when a metric misses its limit: above it for ordinary metrics, below it
+ * for metrics where higher is better (throughput), whose limit is a minimum.
+ */
 export function metricExceeded(metric: Metric): boolean {
-  return metric.limit !== undefined && metric.value > metric.limit;
+  if (metric.limit === undefined) return false;
+  return metric.higherIsBetter ? metric.value < metric.limit : metric.value > metric.limit;
+}
+
+/** The words that introduce a metric's limit: which way round it is, and whether it was met. */
+export function metricLimitPhrase(metric: Metric): string {
+  const missed = metricExceeded(metric);
+  if (metric.higherIsBetter) return missed ? "under the minimum of" : "at least";
+  return missed ? "over the limit of" : "limit";
+}
+
+const sizeNumber = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+const sizeNumberFine = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/**
+ * A byte count in decimal units, the way Hugging Face and macOS show sizes:
+ * "0 kB", "412 kB", "7.2 MB", "712 MB", "3.90 GB".
+ */
+export function formatBytes(bytes: number): string {
+  const value = Math.max(0, bytes);
+  if (value >= 1e9) return `${sizeNumberFine.format(value / 1e9)} GB`;
+  if (value >= 1e7) return `${integer.format(value / 1e6)} MB`;
+  if (value >= 1e6) return `${sizeNumber.format(value / 1e6)} MB`;
+  return `${integer.format(value / 1e3)} kB`;
+}
+
+/** A declared download size, which is approximate: "712 MB", "3.9 GB", "0.5 MB". */
+export function formatSizeMb(megabytes: number): string {
+  if (megabytes >= 1000) return `${sizeNumber.format(megabytes / 1000)} GB`;
+  if (megabytes >= 10) return `${integer.format(megabytes)} MB`;
+  if (megabytes >= 0.1) return `${sizeNumber.format(megabytes)} MB`;
+  return "under 0.1 MB";
+}
+
+/** A whole-number percentage of `done` in `total`; never 100 before it is finished. */
+export function formatPercent(done: number, total: number): string {
+  if (total <= 0) return "0%";
+  const ratio = Math.min(1, Math.max(0, done / total));
+  return `${ratio < 1 ? Math.min(99, Math.floor(ratio * 100)) : 100}%`;
 }
 
 /** "just now", "12 min ago", "3 h ago", "yesterday", "4 days ago", then a date. */

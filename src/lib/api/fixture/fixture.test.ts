@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RunEvent, RunMode } from "../types";
+import type { AssetEvent, RunEvent, RunMode } from "../types";
 import { FixtureBackend } from "./backend";
 import { buildCatalog, renderTemplate } from "./catalog";
 import { buildPlan, resolveScenario, simulateRun } from "./runs";
@@ -342,5 +342,215 @@ describe("FixtureBackend", () => {
     expect(events.at(-1)).toBe("done");
     expect(events.filter((t) => t === "log").length).toBeGreaterThan(3);
     expect((await backend.envStatus()).frameworks.every((f) => f.installed)).toBe(true);
+  });
+
+  it("lists one model of each kind, with the problems that use it", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const listing = await backend.listAssets();
+    expect(listing.modelsDir).toMatch(/\.whetstone\/models$/);
+    expect(listing.assets.map((asset) => [asset.name, asset.state])).toEqual([
+      ["granite-4.0-1b", "incomplete"],
+      ["granite-4.0-350m", "present"],
+      ["granite-4.2-3b-mlx-8bit", "missing"],
+    ]);
+    const problems = await backend.listProblems();
+    for (const asset of listing.assets) {
+      expect(asset.path).toBe(`${listing.modelsDir}/${asset.name}`);
+      expect(asset.problems.length).toBeGreaterThan(0);
+      // The catalog and the listing agree about who declares what.
+      expect(asset.problems).toEqual(
+        problems
+          .filter((problem) => problem.assets.includes(asset.name))
+          .map((problem) => problem.id)
+          .sort(),
+      );
+    }
+    expect(listing.assets[0]?.reason).not.toBeNull();
+    expect(listing.assets[2]?.bytesOnDisk).toBe(0);
+  });
+
+  it("skips the cases that need a missing model, stores the submit, and never counts it as solved", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const id = "mlx-8bit-linear";
+    // History already holds a not-judged submit with its skipped cases.
+    const seeded = (await backend.listSubmissions(id))[0];
+    expect(seeded).toMatchObject({ verdict: "assets_missing", skipped: 3 });
+    const stored = await backend.getSubmission(seeded?.id ?? -1);
+    expect(stored.cases.filter((c) => c.status === "skipped").map((c) => c.skip)).toEqual(
+      Array.from({ length: 3 }, () => ({ kind: "asset", asset: "granite-4.2-3b-mlx-8bit" })),
+    );
+
+    const solvedBefore = (await backend.getStats()).solved;
+    const events = await new Promise<RunEvent[]>((resolve, reject) => {
+      const seen: RunEvent[] = [];
+      backend
+        .startRun({ problemId: id, framework: "mlx", mode: "submit", target: "local" }, (event) => {
+          seen.push(event);
+          if (event.type === "end") resolve(seen);
+        })
+        .catch(reject);
+    });
+    const start = events.find((e) => e.type === "start");
+    expect(start).toMatchObject({ requires: "mlx-gpu", requiresMet: true });
+    const end = events.at(-1);
+    if (end?.type !== "end") throw new Error("expected an end event");
+    expect(end).toMatchObject({ verdict: "assets_missing", passed: 3, total: 6, skipped: 3 });
+    expect(end.missingAssets).toEqual([
+      {
+        name: "granite-4.2-3b-mlx-8bit",
+        repo: "lmstudio-community/granite-4.2-3b-MLX-8bit",
+        sizeMb: 3900,
+      },
+    ]);
+    expect(end.message).toContain("3 of 6 cases were skipped");
+    // A skipped case reports `caseEnd` with no `caseStart`, and is not a failure.
+    const skipped = events.flatMap((e) =>
+      e.type === "caseEnd" && e.result.status === "skipped" ? [e.result] : [],
+    );
+    expect(skipped).toHaveLength(3);
+    expect(skipped[0]?.message).toMatch(/^skipped: model asset/);
+    const started = events.flatMap((e) => (e.type === "caseStart" ? [e.id] : []));
+    expect(started).not.toContain(skipped[0]?.id);
+
+    expect(end.submissionId).not.toBeNull();
+    expect((await backend.getProblem(id)).status).toBe("attempted");
+    expect((await backend.getStats()).solved).toBe(solvedBefore);
+  });
+
+  it("ends with hardware_missing where the fixture Mac has no NVIDIA GPU", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const id = "cuda-device-placement";
+    expect((await backend.listSubmissions(id))[0]).toMatchObject({ verdict: "hardware_missing", skipped: 2 });
+
+    const run = await runToEnd(backend, id, "run");
+    const start = run.find((e) => e.type === "start");
+    expect(start).toMatchObject({ requires: "cuda", requiresMet: false });
+    // Every public case is a CPU case and passes, yet the run is not accepted.
+    expect(run.at(-1)).toMatchObject({
+      verdict: "hardware_missing",
+      passed: 2,
+      total: 2,
+      skipped: 0,
+      missingHardware: "cuda",
+    });
+
+    const submit = await runToEnd(backend, id, "submit");
+    if (start?.type !== "start") throw new Error("expected a start event");
+    const announced = submit.find((e) => e.type === "start");
+    if (announced?.type !== "start") throw new Error("expected a start event");
+    expect(announced.cases.filter((c) => c.requires === "cuda")).toHaveLength(2);
+    expect(submit.at(-1)).toMatchObject({ verdict: "hardware_missing", passed: 3, total: 5, skipped: 2 });
+    expect((await backend.getProblem(id)).status).toBe("attempted");
+  });
+
+  it("downloads a model with progress, after which the skipped cases run", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const name = "granite-4.2-3b-mlx-8bit";
+    const fetch = (names: string[]) =>
+      new Promise<AssetEvent[]>((resolve, reject) => {
+        const seen: AssetEvent[] = [];
+        backend
+          .fetchAssets(names, (event) => {
+            seen.push(event);
+            if (event.type === "done") resolve(seen);
+          })
+          .catch(reject);
+      });
+
+    const events = await fetch([name]);
+    expect(events[0]?.type).toBe("preparing");
+    expect(events.at(-1)).toEqual({ type: "done", ok: true, canceled: false, message: null });
+    expect(events.filter((e) => e.type === "done")).toHaveLength(1);
+    const progress = events.flatMap((e) => (e.type === "progress" ? [e] : []));
+    expect(progress.length).toBeGreaterThan(10);
+    // Bytes only go up, and end at the total.
+    for (let i = 1; i < progress.length; i++) {
+      expect(progress[i]?.doneBytes).toBeGreaterThanOrEqual(progress[i - 1]?.doneBytes ?? 0);
+    }
+    expect(progress.at(-1)?.doneBytes).toBe(progress.at(-1)?.totalBytes);
+    expect(events).toContainEqual({ type: "assetEnd", asset: name, ok: true, message: null });
+
+    const asset = (await backend.listAssets()).assets.find((a) => a.name === name);
+    expect(asset).toMatchObject({ state: "present", reason: null });
+    expect(asset?.bytesOnDisk).toBeGreaterThan(3e9);
+
+    // With the model on disk the same submit is judged on every case.
+    const events2 = await new Promise<RunEvent[]>((resolve, reject) => {
+      const seen: RunEvent[] = [];
+      backend
+        .startRun(
+          { problemId: "mlx-8bit-linear", framework: "mlx", mode: "submit", target: "local" },
+          (e) => {
+            seen.push(e);
+            if (e.type === "end") resolve(seen);
+          },
+        )
+        .catch(reject);
+    });
+    expect(events2.at(-1)).toMatchObject({ verdict: "accepted", skipped: 0 });
+
+    // Removing it brings the skips back; an undeclared name is refused.
+    const after = await backend.removeAsset(name);
+    expect(after.assets.find((a) => a.name === name)).toMatchObject({ state: "missing", bytesOnDisk: 0 });
+    await expect(backend.removeAsset("../state.db")).rejects.toThrow("not a model asset");
+    await expect(backend.fetchAssets([], () => {})).rejects.toThrow("at least one");
+  });
+
+  it("fails once with a one-line reason, then resumes from the bytes on disk", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const name = "granite-4.0-1b";
+    const fetch = () =>
+      new Promise<AssetEvent[]>((resolve, reject) => {
+        const seen: AssetEvent[] = [];
+        backend
+          .fetchAssets([name], (event) => {
+            seen.push(event);
+            if (event.type === "done") resolve(seen);
+          })
+          .catch(reject);
+      });
+
+    const first = await fetch();
+    const failure = first.find((e) => e.type === "assetEnd");
+    if (failure?.type !== "assetEnd") throw new Error("expected an assetEnd event");
+    expect(failure.ok).toBe(false);
+    expect(failure.message).toContain("connection was reset");
+    expect(failure.message).not.toContain("\n");
+    expect(first.at(-1)).toMatchObject({ type: "done", ok: false, canceled: false });
+    const partial = (await backend.listAssets()).assets.find((a) => a.name === name);
+    expect(partial?.state).toBe("incomplete");
+
+    const second = await fetch();
+    expect(second.at(-1)).toMatchObject({ type: "done", ok: true });
+    const resumed = second.find((e) => e.type === "progress");
+    if (resumed?.type !== "progress") throw new Error("expected progress");
+    expect(resumed.doneBytes).toBeGreaterThan(partial?.bytesOnDisk ?? 0);
+    expect((await backend.listAssets()).assets.find((a) => a.name === name)?.state).toBe("present");
+  });
+
+  it("runs one fetch at a time, and a cancel keeps what was downloaded", async () => {
+    const backend = new FixtureBackend({ speed: 0.01 });
+    const name = "granite-4.2-3b-mlx-8bit";
+    const events: AssetEvent[] = [];
+    const done = new Promise<void>((resolve) => {
+      void backend
+        .fetchAssets([name], (event) => {
+          events.push(event);
+          if (event.type === "done") resolve();
+        })
+        .then(async (jobId) => {
+          await expect(backend.fetchAssets(["granite-4.0-1b"], () => {})).rejects.toThrow("already running");
+          await expect(backend.removeAsset(name)).rejects.toThrow("already running");
+          await backend.cancelAssetFetch("not-a-job");
+          await backend.cancelAssetFetch(jobId);
+        });
+    });
+    await done;
+    expect(events.at(-1)).toEqual({ type: "done", ok: false, canceled: true, message: null });
+    expect(events.some((e) => e.type === "assetEnd")).toBe(false);
+    const asset = (await backend.listAssets()).assets.find((a) => a.name === name);
+    expect(asset?.state === "missing" || asset?.state === "incomplete").toBe(true);
+    // The slot is free again.
+    await expect(backend.fetchAssets([name], () => {})).resolves.toMatch(/^fixture-fetch-/);
   });
 });

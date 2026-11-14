@@ -45,9 +45,9 @@ function Summary({
       <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-data-panel-open/disclosure:invisible">
         {result?.message ?? (state === "not-run" ? "Not run" : null)}
       </span>
-      {result && result.status !== "skipped" ? (
+      {result ? (
         <span className="tabular shrink-0 text-xs text-muted-foreground">
-          {formatDuration(result.durationMs)}
+          {result.status === "skipped" ? "Skipped" : formatDuration(result.durationMs)}
         </span>
       ) : null}
     </span>
@@ -57,7 +57,9 @@ function Summary({
 /**
  * One test case in a run or a stored submission. Shows state, name, the one-line
  * failure reason, and time; opens to the full message, detail, captured output,
- * and metrics when there is anything to show.
+ * and metrics when there is anything to show. A skipped case (missing hardware,
+ * a model that is not downloaded) says "Skipped" where the time would be and
+ * gives its reason in body ink: it did not fail.
  */
 function CaseRow({
   info,

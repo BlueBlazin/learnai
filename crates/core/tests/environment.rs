@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use common::{Collector, TestRoot, fixtures, test_limits};
 use whetstone_core::{
-    Core, CoreError, CoreOptions, Framework, FrameworkEnv, InstallEvent, LOCAL_TARGET, RunMode,
+    Core, CoreError, CoreOptions, Extra, Framework, FrameworkEnv, InstallEvent, LOCAL_TARGET,
+    RunMode,
 };
 
 fn install(core: &Core, framework: Framework) -> Vec<InstallEvent> {
@@ -129,7 +130,7 @@ fn installs_accumulate_extras_instead_of_replacing_them() {
         text.contains(&" + jax==9.9.9"),
         "stderr is streamed: {text:?}"
     );
-    assert_eq!(core.enabled_extras().expect("extras"), [Framework::Jax]);
+    assert_eq!(core.enabled_extras().expect("extras"), [Extra::Jax]);
     assert!(env_of(&core, Framework::Jax).installed);
 
     install(&core, Framework::Mlx);
@@ -140,7 +141,7 @@ fn installs_accumulate_extras_instead_of_replacing_them() {
     );
     assert_eq!(
         core.enabled_extras().expect("extras"),
-        [Framework::Jax, Framework::Mlx]
+        [Extra::Jax, Extra::Mlx]
     );
     assert_eq!(
         env_of(&core, Framework::Jax).version.as_deref(),
@@ -159,7 +160,7 @@ fn installs_accumulate_extras_instead_of_replacing_them() {
     );
     assert_eq!(
         core.enabled_extras().expect("extras"),
-        [Framework::Jax, Framework::Mlx]
+        [Extra::Jax, Extra::Mlx]
     );
 }
 
@@ -170,7 +171,7 @@ fn enabled_extras_are_passed_to_every_run_and_survive_a_restart() {
 
     // A new core over the same root reads the setting back from the database.
     let core = root.core_with_fake_uv();
-    assert_eq!(core.enabled_extras().expect("extras"), [Framework::Mlx]);
+    assert_eq!(core.enabled_extras().expect("extras"), [Extra::Mlx]);
     let collector = Collector::new();
     core.start_run(
         "add-two",

@@ -14,7 +14,9 @@
 //! - [`store`]: SQLite state (submissions, editorial unlocks, settings)
 //! - [`progress`]: status derivation and streak math
 //! - [`protocol`], [`harness`], [`target`], [`run`]: the run pipeline
+//! - [`stream`]: reading a subprocess's output as lines (runs, installs, fetches)
 //! - [`uv`], [`env`]: the Python environment
+//! - [`models`]: model assets (list, fetch, cancel, remove)
 //! - [`app`]: the [`Core`] facade
 
 pub mod app;
@@ -24,6 +26,7 @@ pub mod env;
 pub mod error;
 pub mod harness;
 pub mod model;
+pub mod models;
 pub mod paths;
 pub mod progress;
 pub mod protocol;
@@ -32,6 +35,7 @@ pub mod run;
 pub mod sink;
 pub mod solutions;
 pub mod store;
+mod stream;
 pub mod target;
 pub mod uv;
 

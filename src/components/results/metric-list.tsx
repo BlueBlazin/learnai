@@ -1,12 +1,15 @@
 import { cn } from "cn";
 import { TriangleAlert } from "lucide-react";
 import type { Metric } from "@/lib/api";
-import { formatMetricValue, metricExceeded, metricLabel } from "@/lib/format";
+import { formatMetricValue, metricExceeded, metricLabel, metricLimitPhrase } from "@/lib/format";
 
 /**
  * Measured quantities with their limits: tokens processed, slowdown against the
- * reference, simulated latency. A value over its limit is marked with an icon
- * and the word "over", not by color alone.
+ * reference, simulated latency, throughput. A limit reads the way round it
+ * applies: "limit 36 tokens" is a ceiling, "at least 20 tok/s" a floor (metrics
+ * where higher is better). A value that misses its limit is marked with an
+ * icon and the words "over the limit of" or "under the minimum of", not by
+ * color alone.
  */
 export function MetricList({ metrics, className }: { metrics: Metric[]; className?: string }) {
   if (metrics.length === 0) return null;
@@ -24,7 +27,7 @@ export function MetricList({ metrics, className }: { metrics: Metric[]; classNam
               {metric.limit !== undefined ? (
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   {over ? <TriangleAlert className="size-3 self-center text-fail" aria-hidden /> : null}
-                  {over ? "over the limit of" : "limit"} {formatMetricValue(metric.limit, metric.unit)}
+                  {metricLimitPhrase(metric)} {formatMetricValue(metric.limit, metric.unit)}
                 </span>
               ) : null}
             </dd>

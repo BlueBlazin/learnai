@@ -216,7 +216,8 @@ fn the_shipped_starter_path_is_valid_against_the_real_catalog() {
         .iter()
         .find(|p| p.id == "inference-75")
         .expect("inference-75");
-    assert!((3..=4).contains(&path.stages.len()));
+    // The path grows with the catalog; it has always had at least three stages.
+    assert!(path.stages.len() >= 3);
     assert!(path.stages.iter().all(|s| !s.description.is_empty()));
     // Nothing is taught before its prerequisites.
     let order: Vec<&str> = path.problem_ids().collect();

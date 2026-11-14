@@ -5,7 +5,6 @@
 //! whatever happens (launch failure, harness crash, cancel, timeout).
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
@@ -13,11 +12,13 @@ use std::time::{Duration, Instant};
 
 use crate::harness::HarnessJob;
 use crate::model::{
-    CaseInfo, CaseStatus, LogStream, Metric, RunEvent, RunMode, StoredCase, Verdict,
+    CaseInfo, CaseStatus, LogStream, Metric, MissingAsset, Requires, RunEvent, RunMode, StoredCase,
+    Verdict,
 };
 use crate::protocol::{HarnessEvent, StdoutLine, parse_stdout_line, stringify_env};
 use crate::sink::SharedSink;
 use crate::store::{NewSubmission, Store};
+use crate::stream::{Message, spawn_reader};
 use crate::target::Target;
 
 /// Wall-clock limits core enforces on a run, as a backstop to the harness's own
@@ -65,13 +66,6 @@ pub(crate) struct RunPlan {
     pub limits: RunLimits,
     pub store: Arc<Store>,
     pub sink: SharedSink<RunEvent>,
-}
-
-enum Message {
-    Stdout(String),
-    Stderr(String),
-    Closed,
-    Cancel,
 }
 
 /// Active runs, by run id.
@@ -139,6 +133,11 @@ struct Outcome {
     /// The harness's own `(passed, total, duration_ms)`; without it the numbers are
     /// derived from what was observed.
     reported: Option<(u32, u32, f64)>,
+    /// The harness's own count of skipped cases; without it the skipped results are
+    /// counted.
+    skipped: Option<u32>,
+    missing_assets: Option<Vec<MissingAsset>>,
+    missing_hardware: Option<Requires>,
     /// False when the harness process never started.
     launched: bool,
     message: Option<String>,
@@ -152,6 +151,9 @@ impl Outcome {
             verdict,
             metrics: Vec::new(),
             reported: None,
+            skipped: None,
+            missing_assets: None,
+            missing_hardware: None,
             launched,
             message,
             detail: None,
@@ -295,7 +297,12 @@ impl Run {
                 Message::Stderr(line) => self.log(LogStream::Stderr, line),
                 Message::Stdout(line) => match parse_stdout_line(&line) {
                     StdoutLine::Log(text) => self.log(LogStream::Stdout, text),
-                    StdoutLine::Event(HarnessEvent::Start { cases, env }) => {
+                    StdoutLine::Event(HarnessEvent::Start {
+                        cases,
+                        env,
+                        requires,
+                        requires_met,
+                    }) => {
                         self.announced.clone_from(&cases);
                         if !started {
                             started = true;
@@ -308,6 +315,8 @@ impl Run {
                         self.emit(RunEvent::Start {
                             cases,
                             env: stringify_env(env),
+                            requires,
+                            requires_met,
                         });
                     }
                     StdoutLine::Event(HarnessEvent::CaseStart { id }) => {
@@ -319,6 +328,9 @@ impl Run {
                         total,
                         duration_ms,
                         metrics,
+                        skipped,
+                        missing_assets,
+                        missing_hardware,
                         message,
                         detail,
                     }) => {
@@ -327,6 +339,9 @@ impl Run {
                                 verdict: status,
                                 metrics,
                                 reported: Some((passed, total, duration_ms)),
+                                skipped,
+                                missing_assets,
+                                missing_hardware,
                                 launched: true,
                                 message,
                                 detail,
@@ -365,10 +380,21 @@ impl Run {
             verdict,
             metrics,
             reported,
+            skipped,
+            missing_assets,
+            missing_hardware,
             launched,
             message,
             detail,
         } = outcome;
+        let skipped = skipped.unwrap_or_else(|| {
+            let count = self
+                .results
+                .iter()
+                .filter(|r| r.result.status == CaseStatus::Skipped)
+                .count();
+            u32::try_from(count).unwrap_or(u32::MAX)
+        });
         let (passed, total, duration_ms) = reported.unwrap_or_else(|| {
             let passed = self
                 .results
@@ -394,6 +420,7 @@ impl Run {
                 verdict,
                 passed,
                 total,
+                skipped,
                 duration_ms,
                 target: self.plan.target.name(),
                 created_at: &crate::now_iso8601(),
@@ -422,6 +449,7 @@ impl Run {
             %verdict,
             passed,
             total,
+            skipped,
             submission = ?submission_id,
             "run finished"
         );
@@ -432,46 +460,12 @@ impl Run {
             duration_ms,
             metrics,
             submission_id,
+            skipped,
+            missing_assets,
+            missing_hardware,
             message,
             detail,
         });
         self.ended = true;
-    }
-}
-
-/// Forwards each line of `pipe` as a message, then `Closed`. Returns the number of
-/// streams now being read (1), or 0 if the reader thread could not be started.
-fn spawn_reader(
-    pipe: Box<dyn Read + Send>,
-    tx: Sender<Message>,
-    wrap: fn(String) -> Message,
-) -> usize {
-    let spawned = thread::Builder::new()
-        .name("run-reader".to_owned())
-        .spawn(move || {
-            for_each_line(pipe, |line| tx.send(wrap(line)).is_ok());
-            let _ = tx.send(Message::Closed);
-        });
-    usize::from(spawned.is_ok())
-}
-
-/// Calls `handle` with each line of `reader` (lossy UTF-8, line ending removed) until
-/// end of input, a read error, or `handle` returns false.
-pub(crate) fn for_each_line(reader: impl Read, mut handle: impl FnMut(String) -> bool) {
-    let mut reader = BufReader::new(reader);
-    let mut buffer = Vec::new();
-    loop {
-        buffer.clear();
-        match reader.read_until(b'\n', &mut buffer) {
-            Ok(0) | Err(_) => break,
-            Ok(_) => {
-                while matches!(buffer.last(), Some(b'\n' | b'\r')) {
-                    buffer.pop();
-                }
-                if !handle(String::from_utf8_lossy(&buffer).into_owned()) {
-                    break;
-                }
-            }
-        }
     }
 }

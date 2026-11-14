@@ -18,6 +18,14 @@ const cases = [
   { id: "c3", name: "Hidden case 1", public: false },
 ];
 
+const START: Extract<RunEvent, { type: "start" }> = {
+  type: "start",
+  cases,
+  env: {},
+  requires: "cpu",
+  requiresMet: true,
+};
+
 function play(actions: RunAction[], from: RunState = initialRunState): RunState {
   return actions.reduce(runReducer, from);
 }
@@ -35,7 +43,7 @@ describe("runReducer", () => {
     expect(state.phase).toBe("preparing");
     expect(state.preparingMessage).toBe("Syncing");
 
-    state = play([event({ type: "start", cases, env: { python: "3.15.2" } })], state);
+    state = play([event({ ...START, env: { python: "3.15.2" } })], state);
     expect(state.phase).toBe("running");
     expect(state.preparingMessage).toBeNull();
     expect(state.total).toBe(3);
@@ -61,6 +69,7 @@ describe("runReducer", () => {
           durationMs: 10,
           metrics: [{ name: "model_tokens", value: 41, limit: 36 }],
           submissionId: 7,
+          skipped: 0,
           message: null,
           detail: null,
         }),
@@ -78,7 +87,7 @@ describe("runReducer", () => {
   it("carries the message and detail of an import error, with cases skipped without a start", () => {
     const state = play([
       begin,
-      event({ type: "start", cases, env: {} }),
+      event(START),
       ...cases.map((c) => event({ type: "caseEnd", result: result(c.id, "skipped") })),
       event({
         type: "end",
@@ -88,6 +97,7 @@ describe("runReducer", () => {
         durationMs: 2,
         metrics: [],
         submissionId: 8,
+        skipped: 0,
         message: "the solution failed to import: SyntaxError: '(' was never closed",
         detail: '  File "torch.py", line 1\n',
       }),
@@ -105,7 +115,7 @@ describe("runReducer", () => {
   it("keeps case order from `start` regardless of completion order", () => {
     const state = play([
       begin,
-      event({ type: "start", cases, env: {} }),
+      event(START),
       event({ type: "caseEnd", result: result("c3") }),
       event({ type: "caseEnd", result: result("c1") }),
     ]);
@@ -122,7 +132,7 @@ describe("runReducer", () => {
   it("returns a running case to pending when the run is canceled", () => {
     const state = play([
       begin,
-      event({ type: "start", cases, env: {} }),
+      event(START),
       event({ type: "caseStart", id: "c1" }),
       { type: "canceling" },
       event({
@@ -133,6 +143,7 @@ describe("runReducer", () => {
         durationMs: 0,
         metrics: [],
         submissionId: null,
+        skipped: 0,
         message: null,
         detail: null,
       }),
@@ -151,10 +162,11 @@ describe("runReducer", () => {
       durationMs: 1,
       metrics: [],
       submissionId: null,
+      skipped: 0,
       message: null,
       detail: null,
     });
-    const done = play([begin, event({ type: "start", cases, env: {} }), end]);
+    const done = play([begin, event(START), end]);
     expect(play([event({ type: "caseStart", id: "c1" })], done)).toBe(done);
     expect(play([event({ type: "preparing", message: "late" })])).toBe(initialRunState);
   });
@@ -177,6 +189,7 @@ describe("runReducer", () => {
         durationMs: 0,
         metrics: [],
         submissionId: null,
+        skipped: 0,
         message: "ModuleNotFoundError: einops",
         detail: "Traceback",
       }),
@@ -197,14 +210,75 @@ describe("runReducer", () => {
   });
 
   it("begin clears the previous run", () => {
-    const done = play([
-      begin,
-      event({ type: "start", cases, env: {} }),
-      event({ type: "caseEnd", result: result("c1") }),
-    ]);
+    const done = play([begin, event(START), event({ type: "caseEnd", result: result("c1") })]);
     const again = play([{ type: "begin", mode: "run", framework: "jax" }], done);
     expect(again.cases).toEqual([]);
     expect(again.mode).toBe("run");
     expect(again.framework).toBe("jax");
+  });
+
+  it("keeps skipped cases apart from failures and carries a not-judged ending", () => {
+    const skipped: CaseResult = {
+      ...result("c3", "skipped"),
+      message: "skipped: needs an NVIDIA GPU (CUDA), which this machine does not have",
+      skip: { kind: "hardware", requires: "cuda" },
+    };
+    let state = play([
+      begin,
+      event({ ...START, requires: "cuda", requiresMet: false }),
+      event({ type: "caseStart", id: "c1" }),
+      event({ type: "caseEnd", result: result("c1") }),
+      event({ type: "caseEnd", result: skipped }),
+    ]);
+    expect([state.requires, state.requiresMet]).toEqual(["cuda", false]);
+    expect([state.passed, state.skipped]).toEqual([1, 1]);
+    expect(state.cases[2]?.result?.skip).toEqual({ kind: "hardware", requires: "cuda" });
+
+    state = play(
+      [
+        event({
+          type: "end",
+          verdict: "hardware_missing",
+          passed: 2,
+          total: 3,
+          skipped: 1,
+          durationMs: 9,
+          metrics: [],
+          submissionId: 4,
+          missingHardware: "cuda",
+          message: "2 of 2 cases that could run passed",
+          detail: null,
+        }),
+      ],
+      state,
+    );
+    expect(state.phase).toBe("done");
+    expect(state.verdict).toBe("hardware_missing");
+    expect(state.skipped).toBe(1);
+    expect(state.missingHardware).toBe("cuda");
+    expect(state.missingAssets).toEqual([]);
+    expect(state.message).toBe("2 of 2 cases that could run passed");
+
+    const assets = play([
+      begin,
+      event(START),
+      event({
+        type: "end",
+        verdict: "assets_missing",
+        passed: 1,
+        total: 3,
+        skipped: 2,
+        durationMs: 9,
+        metrics: [],
+        submissionId: null,
+        missingAssets: [{ name: "granite-4.0-350m", repo: "ibm-granite/granite-4.0-350m", sizeMb: 712 }],
+        message: "m",
+        detail: null,
+      }),
+    ]);
+    expect(assets.missingAssets.map((asset) => asset.name)).toEqual(["granite-4.0-350m"]);
+    expect(assets.missingHardware).toBeNull();
+    // A new run starts clean.
+    expect(play([begin], assets).missingAssets).toEqual([]);
   });
 });

@@ -23,6 +23,7 @@ const problem = (over: Partial<ProblemSummary> & { id: string }): ProblemSummary
   requires: "cpu",
   status: "todo",
   solvedFrameworks: [],
+  assets: [],
   ...over,
 });
 
@@ -162,6 +163,7 @@ describe("catalog order", () => {
       verdict: "wrong_answer" as const,
       passed: 0,
       total: 1,
+      skipped: 0,
       durationMs: 1,
       target: "local",
       createdAt: "2026-11-14T00:00:00Z",

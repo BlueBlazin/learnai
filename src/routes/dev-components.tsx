@@ -24,6 +24,12 @@ import { FilterSelect } from "@/components/library/filter-select";
 import { LibraryFilterBar } from "@/components/library/library-filter-bar";
 import { TrackList } from "@/components/library/track-list";
 import { TrackSection } from "@/components/library/track-section";
+import { AssetDownloadButton, RemoveAssetButton } from "@/components/models/asset-actions";
+import { AssetNotice } from "@/components/models/asset-notice";
+import { AssetProgress } from "@/components/models/asset-progress";
+import { AssetRow } from "@/components/models/asset-row";
+import { AssetStateMark } from "@/components/models/asset-state-mark";
+import { ModelsPanel } from "@/components/models/models-panel";
 import { PathEntryList } from "@/components/path/path-entry-list";
 import { PathStage } from "@/components/path/path-stage";
 import { PathSummary } from "@/components/path/path-summary";
@@ -60,9 +66,11 @@ import { PathField } from "@/components/settings/path-field";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { Button } from "@/components/ui/button";
 import { EnvironmentNotice } from "@/components/workbench/environment-notice";
+import { HardwareNotice } from "@/components/workbench/hardware-notice";
 import { PaneToolbar } from "@/components/workbench/pane-toolbar";
 import { SaveIndicator } from "@/components/workbench/save-indicator";
 import {
+  type AssetList,
   type CaseResult,
   DIFFICULTIES,
   type Framework,
@@ -76,7 +84,9 @@ import {
   type Track,
   type Verdict,
 } from "@/lib/api";
+import type { ActiveDownload, AssetDownload } from "@/lib/api/asset-fetch-state";
 import { initialRunState, type RunState } from "@/lib/api/run-state";
+import type { AssetFetchController } from "@/lib/api/use-asset-fetch";
 import type { InstallState } from "@/lib/api/use-env-install";
 import { EMPTY_FILTERS, type LibraryFilters } from "@/lib/filters";
 import { nextOnPath, pathEntries, unmetPrerequisites } from "@/lib/paths";
@@ -97,6 +107,7 @@ const summary = (over: Partial<ProblemSummary>): ProblemSummary => ({
   requires: "cpu",
   status: "todo",
   solvedFrameworks: [],
+  assets: [],
   ...over,
 });
 
@@ -317,6 +328,58 @@ const CASES = [
   },
 ];
 
+/** A submit on a machine without the model: two cases ran, two were skipped for it. */
+const SKIPPED_FOR_ASSET = [
+  CASES[0],
+  {
+    info: { id: "c2", name: "layers.0.mlp.fc1 of the checkpoint", public: true },
+    state: "done" as const,
+    result: result("c2", {
+      status: "skipped",
+      durationMs: 0,
+      message:
+        "skipped: model asset `granite-4.2-3b-mlx-8bit` (lmstudio-community/granite-4.2-3b-MLX-8bit, about 3.9 GB) is not downloaded; fetch it with `ws assets fetch granite-4.2-3b-mlx-8bit`",
+      skip: { kind: "asset", asset: "granite-4.2-3b-mlx-8bit" },
+    }),
+  },
+  {
+    info: { id: "c3", name: "Hidden case 1", public: false },
+    state: "done" as const,
+    result: result("c3", { durationMs: 3.1 }),
+  },
+  {
+    info: { id: "c4", name: "Hidden case 2", public: false },
+    state: "done" as const,
+    result: result("c4", {
+      status: "skipped",
+      durationMs: 0,
+      message:
+        "skipped: model asset `granite-4.2-3b-mlx-8bit` (lmstudio-community/granite-4.2-3b-MLX-8bit, about 3.9 GB) is not downloaded; fetch it with `ws assets fetch granite-4.2-3b-mlx-8bit`",
+      skip: { kind: "asset", asset: "granite-4.2-3b-mlx-8bit" },
+    }),
+  },
+].flatMap((c) => (c ? [c] : []));
+
+/** A submit on a machine without the GPU the problem requires. */
+const SKIPPED_FOR_HARDWARE = [
+  CASES[0],
+  {
+    info: { id: "c2", name: "Hidden case 1", public: false },
+    state: "done" as const,
+    result: result("c2", { durationMs: 0.2 }),
+  },
+  {
+    info: { id: "c3", name: "Hidden case 2", public: false, requires: "cuda" as const },
+    state: "done" as const,
+    result: result("c3", {
+      status: "skipped",
+      durationMs: 0,
+      message: "skipped: needs an NVIDIA GPU (CUDA), which this machine does not have",
+      skip: { kind: "hardware", requires: "cuda" },
+    }),
+  },
+].flatMap((c) => (c ? [c] : []));
+
 const RUNNING_CASES = [
   CASES[0],
   {
@@ -380,6 +443,51 @@ const RUN_STATES: { name: string; state: RunState }[] = [
     }),
   },
   {
+    name: "Not judged, model not downloaded (with the download offered)",
+    state: run({
+      phase: "done",
+      verdict: "assets_missing",
+      framework: "mlx",
+      passed: 2,
+      total: 4,
+      skipped: 2,
+      durationMs: 223.8,
+      env: { python: "3.15.2", mlx: "0.32.4", device: "gpu" },
+      submissionId: 14,
+      requires: "mlx-gpu",
+      requiresMet: true,
+      cases: SKIPPED_FOR_ASSET,
+      missingAssets: [
+        {
+          name: "granite-4.2-3b-mlx-8bit",
+          repo: "lmstudio-community/granite-4.2-3b-MLX-8bit",
+          sizeMb: 3900,
+        },
+      ],
+      message:
+        "2 of 2 cases that could run passed; 2 of 4 cases were skipped because a model asset is not downloaded: `granite-4.2-3b-mlx-8bit` (lmstudio-community/granite-4.2-3b-MLX-8bit, about 3.9 GB). Fetch with `ws assets fetch granite-4.2-3b-mlx-8bit`, then run again.",
+    }),
+  },
+  {
+    name: "Not judged, hardware missing",
+    state: run({
+      phase: "done",
+      verdict: "hardware_missing",
+      passed: 2,
+      total: 3,
+      skipped: 1,
+      durationMs: 820.3,
+      env: { python: "3.15.2", torch: "2.15.0", device: "cpu" },
+      submissionId: 15,
+      requires: "cuda",
+      requiresMet: false,
+      missingHardware: "cuda",
+      cases: SKIPPED_FOR_HARDWARE,
+      message:
+        "2 of 2 cases that could run passed; 1 of 3 cases were skipped because they need an NVIDIA GPU (CUDA), which this machine does not have. The solution can only be accepted on a machine that runs every case.",
+    }),
+  },
+  {
     name: "Canceled",
     state: run({
       phase: "done",
@@ -430,6 +538,8 @@ const VERDICTS: Verdict[] = [
   "import_error",
   "harness_error",
   "canceled",
+  "assets_missing",
+  "hardware_missing",
 ];
 const ALL_JUDGES: JudgeKind[] = [
   "numeric",
@@ -441,18 +551,110 @@ const ALL_JUDGES: JudgeKind[] = [
   "service",
 ];
 
-const SUBMISSIONS: Submission[] = VERDICTS.slice(0, 4).map((verdict, index) => ({
+const SUBMISSION_VERDICTS: Verdict[] = [
+  "accepted",
+  "wrong_answer",
+  "runtime_error",
+  "time_limit",
+  "assets_missing",
+  "hardware_missing",
+];
+const SUBMISSIONS: Submission[] = SUBMISSION_VERDICTS.map((verdict, index) => ({
   id: index + 1,
   problemId: index % 2 === 0 ? "a" : "d",
-  framework: (["torch", "jax", "mlx", "python"] as Framework[])[index] ?? "torch",
+  framework: (["torch", "jax", "mlx", "python", "mlx", "torch"] as Framework[])[index] ?? "torch",
   mode: "submit",
   verdict,
   passed: verdict === "accepted" ? 7 : index,
   total: 7,
-  durationMs: [84.2, 31.5, 0.4, 10024][index] ?? 1,
+  skipped: verdict === "assets_missing" ? 3 : verdict === "hardware_missing" ? 2 : 0,
+  durationMs: [84.2, 31.5, 0.4, 10024, 223.8, 820.3][index] ?? 1,
   target: "local",
-  createdAt: new Date(Date.now() - ([5, 190, 60 * 26, 60 * 24 * 9][index] ?? 5) * 60_000).toISOString(),
+  createdAt: new Date(
+    Date.now() - ([5, 190, 60 * 26, 60 * 24 * 9, 60 * 24 * 11, 60 * 24 * 12][index] ?? 5) * 60_000,
+  ).toISOString(),
 }));
+
+/** A stored submission that was not judged on every case: history keeps the skips, not the run's message. */
+const NOT_JUDGED_SUBMISSION: SubmissionDetail = {
+  ...(SUBMISSIONS[4] as Submission),
+  passed: 2,
+  total: 4,
+  skipped: 2,
+  code: SAMPLE_CODE,
+  cases: SKIPPED_FOR_ASSET.map((c) => ({ ...c.result, name: c.info.name, public: c.info.public })),
+  metrics: [],
+};
+
+const MODELS: AssetList = {
+  modelsDir: "/Users/ada/Developer/whetstone/.whetstone/models",
+  assets: [
+    {
+      name: "granite-4.0-1b",
+      repo: "ibm-granite/granite-4.0-1b",
+      revision: "5d0c3bbf0c1f4c7e9a2f3f0a8f0d6f1f8b1c2d3e",
+      files: ["config.json", "tokenizer.json", "model.safetensors"],
+      sizeMb: 1630,
+      state: "incomplete",
+      reason: "not downloaded yet: model.safetensors",
+      path: "/Users/ada/Developer/whetstone/.whetstone/models/granite-4.0-1b",
+      bytesOnDisk: 7_156_949,
+      problems: ["c"],
+    },
+    {
+      name: "granite-4.0-350m",
+      repo: "ibm-granite/granite-4.0-350m",
+      revision: "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2",
+      files: ["config.json", "tokenizer.json", "model.safetensors"],
+      sizeMb: 712,
+      state: "present",
+      reason: null,
+      path: "/Users/ada/Developer/whetstone/.whetstone/models/granite-4.0-350m",
+      bytesOnDisk: 711_966_212,
+      problems: ["a", "scaled-dot-product-attention"],
+    },
+    {
+      name: "granite-4.2-3b-mlx-8bit",
+      repo: "lmstudio-community/granite-4.2-3b-MLX-8bit",
+      revision: "7c630b526561db6b4641767c54595fe494176695",
+      files: ["config.json", "tokenizer.json", "model.safetensors"],
+      sizeMb: 3900,
+      state: "missing",
+      reason: null,
+      path: "/Users/ada/Developer/whetstone/.whetstone/models/granite-4.2-3b-mlx-8bit",
+      bytesOnDisk: 0,
+      problems: ["d"],
+    },
+  ],
+};
+const [MODEL_INCOMPLETE, MODEL_PRESENT, MODEL_MISSING] = MODELS.assets as [
+  AssetList["assets"][number],
+  AssetList["assets"][number],
+  AssetList["assets"][number],
+];
+const MODEL_TITLES = new Map(PROBLEMS.map((problem) => [problem.id, problem.title]));
+
+const PREPARING: ActiveDownload = { phase: "preparing", message: "Checking the Python environment" };
+const DOWNLOADING: ActiveDownload = {
+  phase: "downloading",
+  doneBytes: 1_184_302_080,
+  totalBytes: 3_897_310_556,
+  file: "model.safetensors",
+};
+const DOWNLOAD_FAILED: AssetDownload = {
+  phase: "failed",
+  message:
+    "model.safetensors: the connection was reset; fetch again to resume from the bytes already on disk",
+};
+const NO_DOWNLOADS: AssetFetchController = {
+  downloads: {},
+  busy: false,
+  canceling: false,
+  download: () => {},
+  cancel: () => {},
+  dismiss: () => {},
+};
+const noop = () => {};
 
 const SUBMISSION_DETAIL: SubmissionDetail = {
   ...(SUBMISSIONS[1] as Submission),
@@ -756,9 +958,10 @@ function DevComponentsScreen() {
             />
           </div>
         </Specimen>
-        <Specimen name="SubmissionView: loaded, loading, failed">
+        <Specimen name="SubmissionView: loaded, not judged (skipped cases), loading, failed">
           <div className="flex flex-col gap-8">
             <SubmissionView submission={SUBMISSION_DETAIL} onBack={() => {}} />
+            <SubmissionView submission={NOT_JUDGED_SUBMISSION} onBack={() => {}} />
             <SubmissionView onBack={() => {}} />
             <SubmissionView
               error={new Error("Unknown submission: 99")}
@@ -779,6 +982,7 @@ function DevComponentsScreen() {
                 mode="submit"
                 passed={verdict === "accepted" ? 7 : 2}
                 total={7}
+                skipped={verdict === "assets_missing" || verdict === "hardware_missing" ? 5 : 0}
                 durationMs={84.2}
                 env={ENV}
               />
@@ -807,18 +1011,32 @@ function DevComponentsScreen() {
             <RunProgress mode="submit" message={null} finished={3} total={7} canceling onCancel={() => {}} />
           </div>
         </Specimen>
-        <Specimen name="MetricList: within and over the limit, no limit">
-          <MetricList
-            metrics={[
-              { name: "model_tokens", value: 36, unit: "tokens", limit: 36 },
-              { name: "slowdown", value: 212.4, unit: "x", limit: 1.5 },
-              { name: "mean_ttft", value: 41.2, unit: "ms" },
-            ]}
-          />
+        <Specimen name="MetricList: within and over the limit, no limit; higher is better, met and missed">
+          <div className="flex flex-col gap-4">
+            <MetricList
+              metrics={[
+                { name: "model_tokens", value: 36, unit: "tokens", limit: 36 },
+                { name: "slowdown", value: 212.4, unit: "x", limit: 1.5 },
+                { name: "mean_ttft", value: 41.2, unit: "ms" },
+              ]}
+            />
+            <MetricList
+              metrics={[
+                { name: "throughput", value: 41.3, unit: "tok/s", limit: 20, higherIsBetter: true },
+                { name: "cache_hit_rate", value: 62, unit: "%", limit: 90, higherIsBetter: true },
+              ]}
+            />
+          </div>
         </Specimen>
         <Specimen name="CaseList: pass, fail with detail, error, timeout, skipped">
           <div className="max-w-measure">
             <CaseList cases={CASES} ended />
+          </div>
+        </Specimen>
+        <Specimen name="CaseList: cases skipped for a model that is not downloaded, and for missing hardware (skipped, not failed; nothing opens by itself)">
+          <div className="flex max-w-measure flex-col gap-5">
+            <CaseList cases={SKIPPED_FOR_ASSET} ended />
+            <CaseList cases={SKIPPED_FOR_HARDWARE} ended />
           </div>
         </Specimen>
         <Specimen name="OutputBlock: neutral, failure, tall">
@@ -838,6 +1056,16 @@ function DevComponentsScreen() {
               <ResultsPanel
                 run={state}
                 onCancel={() => {}}
+                resolution={state.missingAssets.map((asset) => (
+                  <AssetNotice
+                    key={asset.name}
+                    asset={asset}
+                    busy={false}
+                    layout="inline"
+                    onDownload={noop}
+                    onCancel={noop}
+                  />
+                ))}
                 actions={
                   state.submissionId !== null ? (
                     <Button variant="outline" size="xs">
@@ -975,6 +1203,207 @@ function DevComponentsScreen() {
               }}
               onInstall={() => {}}
             />
+          </div>
+        </Specimen>
+      </Section>
+
+      <Section title="Models and hardware" aside="models/, workbench/">
+        <Specimen name="AssetStateMark: downloaded, not downloaded, incomplete; without the word">
+          <div className="flex flex-wrap items-center gap-6">
+            <AssetStateMark state="present" />
+            <AssetStateMark state="missing" />
+            <AssetStateMark state="incomplete" />
+            <AssetStateMark state="incomplete" showLabel={false} />
+          </div>
+        </Specimen>
+        <Specimen name="AssetProgress: preparing, downloading, canceling; the bare rule">
+          <div className="flex max-w-measure flex-col gap-5">
+            <AssetProgress name="granite-4.2-3b-mlx-8bit" download={PREPARING} />
+            <AssetProgress name="granite-4.2-3b-mlx-8bit" download={DOWNLOADING} />
+            <AssetProgress name="granite-4.2-3b-mlx-8bit" download={DOWNLOADING} canceling />
+            <AssetProgress name="granite-4.2-3b-mlx-8bit" download={DOWNLOADING} variant="rule" />
+          </div>
+        </Specimen>
+        <Specimen name="AssetDownloadButton: download, resume, try again, cancel, canceling, another download running; RemoveAssetButton (confirms)">
+          <div className="flex flex-wrap items-center gap-3">
+            <AssetDownloadButton state="missing" busy={false} onDownload={noop} onCancel={noop} />
+            <AssetDownloadButton state="incomplete" busy={false} onDownload={noop} onCancel={noop} />
+            <AssetDownloadButton
+              state="missing"
+              download={DOWNLOAD_FAILED}
+              busy={false}
+              onDownload={noop}
+              onCancel={noop}
+            />
+            <AssetDownloadButton
+              state="missing"
+              download={DOWNLOADING}
+              busy
+              onDownload={noop}
+              onCancel={noop}
+            />
+            <AssetDownloadButton
+              state="missing"
+              download={DOWNLOADING}
+              busy
+              canceling
+              onDownload={noop}
+              onCancel={noop}
+            />
+            <AssetDownloadButton state="missing" busy onDownload={noop} onCancel={noop} />
+            <RemoveAssetButton name="granite-4.0-350m" size="712 MB" onRemove={noop} />
+          </div>
+        </Specimen>
+        <Specimen name="AssetRow: downloaded, not downloaded, incomplete; preparing, downloading, canceling, failed, being removed">
+          <RuledList>
+            <AssetRow
+              asset={MODEL_PRESENT}
+              busy={false}
+              titles={MODEL_TITLES}
+              onDownload={noop}
+              onCancel={noop}
+              onRemove={noop}
+            />
+            <AssetRow
+              asset={MODEL_MISSING}
+              busy={false}
+              titles={MODEL_TITLES}
+              onDownload={noop}
+              onCancel={noop}
+              onRemove={noop}
+            />
+            <AssetRow
+              asset={MODEL_INCOMPLETE}
+              busy={false}
+              titles={MODEL_TITLES}
+              onDownload={noop}
+              onCancel={noop}
+              onRemove={noop}
+            />
+            <AssetRow
+              asset={MODEL_MISSING}
+              download={PREPARING}
+              busy
+              titles={MODEL_TITLES}
+              onDownload={noop}
+              onCancel={noop}
+              onRemove={noop}
+            />
+            <AssetRow
+              asset={MODEL_MISSING}
+              download={DOWNLOADING}
+              busy
+              titles={MODEL_TITLES}
+              onDownload={noop}
+              onCancel={noop}
+              onRemove={noop}
+            />
+            <AssetRow
+              asset={MODEL_MISSING}
+              download={DOWNLOADING}
+              busy
+              canceling
+              titles={MODEL_TITLES}
+              onDownload={noop}
+              onCancel={noop}
+              onRemove={noop}
+            />
+            <AssetRow
+              asset={{ ...MODEL_INCOMPLETE, bytesOnDisk: 741_238_784 }}
+              download={DOWNLOAD_FAILED}
+              busy={false}
+              titles={MODEL_TITLES}
+              onDownload={noop}
+              onCancel={noop}
+              onRemove={noop}
+            />
+            <AssetRow
+              asset={MODEL_PRESENT}
+              busy={false}
+              removing
+              titles={MODEL_TITLES}
+              onDownload={noop}
+              onCancel={noop}
+              onRemove={noop}
+            />
+          </RuledList>
+        </Specimen>
+        <Specimen name="ModelsPanel: three models, one downloading; a catalog that needs no model">
+          <div className="flex flex-col gap-10">
+            <ModelsPanel
+              listing={MODELS}
+              titles={MODEL_TITLES}
+              fetch={{
+                ...NO_DOWNLOADS,
+                busy: true,
+                downloads: { "granite-4.2-3b-mlx-8bit": DOWNLOADING },
+              }}
+              onRemove={noop}
+            />
+            <ModelsPanel listing={{ ...MODELS, assets: [] }} fetch={NO_DOWNLOADS} onRemove={noop} />
+          </div>
+        </Specimen>
+        <Specimen name="AssetNotice (strip, under the editor toolbar): not downloaded, incomplete, preparing, downloading, canceling, failed">
+          <div className="flex flex-col gap-3">
+            <AssetNotice asset={MODEL_MISSING} busy={false} onDownload={noop} onCancel={noop} />
+            <AssetNotice asset={MODEL_INCOMPLETE} busy={false} onDownload={noop} onCancel={noop} />
+            <AssetNotice asset={MODEL_MISSING} download={PREPARING} busy onDownload={noop} onCancel={noop} />
+            <AssetNotice
+              asset={MODEL_MISSING}
+              download={DOWNLOADING}
+              busy
+              onDownload={noop}
+              onCancel={noop}
+            />
+            <AssetNotice
+              asset={MODEL_MISSING}
+              download={DOWNLOADING}
+              busy
+              canceling
+              onDownload={noop}
+              onCancel={noop}
+            />
+            <AssetNotice
+              asset={MODEL_MISSING}
+              download={DOWNLOAD_FAILED}
+              busy={false}
+              onDownload={noop}
+              onCancel={noop}
+            />
+          </div>
+        </Specimen>
+        <Specimen name="AssetNotice (inline, in the results): the download offered, downloading, and downloaded after a run that skipped cases">
+          <div className="flex max-w-measure flex-col gap-3">
+            <AssetNotice
+              asset={MODEL_MISSING}
+              busy={false}
+              layout="inline"
+              onDownload={noop}
+              onCancel={noop}
+            />
+            <AssetNotice
+              asset={MODEL_MISSING}
+              download={DOWNLOADING}
+              busy
+              layout="inline"
+              onDownload={noop}
+              onCancel={noop}
+            />
+            <AssetNotice
+              asset={MODEL_PRESENT}
+              busy={false}
+              layout="inline"
+              whenPresent="Submit again to judge the skipped cases."
+              onDownload={noop}
+              onCancel={noop}
+            />
+          </div>
+        </Specimen>
+        <Specimen name="HardwareNotice: CUDA on a machine without an NVIDIA GPU; MLX without an Apple GPU; inline">
+          <div className="flex flex-col gap-3">
+            <HardwareNotice requires="cuda" />
+            <HardwareNotice requires="mlx-gpu" />
+            <HardwareNotice requires="cuda" layout="inline" />
           </div>
         </Specimen>
       </Section>

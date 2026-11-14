@@ -1,8 +1,9 @@
 //! The Python environment: status probing and framework installation.
 //!
-//! The set of enabled extras lives in the settings table. It is passed in full to every
-//! `uv sync` and `uv run`, because a `uv sync` with a partial set would silently remove
-//! the other frameworks.
+//! The set of enabled extras lives in the settings table: the optional frameworks the
+//! user installed, and `models` once a model download has installed it. It is passed in
+//! full to every `uv sync` and `uv run` core makes (runs, installs, asset listing and
+//! fetching), because a `uv sync` with a partial set would silently remove the rest.
 
 use std::collections::BTreeMap;
 use std::process::{Command, Stdio};
@@ -16,18 +17,19 @@ use serde::Deserialize;
 
 use crate::error::{CoreError, Result};
 use crate::harness::CommandSpec;
-use crate::model::{EnvStatus, Framework, FrameworkEnv, InstallEvent};
-use crate::run::for_each_line;
+use crate::model::{EnvStatus, Extra, Framework, FrameworkEnv, InstallEvent};
 use crate::sink::SharedSink;
 use crate::store::Store;
+use crate::stream::for_each_line;
 use crate::target::{LocalProcess, Process};
 use crate::uv::Uv;
 
-/// Settings key holding the enabled extras as a JSON array of framework names.
+/// Settings key holding the enabled extras as a JSON array of extra names.
 const EXTRAS_SETTING: &str = "enabled_extras";
 
 /// Prints the Python version and installed framework versions as one JSON object.
-/// Uses distribution metadata, so nothing heavy is imported.
+/// Uses distribution metadata, so nothing heavy is imported. `models` reports the
+/// package that marks the `models` extra (`huggingface_hub`).
 const PROBE_SCRIPT: &str = "\
 import json, platform
 from importlib import metadata
@@ -39,7 +41,7 @@ def version(name):
         return None
 
 print(json.dumps({'python': platform.python_version(), 'torch': version('torch'), \
-'jax': version('jax'), 'mlx': version('mlx')}))
+'jax': version('jax'), 'mlx': version('mlx'), 'models': version('huggingface_hub')}))
 ";
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +49,21 @@ struct Probe {
     python: String,
     #[serde(flatten)]
     packages: BTreeMap<String, Option<String>>,
+}
+
+impl Probe {
+    fn version(&self, package: &str) -> Option<&str> {
+        self.packages.get(package)?.as_deref()
+    }
+
+    /// The extras whose packages are in the environment.
+    fn installed_extras(&self) -> Vec<Extra> {
+        Extra::ALL
+            .iter()
+            .copied()
+            .filter(|extra| self.version(extra.as_str()).is_some())
+            .collect()
+    }
 }
 
 /// Access to the uv-managed Python environment of a content root.
@@ -72,22 +89,26 @@ impl Environment {
         &self.uv
     }
 
-    /// The optional frameworks the user has enabled, sorted.
-    pub fn enabled_extras(&self) -> Result<Vec<Framework>> {
-        let mut extras: Vec<Framework> = self.store.setting(EXTRAS_SETTING)?.unwrap_or_default();
-        extras.retain(|framework| framework.extra().is_some());
+    /// Whether an install is running.
+    pub fn is_installing(&self) -> bool {
+        self.installing.load(Ordering::SeqCst)
+    }
+
+    /// The extras known to be installed, sorted. Names this build does not know (from
+    /// a newer version of the app) are ignored.
+    pub fn enabled_extras(&self) -> Result<Vec<Extra>> {
+        let names: Vec<String> = self.store.setting(EXTRAS_SETTING)?.unwrap_or_default();
+        let mut extras: Vec<Extra> = names.iter().filter_map(|name| name.parse().ok()).collect();
         extras.sort_unstable();
         extras.dedup();
         Ok(extras)
     }
 
-    fn enable_extras(&self, add: impl IntoIterator<Item = Framework>) -> Result<Vec<Framework>> {
+    /// Records that `add` are installed, so every later uv command keeps them.
+    pub(crate) fn enable_extras(&self, add: impl IntoIterator<Item = Extra>) -> Result<Vec<Extra>> {
         let current = self.enabled_extras()?;
         let mut extras = current.clone();
-        extras.extend(
-            add.into_iter()
-                .filter(|framework| framework.extra().is_some()),
-        );
+        extras.extend(add);
         extras.sort_unstable();
         extras.dedup();
         if extras != current {
@@ -98,9 +119,10 @@ impl Environment {
 
     /// Probes uv and the project environment.
     ///
-    /// Optional frameworks found installed are adopted into the enabled set, so extras
-    /// installed outside the app (for example with `uv sync --extra mlx` in a terminal)
-    /// are not removed by a later install.
+    /// Extras found installed are adopted into the enabled set, so extras installed
+    /// outside the app (for example with `uv sync --extra mlx` or
+    /// `uv run --extra models ws assets fetch ...` in a terminal) are not removed by a
+    /// later install.
     pub fn status(&self, root: &std::path::Path) -> Result<EnvStatus> {
         let uv = capture(&self.uv.version()).and_then(|out| parse_uv_version(&out));
         let probe = uv.as_ref().and_then(|_| self.probe());
@@ -110,7 +132,7 @@ impl Environment {
             .map(|&framework| {
                 let version = probe.as_ref().and_then(|probe| match framework {
                     Framework::Python => Some(probe.python.clone()),
-                    other => probe.packages.get(other.as_str()).cloned().flatten(),
+                    other => probe.version(other.as_str()).map(str::to_owned),
                 });
                 FrameworkEnv {
                     framework,
@@ -119,12 +141,9 @@ impl Environment {
                 }
             })
             .collect();
-        self.enable_extras(
-            frameworks
-                .iter()
-                .filter(|f| f.installed)
-                .map(|f| f.framework),
-        )?;
+        if let Some(probe) = &probe {
+            self.enable_extras(probe.installed_extras())?;
+        }
 
         Ok(EnvStatus {
             uv,
@@ -132,6 +151,16 @@ impl Environment {
             frameworks,
             root: root.to_string_lossy().into_owned(),
         })
+    }
+
+    /// Adopts whatever extras are installed right now and returns the enabled set: the
+    /// extras a uv command must pass so that it removes nothing.
+    pub(crate) fn current_extras(&self) -> Result<Vec<Extra>> {
+        let installed = self
+            .probe()
+            .map(|probe| probe.installed_extras())
+            .unwrap_or_default();
+        self.enable_extras(installed)
     }
 
     /// Runs the probe script in the project environment without syncing it.
@@ -185,18 +214,8 @@ impl Environment {
         sink: &SharedSink<InstallEvent>,
     ) -> std::result::Result<(), String> {
         // Adopt anything already installed, so the sync below cannot strip it.
-        let installed: Vec<Framework> = self
-            .probe()
-            .map(|probe| {
-                Framework::ALL
-                    .iter()
-                    .copied()
-                    .filter(|f| matches!(probe.packages.get(f.as_str()), Some(Some(_))))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let mut extras = self.enable_extras(installed).map_err(|e| e.to_string())?;
-        extras.push(framework);
+        let mut extras = self.current_extras().map_err(|e| e.to_string())?;
+        extras.extend(framework.extra());
 
         let spec = self.uv.sync(&extras);
         sink.emit(InstallEvent::Log {
@@ -223,7 +242,8 @@ impl Environment {
         match process.finish(Duration::from_secs(5)) {
             Some(0) => {
                 // Remember the extra only once it is really installed.
-                self.enable_extras([framework]).map_err(|e| e.to_string())?;
+                self.enable_extras(framework.extra())
+                    .map_err(|e| e.to_string())?;
                 Ok(())
             }
             Some(code) => Err(format!("uv sync exited with code {code}")),
@@ -279,5 +299,33 @@ mod tests {
         assert_eq!(probe.python, "3.15.2");
         assert_eq!(probe.packages["torch"].as_deref(), Some("2.15.0"));
         assert_eq!(probe.packages["jax"], None);
+        assert_eq!(probe.installed_extras(), [Extra::Mlx]);
+
+        // The `models` extra is recognized by its marker package.
+        let probe: Probe = serde_json::from_str(
+            r#"{"python":"3.15.2","torch":"2.15.0","jax":"0.12.0.1","mlx":null,"models":"2.4.0"}"#,
+        )
+        .expect("probe JSON");
+        assert_eq!(probe.installed_extras(), [Extra::Jax, Extra::Models]);
+    }
+
+    #[test]
+    fn enabled_extras_ignore_names_from_other_versions() -> Result<()> {
+        let store = Arc::new(Store::open_in_memory()?);
+        store.set_setting(
+            EXTRAS_SETTING,
+            &["mlx", "torch", "quantum", "models", "mlx"],
+        )?;
+        let env = Environment::new(crate::uv::Uv::new("uv", "/r/python"), Arc::clone(&store));
+        assert_eq!(env.enabled_extras()?, [Extra::Mlx, Extra::Models]);
+        assert_eq!(
+            env.enable_extras([Extra::Jax])?,
+            [Extra::Jax, Extra::Mlx, Extra::Models]
+        );
+        assert_eq!(
+            store.setting::<Vec<String>>(EXTRAS_SETTING)?,
+            Some(vec!["jax".into(), "mlx".into(), "models".into()])
+        );
+        Ok(())
     }
 }

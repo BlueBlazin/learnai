@@ -13,6 +13,7 @@ export function VerdictHeader({
   mode,
   passed,
   total,
+  skipped = 0,
   durationMs,
   env = {},
   actions,
@@ -22,6 +23,8 @@ export function VerdictHeader({
   mode: RunMode | null;
   passed: number;
   total: number;
+  /** Cases that were not run. */
+  skipped?: number;
   durationMs: number;
   env?: Record<string, string>;
   actions?: ReactNode;
@@ -33,7 +36,7 @@ export function VerdictHeader({
       <div className="min-w-0">
         <VerdictMark verdict={verdict} size="lg" className="font-serif text-lg" />
         <p className="selectable mt-0.5 text-sm text-muted-foreground">
-          {summarizeRun({ verdict, mode, passed, total, durationMs })}
+          {summarizeRun({ verdict, mode, passed, total, skipped, durationMs })}
         </p>
         {environment ? <p className="selectable mt-1 text-xs text-faint">{environment}</p> : null}
       </div>

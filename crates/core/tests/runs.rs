@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 
 use common::{Collector, TestRoot, assert_well_formed, logs, test_limits};
 use whetstone_core::{
-    CaseStatus, Core, CoreError, CoreOptions, Framework, LOCAL_TARGET, LogStream, ProblemStatus,
-    ProgramHarness, RunEvent, RunLimits, RunMode, Verdict,
+    CaseStatus, Core, CoreError, CoreOptions, Framework, LOCAL_TARGET, LogStream, MissingAsset,
+    ProblemStatus, ProgramHarness, Requires, RunEvent, RunLimits, RunMode, Skip, Verdict,
 };
 
 /// Starts a run of `add-two` (torch) and returns its complete event stream.
@@ -91,7 +91,12 @@ fn happy_run_maps_every_event_and_stores_nothing() {
         ]
     );
 
-    let RunEvent::Start { cases, env } = events
+    let RunEvent::Start {
+        cases,
+        env,
+        requires,
+        requires_met,
+    } = events
         .iter()
         .find(|e| matches!(e, RunEvent::Start { .. }))
         .expect("start")
@@ -105,6 +110,7 @@ fn happy_run_maps_every_event_and_stores_nothing() {
             .collect::<Vec<_>>(),
         [("c1", true), ("c2", true)]
     );
+    assert_eq!((*requires, *requires_met), (Requires::Cpu, true));
     assert_eq!(env["python"], "3.15.2");
     assert_eq!(env["fake"], "true", "non-string env values are stringified");
 
@@ -651,4 +657,150 @@ fn the_real_uv_command_line_reaches_the_harness_with_the_saved_solution() {
 
     let log = fs::read_to_string(root.path().join("python/.fake-uv.log")).expect("uv log");
     assert_eq!(log.lines().last(), Some("run"), "no extras are enabled yet");
+}
+
+#[test]
+fn a_hardware_missing_submit_is_stored_with_its_skip_and_solves_nothing() {
+    let root = TestRoot::new();
+    let core = root.core("hardware-missing");
+    let events = run(&core, RunMode::Submit);
+
+    let RunEvent::Start {
+        cases,
+        requires,
+        requires_met,
+        ..
+    } = events
+        .iter()
+        .find(|e| matches!(e, RunEvent::Start { .. }))
+        .expect("start")
+    else {
+        unreachable!()
+    };
+    assert_eq!((*requires, *requires_met), (Requires::Cuda, false));
+    assert_eq!(cases[0].requires, None);
+    assert_eq!(cases[1].requires, Some(Requires::Cuda));
+
+    let Some(RunEvent::End {
+        verdict,
+        passed,
+        total,
+        skipped,
+        missing_hardware,
+        missing_assets,
+        message,
+        submission_id,
+        ..
+    }) = events.last()
+    else {
+        panic!("no end event")
+    };
+    assert_eq!(
+        (*verdict, *passed, *total, *skipped),
+        (Verdict::HardwareMissing, 1, 2, 1)
+    );
+    assert_eq!(*missing_hardware, Some(Requires::Cuda));
+    assert_eq!(*missing_assets, None);
+    assert!(message.as_deref().expect("message").contains("NVIDIA GPU"));
+
+    // Stored like any other submit, with the count and the reason for the skip.
+    let detail = core
+        .get_submission(submission_id.expect("stored"))
+        .expect("detail");
+    assert_eq!(detail.submission.verdict, Verdict::HardwareMissing);
+    assert_eq!(detail.submission.skipped, 1);
+    let skipped_case = &detail.cases[1];
+    assert_eq!(skipped_case.name, "On the GPU");
+    assert_eq!(skipped_case.result.status, CaseStatus::Skipped);
+    assert_eq!(
+        skipped_case.result.skip,
+        Some(Skip::Hardware {
+            requires: Requires::Cuda
+        })
+    );
+
+    // Attempted, never solved; no stats, no streak.
+    let problem = core.get_problem("add-two").expect("problem");
+    assert_eq!(problem.summary.status, ProblemStatus::Attempted);
+    assert!(problem.summary.solved_frameworks.is_empty());
+    assert!(!problem.editorial_unlocked);
+    let stats = core.get_stats().expect("stats");
+    assert_eq!((stats.solved, stats.streak_days), (0, 0));
+    assert_eq!(core.list_tracks().expect("tracks")[0].solved_count, 0);
+}
+
+#[test]
+fn an_assets_missing_run_names_the_asset_and_a_submit_never_counts_as_solved() {
+    let root = TestRoot::new();
+    let core = root.core("assets-missing");
+
+    // A run is not stored, but reports the same outcome.
+    let events = run(&core, RunMode::Run);
+    let Some(RunEvent::End {
+        verdict,
+        passed,
+        total,
+        skipped,
+        missing_assets,
+        metrics,
+        submission_id,
+        ..
+    }) = events.last()
+    else {
+        panic!("no end event")
+    };
+    assert_eq!(
+        (*verdict, *passed, *total, *skipped, *submission_id),
+        (Verdict::AssetsMissing, 1, 2, 1, None)
+    );
+    assert_eq!(
+        missing_assets.as_deref(),
+        Some(
+            &[MissingAsset {
+                name: "tiny".into(),
+                repo: "fake/tiny".into(),
+                size_mb: 0.5
+            }][..]
+        )
+    );
+    assert!(metrics[0].higher_is_better);
+    let skip = events.iter().find_map(|e| match e {
+        RunEvent::CaseEnd { result } => result.skip.clone(),
+        _ => None,
+    });
+    assert_eq!(
+        skip,
+        Some(Skip::Asset {
+            asset: "tiny".into()
+        })
+    );
+
+    let events = run(&core, RunMode::Submit);
+    let (verdict, passed, total, submission_id) = end_of(&events);
+    assert_eq!((verdict, passed, total), (Verdict::AssetsMissing, 2, 3));
+    let listed = core.list_submissions(Some("add-two")).expect("list");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, submission_id.expect("stored"));
+    assert_eq!(listed[0].skipped, 1);
+    let summary = &core.list_problems().expect("problems")[0];
+    assert_eq!(summary.status, ProblemStatus::Attempted);
+    assert_eq!(core.get_stats().expect("stats").solved, 0);
+
+    // The problem declares the asset the run asked for.
+    assert_eq!(
+        core.get_problem("add-two").expect("problem").summary.assets,
+        ["tiny"]
+    );
+}
+
+#[test]
+fn skipped_cases_are_counted_when_core_ends_the_run_itself() {
+    // The import-error scenario reports no `skipped` count; core counts the results.
+    let root = TestRoot::new();
+    let core = root.core("import-error");
+    let events = run(&core, RunMode::Run);
+    let Some(RunEvent::End { skipped, .. }) = events.last() else {
+        panic!("no end event")
+    };
+    assert_eq!(*skipped, 2);
 }

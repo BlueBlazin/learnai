@@ -7,8 +7,9 @@
 use tauri::State;
 use tauri::ipc::Channel;
 use whetstone_core::{
-    CatalogIssue, Core, EnvStatus, Framework, InstallEvent, ProblemDetail, ProblemSummary,
-    RunEvent, RunMode, SolutionFile, Stats, StudyPath, Submission, SubmissionDetail, Track,
+    AssetEvent, AssetList, CatalogIssue, Core, EnvStatus, Framework, InstallEvent, ProblemDetail,
+    ProblemSummary, RunEvent, RunMode, SolutionFile, Stats, StudyPath, Submission,
+    SubmissionDetail, Track,
 };
 
 /// Shared application state: the core, or the reason it could not be opened.
@@ -225,4 +226,39 @@ pub async fn get_problem_asset(
         core.get_problem_asset(&id, &path)
     })
     .await
+}
+
+#[tauri::command]
+pub async fn list_assets(state: State<'_, AppState>) -> CommandResult<AssetList> {
+    with_core(state, "list_assets", |core| core.list_assets()).await
+}
+
+/// Returns the job id at once; events flow over the channel until `done` (section 4.1).
+#[tauri::command]
+pub async fn fetch_assets(
+    state: State<'_, AppState>,
+    names: Vec<String>,
+    on_event: Channel<AssetEvent>,
+) -> CommandResult<String> {
+    with_core(state, "fetch_assets", move |core| {
+        core.fetch_assets(&names, move |event: AssetEvent| {
+            // The webview may be gone (window closed mid-download); there is no one to tell.
+            let _ = on_event.send(event);
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn cancel_asset_fetch(state: State<'_, AppState>, job_id: String) -> CommandResult<()> {
+    with_core(state, "cancel_asset_fetch", move |core| {
+        core.cancel_asset_fetch(&job_id);
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn remove_asset(state: State<'_, AppState>, name: String) -> CommandResult<AssetList> {
+    with_core(state, "remove_asset", move |core| core.remove_asset(&name)).await
 }
