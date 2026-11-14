@@ -1,0 +1,12 @@
+id = "mlx-lazy-eval-placement"
+title = "Where to Evaluate"
+track = "mlx"
+order = 10
+difficulty = "easy"
+frameworks = ["mlx"]
+judges = ["numeric", "cost"]
+tags = ["mlx", "lazy-evaluation", "greedy-decoding", "kv-cache"]
+prerequisites = ["cached-greedy-decode"]
+requires = "mlx-gpu"
+entry = ["generate"]
+time_limit_s = 10

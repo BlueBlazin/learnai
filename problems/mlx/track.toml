@@ -1,0 +1,4 @@
+id = "mlx"
+title = "MLX GPU Programming"
+description = "Programming Apple's MLX well for LLM inference: where a lazy graph is evaluated, indexing without boolean masks, staying in half precision, accounting for unified memory, and the fused Metal kernels, all judged on the Apple GPU."
+order = 100

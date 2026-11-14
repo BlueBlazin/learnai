@@ -1,0 +1,12 @@
+id = "mlx-memory-accounting"
+title = "Measuring Unified Memory"
+track = "mlx"
+order = 40
+difficulty = "easy"
+frameworks = ["mlx"]
+judges = ["numeric", "cost"]
+tags = ["mlx", "memory", "unified-memory", "lazy-evaluation", "measurement"]
+prerequisites = []
+requires = "mlx-gpu"
+entry = ["predicted_bytes", "measure"]
+time_limit_s = 10

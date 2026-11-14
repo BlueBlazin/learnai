@@ -1,0 +1,12 @@
+id = "mlx-dtype-discipline"
+title = "Staying in Half Precision"
+track = "mlx"
+order = 30
+difficulty = "easy"
+frameworks = ["mlx"]
+judges = ["numeric", "cost"]
+tags = ["mlx", "dtypes", "float16", "memory", "numerics"]
+prerequisites = []
+requires = "mlx-gpu"
+entry = ["forward_f16"]
+time_limit_s = 10

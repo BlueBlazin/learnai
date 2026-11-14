@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 268">
+  <title>Which key slots two new tokens may attend to, in a full buffer and in a buffer with unused capacity</title>
+  <desc>Three grids with one row per query and one column per key slot. First, a full buffer of five slots, three cached and two new: query 0 reads slots 0 to 3 and query 1 reads slots 0 to 4, which is what the string mask "causal" gives. Second, a buffer of eight slots whose last three are unused: the same slots are read and the unused ones are hidden, which needs an explicit mask. Third, the same buffer with the string mask "causal": the pattern is aligned with the end of the buffer, so query 0 also reads unused slots 5 and 6 and query 1 reads unused slots 5 to 7.</desc>
+
+  <!-- Geometry: cells are 20 units square; every grid starts at x = 150. Filled cells may be attended to. -->
+
+  <!-- Full buffer: "causal" is right -->
+  <g>
+    <text x="150" y="14" font-size="13">Full buffer: "causal" is right</text>
+    <g font-size="13" text-anchor="end" style="fill: var(--figure-muted)">
+      <text x="140" y="37">query 0</text>
+      <text x="140" y="57">query 1</text>
+    </g>
+    <g style="fill: var(--figure-accent)">
+      <rect x="150" y="22" width="20" height="20"/>
+      <rect x="170" y="22" width="20" height="20"/>
+      <rect x="190" y="22" width="20" height="20"/>
+      <rect x="210" y="22" width="20" height="20"/>
+      <rect x="150" y="42" width="20" height="20"/>
+      <rect x="170" y="42" width="20" height="20"/>
+      <rect x="190" y="42" width="20" height="20"/>
+      <rect x="210" y="42" width="20" height="20"/>
+      <rect x="230" y="42" width="20" height="20"/>
+    </g>
+    <g fill="none" stroke="currentColor" stroke-width="1">
+      <line x1="150" y1="22" x2="250" y2="22"/>
+      <line x1="150" y1="42" x2="250" y2="42"/>
+      <line x1="150" y1="62" x2="250" y2="62"/>
+      <line x1="150" y1="22" x2="150" y2="62"/>
+      <line x1="170" y1="22" x2="170" y2="62"/>
+      <line x1="190" y1="22" x2="190" y2="62"/>
+      <line x1="210" y1="22" x2="210" y2="62"/>
+      <line x1="230" y1="22" x2="230" y2="62"/>
+      <line x1="250" y1="22" x2="250" y2="62"/>
+    </g>
+    <g fill="none" stroke-width="1" style="stroke: var(--figure-muted)">
+      <path d="M153 66 L153 70 L207 70 L207 66"/>
+      <path d="M213 66 L213 70 L247 70 L247 66"/>
+    </g>
+    <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+      <text x="180" y="85">cached</text>
+      <text x="230" y="85">new</text>
+    </g>
+  </g>
+
+  <!-- Unused capacity: an explicit mask -->
+  <g>
+    <text x="150" y="104" font-size="13">Unused capacity: an explicit mask</text>
+    <g font-size="13" text-anchor="end" style="fill: var(--figure-muted)">
+      <text x="140" y="127">query 0</text>
+      <text x="140" y="147">query 1</text>
+    </g>
+    <g style="fill: var(--figure-accent)">
+      <rect x="150" y="112" width="20" height="20"/>
+      <rect x="170" y="112" width="20" height="20"/>
+      <rect x="190" y="112" width="20" height="20"/>
+      <rect x="210" y="112" width="20" height="20"/>
+      <rect x="150" y="132" width="20" height="20"/>
+      <rect x="170" y="132" width="20" height="20"/>
+      <rect x="190" y="132" width="20" height="20"/>
+      <rect x="210" y="132" width="20" height="20"/>
+      <rect x="230" y="132" width="20" height="20"/>
+    </g>
+    <g fill="none" stroke="currentColor" stroke-width="1">
+      <line x1="150" y1="112" x2="310" y2="112"/>
+      <line x1="150" y1="132" x2="310" y2="132"/>
+      <line x1="150" y1="152" x2="310" y2="152"/>
+      <line x1="150" y1="112" x2="150" y2="152"/>
+      <line x1="170" y1="112" x2="170" y2="152"/>
+      <line x1="190" y1="112" x2="190" y2="152"/>
+      <line x1="210" y1="112" x2="210" y2="152"/>
+      <line x1="230" y1="112" x2="230" y2="152"/>
+      <line x1="250" y1="112" x2="250" y2="152"/>
+      <line x1="270" y1="112" x2="270" y2="152"/>
+      <line x1="290" y1="112" x2="290" y2="152"/>
+      <line x1="310" y1="112" x2="310" y2="152"/>
+    </g>
+    <g fill="none" stroke-width="1" style="stroke: var(--figure-muted)">
+      <path d="M153 156 L153 160 L207 160 L207 156"/>
+      <path d="M213 156 L213 160 L247 160 L247 156"/>
+      <path d="M253 156 L253 160 L307 160 L307 156"/>
+    </g>
+    <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+      <text x="180" y="175">cached</text>
+      <text x="230" y="175">new</text>
+      <text x="280" y="175">unused</text>
+    </g>
+  </g>
+
+  <!-- Unused capacity with "causal": wrong -->
+  <g>
+    <text x="150" y="194" font-size="13">Unused capacity with "causal": wrong</text>
+    <g font-size="13" text-anchor="end" style="fill: var(--figure-muted)">
+      <text x="140" y="217">query 0</text>
+      <text x="140" y="237">query 1</text>
+    </g>
+    <g style="fill: var(--figure-accent)">
+      <rect x="150" y="202" width="20" height="20"/>
+      <rect x="170" y="202" width="20" height="20"/>
+      <rect x="190" y="202" width="20" height="20"/>
+      <rect x="210" y="202" width="20" height="20"/>
+      <rect x="230" y="202" width="20" height="20"/>
+      <rect x="150" y="222" width="20" height="20"/>
+      <rect x="170" y="222" width="20" height="20"/>
+      <rect x="190" y="222" width="20" height="20"/>
+      <rect x="210" y="222" width="20" height="20"/>
+      <rect x="230" y="222" width="20" height="20"/>
+    </g>
+    <g style="fill: var(--figure-straw)">
+      <rect x="250" y="202" width="20" height="20"/>
+      <rect x="270" y="202" width="20" height="20"/>
+      <rect x="250" y="222" width="20" height="20"/>
+      <rect x="270" y="222" width="20" height="20"/>
+      <rect x="290" y="222" width="20" height="20"/>
+    </g>
+    <g fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M256 208 L264 216 M264 208 L256 216"/>
+      <path d="M276 208 L284 216 M284 208 L276 216"/>
+      <path d="M256 228 L264 236 M264 228 L256 236"/>
+      <path d="M276 228 L284 236 M284 228 L276 236"/>
+      <path d="M296 228 L304 236 M304 228 L296 236"/>
+    </g>
+    <g fill="none" stroke="currentColor" stroke-width="1">
+      <line x1="150" y1="202" x2="310" y2="202"/>
+      <line x1="150" y1="222" x2="310" y2="222"/>
+      <line x1="150" y1="242" x2="310" y2="242"/>
+      <line x1="150" y1="202" x2="150" y2="242"/>
+      <line x1="170" y1="202" x2="170" y2="242"/>
+      <line x1="190" y1="202" x2="190" y2="242"/>
+      <line x1="210" y1="202" x2="210" y2="242"/>
+      <line x1="230" y1="202" x2="230" y2="242"/>
+      <line x1="250" y1="202" x2="250" y2="242"/>
+      <line x1="270" y1="202" x2="270" y2="242"/>
+      <line x1="290" y1="202" x2="290" y2="242"/>
+      <line x1="310" y1="202" x2="310" y2="242"/>
+    </g>
+    <g fill="none" stroke-width="1" style="stroke: var(--figure-muted)">
+      <path d="M153 246 L153 250 L207 250 L207 246"/>
+      <path d="M213 246 L213 250 L247 250 L247 246"/>
+      <path d="M253 246 L253 250 L307 250 L307 246"/>
+    </g>
+    <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+      <text x="180" y="265">cached</text>
+      <text x="230" y="265">new</text>
+      <text x="280" y="265">unused</text>
+    </g>
+  </g>
+
+  <!-- Notes -->
+  <g font-size="13">
+    <text x="332" y="37" style="fill: var(--figure-accent)">filled: may attend</text>
+    <text x="332" y="57" style="fill: var(--figure-muted)">empty: hidden</text>
+    <text x="332" y="227" style="fill: var(--figure-straw)">crossed: reads a slot</text>
+    <text x="332" y="244" style="fill: var(--figure-straw)">that holds no token</text>
+  </g>
+</svg>

@@ -1,0 +1,12 @@
+id = "mlx-fast-attention"
+title = "Using the Fused Attention Kernel"
+track = "mlx"
+order = 50
+difficulty = "easy"
+frameworks = ["mlx"]
+judges = ["numeric"]
+tags = ["mlx", "attention", "kv-cache", "masking", "metal"]
+prerequisites = ["causal-self-attention"]
+requires = "mlx-gpu"
+entry = ["attend"]
+time_limit_s = 10

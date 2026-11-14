@@ -1,0 +1,12 @@
+id = "mlx-mask-free-indexing"
+title = "Filtering Without Boolean Indexing"
+track = "mlx"
+order = 20
+difficulty = "easy"
+frameworks = ["mlx"]
+judges = ["numeric"]
+tags = ["mlx", "indexing", "top-k", "scatter", "lazy-evaluation"]
+prerequisites = ["top-k-filtering"]
+requires = "mlx-gpu"
+entry = ["top_k_filter", "scatter_penalty"]
+time_limit_s = 10
