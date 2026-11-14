@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 176">
+  <title>The layout of a safetensors file</title>
+  <desc>A horizontal strip divided into three parts: 8 bytes holding the header length n, n bytes of JSON header, and the tensor data. The data section starts at byte 8 + n. A tensor inside the data section is marked, with its begin and end offsets measured from the start of the data section, not from the start of the file.</desc>
+  <!-- The file as a strip: length | header | data -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="10" y="52" width="46" height="40"/>
+    <rect x="56" y="52" width="150" height="40"/>
+    <rect x="206" y="52" width="264" height="40"/>
+  </g>
+  <!-- One tensor inside the data section -->
+  <rect x="286" y="52" width="96" height="40" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.18; stroke: var(--figure-accent)"/>
+  <g font-size="13" text-anchor="middle">
+    <text x="33" y="77" style="font-family: var(--figure-serif)"><tspan font-style="italic">n</tspan></text>
+    <text x="131" y="77">JSON header</text>
+    <text x="246" y="77" style="fill: var(--figure-muted)">data</text>
+    <text x="334" y="77" style="fill: var(--figure-accent)">one tensor</text>
+  </g>
+  <!-- Sizes above the strip -->
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="33" y="42">8 bytes</text>
+    <text x="131" y="42"><tspan font-style="italic" style="font-family: var(--figure-serif)">n</tspan> bytes</text>
+    <text x="338" y="42">the rest of the file</text>
+  </g>
+  <!-- File offsets below the strip -->
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="10" y1="92" x2="10" y2="104"/>
+    <line x1="56" y1="92" x2="56" y2="104"/>
+    <line x1="206" y1="92" x2="206" y2="150"/>
+  </g>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="10" y="118">0</text>
+    <text x="52" y="118">8</text>
+  </g>
+  <text x="200" y="118" font-size="13" text-anchor="end">8 + <tspan font-style="italic" style="font-family: var(--figure-serif)">n</tspan></text>
+  <!-- data_offsets are measured from the start of the data section -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-straw)">
+    <line x1="206" y1="112" x2="279" y2="112"/>
+    <line x1="206" y1="140" x2="375" y2="140"/>
+    <line x1="286" y1="92" x2="286" y2="118" stroke-width="1" stroke-dasharray="2 3"/>
+    <line x1="382" y1="92" x2="382" y2="146" stroke-width="1" stroke-dasharray="2 3"/>
+  </g>
+  <polygon points="286,112 278,115.2 278,108.8" style="fill: var(--figure-straw)"/>
+  <polygon points="382,140 374,143.2 374,136.8" style="fill: var(--figure-straw)"/>
+  <g font-size="13" style="fill: var(--figure-straw)">
+    <text x="292" y="116">begin</text>
+    <text x="388" y="144">end</text>
+  </g>
+  <text x="206" y="168" font-size="13" style="fill: var(--figure-muted)">data_offsets count from here</text>
+</svg>

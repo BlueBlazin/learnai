@@ -1,0 +1,19 @@
+{
+  "granite-4.0-350m": {
+    "revision": "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2",
+    "parameters": 352379904,
+    "tensor_bytes": 704759808,
+    "file_bytes": 704786224,
+    "kv_bytes_per_token": 28672,
+    "quantized_bytes": 374458368,
+    "quantized_file_bytes": 374530404
+  },
+  "granite-4.2-3b-mlx-8bit": {
+    "revision": "7c630b526561db6b4641767c54595fe494176695",
+    "parameters": 3659737600,
+    "tensor_bytes": 3888665600,
+    "file_bytes": 3888771048,
+    "kv_bytes_per_token": 81920,
+    "quantized_bytes": 3888665600
+  }
+}

@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 190">
+  <title>One Granite 4.0 decoder block</title>
+  <desc>The residual stream runs from left to right. Two branches leave it and rejoin it: RMSNorm, then grouped-query attention, then a multiplication by 0.263; and RMSNorm, then the fused SwiGLU MLP, then a multiplication by 0.263. Under the attention box: RoPE with theta ten million on queries and keys, scores times one over sixty-four. Under the MLP box: one input matrix whose first half of rows is the gate and second half is up.</desc>
+  <!-- The residual stream -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <line x1="8" y1="40" x2="197" y2="40"/>
+    <line x1="213" y1="40" x2="423" y2="40"/>
+    <line x1="439" y1="40" x2="466" y2="40"/>
+    <circle cx="205" cy="40" r="8"/>
+    <circle cx="431" cy="40" r="8"/>
+    <line x1="201" y1="40" x2="209" y2="40"/>
+    <line x1="205" y1="36" x2="205" y2="44"/>
+    <line x1="427" y1="40" x2="435" y2="40"/>
+    <line x1="431" y1="36" x2="431" y2="44"/>
+  </g>
+  <polygon points="474,40 465,43.2 465,36.8"/>
+  <text x="8" y="28" font-size="13" style="font-family: var(--figure-serif)"><tspan font-style="italic">x</tspan></text>
+  <!-- Branch 1: attention -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <polyline points="24,40 24,110 34,110"/>
+    <line x1="94" y1="110" x2="102" y2="110"/>
+    <line x1="168" y1="110" x2="176" y2="110"/>
+    <line x1="205" y1="96" x2="205" y2="56"/>
+    <rect x="34" y="96" width="60" height="28"/>
+    <rect x="102" y="96" width="66" height="28"/>
+  </g>
+  <polygon points="205,48 208.2,57 201.8,57"/>
+  <circle cx="24" cy="40" r="2.5"/>
+  <rect x="176" y="96" width="58" height="28" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+  <g font-size="13" text-anchor="middle">
+    <text x="64" y="115">norm</text>
+    <text x="135" y="115">attention</text>
+    <text x="205" y="115" style="fill: var(--figure-accent)">× 0.263</text>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="118" y="146">16 heads on 4 KV heads</text>
+    <text x="118" y="163">RoPE on q, k: θ = 10⁷</text>
+  </g>
+  <text x="118" y="180" font-size="13" text-anchor="middle" style="fill: var(--figure-accent)">scores × 1/64</text>
+  <!-- Branch 2: MLP -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <polyline points="250,40 250,110 260,110"/>
+    <line x1="320" y1="110" x2="328" y2="110"/>
+    <line x1="394" y1="110" x2="402" y2="110"/>
+    <line x1="431" y1="96" x2="431" y2="56"/>
+    <rect x="260" y="96" width="60" height="28"/>
+    <rect x="328" y="96" width="66" height="28"/>
+  </g>
+  <polygon points="431,48 434.2,57 427.8,57"/>
+  <circle cx="250" cy="40" r="2.5"/>
+  <rect x="402" y="96" width="58" height="28" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+  <g font-size="13" text-anchor="middle">
+    <text x="290" y="115">norm</text>
+    <text x="361" y="115">SwiGLU</text>
+    <text x="431" y="115" style="fill: var(--figure-accent)">× 0.263</text>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="350" y="146">one input matrix:</text>
+    <text x="350" y="163">rows 0 to F − 1 gate,</text>
+    <text x="350" y="180">rows F to 2F − 1 up</text>
+  </g>
+</svg>

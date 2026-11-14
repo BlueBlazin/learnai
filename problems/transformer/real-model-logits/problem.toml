@@ -1,0 +1,33 @@
+id = "real-model-logits"
+title = "Matching a Real Model's Logits"
+track = "transformer"
+order = 190
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["forward-pass", "granite", "logits", "real-model", "checkpoint-porting", "tied-embeddings"]
+prerequisites = ["real-model-block", "decoder-forward"]
+requires = "cpu"
+entry = ["granite_logits"]
+# The first case on the real model decodes 352 M weights from bfloat16 and hands them
+# to the framework (1 to 2 s, once per run); a forward pass is then about 0.2 s.
+time_limit_s = 20
+# The statement's rule: run the forward pass yourself. The kit's reference model (and
+# the RealModel that builds it) may not be constructed from the solution, MLX's built-in
+# rotary embedding may not be used, and transformers may not be imported. Rejects the
+# mutant uses_kit_reference.
+forbidden = [
+    "whetstone.kit.realmodel.RealLM",
+    "whetstone.kit.realmodel.RealModel",
+    "mlx.nn.RoPE",
+    "mlx.core.fast.rope",
+]
+forbidden_source = ["transformers"]
+
+# The weights, plus config.json, which the kit reads the architecture from.
+[[assets]]
+name = "granite-4.0-350m"
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
+files = ["config.json", "model.safetensors"]
+size_mb = 705

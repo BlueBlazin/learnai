@@ -1,0 +1,24 @@
+id = "tokenizer-json-load"
+title = "Running a Real Tokenizer's Merges"
+track = "tokenization"
+order = 120
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["tokenizer", "bpe", "tokenizer-json", "byte-level", "special-tokens", "real-model"]
+prerequisites = ["bpe-encode", "special-tokens-split"]
+requires = "cpu"
+entry = ["load_tokenizer"]
+time_limit_s = 10
+# The statement's rule: build the tokenizer from the JSON yourself. The libraries and the
+# kit's own tokenizer are ruled out of the solution's source (rejects the mutants
+# uses_tokenizers and uses_kit_tokenizer). kit.bpe.translate_pattern is allowed.
+forbidden_source = ["tokenizers", "transformers", "ByteLevelBPE"]
+
+# Only the tokenizer file (7 MB of the 712 MB model).
+[[assets]]
+name = "granite-4.0-350m"
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
+files = ["tokenizer.json"]
+size_mb = 7

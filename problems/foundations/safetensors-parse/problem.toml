@@ -1,0 +1,23 @@
+id = "safetensors-parse"
+title = "Parsing safetensors by Hand"
+track = "foundations"
+order = 120
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["safetensors", "checkpoint", "file-format", "zero-copy", "bfloat16", "real-model"]
+prerequisites = ["bf16-decode"]
+requires = "cpu"
+entry = ["read_header", "read_tensor"]
+time_limit_s = 10
+# The statement's rule: parse the bytes yourself. The package and the kit's own reader
+# are ruled out of the solution's source (rejects the mutant uses_safetensors).
+forbidden_source = ["safetensors", "SafetensorsFile"]
+
+# Only the checkpoint itself: the cases that use it read 226 real tensors.
+[[assets]]
+name = "granite-4.0-350m"
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
+files = ["model.safetensors"]
+size_mb = 705

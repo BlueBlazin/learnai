@@ -1,0 +1,21 @@
+id = "real-model-sizing"
+title = "Sizing a Real Checkpoint"
+track = "sizing"
+order = 110
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["sizing", "parameters", "safetensors", "kv-cache", "quantization", "real-model"]
+prerequisites = ["param-count", "kv-cache-bytes", "safetensors-parse"]
+requires = "cpu"
+entry = ["size_report"]
+time_limit_s = 10
+
+# The header of the real checkpoint and its config.json. The 3B model's header is a
+# committed fixture, so only the small model has to be downloaded.
+[[assets]]
+name = "granite-4.0-350m"
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
+files = ["config.json", "model.safetensors"]
+size_mb = 705
