@@ -1,0 +1,12 @@
+id = "prompt-lookup-draft"
+title = "Drafting by Prompt Lookup"
+track = "speculative"
+order = 30
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["speculative-decoding", "prompt-lookup", "n-gram", "draft"]
+prerequisites = []
+requires = "cpu"
+entry = ["lookup_draft"]
+time_limit_s = 10
