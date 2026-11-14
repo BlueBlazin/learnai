@@ -1,0 +1,19 @@
+id = "utf8-boundaries"
+title = "UTF-8 Character Boundaries"
+track = "tokenization"
+order = 20
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["utf-8", "bytes", "streaming", "detokenizer"]
+prerequisites = []
+requires = "cpu"
+entry = ["complete_prefix_len"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: no incremental decoder from `codecs`.
+forbidden = [
+    "codecs.getincrementaldecoder",
+    "codecs.iterdecode",
+    "codecs.IncrementalDecoder",
+    "codecs.getreader",
+]

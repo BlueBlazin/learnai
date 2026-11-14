@@ -1,0 +1,12 @@
+id = "streaming-detokenizer"
+title = "Streaming Detokenization"
+track = "tokenization"
+order = 50
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric", "property", "cost"]
+tags = ["detokenizer", "streaming", "utf-8", "bytes"]
+prerequisites = ["utf8-boundaries"]
+requires = "cpu"
+entry = ["detok_step", "detok_flush"]
+time_limit_s = 10

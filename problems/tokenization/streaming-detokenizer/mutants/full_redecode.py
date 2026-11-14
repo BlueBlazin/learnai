@@ -1,0 +1,46 @@
+# BUG: keeps every token id in the state and looks up the whole sequence again at every step; the text is right, but the bytes decoded grow quadratically with the length of the stream.
+from typing import Any
+
+from whetstone.kit import ToyVocab
+
+
+def detok_step(state: Any, token_id: int, vocab: ToyVocab) -> tuple[Any, str]:
+    ids, emitted, _ = state or ((), 0, b"")
+    ids = (*ids, token_id)
+    data = b"".join(vocab.bytes(t) for t in ids)  # the whole stream, again
+    n = _complete_prefix_len(data)
+    return (ids, n, data[n:]), data[emitted:n].decode("utf-8", errors="replace")
+
+
+def detok_flush(state: Any) -> str:
+    return (state[2] if state else b"").decode("utf-8", errors="replace")
+
+
+def _complete_prefix_len(data: bytes) -> int:
+    """Length of `data` without an unfinished, still valid UTF-8 character at its end.
+
+    This is the function of the `utf8-boundaries` problem.
+    """
+    n = len(data)
+    for back in range(1, min(3, n) + 1):
+        byte = data[n - back]
+        if byte & 0xC0 == 0x80:
+            continue  # a continuation byte: keep looking for its lead byte
+        if 0xC2 <= byte <= 0xDF:
+            need = 2
+        elif 0xE0 <= byte <= 0xEF:
+            need = 3
+        elif 0xF0 <= byte <= 0xF4:
+            need = 4
+        else:
+            return n  # ASCII or a byte that starts nothing: complete
+        if back >= need:
+            return n  # the character has all its bytes
+        if back >= 2:
+            second = data[n - back + 1]
+            low = {0xE0: 0xA0, 0xF0: 0x90}.get(byte, 0x80)
+            high = {0xED: 0x9F, 0xF4: 0x8F}.get(byte, 0xBF)
+            if not low <= second <= high:
+                return n  # already invalid: no byte can complete it
+        return n - back
+    return n

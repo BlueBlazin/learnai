@@ -1,0 +1,12 @@
+id = "special-tokens-split"
+title = "Special Tokens Without Injection"
+track = "tokenization"
+order = 40
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["tokenizer", "special-tokens", "prompt-injection", "chat"]
+prerequisites = ["bpe-encode"]
+requires = "cpu"
+entry = ["encode_with_specials"]
+time_limit_s = 10

@@ -1,0 +1,12 @@
+id = "pad-batch-left"
+title = "Padding a Batch for Generation"
+track = "tokenization"
+order = 30
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["padding", "batching", "attention-mask", "generation"]
+prerequisites = []
+requires = "cpu"
+entry = ["pad_batch"]
+time_limit_s = 10

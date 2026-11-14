@@ -1,0 +1,12 @@
+id = "chat-template-render"
+title = "Rendering a Chat Template"
+track = "tokenization"
+order = 60
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["chat-template", "chatml", "special-tokens", "prompt"]
+prerequisites = ["special-tokens-split"]
+requires = "cpu"
+entry = ["render_chat"]
+time_limit_s = 10
