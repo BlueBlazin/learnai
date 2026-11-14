@@ -266,6 +266,21 @@ def test_percentile_is_nearest_rank():
     assert percentile(values, 100) == 4
     assert percentile(values, 0) == 1
     assert percentile(range(1, 101), 99) == 99
+
+
+def test_percentile_rank_is_exact_despite_float_rounding():
+    # 55 / 100 * 100 is 55.00000000000001 in floating point; the rank must still be 55.
+    assert percentile(range(1, 101), 55) == 55
+    assert percentile(range(1, 1001), 99.9) == 999
+    for n in (10, 100, 1000):
+        for q in range(101):
+            assert percentile(range(1, n + 1), q) == max(1, -(-q * n // 100)), (n, q)
+    assert percentile([5.0, 1.0, 3.0], 34) == 3.0  # ceil(1.02) = 2: just past a third
+
+
+def test_percentile_rejects_bad_input():
+    with pytest.raises(ValueError):
+        percentile([1, 2], 101)
     with pytest.raises(ValueError):
         percentile([], 50)
 

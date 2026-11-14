@@ -1,0 +1,4 @@
+id = "constrained"
+title = "Constrained Generation"
+description = "Forcing output to follow a format: token masks, choice tries, regular-expression automata over a real vocabulary, and grammar-driven decoding, the machinery behind JSON mode and tool calls."
+order = 60

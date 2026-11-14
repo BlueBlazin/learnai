@@ -916,6 +916,481 @@ Authoring notes:
 - Different seeds give different models; use two seeds across cases so that a solution
   cannot special-case one.
 
+### KVCache.truncate and KVCache.select
+
+Two operations on the cache `TinyLM` returns, for loops that roll back or branch. Both
+return a new cache and leave the original untouched.
+
+```python
+_, cache = lm([5, 6, 7, 8])
+short = cache.truncate(2)              # as if only [5, 6] had been fed
+logits, _ = lm([9], short)             # continues [5, 6, 9]
+
+beams = cache.select([0, 0, 0])        # one prompt expanded to three beams
+logits, cache = lm(next_tokens, beams) # next_tokens has shape (3, 1)
+cache = cache.select([2, 0, 0])        # reorder (and repeat) rows after a beam reshuffle
+```
+
+- `cache.truncate(n)`: `0 <= n <= cache.length`, else `ValueError`; a non-int is a
+  `TypeError`. `truncate(cache.length)` is an equal cache. `truncate(0)` is an empty
+  cache, and continuing from it equals starting without a cache; a model call still
+  needs at least one token, which is why `prefix-cache-reuse` keeps one prompt token
+  to feed.
+- `cache.select(rows)`: `rows` is a non-empty 1-D list or integer tensor of row
+  indices in `[0, cache.batch_size)`; rows may repeat or be dropped. Negative indices,
+  an empty list, and anything not 1-D raise `ValueError`. The result always counts as
+  batched, also when the source came from 1-D tokens (one row), so feed it tokens of
+  shape `(len(rows), T)`.
+- `cache.batch_size` is the number of rows.
+- Logits after `truncate` or `select` agree with the direct computation to about
+  `1e-5`, like any two call patterns of `TinyLM`: compare tokens, not logits.
+
+### draft_target_pair
+
+Two `TinyLM`s for speculative decoding: a target, and a draft that agrees with it at a
+chosen rate.
+
+```python
+from whetstone.kit import draft_target_pair
+
+draft, target = draft_target_pair(ctx.fw, seed=3, agreement=0.8)   # also TinyLM's size arguments
+ctx.call("speculative_greedy", target, draft, prompt, 4, 24, target.eos_id)
+check.cost(target.counters, "forward_calls", at_most=...)
+check.cost(draft.counters, "tokens_processed", at_most=...)
+```
+
+- `target` is exactly `TinyLM(fw, seed)`. `draft` has the same shape and vocabulary and
+  the target's weights plus seeded noise, tuned so that along the target's greedy
+  continuations the draft's greedy token equals the target's at about `agreement`.
+- `agreement` is in `(0, 1]`; `1.0` gives a draft with identical weights. The rate is a
+  statistical property: over a few hundred positions of prompts the pair was not tuned
+  on it lands within about 0.05 of the request, but one short prompt can be far off.
+  So derive cost limits from the reference's measured counters on your fixture, not
+  from the nominal rate, and pick `agreement=0.9` or more for a "high agreement" case.
+- Each model has its own counters, both zero when returned. Building a pair takes about
+  0.1 s; build it once per case.
+
+### ops
+
+`whetstone.kit.ops` holds reference implementations of concepts from earlier problems,
+so a later problem can build on them without asking for them again. One signature in
+every framework: the call is routed by the type of the first argument (torch, JAX,
+MLX, or numpy), and each framework has a native implementation written from elementary
+operations, so `ops` keeps working in problems whose `forbidden` list rules out the
+built-in `softmax`, `topk`, or attention kernel. Solutions, references, and tests may
+all use it.
+
+```python
+from whetstone.kit import ops
+
+h = ops.rms_norm(x, weight, eps=1e-5)
+q, k = ops.rope(q, positions), ops.rope(k, positions)
+y = ops.attention(q, k, v, mask)
+logits = ops.min_p_filter(ops.top_p_filter(ops.top_k_filter(logits, 40), 0.95), 0.05)
+probs = ops.softmax(logits)
+```
+
+| function | contract |
+|---|---|
+| `softmax(x, axis=-1)`, `log_softmax(x, axis=-1)` | Stable; `-inf` entries get probability 0. An all-`-inf` slice gives NaN. |
+| `rms_norm(x, weight, eps=1e-5)` | `x / sqrt(mean(x**2, -1) + eps) * weight`. The plain formula: it does not have the overflow protection the `rmsnorm` problem asks for. |
+| `rope(x, positions, base=10000.0)` | `x` is `(..., T, D)`; pairs `(2i, 2i+1)` rotated by `positions[t] * base**(-2i/D)`, as in the `rope` problem. `positions` is `(T,)`, or `(B, T)` for `x` of shape `(B, H, T, D)` (one row of positions per batch row). |
+| `attention(q, k, v, mask=None)` | `softmax(q k^T / sqrt(d) + mask) v`. `mask` broadcasts to `(..., T, S)`: boolean (True = may attend) or additive float (0 or `-inf`). A query that may attend to nothing gets a zero output, not NaN. Grouped-query attention is built in: with `q` `(B, H, T, d)` and `k`, `v` `(B, H_kv, S, d)`, query head `h` uses KV head `h // (H // H_kv)`. |
+| `swiglu(x, w_gate, w_up, w_down)` | `(silu(x W_gate^T) * (x W_up^T)) W_down^T`, weights `(out, in)`. |
+| `top_k_filter(logits, k)` | Keeps the `k` largest per row, ties to the lowest index; `k <= 0` or `k >= V` is a no-op. |
+| `top_p_filter(logits, p)` | Keeps a token while the mass ranked strictly before it is below `p` (ties: lowest index first); the top token always survives. |
+| `min_p_filter(logits, min_p)` | Keeps tokens with probability at least `min_p` times the largest. |
+
+The three filters work on the last axis and return **logits**: removed entries become
+`-inf`, kept entries are unchanged, already-masked entries stay masked. That makes
+them chain, and `ops.softmax` of the result is the renormalized distribution. Note the
+difference from the `top-p-filtering` problem, whose `top_p_filter` returns
+probabilities: `ops.softmax(ops.top_p_filter(logits, p))` equals that problem's output.
+
+If your problem *teaches* one of these, forbid the kit version too, by saying so in the
+statement and adding a mutant that calls it; `forbidden` entries such as
+`whetstone.kit.ops.softmax` resolve like any other name.
+
+### DecoderConfig, decoder_params, decoder_forward_ref
+
+Weights for a small modern decoder (RMSNorm pre-norm blocks, RoPE, grouped-query
+attention, SwiGLU, tied head), named like a Hugging Face checkpoint, plus the numpy
+oracle. Use them when the solution must run the forward pass itself.
+
+```python
+from whetstone.kit import DecoderConfig, decoder_forward_ref, decoder_params, layer_params
+
+cfg = DecoderConfig(n_layers=2)                  # vocab_size=64, d_model=32, n_heads=4,
+params = decoder_params(cfg, seed=1)             #   n_kv_heads=2, d_mlp=48, rope_base=1e4,
+tokens = ctx.randint(0, cfg.vocab_size, (2, 6))  #   norm_eps=1e-5, tie_embeddings=True
+got = ctx.call("forward", params, cfg, tokens)   # the dict's arrays become tensors
+check.allclose(got, decoder_forward_ref(cfg, params, tokens), rtol=1e-3, atol=1e-4)
+```
+
+- `decoder_params(cfg, seed)` returns `dict[str, np.ndarray]` (float32, checkpoint
+  order). Linear weights are `(out, in)`, no biases:
+
+  | key | shape |
+  |---|---|
+  | `model.embed_tokens.weight` | `(vocab_size, d_model)` |
+  | `model.layers.{i}.input_layernorm.weight` | `(d_model,)` |
+  | `model.layers.{i}.self_attn.q_proj.weight` | `(n_heads * head_dim, d_model)` |
+  | `model.layers.{i}.self_attn.k_proj.weight`, `v_proj.weight` | `(n_kv_heads * head_dim, d_model)` |
+  | `model.layers.{i}.self_attn.o_proj.weight` | `(d_model, n_heads * head_dim)` |
+  | `model.layers.{i}.post_attention_layernorm.weight` | `(d_model,)` |
+  | `model.layers.{i}.mlp.gate_proj.weight`, `up_proj.weight` | `(d_mlp, d_model)` |
+  | `model.layers.{i}.mlp.down_proj.weight` | `(d_model, d_mlp)` |
+  | `model.norm.weight` | `(d_model,)` |
+  | `lm_head.weight` | `(vocab_size, d_model)`; present only with `tie_embeddings=False` |
+
+  With tied embeddings there is no `lm_head.weight` key at all, as in a real tied
+  checkpoint. Norm gains are drawn from `[0.5, 1.5]`, not set to 1, so a missing or
+  swapped norm changes the output. `cfg.head_dim` is `d_model // n_heads` (must be even).
+- `decoder_forward_ref(cfg, params, tokens)`: `tokens` `(T,)` or `(B, T)` to float32
+  logits `(T, V)` or `(B, T, V)`; causal, positions from 0. The arithmetic is exactly
+  the kit's `ops`: RoPE on queries and keys only, adjacent pairs; scores divided by
+  `sqrt(head_dim)`; logits have a standard deviation of about 2.
+- `layer_params(params, i)` strips the `model.layers.{i}.` prefix (works on numpy and
+  on tensor dicts), for single-block problems.
+- `decoder_block_ref(cfg, block, x, mask=None, positions=None)` is one block of the
+  oracle: `x` `(B, T, d_model)` in and out, `mask` as in `ops.attention` (`None` means
+  no mask, not a causal one), `positions` as in `ops.rope` (default `0..T-1`). For
+  `padded-batch-invariance`, compare each row's last-token logits with
+  `decoder_forward_ref` on the unpadded sequence.
+- `cfg` is a frozen dataclass and passes through `ctx.call` unchanged. Use `rtol=1e-3`:
+  the forward pass is a deep stack (section 9).
+
+### ToyVocab
+
+The byte strings behind `TinyLM`'s token ids, for detokenizing, stop strings, and
+constrained decoding.
+
+```python
+from whetstone.kit import ToyVocab
+
+vocab = ToyVocab(size=lm.vocab_size, seed=0)      # size 64 to 282
+ids = vocab.encode('{"a": true}')                 # byte-pair merging; never a special id
+vocab.decode(ids)                                 # '{"a": true}'
+vocab.bytes(ids[0])                               # b'{"'
+euro = [vocab.id_of(b"\xe2\x82"), vocab.id_of(b"\xac")]     # "€" split over two tokens
+check.cost(vocab.counters, "bytes_decoded", at_most=...)
+```
+
+- Ids 0 to 4 are special tokens, fixed: `vocab.specials == {"<|bos|>": 0, "<|eos|>": 1,
+  "<|pad|>": 2, "<|im_start|>": 3, "<|im_end|>": 4}` (`vocab.bos_id`, `eos_id`,
+  `pad_id`; 0 and 1 match `TinyLM`). **Their bytes are `b""`**, and `decode` skips them.
+- The other ids are shuffled by `seed`. At size 64 they are 38 single bytes (digits,
+  `{}[]:,"`, space, `-`, `.`, the letters `aeflnrstu`, and the nine bytes of `é`, `€`,
+  `😀`) and 21 merged pieces: `tr tru true fa fal fals false nu nul null`, `":`, `": `,
+  `, `, `{"`, `"}`, `é`, `€`, `😀`, and three pieces that are only part of a character
+  (`E2 82`, `F0 9F`, `98 80`). Larger sizes add single bytes, printable ASCII first;
+  at 282 every byte has a token.
+- `vocab.bytes(id)` and `vocab.decode(ids)` (UTF-8 with `errors="replace"`, so a
+  cut-off character is U+FFFD) are **counted**: `counters.lookups` per id and
+  `counters.bytes_decoded` per byte handed out. Re-decoding a growing sequence at every
+  step is quadratic in `bytes_decoded`. An id outside `[0, size)` raises `ValueError`.
+- Not counted, for tests: `vocab.pieces` (a tuple of every token's bytes),
+  `vocab.id_of(piece)` (`KeyError` if absent; also accepts a special's string),
+  `vocab.is_special(id)`, `vocab.merges` (ranked `(left, right)` byte pairs), and
+  `vocab.encode(text)`. `encode` follows the `bpe-encode` rule (lowest-rank adjacent
+  pair first, all its occurrences left to right) and raises `ValueError` for a byte
+  without a token, so below size 282 write test text from the pieces above. It treats
+  special strings as ordinary text: it is the `encode_ordinary` of
+  `special-tokens-split` (use size 282 there, so that `<|im_start|>` is encodable).
+- Token ids are plain ints in every framework. `ctx.expected` gets a twin with fresh
+  counters.
+
+### CharDFA
+
+A deterministic automaton over **bytes** for constrained generation.
+
+```python
+from whetstone.kit import DEAD, CharDFA
+
+dfa = CharDFA.from_regex(r'\{"[a-z]+": (true|false|-?\d+)\}')
+state = dfa.step(dfa.start, ord("{"))        # next state, or DEAD (-1); one counted step
+state = dfa.walk(state, b'"ab')              # several bytes; stops when the walk dies
+dfa.is_accepting(state)
+check.cost(dfa.counters, "steps", exactly=0)
+
+by_hand = CharDFA({0: {"a": 1}, 1: {"b": 1}}, start=0, accepting=[1])    # a b*
+```
+
+- States are non-negative ints; `DEAD` is -1 and stepping from it stays `DEAD`.
+  `dfa.start`, `dfa.accepting` (frozenset), `dfa.states` (sorted tuple), `dfa.n_states`.
+- `dfa.step(state, byte)` counts one in `dfa.counters.steps`; `byte` is an int in
+  `[0, 256)`. An unknown state or a bad byte raises `ValueError`. `dfa.walk(state,
+  data)` counts one step per byte consumed, including the byte that kills the walk and
+  none after it. The transition table is private, so `step` is the only way a solution
+  learns it; that is what makes a step count meaningful.
+- Oracles for tests, **not** counted: `dfa.accepts(data)`, `dfa.accepts_prefix(data)`
+  (can `data` be extended to a string of the language?), `dfa.is_live(state)`. They
+  take `bytes` or `str`. Tell learners in the statement not to call them.
+- `CharDFA.from_regex(pattern)` returns the minimal DFA, **trimmed**: no state from
+  which acceptance is unreachable. So for a regex DFA "the walk is not `DEAD`" means
+  exactly "this is a prefix of a string in the language", which is the rule
+  `dfa-token-mask` states. States are numbered breadth-first from the start (0),
+  following bytes in increasing order, so equal languages give identical automata.
+- A hand-built DFA may have trap states (alive, but nothing accepts from there);
+  `dfa.trim()` removes them, keeping state numbers.
+- Regex subset (the whole string must match): literals; `.`; classes `[abc]`,
+  `[a-z0-9_]`, `[^"]` (ASCII ranges only); `\d \w \s` (ASCII) and, outside classes,
+  `\D \W \S`; `\n \t \r \f \v \0 \xHH`; escaped punctuation; concatenation, `|`,
+  `( )`, `(?: )`; `* + ?`, `{m}`, `{m,}`, `{m,n}` with bounds up to 100. Non-ASCII
+  literals match their UTF-8 bytes, and `.`, negated classes, and `\D \W \S` match one
+  whole character (ASCII or a well-formed multi-byte sequence), never half of one: a
+  token that ends inside a character leaves the walk alive in an intermediate state,
+  and a stray continuation byte kills it. Everything else raises `ValueError`:
+  anchors, lazy, possessive, or stacked quantifiers, backreferences, lookaround, named
+  groups, flags, Unicode classes. The metacharacters `. ^ $ * + ? { } [ ] ( ) | \`
+  must be escaped to be literal. On valid text the subset agrees with
+  `re.fullmatch(pattern, text, re.ASCII)`.
+
+### TokenConstraint and DFAConstraint
+
+`TokenConstraint` is the protocol a constrained decoding loop is written against;
+`DFAConstraint(dfa, vocab)` is the reference implementation.
+
+```python
+from whetstone.kit import CharDFA, DFAConstraint, ToyVocab
+
+vocab = ToyVocab(lm.vocab_size, seed=1)
+constraint = DFAConstraint(CharDFA.from_regex(r"(true|false)"), vocab)
+tokens = ctx.call("constrained_greedy", lm, prompt, constraint, 16, lm.eos_id)
+
+state = constraint.start()
+constraint.allowed(state)            # sorted token ids that may come next
+state = constraint.advance(state, token)     # ValueError if the token was not allowed
+constraint.is_accepting(state)       # may the output end here?
+```
+
+- States are hashable and immutable; `advance` returns a new one.
+- `allowed` never contains EOS or any other special token (their bytes are empty). The
+  loop permits EOS exactly when `is_accepting(state)`. An empty list in a
+  non-accepting state is possible only when the vocabulary lacks the bytes the
+  language needs next (at size 64, a regex that requires the letter `z`): write
+  patterns from the vocabulary's pieces, or use a larger vocabulary.
+- A token is allowed when its bytes, walked from the state, end where acceptance is
+  still reachable, so it is correct for hand-built DFAs with trap states too.
+- `constraint.counters` has `allowed_calls` and `advance_calls` (a loop that forgets to
+  advance shows up here). It answers from its own index and never touches
+  `dfa.counters` or `vocab.counters`.
+- `isinstance(obj, TokenConstraint)` checks that the four methods exist. Write your own
+  constraint class in `tests.py` when a case needs another language.
+
+### SimEngine and CostModel
+
+The simulated inference engine behind the scheduling problems: the forward pass of a
+continuous-batching server with the model taken out. The scheduler under test decides
+what goes into each step; the engine keeps the bookkeeping, the virtual clock, the
+trace, and the rules.
+
+```python
+from whetstone.kit import CostModel, SimEngine, workloads
+
+def simulate(ctx, run, requests, *, max_running):
+    sim = ctx.simclock()
+    engine = SimEngine(sim, CostModel(base_s=2**-6, prefill_s_per_token=2**-12,
+                                      decode_s_per_seq=2**-9), max_seqs=max_running)
+    queue = asyncio.Queue()
+    workloads.drive(sim, requests, queue.put_nowait)      # records `arrive` events
+    sim.spawn(run(engine, queue, max_running))
+    sim.run()
+    check.that(not engine.violations, "the scheduler broke the engine's protocol",
+               "\n".join(f"{v.code}: {v}" for v in engine.violations))
+    return sim, engine
+
+# inside the scheduler:
+engine.admit(request)                                     # no time passes
+result = await engine.step(prefill=[(request.id, request.prompt_tokens)], decode=[3, 5])
+result.tokens, result.finished                            # ids, in report order
+```
+
+`SimEngine(sim, cost, *, max_batch_tokens=None, max_seqs=None, kv_blocks=None,
+block_tokens=16)`.
+
+**The life of a sequence.**
+
+1. `engine.admit(request)` makes it *live* (anything with `id`, `prompt_tokens`,
+   `output_tokens`; normally a `SimRequest`). It may be called while a step runs.
+2. `step(prefill=[(id, n)])` processes `n` more prompt tokens, all at once or in chunks
+   over several steps.
+3. The step that completes the prefill produces the **first output token**.
+4. From the next step on the sequence goes in `decode`, one token per step. It cannot
+   be decoded in the step that completes its prefill.
+5. After `output_tokens` tokens it finishes at the end of that step: it is no longer
+   live and its memory is free, without a call. Its id may be admitted again.
+
+**Time.** A step takes `cost.step_s(prefill_tokens, decode_seqs)` =
+`base_s + prefill_s_per_token * prefill_tokens + decode_s_per_seq * len(decode)`
+virtual seconds. `CostModel` has no defaults: state the three numbers in the statement.
+Tokens appear when the step ends. One step runs at a time; it runs to its end even if
+the task awaiting it is canceled. The step's completion timer has priority
+`STEP_DONE_PRIORITY` (10), so at a shared instant every ordinary timer (an arrival, a
+deadline, a `sleep`) runs first: a request arriving exactly when a step ends is already
+queued when the scheduler resumes. State that rule in the statement and exercise it
+(`workloads.bursty`, or `quantum_s=`). Use costs that are exact in binary (`2**-6`,
+0.125) if a test compares times with `==`; otherwise compare with `check.allclose`, or
+compare the trace with the oracle's from the same simulation.
+
+**Limits.** `max_batch_tokens` bounds prompt tokens plus decoded sequences in one
+step. `max_seqs` bounds live sequences. `kv_blocks` is a pool of KV blocks of
+`block_tokens` tokens: a sequence holds `ceil(kv_tokens / block_tokens)` blocks, and
+`kv_tokens` grows by `n` for a prefill of `n` and by 1 for a decode, when the step
+*starts*. After `g` produced tokens a sequence holds `prompt_tokens + g - 1`.
+
+**Preemption and cancellation.** `engine.preempt(id)` frees the blocks but keeps the
+sequence live and keeps its produced tokens; its whole context, `prompt_tokens +
+generated` tokens, must be prefilled again, and the step that completes that produces
+its *next* token (indices continue; `counters.recomputed_tokens` counts the repeated
+work). `engine.release(id)` drops a sequence altogether. Either may be called during a
+step: the sequence then gets nothing from that step, whose duration is unchanged, so
+no token is recorded for a request after its cancellation.
+
+**State a scheduler may read:** `engine.busy`, `engine.live` (ids in admission order),
+`engine.free_blocks` (None if unlimited), `engine.remaining_prefill(id)`,
+`engine.generated(id)`, `engine.kv_tokens(id)`, `engine.blocks(id)`,
+`engine.block_tokens`, `engine.max_batch_tokens`.
+
+**Violations.** Anything the engine cannot do raises `ProtocolViolation` (a
+`RuntimeError`) with a `.code`. `step` checks in this order and raises for the first
+failure:
+
+| code | when |
+|---|---|
+| `busy` | another step is running |
+| `empty_step` | nothing to prefill and nothing to decode |
+| `duplicate_sequence` | an id listed twice in the step, in either list or both (so also "decoded in the step that completes its prefill") |
+| `unknown_sequence` | a prefill id that is not live: never admitted, finished, or released |
+| `bad_prefill` | a chunk below 1 or above the remaining prefill tokens |
+| `unknown_sequence` | a decode id that is not live |
+| `prefill_incomplete` | a decode id that still needs prefill |
+| `budget_exceeded` | more than `max_batch_tokens` |
+| `out_of_blocks` | the step needs more KV blocks than the pool has; the class is `OutOfBlocks`, a subclass |
+
+`admit` raises `duplicate_sequence` (the id is live), `bad_request` (a token count that
+is not an int >= 1), or `too_many_sequences`; `preempt` and `release` raise
+`unknown_sequence`. A refused call takes no time and changes nothing (no partial
+allocation). Every violation is appended to `engine.violations` and recorded in the
+trace, so a solution that catches the exception is still caught by the test: assert
+`engine.violations == []` in every case, as `simulate` does above. The read-only
+queries raise `unknown_sequence` too, without recording anything.
+
+**Trace events** (in `sim.trace`, section 5.6):
+
+| kind | fields | recorded |
+|---|---|---|
+| `admit` | `id` | at `admit()` |
+| `step` | `index`, `prefill` (tuple of `(id, n)`), `decode` (tuple of ids), `tokens`, `duration` | when the step starts |
+| `first_token` | `id`, `step` | at the end of the step, just before the sequence's first `token` |
+| `token` | `id`, `index` (0-based within the sequence), `step` | at the end of the step |
+| `finish` | `id`, `tokens`, `step` | right after the sequence's last `token` |
+| `step_done` | `index` | after the step's token events |
+| `preempt`, `release` | `id`, `generated` | at the call |
+| `violation` | `code`, `message` | at the refused call |
+
+At the end of a step, sequences are reported in the order of the `prefill` list, then
+the `decode` list; `result.tokens` and `result.finished` use the same order.
+`workloads.drive` adds `arrive` events, so
+`sim.trace.latencies("arrive", "first_token")` is TTFT and
+`sim.trace.latencies("arrive", "finish")` is end-to-end latency.
+
+**Counters:** `steps`, `prefill_tokens`, `decode_tokens`, `output_tokens`,
+`recomputed_tokens`, `preemptions`; `engine.busy_s` is the total step time.
+
+`python/tests/test_kit_simengine.py` ends with a complete continuous-batching
+scheduler, a static-batching baseline, and the checks a problem would make on them
+(exact trace, token accounting, latency comparison). Start from it.
+
+### SimRequest and workloads
+
+```python
+from whetstone.kit import SimRequest, workloads
+
+requests = workloads.poisson(ctx.rng, rate=12.0, n=150, prompt_tokens=(16, 128),
+                             output_tokens=(2, 40), priorities=(0, 1), tenants=("a", "b"))
+requests = workloads.bursty(ctx.rng, bursts=5, burst_size=8, period_s=1.0)   # exact ties
+requests = workloads.replay([(0.0, 4, 3), (0.5, 2, 2)])   # (arrival_s, prompt, output)
+workloads.drive(sim, requests, scheduler.submit)
+```
+
+- `SimRequest(id, arrival_s, prompt_tokens, output_tokens, priority=0, tenant=None,
+  deadline_s=None)`: frozen. Token counts are ints >= 1. `priority`: smaller is more
+  urgent. `deadline_s` is an absolute virtual time, like `arrival_s`. `output_tokens`
+  is what the engine will generate; say in the statement whether the scheduler may
+  read it (a real server cannot).
+- Every generator returns a list sorted by arrival with ids `0..n-1` in that order,
+  and takes `prompt_tokens=` and `output_tokens=` (an int, or an inclusive `(low,
+  high)` range), `priorities=`, `tenants=` (drawn uniformly), `deadline_after_s=`
+  (deadline that long after arrival), `start_s=`, and `quantum_s=` (round arrivals
+  down to a multiple; with `2**-10` times are exact and some coincide). All randomness
+  comes from the generator you pass, and every column is always drawn, so adding
+  `tenants=` does not change the arrival times.
+- `poisson(rng, *, rate, n, ...)`: exponential gaps with mean `1 / rate`.
+  `bursty(rng, *, bursts, burst_size, period_s, jitter_s=0.0, ...)`: burst `b` at
+  `start_s + b * period_s`, each request a uniform `[0, jitter_s)` later; with no
+  jitter a burst arrives at one instant, in id order. `replay(rows)`: rows are
+  `SimRequest`s, dicts of fields, or tuples `(arrival_s, prompt_tokens, output_tokens[,
+  priority[, tenant[, deadline_s]]])`; ids default to the row's position; equal
+  arrival times keep their order; duplicate ids raise `ValueError`.
+- `workloads.drive(sim, requests, on_arrival, *, priority=0)`: at each `arrival_s`,
+  records an `arrive` event (`id`, `request`) and calls `on_arrival(request)`; if that
+  returns a coroutine it is started with `sim.spawn`. Same-instant arrivals are
+  delivered in list order. Call it before `sim.run()`.
+
+### ScriptedLM
+
+A scripted token source for service problems: the "model" behind `make_app(lm)`.
+
+```python
+from whetstone.kit import ScriptedLM
+
+lm = ScriptedLM(["Hello", ",", " world", "!"], gated=True)
+with ctx.serve(ctx.solution.make_app(lm)) as client:
+    with client.stream("POST", "/v1/chat/completions", json=body) as response:
+        events = iter_sse(response)
+        lm.release(1)                                  # let exactly one piece through
+        first = next(events)
+        check.equal(lm.calls[0].pieces, ["Hello"], label="pieces generated so far")
+        lm.release()                                   # open the gate
+        rest = list(events)
+check.that(lm.wait_closed(), "the server did not close the model's stream")
+check.that(not lm.stalled, "the server stopped reading the model's stream")
+
+# what a solution does with it:
+async for piece in lm.stream(prompt, max_tokens):      # stream.aclose() to stop early
+    ...
+```
+
+- `ScriptedLM(script, *, gated=False, delay_s=0.0, gate_timeout_s=5.0)`. `script` is a
+  list of pieces (used for every prompt), a dict from prompt to pieces (key `None` is
+  the default; otherwise an unknown prompt raises `KeyError`), or a function of the
+  prompt.
+- `lm.stream(prompt, max_tokens=None)` returns an async iterator with `aclose()`. One
+  piece is one generated token; at most `max_tokens` are produced (`None`: no limit; a
+  negative or non-int value raises `ValueError`). **Finish reason:** a generation that
+  produced exactly `max_tokens` pieces was cut by the limit (`length`), also when the
+  script happens to end there; one that ended earlier ended by itself (`stop`). The
+  solution derives it by counting; the test reads `lm.calls[i].finish_reason`.
+- `lm.count_tokens(text)` is the number of whitespace-separated words: the definition
+  of prompt tokens for `usage`.
+- `lm.calls`: one `StreamRecord` per call, with `prompt`, `max_tokens`, `script`,
+  `pieces` (produced so far), `closed`, `finish_reason` (None until complete).
+  `lm.active` counts open streams (for a "running requests" gauge); `lm.closed` is true
+  when at least one stream was started and none is open; `lm.counters` has `streams`
+  and `pieces`.
+- A stream is closed when it has produced everything, when `aclose()` was called, or
+  when a cancellation or exception interrupted it while it was producing a piece. A
+  server that just stops reading leaves it open; so "stops generating on disconnect"
+  is tested with `lm.wait_closed(timeout_s=2.0)`, which blocks the test thread until
+  every stream is closed (False on timeout).
+- The gate: with `gated=True` nothing is produced until the test calls
+  `lm.release(n)` (n more pieces) or `lm.release()` (open for good), from the test's
+  thread. A stream that waits longer than `gate_timeout_s` ends early and sets
+  `lm.stalled`, so a buffering server fails instead of hanging. `delay_s` pauses
+  before each piece in the event loop's time (virtual under `ctx.simclock()`). Neither
+  uses `asyncio.sleep`, so a `forbidden` list may contain it.
+
 ### SimModel and Counters
 
 `SimModel` is described in section 5.6. `Counters("a", "b")` is the counter object for
@@ -993,6 +1468,97 @@ Statements, hints, and editorials are rendered by the same component, which supp
   "Tip", "Warning"). Any other marker, or a blockquote without one, renders as an
   ordinary quotation. Use callouts sparingly: one or two per statement, for something
   the reader must not miss.
+
+### Figures
+
+A statement, hint, or editorial can carry figures. Put the file in the problem's
+`assets/` directory and reference it from the Markdown, alone on its own paragraph:
+
+```markdown
+![Positions $p = 0, 1, 2, 3$ for $D = 4$. Each pair is a point in its own plane, turned counterclockwise by $p\,\theta_i$.](assets/pair-rotation.svg)
+```
+
+- The text in the brackets is the **caption**. The app sets it beneath the drawing
+  after "Figure N." (figures are numbered in order within the document, so the prose
+  can say "Figure 1"). Write it as one or two full sentences that say what to see, not
+  a title. It may contain `$...$` math, emphasis, and inline code, and must not
+  contain a line break.
+- The path is `assets/<file>`, relative to the problem directory. Only `.svg` and
+  `.png` files are served, each at most 1 MiB, and a path may not leave `assets/`.
+  Subdirectories are allowed.
+- An image in the middle of a sentence is not a figure and is not resolved. Give every
+  figure its own paragraph.
+- Use a figure where a picture carries something the formulas do not: a geometric
+  action, a memory layout, a timeline. `problems/transformer/rope/assets/pair-rotation.svg`
+  is the model to copy.
+
+**Prefer SVG.** An SVG is inlined into the page, so it takes its colors and typefaces
+from the app and follows the light and dark themes. A PNG is shown as it is and cannot
+adapt: use one only for raster data (a spectrogram, a heat map), with a transparent
+background and marks that read on both a near-white and a dark blue-gray page.
+
+SVG rules:
+
+1. **`viewBox`, no `width` or `height`.** Draw a full-width figure in a `viewBox` 480
+   units wide, as tall as the content needs: `<svg xmlns="http://www.w3.org/2000/svg"
+   viewBox="0 0 480 246">`. The app scales the drawing to the text measure, at most
+   4/3 of its natural size, so a 480-unit drawing exactly fills the 640px measure and
+   is shown at about 1:1 in the narrowest statement pane. A narrower `viewBox` gives a
+   proportionally narrower figure, set flush left.
+2. **Ink is `currentColor`.** Use `stroke="currentColor"` for lines. The default fill
+   is also the text color, so text and solid shapes need no `fill`; an outline must say
+   `fill="none"`. Never draw a background rectangle, and never write a fixed color
+   (`#000`, `black`, `white`).
+3. **Other colors come from the figure palette**, five CSS variables defined by the
+   design tokens. A presentation attribute cannot hold `var()`, so set them through
+   `style`:
+
+   | variable | use |
+   |---|---|
+   | `--figure-ink` | the text color (the same as `currentColor`) |
+   | `--figure-muted` | secondary labels, axis names |
+   | `--figure-faint` | axes, grids, guides: lines that must recede |
+   | `--figure-accent` | the first series or the thing the figure is about (temper blue) |
+   | `--figure-straw` | a second series or an annotation (straw) |
+
+   ```xml
+   <line x1="20" y1="142" x2="228" y2="142" fill="none" style="stroke: var(--figure-faint)"/>
+   <text x="230" y="87" font-size="13" style="fill: var(--figure-accent)">p = 1</text>
+   ```
+
+   Two hues are the whole budget. Never let color carry a distinction alone: label the
+   series, or vary the dash pattern as well. Green, red, and amber mean pass, fail, and
+   warning in the app; do not use them.
+4. **Text is at least `font-size="13"`**, the size of the caption, in a drawing 480
+   units wide (scale that up in proportion for a wider `viewBox`). Text is set in the
+   interface sans by default; for symbols that also appear in the formulas use
+   `style="font-family: var(--figure-serif)"`, with `font-style="italic"` on a
+   `<tspan>` for variables, and `var(--figure-mono)` for code. Do not name a font
+   yourself and do not convert text to outlines. Use Unicode for Greek letters and
+   subscripts (`θ₀`), and keep a label clear of every line it does not belong to.
+5. **Strokes are 1 unit for axes and guides, 1.5 for the subject.** Draw arrowheads as
+   small filled polygons; a `<marker>` does not take the color of the line that uses it
+   in every web view.
+6. **Shapes and text only.** The app removes everything else before the figure is
+   shown: `<script>`, `<style>`, `<foreignObject>`, `<image>`, links, animation,
+   filters, event attributes, `class`, and any reference outside the file (`href` and
+   `url(...)` may only point at an `id` in the same file). Allowed elements: `svg`,
+   `g`, `defs`, `title`, `desc`, `path`, `line`, `polyline`, `polygon`, `rect`,
+   `circle`, `ellipse`, `text`, `tspan`, `marker`, `clipPath`, `mask`,
+   `linearGradient`, `radialGradient`, `stop`, `symbol`, `use`. In `style`, only paint
+   and text properties survive. A figure that relies on anything else will render
+   without it.
+7. **Add a `<title>` and a `<desc>`** that say what the figure shows, for readers who
+   cannot see it. The caption is the figure's accessible name in the app.
+8. **Write the file by hand or from a small script, and keep it readable**: grouped,
+   commented, coordinates rounded to one decimal. Do not commit an export from a
+   drawing program with its metadata, embedded fonts, and inline styles.
+
+Opened on its own, such a file shows only the `currentColor` parts, because the
+palette variables exist only inside the app. To check a figure, open the problem in
+the app (`pnpm dev:real`) and look at it in both themes, at the default window size and
+with the statement pane dragged to its narrowest: every label must be legible and no
+two may touch.
 
 **Starters** contain the imports the learner will need, the exact signature with type
 hints, a docstring restating argument and return shapes, and `raise NotImplementedError`.

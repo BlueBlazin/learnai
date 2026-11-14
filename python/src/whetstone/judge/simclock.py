@@ -46,6 +46,7 @@ import math
 import selectors
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from dataclasses import dataclass, field
+from fractions import Fraction
 from typing import Any, Self
 
 from whetstone.judge.errors import CheckFailure
@@ -253,7 +254,13 @@ def percentile(values: Iterable[float], q: float) -> float:
         raise ValueError("percentile of an empty sequence")
     if not 0 <= q <= 100:
         raise ValueError("q must be between 0 and 100")
-    rank = max(1, math.ceil(q / 100 * len(ordered)))
+    # The rank is ceil(q * n / 100), computed in exact rational arithmetic on the
+    # decimal value of q as written. Floats get this wrong twice over: 55 / 100 * 100
+    # is 55.00000000000001 (rank 56, not 55), and the float 99.9 is itself a hair above
+    # 99.9, so even an exact product with n = 1000 lands above 999. ``str`` of a float
+    # is the shortest decimal that names it ("99.9"), which is the number the caller meant.
+    exact_q = Fraction(str(q if isinstance(q, int) else float(q)))
+    rank = max(1, math.ceil(exact_q * len(ordered) / 100))
     return ordered[rank - 1]
 
 

@@ -53,6 +53,54 @@ class KVCache:
     length: int
     batched: bool
 
+    @property
+    def batch_size(self) -> int:
+        """Number of rows (1 for a cache built from 1-D tokens)."""
+        return self.keys[0].shape[0]
+
+    def truncate(self, n: int) -> KVCache:
+        """A cache covering only the first ``n`` tokens: roll back to an earlier prefix.
+
+            _, cache = lm([5, 6, 7, 8])
+            short = cache.truncate(2)          # as if only [5, 6] had been fed
+            logits, _ = lm([9], short)         # continues [5, 6, 9]
+
+        ``0 <= n <= cache.length``, otherwise ``ValueError``. ``truncate(length)``
+        returns an equal cache; ``truncate(0)`` returns an empty one, and continuing
+        from it is the same as starting without a cache. This cache is unchanged.
+        """
+        if isinstance(n, bool) or not isinstance(n, (int, np.integer)):
+            raise TypeError(f"truncate expects an int, got {type(n).__name__}")
+        if not 0 <= n <= self.length:
+            raise ValueError(f"cannot truncate a cache of length {self.length} to {n}")
+        n = int(n)
+        # Slices of the read-only arrays are read-only views: nothing is copied.
+        keys = tuple(k[:, :, :n] for k in self.keys)
+        values = tuple(v[:, :, :n] for v in self.values)
+        return KVCache(keys, values, n, self.batched)
+
+    def select(self, rows: Any) -> KVCache:
+        """A cache whose batch rows are ``rows`` of this one, in that order.
+
+            cache.select([2, 0])       # row 0 is old row 2, row 1 is old row 0
+            cache.select([0, 0, 0])    # three copies of row 0 (expand one prompt to 3 beams)
+
+        ``rows`` is a non-empty 1-D sequence of ints (a list or an integer tensor) in
+        ``[0, batch_size)``; rows may repeat and may be left out. Anything else raises
+        ``ValueError`` (negative indices are not accepted). The result always counts as
+        batched, so feed it tokens of shape ``(len(rows), T)``. This cache is unchanged.
+        """
+        index = np.asarray(rows.tolist() if hasattr(rows, "tolist") else rows)
+        if index.ndim != 1 or index.size == 0 or index.dtype.kind not in "iu":
+            raise ValueError("rows must be a non-empty 1-D sequence of ints")
+        if index.min() < 0 or index.max() >= self.batch_size:
+            raise ValueError(f"rows must be in [0, {self.batch_size}), got {index.tolist()}")
+        keys = tuple(k[index] for k in self.keys)
+        values = tuple(v[index] for v in self.values)
+        for array in (*keys, *values):
+            array.setflags(write=False)
+        return KVCache(keys, values, self.length, True)
+
     def __repr__(self) -> str:
         return f"KVCache(length={self.length}, layers={len(self.keys)})"
 
