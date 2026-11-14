@@ -1,0 +1,12 @@
+id = "split-merge-heads"
+title = "Splitting and Merging Attention Heads"
+track = "foundations"
+order = 40
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["reshape", "transpose", "attention", "multi-head"]
+prerequisites = []
+requires = "cpu"
+entry = ["split_heads", "merge_heads"]
+time_limit_s = 10

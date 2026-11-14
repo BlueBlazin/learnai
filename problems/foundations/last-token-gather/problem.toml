@@ -1,0 +1,12 @@
+id = "last-token-gather"
+title = "Gathering the Last Real Token"
+track = "foundations"
+order = 60
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["indexing", "gather", "padding", "batching"]
+prerequisites = []
+requires = "cpu"
+entry = ["last_token_logits"]
+time_limit_s = 10

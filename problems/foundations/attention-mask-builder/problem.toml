@@ -1,0 +1,12 @@
+id = "attention-mask-builder"
+title = "Causal and Padding Masks"
+track = "foundations"
+order = 50
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["attention", "causal-mask", "padding", "batching"]
+prerequisites = []
+requires = "cpu"
+entry = ["build_mask"]
+time_limit_s = 10

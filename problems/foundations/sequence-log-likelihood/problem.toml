@@ -1,0 +1,12 @@
+id = "sequence-log-likelihood"
+title = "Sequence Log-Likelihood and Perplexity"
+track = "foundations"
+order = 70
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["log-likelihood", "perplexity", "evaluation", "padding"]
+prerequisites = ["stable-softmax"]
+requires = "cpu"
+entry = ["sequence_logprob", "perplexity"]
+time_limit_s = 10

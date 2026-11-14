@@ -1,0 +1,49 @@
+id = "gelu-silu-activations"
+title = "GELU and SiLU"
+track = "foundations"
+order = 30
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["activation", "gelu", "silu", "numerics"]
+prerequisites = []
+requires = "cpu"
+entry = ["gelu", "silu"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: no built-in GELU, SiLU, sigmoid, or
+# normal CDF. `erf`, `tanh`, and `exp` stay available.
+forbidden = [
+    "torch.nn.functional.gelu",
+    "torch.nn.functional.silu",
+    "torch.nn.functional.sigmoid",
+    "torch.nn.functional.logsigmoid",
+    "torch.nn.GELU",
+    "torch.nn.SiLU",
+    "torch.nn.Sigmoid",
+    "torch.sigmoid",
+    "torch.Tensor.sigmoid",
+    "torch.Tensor.sigmoid_",
+    "torch.special.expit",
+    "torch.special.ndtr",
+    "torch.special.log_ndtr",
+    "jax.nn.gelu",
+    "jax.nn.silu",
+    "jax.nn.swish",
+    "jax.nn.sigmoid",
+    "jax.nn.log_sigmoid",
+    "jax.scipy.special.expit",
+    "jax.scipy.special.ndtr",
+    "jax.scipy.special.log_ndtr",
+    "jax.scipy.stats.norm.cdf",
+    "jax.scipy.stats.norm.logcdf",
+    "mlx.core.sigmoid",
+    "mlx.nn.sigmoid",
+    "mlx.nn.log_sigmoid",
+    "mlx.nn.silu",
+    "mlx.nn.gelu",
+    "mlx.nn.gelu_approx",
+    "mlx.nn.gelu_fast_approx",
+    "mlx.nn.GELU",
+    "mlx.nn.SiLU",
+    "mlx.nn.Sigmoid",
+]
