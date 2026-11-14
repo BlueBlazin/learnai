@@ -1,0 +1,12 @@
+id = "speculative-speedup-model"
+title = "Expected Speedup of Speculation"
+track = "speculative"
+order = 40
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["speculative-decoding", "speedup", "acceptance-rate", "geometric-series", "sizing"]
+prerequisites = []
+requires = "cpu"
+entry = ["expected_tokens", "speedup", "best_k"]
+time_limit_s = 10

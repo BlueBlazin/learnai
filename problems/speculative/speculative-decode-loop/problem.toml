@@ -1,0 +1,12 @@
+id = "speculative-decode-loop"
+title = "A Speculative Decoding Loop"
+track = "speculative"
+order = 60
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["speculative-decoding", "greedy-decoding", "kv-cache", "rollback", "generation-loop", "eos"]
+prerequisites = ["greedy-speculative-verify", "cached-greedy-decode"]
+requires = "cpu"
+entry = ["speculative_greedy"]
+time_limit_s = 10

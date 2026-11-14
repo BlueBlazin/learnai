@@ -1,0 +1,12 @@
+id = "greedy-speculative-verify"
+title = "Verifying a Greedy Draft"
+track = "speculative"
+order = 20
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["speculative-decoding", "greedy-decoding", "verification", "argmax"]
+prerequisites = []
+requires = "cpu"
+entry = ["verify_greedy"]
+time_limit_s = 10
