@@ -1,0 +1,18 @@
+id = "quant-error-metrics"
+title = "Measuring Quantization Error"
+track = "quantization"
+order = 30
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["quantization", "error", "mse", "sqnr", "metrics"]
+prerequisites = []
+requires = "cpu"
+entry = ["mse", "sqnr_db", "max_abs_error", "output_error"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: no built-in MSE loss.
+forbidden = [
+    "torch.nn.functional.mse_loss",
+    "torch.nn.MSELoss",
+    "mlx.nn.losses.mse_loss",
+]

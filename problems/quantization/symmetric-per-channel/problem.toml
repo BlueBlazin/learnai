@@ -1,0 +1,12 @@
+id = "symmetric-per-channel"
+title = "Symmetric Per-Channel Weights"
+track = "quantization"
+order = 20
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["quantization", "per-channel", "symmetric", "weights", "broadcasting"]
+prerequisites = ["affine-int8"]
+requires = "cpu"
+entry = ["quantize_weight", "dequantize"]
+time_limit_s = 10

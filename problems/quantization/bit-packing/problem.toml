@@ -1,0 +1,12 @@
+id = "bit-packing"
+title = "Packing 4-bit Codes"
+track = "quantization"
+order = 40
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["quantization", "bits", "packing", "4-bit", "dtypes"]
+prerequisites = []
+requires = "cpu"
+entry = ["pack4", "unpack4"]
+time_limit_s = 10
