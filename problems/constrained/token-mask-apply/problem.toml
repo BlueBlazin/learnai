@@ -1,0 +1,12 @@
+id = "token-mask-apply"
+title = "Applying a Token Mask"
+track = "constrained"
+order = 10
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["constrained-decoding", "logits", "mask", "softmax"]
+prerequisites = ["stable-softmax"]
+requires = "cpu"
+entry = ["mask_logits", "masked_probs"]
+time_limit_s = 10

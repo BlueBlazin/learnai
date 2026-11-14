@@ -1,0 +1,18 @@
+id = "dfa-token-index"
+title = "Precomputing the Token Index"
+track = "constrained"
+order = 40
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric", "cost"]
+tags = ["constrained-decoding", "dfa", "index", "trie", "outlines"]
+prerequisites = ["dfa-token-mask"]
+requires = "cpu"
+entry = ["build_index", "allowed_from_index", "advance_from_index"]
+time_limit_s = 5
+# The statement's rule, enforced by the harness: the DFA's test oracles are off limits.
+forbidden = [
+    "whetstone.kit.dfa.CharDFA.accepts",
+    "whetstone.kit.dfa.CharDFA.accepts_prefix",
+    "whetstone.kit.dfa.CharDFA.is_live",
+]

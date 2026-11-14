@@ -1,0 +1,18 @@
+id = "dfa-token-mask"
+title = "Token Masks from a Character DFA"
+track = "constrained"
+order = 30
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["constrained-decoding", "dfa", "regex", "token-mask", "utf-8"]
+prerequisites = []
+requires = "cpu"
+entry = ["allowed_tokens", "advance"]
+time_limit_s = 5
+# The statement's rule, enforced by the harness: the DFA's test oracles are off limits.
+forbidden = [
+    "whetstone.kit.dfa.CharDFA.accepts",
+    "whetstone.kit.dfa.CharDFA.accepts_prefix",
+    "whetstone.kit.dfa.CharDFA.is_live",
+]

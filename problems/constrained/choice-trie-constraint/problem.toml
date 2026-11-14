@@ -1,0 +1,12 @@
+id = "choice-trie-constraint"
+title = "Constraining Output to a Set of Choices"
+track = "constrained"
+order = 20
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["constrained-decoding", "trie", "choice", "eos"]
+prerequisites = []
+requires = "cpu"
+entry = ["build_trie", "allowed_next"]
+time_limit_s = 5
