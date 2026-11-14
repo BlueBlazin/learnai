@@ -1,25 +1,56 @@
-# Inference 75: a starter path over the problems that exist today. It will grow to the
-# full 75 as the catalog does. Format: docs/ARCHITECTURE.md section 3.3, "Paths".
+# Inference 75: the curated study path. Generated from docs/CURRICULUM.md section 6;
+# it lists only problems that exist today and is regenerated as the catalog grows.
+# Format: docs/ARCHITECTURE.md section 3.3, "Paths".
 id = "inference-75"
 title = "Inference 75"
 description = "The shortest route through LLM inference: from the arithmetic inside one layer to the systems that serve tokens to many users at once."
 
 [[stages]]
-title = "Numerics and the forward pass"
-description = "The functions a decoder runs for every token, written from their formulas with the float32 edge cases that break naive versions."
-problems = ["stable-softmax", "rmsnorm", "causal-self-attention", "rope"]
+title = "Numerics and tensors"
+description = "Stable arithmetic and the indexing that every later problem assumes."
+problems = ["stable-softmax", "rmsnorm", "attention-mask-builder", "last-token-gather", "sequence-log-likelihood"]
 
 [[stages]]
-title = "From text to tokens and back"
-description = "What goes into the model and how its logits become the next token: byte-level BPE, then the filters and penalties a sampler applies."
-problems = ["bpe-encode", "top-p-filtering", "repetition-penalty"]
+title = "Text to tokens and back"
+description = "Encode, decode, and template text exactly as a production tokenizer does."
+problems = ["bpe-encode", "special-tokens-split", "streaming-detokenizer", "chat-template-render"]
 
 [[stages]]
-title = "Making generation cheap"
-description = "The three standard ways to spend less compute per token: reuse past work, shrink the weights, and verify several drafted tokens in one pass."
-problems = ["cached-greedy-decode", "affine-int8", "speculative-sampling-step"]
+title = "The forward pass"
+description = "Build a current decoder-only model piece by piece, then match a real one."
+problems = ["causal-self-attention", "rope", "swiglu-mlp", "grouped-query-attention", "decoder-forward", "padded-batch-invariance", "moe-router-forward"]
 
 [[stages]]
-title = "Serving many requests"
-description = "The model as a service: grouping requests into batches under a latency budget, and streaming tokens to a client as they are produced."
-problems = ["dynamic-batcher", "sse-token-stream"]
+title = "Choosing the next token"
+description = "The samplers engines ship, composed in the right order, and when to stop."
+problems = ["temperature-scaling", "top-k-filtering", "top-p-filtering", "min-p-filtering", "repetition-penalty", "categorical-sample", "sampler-chain", "stop-sequences"]
+
+[[stages]]
+title = "The KV cache"
+description = "Compute each token once, then share, page, and index the memory."
+problems = ["kv-cache-append", "cached-greedy-decode", "cached-rope-offsets", "preallocated-kv-cache", "batched-cached-decode", "prefix-cache-reuse", "paged-kv-allocator"]
+
+[[stages]]
+title = "Structured output"
+description = "Turn a regex or schema into per-step token masks and decode under them."
+problems = ["token-mask-apply", "dfa-token-mask", "dfa-token-index", "constrained-greedy-decode"]
+
+[[stages]]
+title = "Quantization"
+description = "Shrink weights, compute on the codes, and measure what was lost."
+problems = ["affine-int8", "symmetric-per-channel", "groupwise-4bit", "quantized-matmul", "lora-merge"]
+
+[[stages]]
+title = "Speculative decoding"
+description = "Draft cheaply and verify exactly, first for one token, then in a loop."
+problems = ["greedy-speculative-verify", "speculative-sampling-step", "speculative-sampling-block", "speculative-decode-loop"]
+
+[[stages]]
+title = "Sizing and measurement"
+description = "Predict memory and speed from a config, and measure latency correctly."
+problems = ["param-count", "kv-cache-bytes", "memory-bandwidth-bound", "latency-metrics", "latency-percentiles"]
+
+[[stages]]
+title = "Serving"
+description = "Batch, admit, schedule, cancel, and stream under load."
+problems = ["dynamic-batcher", "sse-token-stream", "token-bucket-limiter", "admission-control", "continuous-batching-scheduler", "chunked-prefill-scheduling", "deadline-cancellation", "vtc-fair-scheduler", "openai-chat-endpoint"]
