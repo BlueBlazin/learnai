@@ -1,0 +1,29 @@
+id = "sampler-chain"
+title = "A Sampler Chain in the Right Order"
+track = "sampling"
+order = 80
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "statistical"]
+tags = ["sampling", "sampler-chain", "top-p", "temperature", "penalties", "llama.cpp"]
+prerequisites = ["top-p-filtering", "top-k-filtering", "temperature-scaling"]
+requires = "cpu"
+entry = ["chain_logits", "sample_chain"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: randomness is an input, never drawn here.
+forbidden = [
+    "torch.rand",
+    "torch.rand_like",
+    "torch.multinomial",
+    "torch.Tensor.multinomial",
+    "torch.distributions.Categorical",
+    "jax.random.uniform",
+    "jax.random.categorical",
+    "jax.random.choice",
+    "mlx.core.random.uniform",
+    "mlx.core.random.categorical",
+    "numpy.random.default_rng",
+    "numpy.random.rand",
+    "numpy.random.random",
+    "random.random",
+]

@@ -1,0 +1,12 @@
+id = "batched-cached-decode"
+title = "Batched Decoding with Early Finish"
+track = "kv-cache"
+order = 60
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["kv-cache", "batching", "greedy-decoding", "eos", "generation-loop"]
+prerequisites = ["cached-greedy-decode"]
+requires = "cpu"
+entry = ["batched_greedy"]
+time_limit_s = 10

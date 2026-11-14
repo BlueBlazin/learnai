@@ -1,0 +1,12 @@
+id = "stop-sequences"
+title = "Stop Sequences Across Token Boundaries"
+track = "sampling"
+order = 90
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["stop-sequences", "streaming", "strings", "detokenization", "state-machine"]
+prerequisites = ["streaming-detokenizer"]
+requires = "cpu"
+entry = ["stop_step", "stop_flush"]
+time_limit_s = 10

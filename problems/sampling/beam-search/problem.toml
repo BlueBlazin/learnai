@@ -1,0 +1,12 @@
+id = "beam-search"
+title = "Beam Search with a KV Cache"
+track = "sampling"
+order = 100
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["beam-search", "kv-cache", "decoding", "length-penalty", "batching"]
+prerequisites = ["cached-greedy-decode"]
+requires = "cpu"
+entry = ["beam_search"]
+time_limit_s = 10
