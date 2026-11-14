@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from whetstone import assets, runner
+from whetstone import assets, hardware, runner
 from whetstone.problem import (
     DIFFICULTIES,
     FRAMEWORKS,
@@ -342,6 +342,18 @@ def _not_run(result: runner.RunResult) -> str:
     return "; ".join(reason for reason in reasons if reason) or "cases were skipped"
 
 
+def _skipped_ids(result: runner.RunResult, limit: int = 6) -> str:
+    """The ids of the skipped cases (validation runs with --reveal, so real ids)."""
+    ids = [str(c.get("id")) for c in result.cases if c.get("status") == "skipped"]
+    shown = ", ".join(ids[:limit])
+    return shown + (f", and {len(ids) - limit} more" if len(ids) > limit else "")
+
+
+def _unmet(end: dict[str, Any], problem: Problem) -> str:
+    """The hardware the problem requires and this machine lacks, in words."""
+    return hardware.describe(str(end.get("missing_hardware") or problem.requires))
+
+
 def _judge(
     report: Report,
     problem: Problem,
@@ -355,6 +367,9 @@ def _judge(
     explanation = f": {end['message']}" if end.get("message") else ""
     incomplete = verdict in INCOMPLETE_VERDICTS
     passed, skipped = int(end.get("passed", 0)), int(end.get("skipped", 0))
+    #: Every case ran and passed; the run is not `accepted` only because the machine
+    #: lacks the hardware the problem names in `requires` (nothing was skipped).
+    complete_elsewhere = incomplete and skipped == 0 and passed > 0
     if incomplete and verdict == "assets_missing" and require_assets:
         if job.kind == "reference":
             report.errors.append(f"{job.label}: a required model asset is missing{explanation}")
@@ -365,13 +380,20 @@ def _judge(
             report.skips.append(f"{job.label}: not validated here: {_not_run(result)}")
         return
     if job.kind == "reference":
-        if incomplete:
-            report.ran = True
+        if complete_elsewhere:
             cases = (result.start or {}).get("cases", [])
+            report.warnings.append(
+                f"{job.label}: all {passed} cases ran and passed, but not on the hardware "
+                f"the problem requires ({_unmet(end, problem)}), which this machine does "
+                "not have"
+            )
+        elif incomplete:
+            cases = (result.start or {}).get("cases", [])
+            what = "GPU cases" if verdict == "hardware_missing" else "cases"
             report.warnings.append(
                 f"{job.label}: only {passed} of {len(cases)} cases could run on this machine "
                 f"(all passed); {skipped} {'was' if skipped == 1 else 'were'} NOT validated: "
-                f"{_not_run(result)}"
+                f"{_not_run(result)} ({what} not validated: {_skipped_ids(result)})"
             )
         elif verdict != "accepted":
             failing = [c for c in result.cases if c.get("status") != "pass"]
@@ -402,6 +424,8 @@ def _judge(
     elif job.kind == "starter":
         if verdict == "accepted":
             report.errors.append(f"{job.label}: must not be accepted, but it was")
+        elif complete_elsewhere:
+            report.errors.append(f"{job.label}: passes every case; the tests must reject it")
         elif incomplete:
             report.errors.append(
                 f"{job.label}: passes every case that can run on this machine; the cases "
@@ -414,9 +438,11 @@ def _judge(
         else:
             report.checks.append(f"{job.label} rejected ({verdict})")
     else:
-        if verdict == "accepted":
+        if verdict == "accepted" or complete_elsewhere:
+            # Every case ran: that the machine lacks the hardware changes nothing.
             report.errors.append(
-                f"{job.label}: was accepted; no test catches this bug. Add a case that does."
+                f"{job.label}: {'was accepted' if verdict == 'accepted' else 'passed every case'}"
+                "; no test catches this bug. Add a case that does."
             )
         elif incomplete:
             report.warnings.append(

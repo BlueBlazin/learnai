@@ -250,7 +250,8 @@ def test_validate_reports_cuda_cases_it_could_not_run(monkeypatch, capsys):
     reference, mutant = report.warnings
     assert reference == (
         "reference (torch): only 2 of 3 cases could run on this machine (all passed); 1 was "
-        "NOT validated: needs an NVIDIA GPU (CUDA), which this machine does not have"
+        "NOT validated: needs an NVIDIA GPU (CUDA), which this machine does not have "
+        "(GPU cases not validated: on_cuda)"
     )
     # The mutant only a GPU can catch is reported, not silently counted as rejected.
     assert mutant.startswith("mutant stays_on_cpu: NOT validated: no case that can run")

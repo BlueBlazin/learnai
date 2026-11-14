@@ -316,3 +316,45 @@ serve = ["starlette", "uvicorn", "httpx"]
 - Never call a bare `uv sync` (or `uv sync --extra X` with a partial set) from the app; it silently strips the other frameworks. If a partial call is unavoidable, add `--inexact`.
 - For fast, side-effect-free judge runs once the environment is set up, `uv run --no-sync ...` skips the environment check entirely (it implies `--frozen`).
 - Dependency groups (`[dependency-groups]`, `--group`) are the alternative mechanism; the `dev` group syncs by default. Extras fit better here because the frameworks are user-facing options.
+
+### Linux hosts (milestone 4, remote runs)
+
+No dependency was added or bumped for milestone 4. What changed is two markers in
+`python/pyproject.toml`, and what follows was checked for the existing pins.
+
+- `mlx` (extra `mlx`) and `mlx-lm` (extra `models`) carry
+  `sys_platform == 'darwin' and platform_machine == 'arm64'`. `mlx` 0.32.4 does
+  publish manylinux wheels (glibc 2.35), but the catalog's MLX problems need Metal
+  (`requires = "mlx-gpu"`), so a Linux host installs no MLX and the same
+  `--extra jax --extra mlx` can be passed everywhere. After the change `uv lock`
+  moved no version: the only differences in `uv.lock` are the markers and the MLX
+  wheels for Linux and Windows, which are no longer listed.
+- `uv.lock` is still one universal lock (`uv lock --check` passes). For Linux it
+  pins `torch` 2.15.0 from PyPI (`manylinux_2_28` wheels for x86_64 and aarch64,
+  cp315), which is the CUDA build: it depends on `cuda-toolkit` 13.2.2, the
+  `nvidia-*` runtime wheels (`nvidia-cudnn-cu13` 9.26.0.51 and others), and
+  **`triton` 3.9.0**, all with `sys_platform == 'linux'` markers. So real Triton is
+  present on a Linux host without being a dependency of ours
+  (https://pypi.org/project/triton/).
+- Verified on this Mac with uv 0.9.26, since no Linux machine was available:
+  `uv export --frozen` of the lock, then `uv pip install --dry-run --require-hashes
+  --python-version 3.15 --python-platform <p>` for `x86_64-manylinux_2_28` and
+  `aarch64-manylinux_2_28`. With the extras a harness run uses (`jax`, `mlx`) and
+  `--only-binary :all:`, both platforms resolve to 48 packages, every one a wheel.
+  With `models` added (69 packages) one package has no Linux wheel for Python 3.15:
+  **`pyyaml` 6.0.3** (needed by `huggingface_hub` and `transformers`) must be built
+  from its sdist, so `ws assets fetch` on a Linux host needs a working build
+  environment or a later `pyyaml`. `uv pip compile pyproject.toml --python-platform
+  x86_64-manylinux_2_28` resolves to the same versions as the lock.
+- NOT verified: an actual install or run on Linux (wheel contents, the CUDA runtime
+  loading, glibc compatibility of the host, a managed Python 3.15 from uv on Linux),
+  and anything on a GPU.
+- `ws doctor --json` was run in a fresh environment with no extras
+  (`UV_PROJECT_ENVIRONMENT=<tmp> uv run --frozen --no-dev ws doctor --json`): it
+  reports `jax` and `mlx` as null and exits 0, and a torch problem is judged there.
+- JAX's persistent compilation cache (`jax_compilation_cache_dir`,
+  `jax_persistent_cache_min_compile_time_secs`,
+  `jax_persistent_cache_min_entry_size_bytes`; JAX 0.12.0.1) is switched on by the
+  harness. Its optional size bound (`jax_compilation_cache_max_size`, which needs
+  `filelock`) is not used: with it every write rescans the directory, which doubled
+  first-run time here (9.9 s to 18.5 s on `quantize-real-weights`).

@@ -286,6 +286,94 @@ def _leaves(obj: Any, *, deep: bool = False, _depth: int = 0, _seen: set[int] | 
                 yield from _leaves(attributes, deep=True, _depth=_depth + 1, _seen=seen)
 
 
+#: Upper bound on the on-disk JAX compilation cache. Beyond it the cache is emptied.
+JAX_CACHE_MAX_BYTES = 512 * 1024 * 1024
+
+
+def _tidy_jax_cache(path: str) -> None:
+    """Remove what a killed process may have left, and keep the directory bounded.
+
+    JAX writes an entry with a plain open-and-write. A worker killed between the two
+    (the hard time limit) leaves an empty file that every later run would fail to
+    read, so empty entries are removed. JAX's own size bound rescans the directory on
+    every write, which doubles the time of a first run; one scan per process and
+    "empty it when it is too large" costs nothing and is enough for a cache.
+    """
+    import os
+
+    total = 0
+    entries = []
+    with os.scandir(path) as listing:
+        for entry in listing:
+            try:
+                size = entry.stat().st_size
+            except OSError:
+                continue
+            if size == 0:
+                _unlink(entry.path)
+                continue
+            total += size
+            entries.append(entry.path)
+    if total > JAX_CACHE_MAX_BYTES:
+        for entry_path in entries:
+            _unlink(entry_path)
+
+
+def _unlink(path: str) -> None:
+    import os
+
+    try:
+        os.unlink(path)
+    except OSError:  # another run removed it first
+        pass
+
+
+def use_jax_compilation_cache(directory: Any) -> bool:
+    """Keep JAX's compiled kernels on disk, so only the first run pays for them.
+
+    JAX compiles every operation once per input shape and dtype, in every process: a
+    real-model reference spends seconds of each run compiling the same few hundred
+    kernels again. JAX's persistent compilation cache stores the compiled executables,
+    keyed by the computation, the JAX and XLA versions, and the compile options; a
+    later run loads them instead. Results are unchanged (the same executables run) and
+    nothing a case measures moves: speed cases compile during warm-up either way.
+
+    ``directory`` is ``<root>/.whetstone/cache/jax``. ``WHETSTONE_JAX_CACHE`` overrides
+    it with another directory, or disables the cache with ``0`` or ``off``; a
+    ``JAX_COMPILATION_CACHE_DIR`` set by the user is left alone. Returns whether the
+    cache was configured. Never raises: a run without the cache is merely slower.
+
+    An entry that cannot be read (two runs racing on one file) is recompiled by JAX,
+    which warns about it; the warning is silenced because the learner can do nothing
+    with it and the result is the same.
+    """
+    import os
+    import warnings
+
+    choice = os.environ.get("WHETSTONE_JAX_CACHE", "")
+    if choice.lower() in ("0", "off", "false", "no"):
+        return False
+    if os.environ.get("JAX_COMPILATION_CACHE_DIR"):
+        return False
+    try:
+        import jax
+
+        path = os.path.abspath(choice or str(directory))
+        os.makedirs(path, exist_ok=True)
+        _tidy_jax_cache(path)
+        jax.config.update("jax_compilation_cache_dir", path)
+        # The defaults keep only kernels that took a second to compile; the cost here
+        # is a thousand small ones.
+        jax.config.update("jax_persistent_cache_min_compile_time_secs", 0.0)
+        jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+        warnings.filterwarnings(
+            "ignore", message="Error (reading|writing) persistent compilation cache entry"
+        )
+    except Exception:  # noqa: BLE001 - read-only disk, an older JAX: run without it
+        return False
+    return True
+
+
 _CLASSES = {
     "torch": TorchFramework,
     "jax": JaxFramework,

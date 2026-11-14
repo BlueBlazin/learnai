@@ -66,6 +66,10 @@ One uv project at `python/` with ONE virtual environment.
   transformers, and mlx-lm on macOS). `models` is needed only by `ws assets fetch` and
   by authors generating fixtures; the harness and the kit read downloaded files with
   numpy.
+- The `mlx` extra and `mlx-lm` carry the marker `sys_platform == 'darwin' and
+  platform_machine == 'arm64'`, so the same extras can be passed on every host; on Linux
+  they install nothing and torch resolves to its normal Linux wheels. `uv.lock` is
+  universal.
 - The Python version is pinned in `python/.python-version` (see VERSIONS.md).
 - All tensors in tests are **float32** unless a problem is about dtypes. MLX has no
   float64 on GPU and JAX defaults to 32-bit; tolerances must be chosen for float32.
@@ -198,7 +202,9 @@ uv run --project <root>/python [--extra jax] [--extra mlx] -- \
   and kills the process group on cancel or timeout.
 - Environment variables: `WHETSTONE_MODELS_DIR` replaces `<root>/.whetstone/models`;
   `WHETSTONE_HARDWARE` is a comma-separated list of hardware to treat as present (tests
-  and previews only).
+  and previews only); `WHETSTONE_JAX_CACHE` is the directory of JAX's persistent
+  compilation cache (default `<root>/.whetstone/cache/jax`; `0` disables). Anything
+  under `<root>/.whetstone/cache/` is disposable.
 
 ### 3.6 Event protocol
 
@@ -263,6 +269,8 @@ Skipped cases and the two "not judged" endings:
   `harness_error`: the traceback). Core forwards them on the `end` RunEvent as
   `message: string | null` and `detail: string | null`.
 - A skipped case emits `case_end` with no preceding `case_start`.
+- The one-line `message` of a case that ended in `error` is the exception type and the
+  first meaningful line of its text.
 - Output printed while the solution module is imported arrives as non-prefixed log lines.
 - `start.env` also carries `platform`.
 - With no saved solution file, `ws run` judges the starter and says so.
@@ -272,7 +280,15 @@ Skipped cases and the two "not judged" endings:
 `uv run --project python ws <command>`: `list`, `run <id> [-f framework]`,
 `submit <id> [-f framework]`, `validate [<id> | --all] [--require-assets]`,
 `new <track>/<id>`, `assets list [--json]`,
-`assets fetch <name>... | --all [--json] [--no-verify]`.
+`assets fetch <name>... | --all [--json] [--no-verify]`, `doctor [--json]`.
+
+`ws doctor --json` prints one JSON document describing the environment it runs in:
+`schema`, `whetstone`, `python`, `executable`, `platform{system,machine,release}`,
+`frameworks{torch,jax,mlx}` (installed version or null), `packages`,
+`hardware{cpu{present,cores}, mlx-gpu{present,name,memory_bytes},
+cuda{present,name,memory_bytes,devices[],torch_cuda_version}}`, `hardware_override`,
+`root`, `models_dir`. It needs no extra and no network and never fails because a
+package is missing (full schema: PROBLEM_AUTHORING section 19).
 
 `ws assets list --json` prints one JSON document (`models_dir`, `assets[]` with `name`,
 `repo`, `revision`, `files`, `size_mb`, `state` = `present | missing | incomplete`,
@@ -435,7 +451,69 @@ full set of installed extras, so no call removes another's packages. The app nev
 downloads anything without an explicit click. `assets_missing` and `hardware_missing` submits are stored (with `skipped`) but
 never count as solved or toward the streak.
 
-### 4.1 Transports
+### 4.1 Run targets
+
+A target is where the harness runs. `local` always exists. An **SSH target** runs the
+same harness on a remote POSIX host (Linux with or without an NVIDIA GPU, or another
+Mac) and streams the same events back; its name is `ssh:<alias>`.
+
+```ts
+interface SshHost { alias: string; hostName: string | null; user: string | null;
+                    port: number | null; }                // from ~/.ssh/config, no wildcards
+type CheckStepId = "connect" | "uv" | "sync" | "environment" | "doctor";
+interface CheckStep { id: CheckStepId; ok: boolean; message: string;
+                      fix: string | null; }               // fix: a command or instruction for the user
+interface RemoteDoctor { python: string; system: string; machine: string;
+                         frameworks: Partial<Record<Framework, string | null>>;
+                         hardware: Requires[];            // what is present, always with "cpu"
+                         gpuName: string | null; gpuMemoryBytes: number | null; }
+interface TargetCheck { ok: boolean; checkedAt: string; steps: CheckStep[];
+                        doctor: RemoteDoctor | null; }
+interface TargetInfo { name: string;                      // "local" | "ssh:<alias>"
+                       kind: "local" | "ssh"; label: string;
+                       host: string | null; remoteDir: string | null;
+                       lastCheck: TargetCheck | null; }
+type TargetCheckEvent =
+  | { type: "step"; step: CheckStep }
+  | { type: "log"; text: string }
+  | { type: "done"; check: TargetCheck };                 // always last
+```
+
+| command | arguments | returns |
+|---|---|---|
+| `list_ssh_hosts` | | `SshHost[]` |
+| `list_targets` | | `TargetInfo[]`, `local` first |
+| `add_target` | `host, remoteDir?` | `TargetInfo[]`; `host` must be an alias from `list_ssh_hosts`; `remoteDir` defaults to `~/.whetstone` |
+| `remove_target` | `name` | `TargetInfo[]`; removing `local` fails; nothing is deleted on the remote host |
+| `check_target` | `name` + event sink | `jobId: string`; stream of `TargetCheckEvent` |
+
+Rules:
+
+- The app uses the system `ssh` and `rsync` and the user's own SSH configuration and
+  agent. It **never** stores, reads, or asks for keys or passwords: every invocation
+  uses `BatchMode=yes` (no prompts) and a connect timeout. A host that needs a password
+  or an unknown host key fails the `connect` step with a `fix` that tells the user what
+  to do in a terminal. Host aliases and remote directories are validated and passed as
+  separate arguments, never spliced into a shell string unquoted.
+- Remote layout: `<remoteDir>/root/` mirrors a content root: `python/` (without the
+  virtual environment and caches), `problems/<track>/<id>/` for the problem being run,
+  and `workspace/<id>/<framework>.py` for the solution. `launch` syncs these (only
+  what changed), then runs the section 3.5 command there with `WHETSTONE_ROOT` set and
+  the extras the job's framework needs, emitting `preparing` events for each step.
+- `check_target` runs the bootstrap: connect; find `uv` (the `fix` gives the official
+  install command, which the user runs; the app does not install software on a remote
+  host unasked); sync `python/`; build the environment; run `ws doctor --json`. The
+  result is saved as `lastCheck`. A run on a target never requires a prior check.
+- Cancel and timeouts terminate the remote process tree, not only the local `ssh`.
+- Targets are stored in the settings table. Submissions record the target name.
+  `start_run` with an unknown target fails with a clear message.
+- Model assets on a remote target live under `<remoteDir>/root/.whetstone/models/`.
+  `fetch_assets` takes an optional `target` (default `local`) and runs the same fetch
+  there; `list_assets` and `remove_asset` are local only.
+- Devbridge: the four plain commands as `POST /api/<command>`; `POST /api/check_target`
+  returns `{"jobId"}` with events at `GET /api/jobs/<jobId>/events`.
+
+### 4.2 Transports
 
 **Tauri.** One `#[tauri::command]` per row above. JavaScript passes camelCase argument
 names (Tauri maps them to snake_case Rust parameters). Streaming commands take an extra

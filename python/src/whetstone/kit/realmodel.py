@@ -127,8 +127,13 @@ class RealConfig:
                 f"unsupported model_type {kind!r}: the kit knows `granite` and "
                 "`granitemoehybrid` (see whetstone/kit/realmodel.py)"
             )
+        # `transformers` 4 writes "attention" for an attention layer; a config saved
+        # again by `transformers` 5 says "full_attention". Either a list with one
+        # entry per layer or (in hand-written configs) a single string is accepted.
+        kinds = raw.get("layer_types") or []
+        kinds = {kinds} if isinstance(kinds, str) else set(kinds)
         if kind == "granitemoehybrid" and (
-            raw.get("num_local_experts") or set(raw.get("layer_types", [])) - {"attention"}
+            raw.get("num_local_experts") or kinds - {"attention", "full_attention"}
         ):
             raise ValueError("granitemoehybrid with experts or non-attention layers is unsupported")
         quant = raw.get("quantization")

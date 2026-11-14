@@ -23,7 +23,8 @@ Miniatures of the milestone 3 features live under
 `python/tests/fixtures/m3/problems/`: `gpu/mlx-scale` (an MLX-only problem with a
 memory limit and a throughput metric, section 13), `gpu/cuda-scale` (CPU cases plus a
 case that needs CUDA, section 14), and `real/asset-vocab` (a model asset, a fixture
-file, and cases that need no download, section 15).
+file, and cases that need no download, section 15). CUDA problems, which are judged on
+the CPU with a kit of stand-ins, are section 18.
 
 All commands below run from the repository root. Always pass both extras; a bare
 `uv sync` removes the optional frameworks.
@@ -118,8 +119,17 @@ are skipped by the harness, and validation never counts what it did not see:
 
 - The reference must pass every case that *can* run. The cases that could not are
   listed in a warning on the problem ("only 2 of 3 cases could run on this machine
-  (all passed); 1 was NOT validated: needs an NVIDIA GPU (CUDA) ..."). The problem is
-  still `ok`, but the warning is printed on every run, not only with `-v`.
+  (all passed); 1 was NOT validated: needs an NVIDIA GPU (CUDA), which this machine
+  does not have (GPU cases not validated: on_cuda)"). The problem is still `ok`, but
+  the warning is printed on every run, not only with `-v`, and the summary line
+  counts such problems: "110 of 110 problems passed validation; 14 passed with cases
+  that could NOT be validated on this machine (see the warnings above)".
+- When every case ran and only the problem's `requires` is unmet (no case is marked,
+  or `ws run` selected only CPU cases), nothing was skipped and the warning says so:
+  "all 9 cases ran and passed, but not on the hardware the problem requires (an Apple
+  GPU (MLX with Metal)), which this machine does not have". In that situation a
+  starter or mutant that passes every case is an error, exactly as on a machine with
+  the hardware: every test ran.
 - The starter must be rejected by the cases that run here. A starter that survives
   them is an error, whatever the skipped cases would have said.
 - A mutant that survives the cases that run here is reported as "NOT validated": only
@@ -442,7 +452,13 @@ the same rule: describe what the solution did in `message`, put the specifics in
 `detail`. Plain `assert` works too (it counts as a failed case), but its text becomes
 the message, so prefer `check.that`.
 
-An exception raised by the solution is an `error` (verdict `runtime_error`).
+An exception raised by the solution is an `error` (verdict `runtime_error`). The
+*exception line* below is always one line: the exception type and the first
+meaningful line of its text (`RuntimeError: size mismatch for layer 3`). Framework
+errors are often many lines (a summary, then shapes, hints, a stack of their own);
+blank and decoration-only lines are skipped, and a first line that only introduces
+the rest (it ends with a colon) is joined with the next one. A `SyntaxError` keeps
+its message line.
 
 - In a **public** case the message is the exception line and the detail is a traceback
   trimmed to the learner's own frames (or to the frames of `tests.py` when the
@@ -1660,7 +1676,10 @@ The kit objects added for milestone 3 are documented where they are used:
 `MLXTinyLM`, `EvalSpy`, `TraceCounter`, and `mlx_memory` in section 13; `RealModel`,
 `RealLM`, `RealConfig`, `Weights`, `SafetensorsFile`, `ByteLevelBPE`, `dequantize`,
 `unpack_codes`, `bf16_to_f32`, `CountingFile`, and the house models `SMALL` and
-`LARGE_8BIT` in section 15.
+`LARGE_8BIT` in section 15. Milestone 4 added `pending_ops`, `watch_load`, and
+`LazyClock` (section 13), `logit_kl` (section 15), and the CUDA-on-CPU tools
+`SyncSpy`, `DeviceSpy`, `FakeDevice`, `RealDevice`, `OOMModel`, `FakeCudaGraph`,
+`CompileCounter`, `TransferSpy`, and `tritonshim` (section 18).
 
 ### Adding a kit object
 
@@ -1887,6 +1906,19 @@ spent in cases, and warns when the cases take more than 3 s.
   from a short fixed list (`rng.choice([(4, 8), (2, 3, 8)])`) rather than from a range.
   `ws validate -v` prints the time in cases per framework; when the JAX figure is ten
   times the torch one, count your distinct shapes.
+- **The harness keeps JAX's compiled kernels on disk** (`<root>/.whetstone/cache/jax`,
+  JAX's persistent compilation cache), so that per-shape cost is paid by the first
+  run of a problem on a machine and not by later ones. Measured on the four slowest
+  JAX references, alone on the machine (first run, then later runs):
+  `real-model-cached-generate` 17.4 s then 13.5 s, `quantize-real-weights` 9.9 s then
+  4.2 s, `real-model-perplexity` 4.1 s then 2.9 s, `real-model-logits` 3.5 s then
+  2.2 s. Budget for the *first* run: that is what a learner's first submit and a fresh
+  checkout see. What the cache cannot remove is JAX's cost per operation once
+  compiled: an un-jitted 28-layer forward pass is about a thousand dispatches, 0.1 s
+  per decode step and 1 s per 768-token prefill on the small real model, which is
+  where the rest of `real-model-cached-generate` goes. `WHETSTONE_JAX_CACHE=0` turns
+  the cache off (to measure a first run again); `ws validate` times are also inflated
+  by its four parallel runs, so time a single problem with `ws submit`.
 - Keep tensors small: tests check correctness, not scale. A few thousand elements is
   plenty except in speed cases.
 - `time_limit_s` is per case; 10 is right for almost everything. A correct solution
@@ -2212,6 +2244,69 @@ is by the ranges asked for, not by page faults the operating system saw, so it i
 exact and identical on every machine: a loader that takes `f[:]` or `f.read()` and
 picks out one tensor is charged for the whole file.
 
+### `pending_ops`, `watch_load`, `LazyClock`
+
+Three helpers that MLX problems kept rewriting:
+
+```python
+from whetstone.kit import LazyClock, pending_ops, watch_load
+
+check.that(pending_ops(model.parameters()) == 0, "load_into: the parameters are still lazy")
+
+with watch_load() as loaded:                      # {name: array} of what mx.load returned
+    ctx.solution.load_into(model, path)
+check.that(pending_ops(loaded["unused.weight"]) > 0, "a tensor the module does not use was read")
+```
+
+- `pending_ops(*trees)` is the number of operations not yet computed behind the
+  arrays in its arguments (arrays, or lists, tuples, and dicts of them); zero means
+  evaluated. It counts nodes of `mx.export_to_dot`, so use it for "zero or not" and
+  "at most a handful", never for an exact graph size.
+- `watch_load()` wraps `mx.load` for the length of the block and collects the arrays
+  it returned. `mx.load` of a safetensors file is lazy, so with the arrays in hand a
+  test can tell which tensors were actually read.
+- `LazyClock(slow=())` is a simulated clock for problems about *measuring* MLX code:
+  `clock()` reads it like `time.perf_counter`, `clock.spend(seconds)` advances it at
+  once (building a graph), and `clock.owe(array, seconds, group=None)` attaches a cost
+  to a lazy array that the clock collects at the first reading after the array has
+  been evaluated. An interval around an unevaluated graph therefore contains none of
+  its work. `group` chains debts (a later debt of a group waits for the earlier
+  ones); `slow[k]` multiplies the k-th group collected (warm-up). The existing
+  `mlx-benchmark-harness` keeps its own copy in `tests.py`; new problems use this one.
+
+### MLX behaviors to know (MLX 0.32.4)
+
+Found while writing the MLX track. The first four were re-run for this list on an
+M1 Max; the last two are as reported by the authors who hit them. Re-check when the
+pin moves.
+
+- **A boolean mask cannot be read, but it can be assigned.** `x[mask]` raises
+  `ValueError: boolean indices are not yet supported`; `x[mask] = value` works. Use
+  `mx.where(mask, a, b)` for reads; do not write a test whose reference needs
+  `x[mask]`.
+- **`mx.quantize` accepts only group sizes 32, 64, and 128** (16 and 256 raise
+  "[quantize] The requested group size ... is not supported"). And for a group whose
+  values are **all negative** (or all positive: zero is outside the group's range)
+  the GPU and the CPU disagree: for one such group at 4 bits the GPU chose scale
+  0.319 where the CPU chose 0.252, with a correspondingly larger error. A test that
+  compares against `mx.quantize` should keep zero inside every group, or compare
+  with a numpy oracle of the documented formula instead.
+- **Slice assignment copies.** `b = a[1:3]; b[0] = 5` leaves `a` unchanged: an MLX
+  slice is a new array, not a view. Only `a[...] = value` on the array itself (or on
+  another name bound to the same array object) updates it. A problem about in-place
+  cache updates must say which.
+- **The fused attention `"causal"` mask is lower-right aligned.**
+  `mx.fast.scaled_dot_product_attention(q, k, v, scale=..., mask="causal")` with `T`
+  queries and `S > T` keys lets query `i` see keys `j <= i + (S - T)`: the queries
+  are taken to be the *last* `T` positions, which is what decoding with a cache
+  needs. It is not `j <= i`.
+- **`mx.fast.metal_kernel`'s `elem_to_loc` misreads negative strides** (reported): an
+  input that is a reversed view reaches the kernel with wrong element locations.
+  Make such inputs contiguous first, and do not build a test on reversed views.
+- **`atexit` handlers do not run in the harness.** The worker leaves with
+  `os._exit` after the `end` event, so that framework teardown cannot delay or break
+  the exit. Clean up with `ctx.defer(...)` (runs when the case ends), never `atexit`.
+
 ## 14. Hardware requirements and skipped cases
 
 `requires` in `problem.toml` names the hardware a solution needs before it can be
@@ -2275,7 +2370,8 @@ How to split a problem:
   lives, a speed or memory property of the GPU path, a Metal kernel. Keep them few.
 - Every mutant should be caught by a CPU case if at all possible. A mutant that only
   a marked case catches is reported by `ws validate` as "NOT validated" on a machine
-  without the hardware (section 1), which is honest and unsatisfying.
+  without the hardware (section 1), which is honest and unsatisfying. Section 18
+  describes the kit that makes GPU mistakes visible on the CPU for exactly this.
 - For the MLX track (`requires = "mlx-gpu"`), mark the cases that need the GPU:
   memory limits, speed, Metal kernels. Apple silicon always has the GPU, so in
   practice everything runs; the marks decide what happens elsewhere, and they tell
@@ -2625,9 +2721,28 @@ a separate head, and quantized linear layers.
 
 **Tolerances that hold** (small model, 16-token prompts): float32 in numpy, torch,
 JAX, or MLX agrees with the fixture to 1e-4 absolute, so `rtol=1e-3, atol=1e-3` is
-safe; an MLX forward in float16 is off by up to 0.06 and in bfloat16 by up to 0.4,
-with the same argmax on ordinary prompts. For a float16 case use `atol=0.25` and
-compare argmax only where the fixture's top-two margin exceeds 1.
+safe. An MLX forward in **bfloat16** is off by up to 0.4 with the same argmax on
+ordinary prompts; it is the safe 16-bit type for this model. For a bfloat16 case
+measure the error on the case's own prompts in `fixtures/make.py`, set `atol` with a
+margin above it, and compare argmax only where the fixture's top-two margin exceeds 1.
+
+**float16 is not safe on the small model.** On the prompts where it works a float16
+forward is off by up to 0.06, closer than bfloat16, but on others it **overflows to
+NaN at layer 2** (seen by the milestone 3 authors in MLX). The reason is visible in
+float32: the largest hidden-state entry is about 15 after layers 0 and 1 and about
+9,400 after layer 2 for every prompt measured, which is after the 0.263 residual
+multiplier, so that block's MLP output is about 36,000, within a factor of two of
+float16's largest finite value, 65,504. bfloat16 has float32's exponent range and
+cannot overflow there. So: never state a float16 tolerance for the whole model
+without naming the prompts it was measured on; a float16 case must use prompts
+checked to stay finite (assert it in `fixtures/make.py`), and a problem that wants
+"half precision" on Granite 4.0 350M should ask for bfloat16.
+
+**KL divergence between two sets of logits** (how far a quantized or half-precision
+model's predictions moved): `logit_kl(p_logits, q_logits, axis=-1)` from
+`whetstone.kit` returns `KL(softmax(p) || softmax(q))` in nats per row, computed in
+float64 from log-softmax; `p` is the original model. Report the mean with
+`check.at_most("logit_kl", float(kl.mean()), limit, unit="nats")`.
 
 ### RealLM: the reference forward pass on demand
 
@@ -2699,6 +2814,10 @@ asset problem (with a made-up asset that the tests install themselves).
   and `fixtures/make.py` regenerates them (section 15).
 - If a case has a memory limit: the reference uses at most two thirds of it and the
   mutant it is written for at least one and a half times it (section 13).
+- If the problem is in the `cuda` track: every mutant is rejected by a CPU case
+  (`ws validate <id>` prints no "NOT validated" line for a mutant), the GPU cases are
+  marked `requires="cuda"` and few, and the statement says which facts were checked
+  only on the CPU (section 18).
 - Every statistical case takes under about 3 s in every framework.
 - The first public case is the statement's worked example.
 - No expected values appear in any failure message of a hidden case.
@@ -2801,3 +2920,568 @@ interface MissingAsset { name: string; repo: string; sizeMb: number; fetchComman
 // RunEvent "end" gains skipped: number, missingAssets?: MissingAsset[], missingHardware?: Requires.
 ```
 
+
+## 18. CUDA problems
+
+The `cuda` track teaches GPU programming with PyTorch to learners most of whom, like
+the machine that validates the catalog, have no NVIDIA GPU. A CUDA problem therefore
+has two halves:
+
+```toml
+frameworks = ["torch"]
+requires = "cuda"
+```
+
+- **CPU logic cases** (unmarked) run everywhere and decide validation. They hand the
+  solution CPU tensors and `torch.device("cpu")`, and they catch the *GPU* mistake
+  with a kit object that makes it observable on the CPU: a spy that counts host
+  synchronizations, a device whose work finishes only at `sync()`, a model that runs
+  out of memory, a graph that replays on captured memory, a numpy Triton.
+- **GPU cases** (`@case(..., requires="cuda")`) run only where
+  `torch.cuda.is_available()`. They check what only hardware shows: that tensors are
+  on the device, a speed ratio against the same-framework reference, an allocator
+  number. Keep them few; no mutant should depend on them (section 14).
+
+Rules for the split:
+
+1. Every solution takes `device` (or a device-like object) as an argument and must
+   work for `torch.device("cpu")`. Never call `torch.cuda.*` unconditionally in a
+   reference: `torch.cuda.synchronize()` raises `AssertionError: Torch not compiled
+   with CUDA enabled` on a CPU build.
+2. Things the solution would take from `torch.cuda` are **passed in**, so the CPU
+   case can pass the kit's stand-in and the GPU case the real thing: `device_api`
+   (`FakeDevice` or `RealDevice`), `empty_cache` (`model.empty_cache` or
+   `torch.cuda.empty_cache`), `graph` (`FakeCudaGraph()` or `torch.cuda.CUDAGraph()`),
+   `pin` and `to_device` (`TransferSpy` or `torch.Tensor.pin_memory` and `.to`).
+3. A GPU case builds its inputs on the device itself (`torch.ones(3, device="cuda")`);
+   `ctx.call` and `ctx.fw.tensor` make CPU tensors. `ctx.fw.sync(x)` calls
+   `torch.cuda.synchronize()` when a CUDA tensor is among its arguments, so
+   `ctx.compare_speed` times GPU work correctly.
+4. On this machine `ws validate` reports each CUDA problem as `ok` with the warning
+   "only N of M cases could run ... (GPU cases not validated: <ids>)". That line is
+   the honest state of the track: its GPU cases have never run. Say so in the pull
+   request, and do not write a GPU case you would not bet on.
+
+The tools, all in `whetstone.kit`, all working on CPU tensors
+(`python/src/whetstone/kit/cudatools.py` and `tritonshim.py`; unit tests in
+`python/tests/test_kit_cuda.py` and `test_kit_tritonshim.py`).
+
+### SyncSpy: host synchronizations
+
+```python
+from whetstone.kit import SyncSpy
+
+@case("at most one host read per check_every steps, and one transfer", public=True)
+def sync_free(ctx):
+    with SyncSpy() as spy:                        # watches the solution file
+        tokens = ctx.solution.decode(model, prompt, 64, uniforms, torch.device("cpu"))
+    check.at_most("host_syncs", spy.syncs, 64 // CHECK_EVERY + 1)
+    check.equal(tokens.tolist(), expected, label="tokens")
+```
+
+On a GPU, `.item()`, `bool(x)`, and friends make Python wait for all queued work and
+copy data to the host; in a loop that is once per token. `SyncSpy` replaces the
+methods on `torch.Tensor` for the length of the block and records each call **made
+from the solution file** (or `file=`): `spy.events` is the ordered list of
+`SyncEvent(kind, what, line)`, `spy.syncs` its length, `spy.reads`, `spy.transfers`,
+and `spy.shape_syncs` the counts by kind, `spy.describe()` one line per event.
+
+- `"read"`: `x.item()`, `x.tolist()`, `bool(x)` (so also `if x:`, `while x:`, `not
+  x`, `x and y`, `max(a, b)`), `int(x)`, `float(x)`, `x` used as an index or in
+  `range(x)`, `print(x)`, `str(x)`, `repr(x)`, an f-string, `y in x`, `x.equal(y)`,
+  `x.allclose(y)`, `torch.equal`, `torch.allclose`.
+- `"transfer"`: `x.cpu()`, `x.numpy()`, `np.asarray(x)`.
+- `"shape"`: operations whose output size depends on the data, which make the host
+  wait to learn it: `nonzero`, `argwhere`, `masked_select`, `unique`,
+  `unique_consecutive`, `torch.where(cond)` with one argument, `x[mask]` with a
+  boolean mask.
+- **Not counted: `x.to(device)`.** With a CPU `device` it is a no-op, and whether it
+  would synchronize on a GPU depends on where `x` lives. Specify `.cpu()` for the
+  final transfer in the statement, and count it in the limit.
+- Unlike `EvalSpy` (section 13), which watches calls, this spy patches methods, so
+  the implicit forms (`if x:`) *are* seen. One call counts once: `print(x)` is one
+  event although torch reads many values to format it. The kit's, the test's, and
+  torch's own reads are not counted.
+- A kit model that is numpy inside (`TinyLM`) reads its inputs on the host; that is
+  not the solution's doing and is not counted, but it also means such a model cannot
+  run on a CUDA device. A GPU case needs a small `torch.nn.Module` defined in
+  `tests.py` and moved to the device.
+
+### DeviceSpy and the meta device: tensors created in the wrong place
+
+```python
+from whetstone.kit import DeviceSpy
+
+with DeviceSpy() as spy:
+    out = ctx.solution.run(model, inputs, torch.device("cpu"))
+check.that(not spy.implicit,
+           f"run: {len(spy.implicit)} tensors were created without device=", spy.describe())
+```
+
+`torch.arange(n)` lands on the default device, the CPU; next to CUDA inputs that is
+an error at best and a silent host round trip at worst, and on a CPU run it is
+invisible. `DeviceSpy` wraps the factory functions (`arange`, `zeros`, `ones`, `full`,
+`empty`, `eye`, `linspace`, `logspace`, `rand`, `randn`, `randint`, `randperm`,
+`tensor`, `tril_indices`, `triu_indices`) and records every call from the solution
+file as `FactoryEvent(what, line, explicit)`; `spy.implicit` are the calls without
+`device=`. The `*_like` functions and `x.new_zeros(...)` inherit the device and are
+not watched. Only `torch.<name>` looked up at call time is seen.
+
+There is also a **second device on every machine: `torch.device("meta")`**. A meta
+tensor has a shape and a dtype and no data. Verified on torch 2.15: adding,
+concatenating, `torch.where`, `masked_fill`, `nn.Linear`, and
+`scaled_dot_product_attention` raise "Tensor on device cpu is not on the expected
+device meta!" when a CPU tensor meets a meta tensor, exactly as CUDA would, and
+`.item()` and `.cpu()` on a meta tensor raise. So a case can run the solution with
+inputs moved to `"meta"` and `device=torch.device("meta")` to find a leaf that was
+not moved or a mask built on the CPU. It is not complete: `x @ w`, `x[:, index]`,
+and `F.embedding` with one CPU and one meta operand do **not** raise. Use it together
+with `DeviceSpy`, and check numbers in a separate CPU case (meta tensors have none).
+
+### FakeDevice and RealDevice: asynchronous work on a virtual clock
+
+```python
+from whetstone.kit import FakeDevice, RealDevice
+
+@case("median seconds per call, warm-up excluded", public=True)
+def exact_time(ctx):
+    dev = FakeDevice()
+    fn = dev.kernel(0.004, first_call_s=0.050)    # each call queues 4 ms of device work
+    dev.launch(0.1)                               # stale work queued before the region
+    seconds = ctx.solution.time_region(fn, dev, 5)
+    check.allclose(seconds, 0.004, rtol=1e-9, label="median seconds per call")
+
+@case("on the GPU the same function reports real time", requires="cuda")
+def real_time(ctx):
+    seconds = ctx.solution.time_region(gpu_fn, RealDevice("cuda"), 5)
+```
+
+A CUDA call returns when the work is *queued*. `FakeDevice` models that with a
+virtual clock in integer nanoseconds: `dev.kernel(seconds, first_call_s=None)`
+returns a function that queues device work and returns at once (costing the host
+`launch_s`, default 0); `dev.launch(seconds)` queues work directly; `dev.sync()`
+(for `torch.cuda.synchronize`) moves host time to when the queue is empty;
+`dev.clock()` (for `time.perf_counter`) reads host time and never waits. The device
+runs its queue concurrently with the host. So a timer without a sync before the stop
+measures 0; a region not preceded by a sync pays for the stale work in its first
+sample; a first call inside the measurement shows as 0.050 in the first sample.
+**A median hides one bad sample**: the last two mistakes change only the first of
+the `n` timings, so test them with `n = 1` (a solution that does not sync before starting
+the timer then reports 0.154 in the example above, the stale 0.1 and the warm-up
+0.050 included, instead of 0.004), or assert on `dev.events` that a `"sync"` precedes the first
+`"clock"`. `dev.counters` has
+`syncs`, `clock_reads`, `launches`; `dev.pending_s` is unwaited work; `dev.events`
+the ordered log. `RealDevice(device)` gives the same two methods over
+`torch.cuda.synchronize(device)` (nothing on the CPU) and `time.perf_counter`.
+
+**Interface change from the curriculum:** the curriculum gave `FakeDevice()` with
+`sync()` and `clock()` only; `kernel`, `launch`, `pending_s`, `counters`, `events`,
+`launch_s`, and `RealDevice` were added because a test needs a way to *queue* work
+and a GPU case needs the real counterpart.
+
+### OOMModel: out of memory above a batch size
+
+```python
+from whetstone.kit import OOMModel
+
+model = OOMModel(lambda x: x * 2, max_items=3)
+out = ctx.solution.run_batched(model, items, 8, model.empty_cache)
+check.equal(model.batch_sizes, [8, 4, 2, 2, 2, 2, 2], label="batch sizes tried")
+check.that(model.counters.live_at_empty_cache == 0,
+           "empty_cache() ran while the failed batch was still referenced")
+```
+
+`model(batch)` returns `fn(batch)` for `len(batch) <= max_items` and otherwise raises
+`torch.OutOfMemoryError("CUDA out of memory. ...")`. `model.batch_sizes` lists every
+size tried; `model.events` is the ordered log of `("call", size, "ok" | "oom" |
+"error")` and `("empty_cache", live)`; `model.counters` has `calls`, `ooms`, `items`,
+`empty_cache_calls`, `live_at_empty_cache`; `model.empty_cache` is the stand-in for
+`torch.cuda.empty_cache` to pass to the solution; `errors={call_index: exception}`
+makes a given call raise something else.
+
+- `live_at_empty_cache` is the real trap, reproduced with weak references: inside
+  `except torch.OutOfMemoryError:` the exception holds the traceback, the traceback
+  holds the failed call's frame, and the frame holds the batch, so `empty_cache()`
+  called there cannot free it. The fix is to leave the `except` block and drop the
+  batch first. It needs a batch that can be weakly referenced (a tensor; a list is
+  silently not tracked).
+- `torch.OutOfMemoryError` is a subclass of `RuntimeError`; the mutant that catches
+  `RuntimeError` is caught by `errors={1: RuntimeError("shape mismatch")}`, which a
+  correct solution lets through.
+- **Interface change:** the curriculum gave `OOMModel(fn, max_items)` "counts calls";
+  `batch_sizes`, `events`, `empty_cache`, `errors=`, and the liveness check were
+  added, and the solution receives `empty_cache` from the model.
+
+### FakeCudaGraph: capture, then replay on the captured memory
+
+```python
+from whetstone.kit import FakeCudaGraph
+
+graph = FakeCudaGraph()
+calls = []
+def step_fn(x):                                   # the test's wrapper sees when it is called
+    calls.append(graph.capturing)
+    return model(x)
+step = ctx.solution.GraphedStep(step_fn, example, graph)
+check.equal(calls[-1:], [True], label="the last call of step_fn is the capture")
+check.that(False in calls, "step_fn was never run before capturing (no warm-up)")
+for x in inputs:
+    check.allclose(step(x), model(x), label="replayed output")
+check.equal(len(calls), n_before, label="step_fn must not run again after capture")
+```
+
+A CUDA graph records the kernels launched during capture with the memory addresses
+they read and wrote; `replay()` reruns them on those addresses and runs no Python.
+`FakeCudaGraph` does the same on CPU tensors: between `capture_begin()` and
+`capture_end()` a `TorchDispatchMode` records every operation with the tensor
+objects it read and returned; `replay()` re-executes them on those same tensors and
+writes each result into the tensor that held it during capture. Consequences, as on
+the GPU:
+
+- rebinding a placeholder (`static_in = x`) instead of `static_in.copy_(x)` replays
+  the old input: stale output;
+- outputs are overwritten in place by every replay: without `clone()` an earlier
+  result changes at the next call (and `data_ptr()` of the output stays the same);
+- a host read during capture (`.item()`, `bool(x)`, `print(x)`) raises
+  `RuntimeError: CUDA error: operation not permitted when stream is capturing`;
+- a replay whose recomputed shape differs raises: shapes are frozen.
+
+Surface: `capture_begin(pool=None, capture_error_mode="global")`, `capture_end()`,
+`replay()`, `reset()`, as in torch 2.15, plus `graph.capturing`, `graph.captured`,
+`graph.n_ops`, and `graph.counters` (`captures`, `replays`).
+
+**Use the context manager in solutions.** Torch's documentation says not to call
+`capture_begin` yourself but to use `with torch.cuda.graph(g):`.
+(Torch's CUDA notes: warm-up and capture happen on a side stream, and
+`torch.cuda.graph` sets one for you; its source also synchronizes and empties the
+cache first.)
+`with graph.patched():` makes `torch.cuda.graph(graph)` accept a `FakeCudaGraph`, so
+a solution written `with torch.cuda.graph(self.graph): ...` runs unchanged in both
+halves: wrap the CPU case's calls in `with graph.patched():`. Not imitated: streams,
+memory pools, and any failure of a capture made without warm-up (check the warm-up
+through `graph.capturing`, as above).
+
+### CompileCounter: how many graphs `torch.compile` built
+
+```python
+from whetstone.kit import CompileCounter
+
+with CompileCounter() as cc:
+    step = ctx.solution.make_step(model, cache, backend="eager")
+    for pos in range(64):
+        logits = step(token, torch.tensor(pos))
+check.at_most("compilations", cc.compilations, 1)
+check.that(cc.graph_breaks == 0, "the step has a graph break", cc.describe())
+```
+
+`cc.compilations` is the number of frames Dynamo compiled (a function compiled once
+with no break is 1; a graph break makes each piece a frame), `cc.graph_breaks` the
+number of graph breaks with `cc.break_reasons`, `cc.graphs` the distinct graphs.
+`cc.snapshot()` updates the numbers inside the block. Entering and leaving call
+`torch._dynamo.reset()`. Have the solution accept `backend` and pass `"eager"` on the
+CPU: Dynamo traces and guards exactly as for any backend and no C++ compiler is
+needed (`mode=` is ignored by the eager backend, with a warning).
+
+Measured on torch 2.15, CPU, `backend="eager"` (the numbers a limit must be set
+against):
+
+| the step function is called with | `compilations` |
+|---|---|
+| a 0-d tensor position, fixed shapes, 6 calls | 1 |
+| a Python `int` position that changes, default `dynamic=None` | **2**: specialized on the first value, then recompiled once with the value symbolic |
+| a Python `int` that changes, `dynamic=False` | 8, then Dynamo gives up at `recompile_limit` (8) and runs the frame uncompiled |
+| an input whose length grows every call, default | 2 (the size becomes symbolic) |
+| an input whose length grows, `dynamic=False` | 8, then the limit |
+| `if x.sum() > 0:` on a tensor (one call) | 2 frames, `graph_breaks == 1` ("Data-dependent branching") |
+
+So the curriculum's "at most 2 compilations" does **not** reject a Python-int
+position under the default settings: it compiles exactly twice. Either require
+`compilations <= 1` for the decode steps (with the prompt compiled outside the
+block), or specify `dynamic=False` in the statement, under which the int mutant
+reaches 8. `fullgraph=True` turns a graph break into an exception
+(`torch._dynamo.exc.Unsupported`), which is another way to test for one.
+
+The counts come from `torch._dynamo.utils.counters` (`["frames"]["ok"]`,
+`["stats"]["unique_graphs"]`, `["unimplemented"]`), which is internal API read by
+torch's own tests; `CompileCounter` is the one place that touches it.
+
+### TransferSpy: pinning and non-blocking transfers
+
+```python
+from whetstone.kit import TransferSpy
+
+spy = TransferSpy()
+batches = [spy.label(torch.randn(4, 8), i) for i in range(5)]
+fetcher = ctx.solution.Prefetcher(batches, torch.device("cpu"), spy.to_device, spy.pin)
+for i, batch in enumerate(fetcher):
+    spy.mark(("consumed", i))
+check.that(not spy.unpinned, "a batch was transferred from pageable memory", spy.describe())
+order = spy.order()                # [("pin", 0), ("transfer", 0), ("pin", 1), ("transfer", 1),
+                                   #  ("mark", ("consumed", 0)), ...]
+```
+
+`spy.pin(tensor)` returns a copy that counts as pinned; `spy.to_device(tensor,
+device, non_blocking=False)` moves it (a real `.to`) and records whether its
+argument was pinned and whether the call was non-blocking; `spy.label(tensor, label)`
+names a source tensor, and tensors derived from it carry the label; `spy.mark(name)`
+records a moment chosen by the test. `spy.events` is the ordered `TransferEvent`
+list, `spy.transfers`, `spy.unpinned`, and `spy.blocking` filter it, `spy.order()` is
+`[(kind, label), ...]`. On a GPU pass `pin=torch.Tensor.pin_memory` and
+`to_device=lambda t, device, non_blocking=False: t.to(device,
+non_blocking=non_blocking)`.
+
+### tritonshim: Triton kernels in numpy
+
+```python
+# solution
+from whetstone.kit import tritonshim as tl
+
+@tl.jit
+def rmsnorm_kernel(x_ptr, w_ptr, out_ptr, n_cols, eps, BLOCK: tl.constexpr):
+    row = tl.program_id(0)
+    base = row * n_cols
+    acc = tl.zeros((BLOCK,), tl.float32)
+    for start in range(0, n_cols, BLOCK):
+        offs = start + tl.arange(0, BLOCK)
+        x = tl.load(x_ptr + base + offs, mask=offs < n_cols, other=0.0)
+        acc += x * x
+    ...
+
+# tests.py
+info = tl.launch(ctx.solution.rmsnorm_kernel, (n_rows,), x, w, out, n_cols, 1e-5, BLOCK=64)
+check.allclose(out.numpy(), oracle, rtol=1e-5, atol=1e-6, label="rmsnorm")
+check.equal(info.elements_stored, n_rows * n_cols, label="elements written")
+```
+
+`tritonshim` runs a kernel written in a subset of `triton.language` on CPU tensors
+or numpy arrays, one program after another, writing into the output in place.
+`tl.launch(kernel, grid, *args, **kwargs)` (or Triton's own spelling,
+`kernel[grid](*args, **kwargs)`) returns counters for the launch: `programs`,
+`loads`, `stores`, `elements_loaded`, `elements_stored` (masked-off elements do not
+count), which is how "never materializes the weights" becomes a cost check.
+
+What is modeled, from the Triton documentation:
+
+- `program_id(axis)`, `num_programs(axis)`; a grid of one to three ints, or a
+  function of the keyword (meta-)parameters.
+- Pointers: a tensor argument arrives as a pointer to its first element; `ptr +
+  offsets` (in elements) is a block of pointers; `load(pointer, mask=None,
+  other=None, *, cache_modifier="", eviction_policy="", volatile=False)` and
+  `store(pointer, value, mask=None, *, cache_modifier="", eviction_policy="")`.
+- `arange(start, end)`, `zeros(shape, dtype)`, `zeros_like`, `full(shape, value,
+  dtype)`, `where(condition, x, y)`, `cast(input, dtype, fp_downcast_rounding=None,
+  bitcast=False)` and `x.to(dtype)`, `sum(input, axis=None, keep_dims=False,
+  dtype=None)`, `max` and `min` (`axis`, `keep_dims`), `maximum`, `minimum`, `clamp`,
+  `abs`, `sqrt`, `rsqrt`, `exp`, `log`, `sigmoid`, `static_range`; the operators `+ -
+  * / // % & | ^ << >> ~` and comparisons; `x[:, None]` and `x[None, :]`; dtypes
+  `int1`, `int8` to `int64`, `uint8` to `uint64`, `float16`, `float32`, `float64`;
+  host helpers `cdiv` and `next_power_of_2` (`triton.cdiv`, `triton.next_power_of_2`).
+- Type rules of the "Triton Semantics" page: promotion by kind (bool < integer <
+  float), then width, then unsigned; a Python number next to a tensor takes the
+  tensor's dtype unless its kind is higher (`uint8 + 300` stays uint8, `int16 * 4.0`
+  is float32); `/` and `%` with a float operand compute in at least float32 (a
+  float16 operand is promoted); integer `//` and `%` round toward zero as in C, while
+  arithmetic on `constexpr` values is Python's; `sum` widens integers narrower than
+  32 bits to int32 or uint32.
+- Three rules come from the author's knowledge of Triton's implementation rather
+  than from its documentation, and are the first things to check on a GPU: `/` on
+  two integers gives float32; scalar launch arguments arrive as int32 (int64 when
+  they do not fit), float32, or int1; and every block shape, not only `arange`'s
+  length, must be a power of two. `tl.constexpr` parameters stay Python numbers and
+  are the only values allowed as shapes and `arange` bounds. The shim also refuses
+  `//` on floats (use `/`).
+
+Where the shim is strict because a GPU would not tell you:
+
+- an **unmasked access outside the tensor raises `tl.OutOfBounds`** (with the
+  program, the element, and the tensor's size); negative offsets never wrap;
+- a **masked-off element of a load without `other=` is poison**: NaN for floats, the
+  largest value for integers. Triton documents it as undefined;
+- **two programs storing to the same element raise `tl.DataRace`**, and programs run
+  in a fixed shuffled order, so nothing may depend on program order;
+- `tl.jit` **checks the kernel's source** and rejects what Triton could not compile
+  in this subset: calling numpy or any function that is not `tl.<name>`, a block
+  method, another `@tl.jit` function, or one of `range`, `min`, `max`, `int`,
+  `float`, `bool`, `abs`, `print`; reaching into a block (`x.value`); lists, dicts,
+  comprehensions, lambdas, `with`, `try`, imports, nested functions, f-strings.
+
+How the mutants of the two Triton problems show: no tail mask reads past the end of
+the tensor (`OutOfBounds`), or into the next row (a wrong answer or a `DataRace`);
+`other=1.0` pollutes the sum (numeric); eps outside the root, nibble order, and the
+group index are numeric; a float16 accumulator loses precision (numeric).
+
+**What is and is not verified.** The signatures and semantics above were read from
+triton-lang.org (`triton.language`, the pages for `load`, `store`, `sum`, `max`,
+`cast`, `arange`, `where`, `full`, `program_id`, "Triton Semantics", and the
+vector-add tutorial, whose kernel is the first unit test). **The shim has not been
+run against real Triton**, which does not install on macOS; torch's Linux wheels
+depend on it (`triton` 3.9.0 in `uv.lock`), so it is present on a CUDA host. On such
+a host `tl.launch` with CUDA tensors hands the same kernel function to real Triton
+(`tl.compile_with_triton`: the function's globals are copied with the shim replaced
+by `triton.language`, and `triton.jit` is applied); that path is exercised only with
+a stand-in `triton` module in the unit tests. Known gaps, where a kernel accepted
+here might still be refused or behave differently there: Triton's rule that a
+variable used after an `if` or `for` must be assigned on every path; the documented
+arange constraint, which the page words as a power-of-two *interval* and the shim
+enforces as a power-of-two *length*; float results of GPU math functions, which need
+not round like numpy's; float-to-int casts out of range (undefined in Triton);
+bfloat16 (numpy has none). Treat the first GPU run of each Triton problem as a test
+of the shim, and tell the judge's owner what differs.
+
+### Facts about torch 2.15 behind this section
+
+Verified here by running torch 2.15.0 on the CPU (macOS arm64, no CUDA) and from
+the docstrings it ships:
+
+- `torch.OutOfMemoryError` exists, is a subclass of `RuntimeError`, and
+  `torch.cuda.OutOfMemoryError` is the same class.
+- `torch.cuda.CUDAGraph(keep_graph=False)` has `capture_begin(pool=None,
+  capture_error_mode="global", check_input_liveness=False)`, `capture_end()`,
+  `replay()`, `reset()`, `pool()`, `enable_debug_mode()`, `debug_dump(path)`; on a
+  CPU build the constructor raises "Tried to instantiate dummy base class
+  CUDAGraph". `torch.cuda.graph(cuda_graph, pool=None, stream=None,
+  capture_error_mode="global", ...)` is the documented way to capture.
+- `torch.cuda.memory_stats()` returns an empty `OrderedDict` without CUDA, and
+  `memory_allocated`, `max_memory_allocated`, `memory_reserved` return 0. Its
+  documented keys are `"<stat>.<pool>.<metric>"` with stats `allocated`,
+  `allocated_bytes`, `segment`, `reserved_bytes`, `active`, `active_bytes`,
+  `inactive_split`, `inactive_split_bytes`, `requested_bytes`; pools `all`,
+  `large_pool`, `small_pool` (the small pool takes allocations under 1 MB); metrics
+  `current`, `peak`, `allocated`, `freed`; plus the counters `num_alloc_retries`,
+  `num_ooms`, `num_sync_all_streams`, `num_device_alloc`, `num_device_free`,
+  `max_split_size`, and `oversize_allocations.*`, `oversize_segments.*`.
+- `torch.cuda.empty_cache()` is a no-op without CUDA; `torch.cuda.synchronize()`,
+  `get_device_name()`, and `mem_get_info()` raise `AssertionError`.
+  `torch.cuda.Event` has `record`, `elapsed_time`, `query`, `synchronize`, `wait`.
+- `torch.autocast(device_type, dtype=None, enabled=True, cache_enabled=None)`. On
+  the CPU both `dtype=torch.bfloat16` and `torch.float16` are accepted: `nn.Linear`
+  and `@` produce the 16-bit type, and so does `torch.softmax` (**on the CPU softmax
+  is not kept in float32 by autocast**; on CUDA it is, per the op lists below). So a CPU case that requires float32
+  probabilities is checking the solution's explicit `.float()`, which is the point.
+  `device_type="cuda"` on a machine without CUDA only warns ("CUDA is not
+  available ... Disabling autocast") and computes in float32: the hard-coded-device
+  mutant is caught by checking the dtype of a hidden activation.
+  `torch.is_autocast_enabled("cpu")` and `torch.get_autocast_dtype("cpu")` report the
+  state. `torch.tensor(70000.0).half()` is `inf`; as bfloat16 it is 70144.
+- `x.pin_memory()` and `torch.zeros(n, pin_memory=True)` succeed on this CPU-only
+  build and report `is_pinned() == True`; `x.to("cpu", non_blocking=True)` and
+  `x.cpu()` on a CPU tensor return the same object. Pinning therefore cannot be
+  judged from the tensor on a CPU: use `TransferSpy`.
+- `F.scaled_dot_product_attention(query, key, value, attn_mask=None, dropout_p=0.0,
+  is_causal=False, scale=None, enable_gqa=False)`; passing `attn_mask` together with
+  `is_causal=True` raises "Explicit attn_mask should not be set when
+  is_causal=True".
+- `torch.compile(fn, backend="eager")` works on the CPU with the numbers in the
+  `CompileCounter` table; `torch.compiler.list_backends()` is `['cudagraphs',
+  'inductor', 'openxla', 'tvm']`; the default inductor backend also compiles on this
+  Mac.
+- `torch.device("meta")` behaves as described under `DeviceSpy`.
+
+Read from torch 2.15's documentation (`notes/cuda.html`, `amp.html`), not run:
+
+- GPU operations are asynchronous; "time measurements without synchronizations are
+  not accurate"; use `torch.cuda.synchronize()` or a pair of
+  `torch.cuda.Event(enable_timing=True)`.
+- Host-to-GPU copies are faster from pinned memory, and once a tensor is pinned
+  `non_blocking=True` gives an asynchronous copy that can overlap with computation.
+  The notes do not say what `non_blocking=True` does from pageable memory (it is
+  commonly described as falling back to a synchronous copy).
+- CUDA graphs: warm up with a few eager iterations before capture, on a side stream
+  (`torch.cuda.graph` and `make_graphed_callables` set one); operations that
+  synchronize the CPU with the GPU (`.item()`) and dynamic shapes are prohibited
+  during capture; "every replay reads from and writes to the same (virtual) memory
+  addresses"; the whole-network example fills static inputs with
+  `static_input.copy_(data)` and calls `g.replay()`.
+- `memory_allocated` counts memory occupied by tensors, `memory_reserved` everything
+  the caching allocator holds; `empty_cache()` releases unused cached memory and
+  cannot free memory occupied by tensors.
+- Autocast: `softmax` and `log_softmax` are in the list of CUDA ops that autocast to
+  float32 and in neither CPU list; the CPU lists are written for bfloat16 and
+  "float16 shares the lists of bfloat16"; the default dtype is float16 for CUDA and
+  bfloat16 for the CPU.
+
+**Not verifiable without a GPU**, and therefore to be treated as documentation, not
+fact, until a GPU case has run: everything about real `CUDAGraph` behavior (what an
+un-warmed capture or a capture on the default stream does, speedups); the
+values in a real `memory_stats()` dict and the allocator's rounding to 512-byte
+blocks (the fixture dicts of `cuda-memory-accounting` cannot be captured here: build
+them by hand from the documented keys and say so in the problem); what
+`non_blocking=True` does from pageable memory; how CUDA autocast behaves in practice;
+`mode="reduce-overhead"`; every speed ratio; and real Triton.
+
+## 19. Contract additions of milestone 4 (to mirror in ARCHITECTURE.md)
+
+Everything is additive; no event changes shape.
+
+**3.1 Environment.** The `mlx` extra and `mlx-lm` in `models` carry the marker
+`sys_platform == 'darwin' and platform_machine == 'arm64'`, so the same extras can be
+passed on every host: `uv run --project python --extra jax --extra mlx ...` on Linux
+installs torch's normal Linux wheels (CUDA 13 runtime libraries and `triton` come
+with them) and no MLX. `uv.lock` stays universal. The `models` extra needs a source
+build of `pyyaml` on Linux for Python 3.15 (no wheel is published); the harness and
+the kit do not need that extra.
+
+**3.5 Harness command.** One more environment variable: `WHETSTONE_JAX_CACHE`, a
+directory for JAX's persistent compilation cache, or `0`/`off` to disable it. Default:
+`<root>/.whetstone/cache/jax`, created on the first JAX run. Anything under
+`<root>/.whetstone/cache/` is disposable. A `JAX_COMPILATION_CACHE_DIR` set by the
+user is respected instead.
+
+**3.6 Event protocol.** No new fields. The one-line `message` of a case that ended
+in `error` is the exception type and the first meaningful line of its text (a first
+line that ends with a colon is joined with the next), for public and hidden cases
+alike; for a hidden case the location in the solution file follows, as before. The
+full multi-line text stays in the public case's `detail`.
+
+**3.7 CLI.** `ws doctor [--json]`: what this environment has. It needs no extra and
+no network, imports torch (a base dependency) and, when installed, MLX, to detect
+hardware, and never fails because a package is missing. `ws doctor --json` prints
+one JSON document:
+
+```jsonc
+{
+  "schema": 1,                      // bumped on an incompatible change
+  "whetstone": "0.1.0",
+  "python": "3.15.2",
+  "executable": "/abs/path/python/.venv/bin/python3",
+  "platform": {"system": "Linux", "machine": "x86_64", "release": "6.8.0"},   // platform.system(), machine(), release()
+  "frameworks": {"torch": "2.15.0", "jax": "0.12.0.1", "mlx": null},          // installed version, or null
+  "packages": {"numpy": "2.5.4", "triton": "3.9.0", "huggingface_hub": null,
+               "safetensors": null, "tokenizers": null, "transformers": null, "mlx-lm": null},
+  "hardware": {
+    "cpu": {"present": true, "cores": 32},
+    "mlx-gpu": {"present": false, "name": null, "memory_bytes": null},        // "Apple M1 Max", unified memory size
+    "cuda": {"present": true, "name": "NVIDIA GeForce RTX 4090", "memory_bytes": 25757220864,   // device 0
+             "devices": [{"index": 0, "name": "NVIDIA GeForce RTX 4090", "memory_bytes": 25757220864}],
+             "torch_cuda_version": "13.0"}                                    // torch.version.cuda, null on a CPU build
+  },
+  "hardware_override": null,        // WHETSTONE_HARDWARE as a sorted list (always with "cpu"), or null
+  "root": "/abs/content/root",
+  "models_dir": "/abs/content/root/.whetstone/models"                         // WHETSTONE_MODELS_DIR applied
+}
+```
+
+- `frameworks` and `packages` are read from installed package metadata; nothing is
+  imported to fill them. A `null` framework means its extra is not installed here.
+- `hardware.<name>.present` is real detection and is exactly what decides whether
+  cases with that `requires` run: `torch.cuda.is_available()` for `cuda`,
+  `mx.metal.is_available()` with a GPU default device for `mlx-gpu`.
+  `WHETSTONE_HARDWARE` does not change it; it is reported in `hardware_override`.
+- `cuda.name` and `cuda.memory_bytes` describe device 0 (`null` when absent, or when
+  the driver does not answer); `devices` lists all of them.
+- Exit code 0. Without `--json` the same facts are printed as text.
+
+`ws validate` prints, per problem, which cases this machine could not validate
+(`... (GPU cases not validated: <ids>)`), a different warning when every case ran but
+the problem's `requires` is unmet, and a summary count of problems that passed with
+unvalidated cases.
+
+**Remote runs.** The harness is POSIX code with nothing specific to macOS on the
+paths a Linux run takes: time limits use `signal.setitimer`/`SIGALRM` in the worker
+(skipped where missing) and a supervising process that kills the worker; output is
+captured by redirecting file descriptors 1 and 2 to a file in a `tempfile`
+directory, with `fflush` through `ctypes.CDLL(None)`; no path is hard-coded. MLX is
+imported only by the MLX adapter, the MLX kit tools, and hardware detection, each
+guarded. A remote host needs Python 3.15, `uv`, the `python/` directory, and the
+problem directory at `<root>/problems/<track>/<id>` (or `WHETSTONE_ROOT`); assets are
+looked up under that root.

@@ -1,7 +1,7 @@
 """Instruments for MLX problems: where evaluation happens, how often a compiled
 function is traced, and how much memory a piece of work takes.
 
-    from whetstone.kit import EvalSpy, TraceCounter, mlx_memory
+    from whetstone.kit import EvalSpy, TraceCounter, mlx_memory, pending_ops, watch_load, LazyClock
 
 MLX builds a graph and computes nothing until something forces it: ``mx.eval``,
 ``mx.async_eval``, or a read that needs the numbers (``.item()``, ``.tolist()``,
@@ -270,6 +270,122 @@ def mlx_memory() -> Iterator[MemoryMeasurement]:
         measurement.peak_bytes = max(0, mx.get_peak_memory() - baseline)
         measurement.active_bytes = max(0, mx.get_active_memory() - baseline)
         measurement.cache_bytes = mx.get_cache_memory()
+
+
+def pending_ops(*trees: Any) -> int:
+    """Number of operations not yet computed behind the arrays in ``trees``.
+
+        check.that(pending_ops(model.parameters()) == 0, "the parameters are still lazy")
+
+    MLX builds a graph and computes it when asked; an array that has been evaluated
+    has nothing behind it. ``trees`` may be arrays, or lists, tuples, and dicts of
+    them (``module.parameters()``, a cache); anything else is ignored. Zero means
+    every array is evaluated. The count comes from ``mx.export_to_dot``, which lists
+    one node per pending operation; it is meant for "zero or not" and "bounded"
+    checks, not for exact graph sizes.
+    """
+    import io
+
+    import mlx.core as mx
+    from mlx.utils import tree_flatten
+
+    arrays = [leaf for _, leaf in tree_flatten(list(trees)) if isinstance(leaf, mx.array)]
+    if not arrays:
+        return 0
+    dot = io.StringIO()
+    mx.export_to_dot(dot, *arrays)
+    return dot.getvalue().count("shape=rectangle")
+
+
+@contextmanager
+def watch_load() -> Iterator[dict[str, Any]]:
+    """Collect the arrays ``mx.load`` returns while the block runs: ``{name: array}``.
+
+        with watch_load() as loaded:
+            ctx.solution.load_into(model, path)
+        check.that(pending_ops(loaded["unused.weight"]) > 0, "an unused tensor was read")
+
+    ``mx.load`` of a safetensors or npz file returns lazy arrays: nothing is read from
+    disk until an array is evaluated. Holding the very arrays the solution was given
+    lets a test see which of them were read (``pending_ops``). Only ``mx.load`` looked
+    up at call time is seen, which is how solutions call it.
+    """
+    import mlx.core as mx
+
+    seen: dict[str, Any] = {}
+    original = mx.load
+
+    def load(*args: Any, **kwargs: Any) -> Any:
+        result = original(*args, **kwargs)
+        tensors = result[0] if isinstance(result, tuple) else result
+        if isinstance(tensors, dict):
+            seen.update(tensors)
+        return result
+
+    mx.load = load
+    try:
+        yield seen
+    finally:
+        mx.load = original
+
+
+class LazyClock:
+    """A simulated clock on which time passes only when lazy work is really computed.
+
+        clock = LazyClock()
+        logits = model(tokens)                 # a lazy graph
+        clock.spend(0.0001)                    # building it cost this much, at once
+        clock.owe(logits, 0.004)               # computing it will cost this much
+        clock()                                # 0.0001: nothing has been computed yet
+        mx.eval(logits)
+        clock()                                # 0.0041: the debt was collected
+
+    For problems about *measuring* MLX code. Real timings are noisy; this clock makes
+    the mistakes exact. ``clock()`` returns simulated seconds, as ``time.perf_counter``
+    would. ``spend(seconds)`` advances it immediately. ``owe(array, seconds, group=None)``
+    attaches a cost to a lazy array: the clock collects it at the first reading after
+    the array has been evaluated (``pending_ops(array) == 0``). An interval timed
+    around an unevaluated graph therefore contains none of its work, and the work
+    lands in whichever interval ends after someone evaluates.
+
+    ``group`` ties debts together (the calls of one generation run): a group's debts
+    are collected in order, and a later debt waits for the earlier ones. ``slow``
+    multiplies the cost of the k-th group to be collected by ``slow[k]`` (warm-up:
+    the first computed run is slower); groups beyond the list cost their plain price.
+
+    ``clock.reads`` counts the readings; ``clock.now`` is the time without reading.
+    """
+
+    def __init__(self, slow: Any = ()) -> None:
+        self.now = 0.0
+        self.slow = list(slow)
+        self.reads = 0
+        self._debts: list[tuple[Any, Any, float]] = []
+        self._order: dict[Any, int] = {}
+        self._anonymous = 0
+
+    def spend(self, seconds: float) -> None:
+        self.now += seconds
+
+    def owe(self, array: Any, seconds: float, group: Any = None) -> None:
+        if group is None:
+            self._anonymous += 1
+            group = ("anonymous", self._anonymous)
+        self._debts.append((array, group, seconds))
+
+    def __call__(self) -> float:
+        self.reads += 1
+        waiting = []
+        blocked = set()  # groups with an uncomputed debt: the debts after it depend on it
+        for array, group, seconds in self._debts:
+            if group in blocked or pending_ops(array):
+                blocked.add(group)
+                waiting.append((array, group, seconds))
+                continue
+            position = self._order.setdefault(group, len(self._order))
+            self.now += seconds * (self.slow[position] if position < len(self.slow) else 1.0)
+        self._debts = waiting
+        return self.now
 
 
 class CountingFile:

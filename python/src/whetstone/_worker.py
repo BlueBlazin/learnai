@@ -148,6 +148,9 @@ class Worker:
         if not solution_path.is_file():
             raise HarnessFailure(f"solution file not found: {solution_path}")
 
+        if "jax" in (args.framework, problem.oracle_framework):
+            cache = assets.cache_dir(assets.root_of(problem.path), "jax")
+            frameworks.use_jax_compilation_cache(cache)
         try:
             fw = frameworks.get(args.framework)
             oracle_fw = frameworks.get(problem.oracle_framework)

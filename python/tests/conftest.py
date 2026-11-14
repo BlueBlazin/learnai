@@ -17,6 +17,18 @@ from whetstone.judge.context import Context, make_context
 from whetstone.judge.registry import Case
 from whetstone.problem import load_problem
 
+# Harness runs with JAX keep compiled kernels on disk under the content root
+# (frameworks.use_jax_compilation_cache). The judge's own tests use fixture catalogs
+# inside the repository as roots; their cache goes to a temporary directory instead.
+if "WHETSTONE_JAX_CACHE" not in os.environ:
+    import atexit
+    import shutil
+    import tempfile
+
+    _jax_cache = tempfile.mkdtemp(prefix="whetstone-test-jax-cache-")
+    os.environ["WHETSTONE_JAX_CACHE"] = _jax_cache
+    atexit.register(shutil.rmtree, _jax_cache, ignore_errors=True)
+
 FIXTURES = Path(__file__).parent / "fixtures"
 CATALOG = FIXTURES / "catalog"
 SOLUTIONS = FIXTURES / "solutions"

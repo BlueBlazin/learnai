@@ -131,6 +131,16 @@ def cmd_validate(args: argparse.Namespace) -> int:
     summary = f"{len(reports) - failed - skipped} of {len(reports)} problems passed validation"
     if skipped:
         summary += f"; {skipped} skipped (not validated on this machine, see above)"
+    partial = sum(
+        1
+        for report in reports
+        if report.status == "ok" and any("NOT validated" in w for w in report.warnings)
+    )
+    if partial:
+        summary += (
+            f"; {partial} passed with cases that could NOT be validated on this machine "
+            "(see the warnings above)"
+        )
     print(summary)
     return 1 if failed else 0
 
@@ -254,6 +264,80 @@ def _assets_fetch(root: Path, args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+#: Distributions `ws doctor` reports, by group. Versions are read from the installed
+#: metadata, so nothing is imported to find them.
+DOCTOR_FRAMEWORKS = ("torch", "jax", "mlx")
+DOCTOR_PACKAGES = (
+    "numpy", "triton", "huggingface_hub", "safetensors", "tokenizers", "transformers",
+    "mlx-lm",
+)  # fmt: skip
+
+
+def doctor_report(root: Path) -> dict:
+    """The document ``ws doctor --json`` prints (PROBLEM_AUTHORING section 19)."""
+    import os
+    import platform
+    from importlib import metadata
+
+    from whetstone import hardware
+
+    def version(name: str) -> str | None:
+        try:
+            return metadata.version(name)
+        except Exception:  # noqa: BLE001 - not installed, or broken metadata
+            return None
+
+    override = os.environ.get("WHETSTONE_HARDWARE")
+    return {
+        "schema": 1,
+        "whetstone": __version__,
+        "python": platform.python_version(),
+        "executable": sys.executable,
+        "platform": {
+            "system": platform.system(),
+            "machine": platform.machine(),
+            "release": platform.release(),
+        },
+        "frameworks": {name: version(name) for name in DOCTOR_FRAMEWORKS},
+        "packages": {name: version(name) for name in DOCTOR_PACKAGES},
+        "hardware": hardware.report(),
+        "hardware_override": (
+            None
+            if override is None
+            else sorted({item.strip() for item in override.split(",") if item.strip()} | {"cpu"})
+        ),
+        "root": str(root),
+        "models_dir": str(assets.models_dir(root)),
+    }
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    report = doctor_report(find_root())
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return 0
+    system = report["platform"]
+    print(f"whetstone {report['whetstone']}, python {report['python']} ({report['executable']})")
+    print(f"platform   {system['system']} {system['machine']} {system['release']}")
+    for group in ("frameworks", "packages"):
+        for name, found in report[group].items():
+            print(f"{name:<16} {found or 'not installed'}")
+    hw = report["hardware"]
+    print(f"cpu        {hw['cpu']['cores']} cores")
+    for key, label in (("mlx-gpu", "mlx-gpu"), ("cuda", "cuda")):
+        item = hw[key]
+        if item["present"]:
+            memory = item["memory_bytes"]
+            size = f", {assets.format_size(memory)}" if memory else ""
+            print(f"{label:<10} {item['name'] or 'present'}{size}")
+        else:
+            print(f"{label:<10} not available")
+    if report["hardware_override"] is not None:
+        print(f"WHETSTONE_HARDWARE pretends: {', '.join(report['hardware_override'])}")
+    print(f"models     {report['models_dir']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ws", description="Whetstone problems from the terminal.")
     parser.add_argument("--version", action="version", version=f"whetstone {__version__}")
@@ -311,6 +395,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-verify", action="store_true", help="skip the SHA-256 check after downloading"
     )
 
+    cmd = sub.add_parser("doctor", help="what this environment has: versions and hardware")
+    cmd.add_argument("--json", action="store_true", help="print one JSON document")
+
     cmd = sub.add_parser("new", help="scaffold a problem directory")
     cmd.add_argument("target", metavar="<track>/<id>")
     cmd.add_argument("--title", default=None)
@@ -338,6 +425,8 @@ def _dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         return cmd_validate(args)
     if args.command == "assets":
         return cmd_assets(args)
+    if args.command == "doctor":
+        return cmd_doctor(args)
     if args.command == "new":
         return cmd_new(args)
     parser.print_help()

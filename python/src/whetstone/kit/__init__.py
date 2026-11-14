@@ -14,18 +14,33 @@ Kit objects are small and meant to be read. Anything with instrumentation expose
     real models  RealModel, RealLM, RealConfig, Weights, SafetensorsFile, ByteLevelBPE,
                  dequantize, unpack_codes, bf16_to_f32, SMALL, LARGE_8BIT
     files        CountingFile
-    MLX          MLXTinyLM, EvalSpy, TraceCounter, mlx_memory
+    numbers      logit_kl
+    MLX          MLXTinyLM, EvalSpy, TraceCounter, mlx_memory, pending_ops, watch_load,
+                 LazyClock
+    CUDA on CPU  SyncSpy, DeviceSpy, FakeDevice, RealDevice, OOMModel, FakeCudaGraph,
+                 CompileCounter, TransferSpy, tritonshim
 
 The MLX names need the ``mlx`` extra and are imported on first use, so the kit itself
-imports on any machine. Real-model objects need only numpy plus the downloaded asset.
+imports on any machine. The CUDA tools work on CPU tensors and import torch on first
+use. Real-model objects need only numpy plus the downloaded asset.
 """
 
 from typing import Any
 
-from whetstone.kit import ops, workloads
+from whetstone.kit import ops, tritonshim, workloads
 from whetstone.kit.bpe import ByteLevelBPE
 from whetstone.kit.constraint import DFAConstraint, TokenConstraint
 from whetstone.kit.counters import Counters
+from whetstone.kit.cudatools import (
+    CompileCounter,
+    DeviceSpy,
+    FakeCudaGraph,
+    FakeDevice,
+    OOMModel,
+    RealDevice,
+    SyncSpy,
+    TransferSpy,
+)
 from whetstone.kit.decoder import (
     DecoderConfig,
     decoder_block_ref,
@@ -35,7 +50,16 @@ from whetstone.kit.decoder import (
 )
 from whetstone.kit.dfa import DEAD, CharDFA
 from whetstone.kit.draft import draft_target_pair
-from whetstone.kit.mlxtools import CountingFile, EvalSpy, TraceCounter, mlx_memory
+from whetstone.kit.metrics import logit_kl
+from whetstone.kit.mlxtools import (
+    CountingFile,
+    EvalSpy,
+    LazyClock,
+    TraceCounter,
+    mlx_memory,
+    pending_ops,
+    watch_load,
+)
 from whetstone.kit.realmodel import (
     LARGE_8BIT,
     SMALL,
@@ -78,17 +102,24 @@ __all__ = [
     "STEP_DONE_PRIORITY",
     "ByteLevelBPE",
     "CharDFA",
+    "CompileCounter",
     "CostModel",
     "Counters",
     "CountingFile",
     "DFAConstraint",
     "DecoderConfig",
+    "DeviceSpy",
     "EvalSpy",
+    "FakeCudaGraph",
+    "FakeDevice",
     "KVCache",
+    "LazyClock",
     "MLXTinyLM",
+    "OOMModel",
     "OutOfBlocks",
     "ProtocolViolation",
     "RealConfig",
+    "RealDevice",
     "RealLM",
     "RealModel",
     "SafetensorsFile",
@@ -99,10 +130,12 @@ __all__ = [
     "SimRequest",
     "StepResult",
     "StreamRecord",
+    "SyncSpy",
     "TinyLM",
     "TokenConstraint",
     "ToyVocab",
     "TraceCounter",
+    "TransferSpy",
     "Weights",
     "bf16_to_f32",
     "decoder_block_ref",
@@ -111,8 +144,12 @@ __all__ = [
     "dequantize",
     "draft_target_pair",
     "layer_params",
+    "logit_kl",
     "mlx_memory",
     "ops",
+    "pending_ops",
+    "tritonshim",
     "unpack_codes",
+    "watch_load",
     "workloads",
 ]

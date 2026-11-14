@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import traceback
 from collections.abc import Iterable
 
@@ -14,11 +15,39 @@ def _same_file(a: str, b: str) -> bool:
         return os.path.abspath(a) == os.path.abspath(b)
 
 
+_MEANINGFUL = re.compile(r"\w")
+
+
 def exception_line(exc: BaseException) -> str:
-    """``TypeError: message`` on one line."""
-    text = "".join(traceback.format_exception_only(type(exc), exc)).strip()
-    lines = text.splitlines()
-    return lines[-1] if lines else type(exc).__name__
+    """``TypeError: message`` on one line, whatever the exception's text looks like.
+
+    A multi-line message (framework errors often are: a summary, then shapes, hints,
+    or a stack of their own) is reduced to the exception type and the first line that
+    says something. A first line that only introduces what follows (it ends with a
+    colon) is joined with the next one. Nothing is added that the exception did not
+    say itself, so the hidden-case rule (ARCHITECTURE 3.6) is unaffected.
+    """
+    formatted = "".join(traceback.format_exception_only(type(exc), exc)).strip()
+    if isinstance(exc, SyntaxError):
+        # The file, source line, and caret come first; the last line is the message.
+        lines = formatted.splitlines()
+        return lines[-1] if lines else type(exc).__name__
+    try:
+        text = str(exc)
+    except Exception:  # noqa: BLE001 - a broken __str__ must not break the report
+        text = ""
+    lines = [" ".join(line.split()) for line in text.splitlines()]
+    meaningful = [line for line in lines if _MEANINGFUL.search(line)]
+    # The type as Python prints it (``module.Name`` for non-builtins).
+    kind = formatted.split(":", 1)[0].splitlines()[0].strip() if formatted else ""
+    if not kind or " " in kind:
+        kind = type(exc).__name__
+    if not meaningful:
+        return kind
+    first = meaningful[0]
+    if first.endswith(":") and len(meaningful) > 1:
+        first = f"{first} {meaningful[1]}"
+    return f"{kind}: {first}"
 
 
 def user_location(exc: BaseException, user_path: str) -> str | None:

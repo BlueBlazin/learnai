@@ -12,7 +12,12 @@ uv run --extra jax --extra mlx pytest
 uv run --extra jax --extra mlx ruff check
 uv run --extra jax --extra mlx ws list
 uv run --extra jax --extra mlx ws validate --all
+uv run --extra jax --extra mlx ws doctor --json     # versions and hardware of this environment
 ```
+
+The same commands work on Linux (x86_64 with CUDA, aarch64): MLX is behind an
+Apple-silicon marker, so `--extra mlx` installs nothing there, and torch comes with
+its CUDA runtime and Triton.
 
 The `models` extra (huggingface_hub, safetensors, tokenizers, transformers, mlx-lm) is
 for real-model problems: `ws assets fetch` needs it to download weights into
@@ -34,12 +39,13 @@ src/whetstone/
   protocol.py     the @@WS@@ event format
   problem.py      problem.toml / track.toml loading, catalog discovery
   assets.py       [[assets]]: declarations, what is on disk, ws assets list | fetch
-  hardware.py     which `requires` this machine meets (mlx-gpu, cuda)
+  hardware.py     which `requires` this machine meets (mlx-gpu, cuda), and its devices
   judge/          the test authoring API: @case, Context, check, adapters,
                   speed, simclock, service
   kit/            objects problems hand to solutions: TinyLM, SimModel, Counters,
-                  MLXTinyLM and the MLX instruments, RealModel and the real-model loaders
-  cli.py          ws list | run | submit | validate | new | assets
+                  MLXTinyLM and the MLX instruments, RealModel and the real-model loaders,
+                  the CUDA-on-CPU tools (cudatools.py) and tritonshim.py
+  cli.py          ws list | run | submit | validate | new | assets | doctor
   validate.py     the quality gate
   scaffold.py     ws new
   render.py       terminal rendering of the event stream

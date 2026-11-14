@@ -188,6 +188,14 @@ def models_dir(root: Path) -> Path:
     return Path(override).resolve() if override else root / ".whetstone" / "models"
 
 
+def cache_dir(root: Path, name: str) -> Path:
+    """Where the harness keeps disposable state: ``<root>/.whetstone/cache/<name>``.
+
+    Anything under it may be deleted at any time; it only makes later runs faster.
+    """
+    return root / ".whetstone" / "cache" / name
+
+
 def root_of(problem_dir: Path) -> Path:
     """The content root of a problem at ``<root>/problems/<track>/<id>``."""
     env = os.environ.get("WHETSTONE_ROOT")
