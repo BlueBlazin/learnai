@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 236">
+  <title>Blocking evaluation alternates GPU and Python; asynchronous evaluation overlaps them</title>
+  <desc>Two timelines, each with a GPU lane and a Python lane. In the upper one, labeled mx.eval then read, the GPU computes step 0, then stands idle while Python detokenizes token 0, then computes step 1, then stands idle again: the two lanes are never busy at the same time. In the lower one, labeled mx.async_eval of the next step then read, the GPU computes steps 0, 1, 2, and 3 back to back, and Python detokenizes token 0 while the GPU computes step 1, token 1 during step 2, and token 2 during step 3.</desc>
+
+  <!-- Geometry: lanes start at x = 78. A step is 80 wide, a detokenization 60. -->
+
+  <!-- Upper timeline: blocking -->
+  <text x="10" y="14" font-size="13"><tspan style="font-family: var(--figure-mono)">mx.eval</tspan>, then read: one side always waits</text>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="10" y="41">GPU</text>
+    <text x="10" y="71">Python</text>
+  </g>
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="78" y1="52" x2="470" y2="52"/>
+  </g>
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <rect x="78" y="26" width="80" height="22" rx="3"/>
+    <rect x="218" y="26" width="80" height="22" rx="3"/>
+    <rect x="358" y="26" width="80" height="22" rx="3"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-accent)">
+    <text x="118" y="42">step 0</text>
+    <text x="258" y="42">step 1</text>
+    <text x="398" y="42">step 2</text>
+  </g>
+  <g fill="none" stroke-width="1.5" stroke-dasharray="5 3" style="stroke: var(--figure-straw)">
+    <rect x="158" y="56" width="60" height="22" rx="3"/>
+    <rect x="298" y="56" width="60" height="22" rx="3"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-straw)">
+    <text x="188" y="72">text 0</text>
+    <text x="328" y="72">text 1</text>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="188" y="42">idle</text>
+    <text x="328" y="42">idle</text>
+  </g>
+
+  <!-- Lower timeline: step t + 1 is scheduled before token t is read -->
+  <text x="10" y="116" font-size="13"><tspan style="font-family: var(--figure-mono)">mx.async_eval</tspan> of the next step, then read: they overlap</text>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="10" y="143">GPU</text>
+    <text x="10" y="173">Python</text>
+  </g>
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="78" y1="154" x2="470" y2="154"/>
+  </g>
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <rect x="78" y="128" width="80" height="22" rx="3"/>
+    <rect x="158" y="128" width="80" height="22" rx="3"/>
+    <rect x="238" y="128" width="80" height="22" rx="3"/>
+    <rect x="318" y="128" width="80" height="22" rx="3"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-accent)">
+    <text x="118" y="144">step 0</text>
+    <text x="198" y="144">step 1</text>
+    <text x="278" y="144">step 2</text>
+    <text x="358" y="144">step 3</text>
+  </g>
+  <g fill="none" stroke-width="1.5" stroke-dasharray="5 3" style="stroke: var(--figure-straw)">
+    <rect x="158" y="158" width="60" height="22" rx="3"/>
+    <rect x="238" y="158" width="60" height="22" rx="3"/>
+    <rect x="318" y="158" width="60" height="22" rx="3"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-straw)">
+    <text x="188" y="174">text 0</text>
+    <text x="268" y="174">text 1</text>
+    <text x="348" y="174">text 2</text>
+  </g>
+
+  <!-- Time axis -->
+  <line x1="78" y1="204" x2="463" y2="204" fill="none" stroke="currentColor" stroke-width="1"/>
+  <polygon points="470,204 463,200.5 463,207.5"/>
+  <text x="78" y="224" font-size="13" style="fill: var(--figure-muted)">time</text>
+  <text x="470" y="224" font-size="13" text-anchor="end" style="fill: var(--figure-muted)">text t: detokenize token t, hand it to the consumer</text>
+</svg>

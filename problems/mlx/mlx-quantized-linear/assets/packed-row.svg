@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 252">
+  <title>One row of a weight matrix before and after mx.quantize with groups of 64 and 4 bits</title>
+  <desc>At the top, one row of 64 float32 weights, 256 bytes. An arrow labeled mx.quantize leads down to what replaces it: eight uint32 words holding eight 4-bit codes each, 32 bytes, followed by one float32 scale and one float32 bias for the group, 4 bytes each. At the bottom, the first word of the worked example, 0x76543210, is drawn as eight 4-bit cells from bit 31 on the left to bit 0 on the right; the cells read 7, 6, 5, 4, 3, 2, 1, 0, so code 0 sits in the lowest four bits and code 7 in the highest.</desc>
+
+  <!-- The float row -->
+  <text x="10" y="14" font-size="13">one row of the float weight: 64 float32 values, 256 bytes</text>
+  <rect x="10" y="22" width="460" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="67.5" y1="22" x2="67.5" y2="44"/>
+    <line x1="125" y1="22" x2="125" y2="44"/>
+    <line x1="182.5" y1="22" x2="182.5" y2="44"/>
+    <line x1="240" y1="22" x2="240" y2="44"/>
+    <line x1="297.5" y1="22" x2="297.5" y2="44"/>
+    <line x1="355" y1="22" x2="355" y2="44"/>
+    <line x1="412.5" y1="22" x2="412.5" y2="44"/>
+  </g>
+
+  <!-- mx.quantize -->
+  <line x1="40" y1="48" x2="40" y2="71" fill="none" stroke="currentColor" stroke-width="1"/>
+  <polygon points="40,78 36.5,71 43.5,71"/>
+  <text x="52" y="68" font-size="13" style="font-family: var(--figure-mono); fill: var(--figure-muted)">mx.quantize(w, group_size=64, bits=4)</text>
+
+  <!-- The packed row: eight words, one scale, one bias -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="10" y="84" width="40" height="24" rx="3"/>
+    <rect x="52" y="84" width="40" height="24" rx="3"/>
+    <rect x="94" y="84" width="40" height="24" rx="3"/>
+    <rect x="136" y="84" width="40" height="24" rx="3"/>
+    <rect x="178" y="84" width="40" height="24" rx="3"/>
+    <rect x="220" y="84" width="40" height="24" rx="3"/>
+    <rect x="262" y="84" width="40" height="24" rx="3"/>
+    <rect x="304" y="84" width="40" height="24" rx="3"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="30" y="101">u32</text>
+    <text x="72" y="101">u32</text>
+    <text x="114" y="101">u32</text>
+    <text x="156" y="101">u32</text>
+    <text x="198" y="101">u32</text>
+    <text x="240" y="101">u32</text>
+    <text x="282" y="101">u32</text>
+    <text x="324" y="101">u32</text>
+  </g>
+  <rect x="362" y="84" width="50" height="24" rx="3" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+  <rect x="420" y="84" width="50" height="24" rx="3" fill="none" stroke-width="1.5" stroke-dasharray="5 3" style="stroke: var(--figure-straw)"/>
+  <text x="387" y="101" font-size="13" text-anchor="middle" style="fill: var(--figure-accent)">scale</text>
+  <text x="445" y="101" font-size="13" text-anchor="middle" style="fill: var(--figure-straw)">bias</text>
+  <g font-size="13">
+    <text x="10" y="126"><tspan style="font-family: var(--figure-mono)">weight</tspan>: 8 words = 64 codes, 32 bytes</text>
+    <text x="362" y="126">4 + 4 bytes</text>
+  </g>
+
+  <!-- One word, opened: code j occupies bits 4j to 4j + 3 -->
+  <line x1="30" y1="134" x2="30" y2="163" fill="none" stroke-width="1" style="stroke: var(--figure-faint)"/>
+  <text x="42" y="156" font-size="13">the first word of the example, <tspan style="font-family: var(--figure-mono)">0x76543210</tspan>:</text>
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <rect x="10" y="166" width="460" height="26"/>
+    <line x1="67.5" y1="166" x2="67.5" y2="192"/>
+    <line x1="125" y1="166" x2="125" y2="192"/>
+    <line x1="182.5" y1="166" x2="182.5" y2="192"/>
+    <line x1="240" y1="166" x2="240" y2="192"/>
+    <line x1="297.5" y1="166" x2="297.5" y2="192"/>
+    <line x1="355" y1="166" x2="355" y2="192"/>
+    <line x1="412.5" y1="166" x2="412.5" y2="192"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="38.8" y="184">7</text>
+    <text x="96.3" y="184">6</text>
+    <text x="153.8" y="184">5</text>
+    <text x="211.3" y="184">4</text>
+    <text x="268.8" y="184">3</text>
+    <text x="326.3" y="184">2</text>
+    <text x="383.8" y="184">1</text>
+    <text x="441.3" y="184">0</text>
+  </g>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="10" y="210">bit 31</text>
+    <text x="470" y="210" text-anchor="end">bit 0</text>
+    <text x="38.8" y="232" text-anchor="middle">code 7</text>
+    <text x="441.3" y="232" text-anchor="middle">code 0</text>
+    <text x="240" y="232" text-anchor="middle">code j is bits 4j to 4j + 3</text>
+  </g>
+</svg>

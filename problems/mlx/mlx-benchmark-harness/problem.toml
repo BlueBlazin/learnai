@@ -1,0 +1,12 @@
+id = "mlx-benchmark-harness"
+title = "Benchmarking a Lazy Framework"
+track = "mlx"
+order = 130
+difficulty = "medium"
+frameworks = ["mlx"]
+judges = ["numeric", "cost"]
+tags = ["mlx", "benchmarking", "lazy-evaluation", "warm-up", "tokens-per-second"]
+prerequisites = ["mlx-lazy-eval-placement", "latency-metrics"]
+requires = "mlx-gpu"
+entry = ["benchmark"]
+time_limit_s = 10

@@ -1,0 +1,22 @@
+id = "mlx-quantized-linear"
+title = "A Quantized Linear Layer"
+track = "mlx"
+order = 100
+difficulty = "medium"
+frameworks = ["mlx"]
+judges = ["numeric", "cost"]
+tags = ["mlx", "quantization", "quantized-matmul", "module", "memory"]
+prerequisites = ["groupwise-4bit", "quantized-matmul"]
+requires = "mlx-gpu"
+entry = ["QLinear"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: build the layer from mx.quantize and
+# mx.quantized_matmul, not from the layers MLX ships.
+forbidden = [
+    "mlx.nn.QuantizedLinear",
+    "mlx.nn.QQLinear",
+    "mlx.nn.QuantizedEmbedding",
+    "mlx.nn.Linear.to_quantized",
+    "mlx.nn.Embedding.to_quantized",
+    "mlx.nn.quantize",
+]

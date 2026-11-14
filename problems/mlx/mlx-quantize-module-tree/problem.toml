@@ -1,0 +1,14 @@
+id = "mlx-quantize-module-tree"
+title = "Quantizing a Model with a Mixed Recipe"
+track = "mlx"
+order = 110
+difficulty = "medium"
+frameworks = ["mlx"]
+judges = ["numeric", "cost"]
+tags = ["mlx", "quantization", "module-tree", "bits-per-weight", "memory"]
+prerequisites = ["mlx-quantized-linear"]
+requires = "mlx-gpu"
+entry = ["quantize_model", "bits_per_weight"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: walk the tree yourself.
+forbidden = ["mlx.nn.quantize"]

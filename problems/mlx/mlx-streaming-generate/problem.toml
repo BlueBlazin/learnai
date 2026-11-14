@@ -1,0 +1,12 @@
+id = "mlx-streaming-generate"
+title = "Streaming Generation with Async Evaluation"
+track = "mlx"
+order = 120
+difficulty = "medium"
+frameworks = ["mlx"]
+judges = ["numeric", "cost"]
+tags = ["mlx", "async-eval", "streaming", "greedy-decoding", "lazy-evaluation"]
+prerequisites = ["mlx-lazy-eval-placement"]
+requires = "mlx-gpu"
+entry = ["stream_generate"]
+time_limit_s = 10
