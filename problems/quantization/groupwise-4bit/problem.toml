@@ -1,0 +1,12 @@
+id = "groupwise-4bit"
+title = "Group-Wise 4-bit Quantization"
+track = "quantization"
+order = 50
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["quantization", "4-bit", "groups", "mlx"]
+prerequisites = ["affine-int8"]
+requires = "cpu"
+entry = ["quantize_groups"]
+time_limit_s = 10

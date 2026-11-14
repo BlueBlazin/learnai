@@ -1,0 +1,12 @@
+id = "clipping-calibration"
+title = "Calibrating a Clipping Range"
+track = "quantization"
+order = 70
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["quantization", "calibration", "clipping", "mse"]
+prerequisites = ["affine-int8", "quant-error-metrics"]
+requires = "cpu"
+entry = ["best_clip"]
+time_limit_s = 10

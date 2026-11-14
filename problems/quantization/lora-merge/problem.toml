@@ -1,0 +1,12 @@
+id = "lora-merge"
+title = "Merging a LoRA Adapter"
+track = "quantization"
+order = 80
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["lora", "adapters", "low-rank", "linear"]
+prerequisites = []
+requires = "cpu"
+entry = ["merge", "unmerge", "lora_forward"]
+time_limit_s = 10

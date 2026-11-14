@@ -1,0 +1,12 @@
+id = "quantized-matmul"
+title = "Multiplying Without Dequantizing"
+track = "quantization"
+order = 60
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["quantization", "matmul", "groups", "mlx"]
+prerequisites = ["groupwise-4bit"]
+requires = "cpu"
+entry = ["qmatmul"]
+time_limit_s = 10
