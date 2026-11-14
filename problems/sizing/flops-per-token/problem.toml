@@ -1,0 +1,12 @@
+id = "flops-per-token"
+title = "FLOPs for Prefill and Decode"
+track = "sizing"
+order = 50
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["sizing", "flops", "prefill", "decode", "attention", "gqa"]
+prerequisites = ["param-count"]
+requires = "cpu"
+entry = ["prefill_flops", "decode_flops"]
+time_limit_s = 10

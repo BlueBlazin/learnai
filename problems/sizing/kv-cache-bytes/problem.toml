@@ -1,0 +1,12 @@
+id = "kv-cache-bytes"
+title = "KV Cache Bytes per Token"
+track = "sizing"
+order = 20
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["sizing", "kv-cache", "memory", "gqa", "sliding-window"]
+prerequisites = []
+requires = "cpu"
+entry = ["kv_bytes_per_token", "kv_bytes"]
+time_limit_s = 10

@@ -1,0 +1,12 @@
+id = "memory-bandwidth-bound"
+title = "The Memory-Bandwidth Bound on Tokens per Second"
+track = "sizing"
+order = 60
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["sizing", "bandwidth", "throughput", "batching", "decode"]
+prerequisites = ["param-count", "kv-cache-bytes"]
+requires = "cpu"
+entry = ["decode_tokens_per_s", "crossover_batch"]
+time_limit_s = 10

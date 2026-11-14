@@ -1,0 +1,12 @@
+id = "latency-percentiles"
+title = "Percentiles Done Right"
+track = "sizing"
+order = 40
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["benchmarking", "latency", "percentiles", "p99", "aggregation"]
+prerequisites = []
+requires = "cpu"
+entry = ["percentile_nearest_rank", "percentile_linear", "merge_percentile"]
+time_limit_s = 10

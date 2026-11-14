@@ -1,0 +1,12 @@
+id = "param-count"
+title = "Counting Parameters"
+track = "sizing"
+order = 10
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["sizing", "parameters", "gqa", "swiglu", "tied-embeddings"]
+prerequisites = []
+requires = "cpu"
+entry = ["count_params"]
+time_limit_s = 10

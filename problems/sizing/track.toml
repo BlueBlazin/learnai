@@ -1,0 +1,4 @@
+id = "sizing"
+title = "Sizing and Benchmarking"
+description = "Predicting memory and speed on paper before anything runs, then measuring the right thing: parameter counts, KV cache bytes, FLOPs, bandwidth bounds, and latency percentiles, with every convention stated."
+order = 90
