@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 196">
+  <title>Sliding windows over a text of seven tokens</title>
+  <desc>Three rows, one per window. Window 0 covers positions 0 to 3 and scores positions 1, 2, 3. Window 1 covers positions 2 to 5 and scores positions 4 and 5. Window 2 covers positions 4 to 6 and scores position 6. The other tokens of each window are context only.</desc>
+
+  <!-- position axis -->
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="26" y="20" text-anchor="start">position</text>
+    <text x="141" y="20">0</text>
+    <text x="187" y="20">1</text>
+    <text x="233" y="20">2</text>
+    <text x="279" y="20">3</text>
+    <text x="325" y="20">4</text>
+    <text x="371" y="20">5</text>
+    <text x="417" y="20">6</text>
+  </g>
+  <g fill="none" style="stroke: var(--figure-faint)" stroke-width="1" stroke-dasharray="2 4">
+    <line x1="141" y1="28" x2="141" y2="160"/>
+    <line x1="187" y1="28" x2="187" y2="160"/>
+    <line x1="233" y1="28" x2="233" y2="160"/>
+    <line x1="279" y1="28" x2="279" y2="160"/>
+    <line x1="325" y1="28" x2="325" y2="160"/>
+    <line x1="371" y1="28" x2="371" y2="160"/>
+    <line x1="417" y1="28" x2="417" y2="160"/>
+  </g>
+
+  <!-- window 0: positions 0..3, scores 1, 2, 3 -->
+  <text x="26" y="57" font-size="13">window 0</text>
+  <rect x="124" y="38" width="34" height="28" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <g style="fill: var(--figure-accent); stroke: var(--figure-accent)" stroke-width="1.5">
+    <rect x="170" y="38" width="34" height="28" rx="3"/>
+    <rect x="216" y="38" width="34" height="28" rx="3"/>
+    <rect x="262" y="38" width="34" height="28" rx="3"/>
+  </g>
+
+  <!-- window 1: positions 2..5, scores 4, 5 -->
+  <text x="26" y="101" font-size="13">window 1</text>
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="216" y="82" width="34" height="28" rx="3"/>
+    <rect x="262" y="82" width="34" height="28" rx="3"/>
+  </g>
+  <g style="fill: var(--figure-accent); stroke: var(--figure-accent)" stroke-width="1.5">
+    <rect x="308" y="82" width="34" height="28" rx="3"/>
+    <rect x="354" y="82" width="34" height="28" rx="3"/>
+  </g>
+
+  <!-- window 2: positions 4..6, scores 6 -->
+  <text x="26" y="145" font-size="13">window 2</text>
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="308" y="126" width="34" height="28" rx="3"/>
+    <rect x="354" y="126" width="34" height="28" rx="3"/>
+  </g>
+  <rect x="400" y="126" width="34" height="28" rx="3" stroke-width="1.5" style="fill: var(--figure-accent); stroke: var(--figure-accent)"/>
+
+  <!-- legend -->
+  <rect x="124" y="174" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="146" y="186" font-size="13">context only</text>
+  <rect x="262" y="174" width="16" height="14" rx="2" stroke-width="1.5" style="fill: var(--figure-accent); stroke: var(--figure-accent)"/>
+  <text x="284" y="186" font-size="13">scored by this window</text>
+</svg>

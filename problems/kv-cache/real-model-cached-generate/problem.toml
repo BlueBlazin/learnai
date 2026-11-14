@@ -1,0 +1,34 @@
+id = "real-model-cached-generate"
+title = "Cached Generation on a Real Model"
+track = "kv-cache"
+order = 160
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "speed"]
+tags = ["kv-cache", "generation", "granite", "rope", "grouped-query-attention", "real-model"]
+prerequisites = ["kv-cache-append", "cached-rope-offsets", "real-model-logits"]
+requires = "cpu"
+entry = ["prefill", "decode_step", "generate"]
+# The first case on the real model decodes 352 M weights from bfloat16 and hands them
+# to the framework (1 to 2 s, once per run). Reading 768 tokens takes 0.6 s in torch
+# and about 3 s in JAX the first time (it compiles each new shape once).
+time_limit_s = 30
+# The statement's rule: the forward pass and the cache are yours. The kit's reference
+# model has a cache of its own (rejects the mutant uses_kit_reference); MLX's built-in
+# rotary embedding and the model libraries are ruled out as in real-model-logits.
+forbidden = [
+    "whetstone.kit.realmodel.RealLM",
+    "whetstone.kit.realmodel.RealModel",
+    "mlx.nn.RoPE",
+    "mlx.core.fast.rope",
+]
+forbidden_source = ["transformers", "mlx_lm"]
+
+# The weights, plus config.json, which the kit reads the architecture from. The token
+# ids of the prompts are in the fixture, so the tokenizer is not needed.
+[[assets]]
+name = "granite-4.0-350m"
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
+files = ["config.json", "model.safetensors"]
+size_mb = 705

@@ -1,0 +1,26 @@
+# BUG: scores every token of every window, so tokens in the overlap of two windows are counted twice (once with little context), and divides by the number of terms.
+from collections.abc import Callable
+
+import torch
+
+
+def perplexity(
+    forward: Callable[[torch.Tensor], torch.Tensor],
+    token_ids: torch.Tensor,
+    max_len: int,
+    stride: int,
+) -> torch.Tensor:
+    n = token_ids.shape[0]
+    total = torch.zeros((), dtype=torch.float32)
+    count = 0
+    for begin in range(0, n, stride):
+        end = min(begin + max_len, n)
+        logp = torch.log_softmax(forward(token_ids[begin:end]), dim=-1)  # (end - begin, V)
+        # Row t of this window predicts token begin + t + 1. Only the tokens that no
+        # earlier window scored are counted; the ones before them are context.
+        rows = torch.arange(0, end - 1 - begin)
+        total = total + logp[rows, token_ids[begin + 1 : end]].sum()
+        count += end - 1 - begin
+        if end == n:
+            break
+    return torch.exp(-total / count)

@@ -1,0 +1,32 @@
+id = "mlx-quantized-checkpoint-load"
+title = "Reading an 8-bit Checkpoint"
+track = "quantization"
+order = 180
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric", "cost"]
+tags = ["quantization", "safetensors", "mlx", "bit-packing", "bfloat16", "mmap", "real-model"]
+prerequisites = ["bit-packing", "safetensors-parse"]
+requires = "cpu"
+entry = ["load_quantized"]
+time_limit_s = 10
+# The statement's rule: read the file and dequantize yourself. The kit's dequantizer
+# and its model loader, and MLX's loader and dequantizer, may not be called (rejects
+# the mutant uses_kit_dequantize); the safetensors package and the kit's reader are
+# ruled out of the source.
+forbidden = [
+    "whetstone.kit.realmodel.dequantize",
+    "whetstone.kit.realmodel.unpack_codes",
+    "whetstone.kit.realmodel.RealModel",
+    "mlx.core.dequantize",
+    "mlx.core.load",
+]
+forbidden_source = ["safetensors", "SafetensorsFile"]
+
+# Only the checkpoint: the cases that use it read three layers, 1.4 MB each, of 3.9 GB.
+[[assets]]
+name = "granite-4.2-3b-mlx-8bit"
+repo = "lmstudio-community/granite-4.2-3b-MLX-8bit"
+revision = "7c630b526561db6b4641767c54595fe494176695"
+files = ["model.safetensors"]
+size_mb = 3890

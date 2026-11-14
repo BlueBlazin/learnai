@@ -1,0 +1,23 @@
+id = "real-model-perplexity"
+title = "Perplexity of a Real Model"
+track = "foundations"
+order = 130
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["perplexity", "evaluation", "sliding-window", "granite", "real-model"]
+prerequisites = ["sequence-log-likelihood"]
+requires = "cpu"
+entry = ["perplexity"]
+# The first case on the real model decodes 352 M weights from bfloat16 (about 1 s, once
+# per run); a 16-token forward pass of the kit's numpy model is then about 0.1 s.
+time_limit_s = 20
+
+# The weights, plus config.json, which the kit reads the architecture from. The token
+# ids of the passages are in the fixture, so the tokenizer is not needed.
+[[assets]]
+name = "granite-4.0-350m"
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
+files = ["config.json", "model.safetensors"]
+size_mb = 705

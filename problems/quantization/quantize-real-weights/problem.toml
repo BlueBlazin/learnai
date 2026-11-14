@@ -1,0 +1,33 @@
+id = "quantize-real-weights"
+title = "Quantizing Real Weights"
+track = "quantization"
+order = 170
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["quantization", "affine", "groups", "sqnr", "bits-per-weight", "mlx", "granite", "real-model"]
+prerequisites = ["groupwise-4bit", "quant-error-metrics"]
+requires = "cpu"
+entry = ["quantize_dequantize", "quantize_report"]
+# The first case on the real model decodes 352 M weights from bfloat16 and hands them
+# to the framework (1 to 2 s, once per run); one pass over all of them takes under a
+# second. The two KL cases quantize matrix by matrix through numpy and take longer.
+time_limit_s = 30
+# The statement's rule: write the quantizer yourself. MLX's own is the oracle of this
+# problem and may not be called (rejects the mutant uses_builtin).
+forbidden = [
+    "mlx.core.quantize",
+    "mlx.core.dequantize",
+    "mlx.nn.quantize",
+    "mlx.nn.QuantizedLinear",
+    "mlx.nn.QuantizedEmbedding",
+]
+
+# The weights, plus config.json, which the kit reads the architecture from (for the
+# forward pass that measures the quantized model).
+[[assets]]
+name = "granite-4.0-350m"
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
+files = ["config.json", "model.safetensors"]
+size_mb = 705

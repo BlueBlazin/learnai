@@ -1,0 +1,26 @@
+id = "real-model-chat-turn"
+title = "One Chat Turn with a Real Model"
+track = "tokenization"
+order = 130
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["chat-template", "granite", "streaming", "detokenizer", "greedy", "real-model"]
+prerequisites = ["chat-template-render", "streaming-detokenizer"]
+requires = "cpu"
+entry = ["chat_turn"]
+# The first case on the real model decodes 352 M weights from bfloat16 (about 1 s, once
+# per run); reading a 40-token prompt with the kit's numpy model takes about 0.3 s.
+time_limit_s = 20
+# The statement's rule: write the template out by hand. A template engine and the
+# libraries that ship one are ruled out of the solution's source (rejects the mutant
+# uses_jinja).
+forbidden_source = ["jinja2", "transformers", "tokenizers"]
+
+# The tokenizer, the weights, and config.json, which the kit reads the architecture from.
+[[assets]]
+name = "granite-4.0-350m"
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
+files = ["config.json", "tokenizer.json", "model.safetensors"]
+size_mb = 712
