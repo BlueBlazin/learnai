@@ -88,10 +88,24 @@ def compare(
     )
 
 
-def require(result: SpeedResult, *, max_ratio: float, label: str, ctx: Any = None) -> None:
-    """Report the ``slowdown`` metric and fail if it exceeds ``max_ratio``."""
+def require(
+    result: SpeedResult,
+    *,
+    max_ratio: float,
+    label: str,
+    ctx: Any = None,
+    tokens: int | None = None,
+) -> None:
+    """Report the ``slowdown`` metric and fail if it exceeds ``max_ratio``.
+
+    With ``tokens`` (how many tokens one call handles) the solution's throughput is
+    reported too, as ``tokens_per_s``: a number to look at, never a threshold.
+    """
     if ctx is not None:
         ctx.metric("slowdown", round(result.ratio, 3), "x", max_ratio)
+        if tokens is not None and result.solution_s > 0:
+            rate = tokens / result.solution_s
+            ctx.metric("tokens_per_s", round(rate, 1), "tok/s", higher_is_better=True)
     if result.ratio > max_ratio:
         raise CheckFailure(
             f"{label}: {result.ratio:.1f}x slower than the reference (limit {max_ratio:g}x)",

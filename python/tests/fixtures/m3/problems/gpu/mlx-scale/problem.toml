@@ -1,0 +1,12 @@
+id = "mlx-scale"
+title = "Scale on the GPU"
+track = "gpu"
+order = 10
+difficulty = "easy"
+frameworks = ["mlx"]
+judges = ["numeric", "cost", "speed"]
+tags = ["fixture"]
+prerequisites = []
+requires = "mlx-gpu"
+entry = ["scale"]
+time_limit_s = 10

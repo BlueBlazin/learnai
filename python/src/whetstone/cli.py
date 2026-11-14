@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
-from whetstone import __version__, protocol, render, runner, scaffold
+from whetstone import __version__, assets, protocol, render, runner, scaffold
 from whetstone import validate as gate
 from whetstone.problem import Problem, ProblemError, discover, find_problem, find_root, problem_dirs
 
@@ -105,20 +106,32 @@ def cmd_validate(args: argparse.Namespace) -> int:
         print(f"ws validate: no problems under {root / 'problems'}", file=sys.stderr)
         return 2
 
-    reports = gate.validate(root, directories, jobs=args.jobs)
+    reports = gate.validate(
+        root, directories, jobs=args.jobs, require_assets=args.require_assets
+    )
     paint = render.Renderer().paint
+    tags = {
+        "ok": paint("ok  ", "pass"),
+        "fail": paint("FAIL", "fail"),
+        "skipped": paint("SKIP", "incomplete"),
+    }
     for report in reports:
-        status = paint("ok  ", "pass") if report.ok else paint("FAIL", "fail")
-        print(f"{status} {report.path.parent.name}/{report.problem_id}")
+        print(f"{tags[report.status]} {report.path.parent.name}/{report.problem_id}")
         if args.verbose or not report.ok:
             for check in report.checks:
                 print(f"       {paint(check, 'dim')}")
+        for skip in report.skips:
+            print(f"       skipped: {skip}")
         for warning in report.warnings:
             print(f"       warning: {warning}")
         for error in report.errors:
             print(f"       error: {error}")
-    failed = sum(1 for report in reports if not report.ok)
-    print(f"{len(reports) - failed} of {len(reports)} problems passed validation")
+    failed = sum(1 for report in reports if report.status == "fail")
+    skipped = sum(1 for report in reports if report.status == "skipped")
+    summary = f"{len(reports) - failed - skipped} of {len(reports)} problems passed validation"
+    if skipped:
+        summary += f"; {skipped} skipped (not validated on this machine, see above)"
+    print(summary)
     return 1 if failed else 0
 
 
@@ -151,6 +164,94 @@ def cmd_new(args: argparse.Namespace) -> int:
     print(f"every {gate.PLACEHOLDER} marker must be replaced before `ws validate` passes;")
     print("see docs/PROBLEM_AUTHORING.md")
     return 0
+
+
+def cmd_assets(args: argparse.Namespace) -> int:
+    root = find_root()
+    if args.action == "list":
+        return _assets_list(root, as_json=args.json)
+    if args.action == "fetch":
+        return _assets_fetch(root, args)
+    print("ws assets: give `list` or `fetch <name>`", file=sys.stderr)
+    return 2
+
+
+def _assets_list(root: Path, *, as_json: bool) -> int:
+    listing = assets.listing(root)
+    if as_json:
+        print(json.dumps(listing, indent=2))
+        return 0
+    if not listing["assets"]:
+        print("no problem in the catalog declares a model asset")
+    rows = [("ASSET", "STATE", "SIZE", "REPOSITORY", "USED BY")]
+    for item in listing["assets"]:
+        on_disk = item["bytes_on_disk"] if item["present"] else item["size_mb"] * 1e6
+        size = ("" if item["present"] else "~") + assets.format_size(on_disk)
+        used = ", ".join(item["problems"][:4])
+        if len(item["problems"]) > 4:
+            used += f", and {len(item['problems']) - 4} more"
+        rows.append((item["name"], item["state"], size, item["repo"], used))
+    if len(rows) > 1:
+        widths = [max(len(row[i]) for row in rows) for i in range(4)]
+        for row in rows:
+            print("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row[:4])) + "  " + row[4])
+    for item in listing["assets"]:
+        if not item["present"]:
+            why = f" ({item['reason']})" if item["reason"] else ""
+            print(f"{item['name']} is {item['state']}{why}: {item['fetch_command']}")
+    for issue in listing["issues"]:
+        print(f"warning: {issue['problem']}: {issue['message']}")
+    print(f"assets are stored under {listing['models_dir']}")
+    return 0
+
+
+def _assets_fetch(root: Path, args: argparse.Namespace) -> int:
+    merged, _ = assets.catalog(root)
+    # The house models can be fetched before any problem declares them (authors need
+    # the weights to write the problem). A catalog declaration wins when there is one.
+    from whetstone.kit.realmodel import HOUSE_MODELS
+
+    for name, spec in HOUSE_MODELS.items():
+        merged.setdefault(name, assets.CatalogAsset(spec))
+    if args.all == bool(args.names):
+        print("ws assets fetch: give asset names or --all (not both)", file=sys.stderr)
+        return 2
+    names = sorted(merged) if args.all else args.names
+    unknown = [name for name in names if name not in merged]
+    if unknown:
+        known = ", ".join(sorted(merged)) or "none"
+        print(
+            f"ws assets fetch: no asset named {', '.join(unknown)} in the catalog (known: {known})",
+            file=sys.stderr,
+        )
+        return 2
+
+    def show(event: dict) -> None:
+        kind = event["event"]
+        if args.json:
+            print(protocol.encode(event), flush=True)
+        elif kind == "asset_start":
+            total = assets.format_size(event["total_bytes"])
+            print(f"{event['asset']}: {len(event['files'])} files, {total}, from {event['repo']}")
+        elif kind == "asset_progress":
+            percent = 100 * event["done_bytes"] / max(event["total_bytes"], 1)
+            done, total = (assets.format_size(event[k]) for k in ("done_bytes", "total_bytes"))
+            print(f"  {percent:5.1f}%  {done} of {total}  {event['file']}", flush=True)
+        elif kind == "asset_file":
+            note = " (already downloaded)" if event["cached"] else ""
+            print(f"  done   {event['file']}{note}", flush=True)
+        elif kind == "asset_end" and event["ok"]:
+            print(f"{event['asset']}: ready at {event['path']}")
+        elif kind == "asset_end":
+            print(f"{event['asset']}: failed: {event['message']}", file=sys.stderr)
+
+    failed = 0
+    for name in names:
+        try:
+            assets.fetch(merged[name].spec, assets.models_dir(root), show, verify=not args.no_verify)
+        except assets.AssetError:
+            failed += 1  # reported through the asset_end event
+    return 1 if failed else 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -188,6 +289,27 @@ def build_parser() -> argparse.ArgumentParser:
     cmd.add_argument("--all", action="store_true", help="validate the whole catalog")
     cmd.add_argument("-j", "--jobs", type=int, default=None, help="parallel harness runs")
     cmd.add_argument("-v", "--verbose", action="store_true", help="also list passed checks")
+    cmd.add_argument(
+        "--require-assets",
+        action="store_true",
+        help="fail, instead of skipping, a problem whose model asset is not downloaded",
+    )
+
+    cmd = sub.add_parser("assets", help="model weights that real-model problems need")
+    actions = cmd.add_subparsers(dest="action", metavar="<action>")
+    action = actions.add_parser("list", help="what each problem needs and what is downloaded")
+    action.add_argument("--json", action="store_true", help="print one JSON document")
+    action = actions.add_parser(
+        "fetch", help="download assets into .whetstone/models (needs the `models` extra)"
+    )
+    action.add_argument("names", nargs="*", metavar="name", help="asset names")
+    action.add_argument("--all", action="store_true", help="every asset in the catalog")
+    action.add_argument(
+        "--json", action="store_true", help="print progress as @@WS@@ JSON lines"
+    )
+    action.add_argument(
+        "--no-verify", action="store_true", help="skip the SHA-256 check after downloading"
+    )
 
     cmd = sub.add_parser("new", help="scaffold a problem directory")
     cmd.add_argument("target", metavar="<track>/<id>")
@@ -214,6 +336,8 @@ def _dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         return cmd_run(args, args.command)
     if args.command == "validate":
         return cmd_validate(args)
+    if args.command == "assets":
+        return cmd_assets(args)
     if args.command == "new":
         return cmd_new(args)
     parser.print_help()

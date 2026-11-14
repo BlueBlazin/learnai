@@ -168,8 +168,11 @@ def create(
             raise ScaffoldError(f"unknown framework {name!r}")
     if "python" in frameworks and len(frameworks) > 1:
         raise ScaffoldError('"python" cannot be combined with tensor frameworks')
-    if "python" not in frameworks and "torch" not in frameworks:
-        raise ScaffoldError('tensor problems must include "torch" (the oracle)')
+    if "python" not in frameworks and "torch" not in frameworks and frameworks != ["mlx"]:
+        raise ScaffoldError(
+            'tensor problems must include "torch" (the oracle); the one exception is an '
+            'MLX-only problem, `--frameworks mlx`, whose MLX reference is the oracle'
+        )
     if difficulty not in DIFFICULTIES:
         raise ScaffoldError(f"difficulty must be one of {', '.join(DIFFICULTIES)}")
     existing = [p for p in (root / "problems").glob(f"*/{problem_id}") if p.is_dir()]
@@ -197,6 +200,7 @@ def create(
 
     title = title or problem_id.replace("-", " ").title()
     listed = ", ".join(f'"{name}"' for name in frameworks)
+    requires = "mlx-gpu" if frameworks == ["mlx"] else "cpu"
     write(
         "problem.toml",
         f'id = "{problem_id}"\n'
@@ -208,7 +212,7 @@ def create(
         'judges = ["numeric"]\n'
         f'tags = ["{PLACEHOLDER}"]\n'
         "prerequisites = []\n"
-        'requires = "cpu"\n'
+        f'requires = "{requires}"\n'
         'entry = ["scale"]\n'
         "time_limit_s = 10\n",
     )
@@ -224,7 +228,7 @@ def create(
             f"reference/{name}.py",
             _REFERENCE.format(imports=imports, tensor=tensor, todo=PLACEHOLDER, body=good),
         )
-    oracle = "python" if "python" in frameworks else "torch"
+    oracle = "torch" if "torch" in frameworks else frameworks[0]
     imports, tensor = _IMPORTS[oracle]
     write(
         "mutants/ignores_factor.py",

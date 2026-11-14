@@ -20,7 +20,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from whetstone import protocol
+from whetstone import assets, hardware, protocol
 from whetstone.capture import FdCapture
 from whetstone.problem import Problem, ProblemError, load_problem
 from whetstone.tracebacks import (
@@ -88,6 +88,9 @@ class Worker:
         #: Real case id -> the id that leaves the harness (opaque for hidden cases).
         self.wire: dict[str, str] = {}
         self.guard: Any = None  # forbidden-call guard, when the problem has a list
+        #: Real case id -> (skip object, message) for cases this machine cannot run.
+        self.skips: dict[str, tuple[dict[str, str], str]] = {}
+        self.hardware_met = True
 
     # -- emitting --------------------------------------------------------------
 
@@ -105,6 +108,7 @@ class Worker:
             "status": status,
             "passed": sum(1 for s in statuses if s == "pass"),
             "total": total,
+            "skipped": sum(1 for s in statuses if s == "skipped"),
             "duration_ms": round((time.perf_counter() - self.started_at) * 1000, 3),
             "metrics": metrics,
         }
@@ -133,6 +137,8 @@ class Worker:
             problem = load_problem(args.problem)
         except ProblemError as exc:
             raise HarnessFailure(str(exc)) from exc
+        if problem.asset_errors:
+            raise HarnessFailure("problem.toml: " + "; ".join(problem.asset_errors))
         if args.framework not in problem.frameworks:
             raise HarnessFailure(
                 f"problem {problem.id!r} does not support framework {args.framework!r} "
@@ -165,6 +171,10 @@ class Worker:
                     f"no case with id {args.case!r} in {args.mode} mode for {problem.id!r}"
                 )
 
+        models = assets.models_dir(assets.root_of(problem.path))
+        self.plan_skips(problem, cases, models)
+        runnable = [c for c in cases if c.id not in self.skips]
+
         env = {
             "python": platform.python_version(),
             "platform": f"{platform.system()} {platform.machine()}",
@@ -179,32 +189,44 @@ class Worker:
                 "problem": problem.id,
                 "framework": args.framework,
                 "mode": args.mode,
-                "cases": [
-                    {"id": identity[c.id][0], "name": identity[c.id][1], "public": c.public}
-                    for c in cases
-                ],
+                "cases": [self.case_info(c, identity) for c in cases],
                 "env": env,
+                "requires": problem.requires,
+                "requires_met": self.hardware_met,
             }
         )
 
-        if problem.forbidden:
+        if not runnable:
+            # Nothing this machine can run: the solution is not even imported.
+            for case in cases:
+                self.emit(self.skipped(case))
+            self.finish(problem, cases, ["skipped"] * len(cases), [])
+            return 0
+
+        if problem.forbidden or problem.forbidden_source:
             from whetstone.judge.forbidden import Guard
 
             # In place before the solution is imported, so that `from torch import
             # softmax` binds the guard, not the function.
-            self.guard = Guard(problem.forbidden, solution_path)
+            self.guard = Guard(problem.forbidden, solution_path, problem.forbidden_source)
             self.guard.install()
             found = self.guard.scan_source()
             if found is not None:
-                # A forbidden method that can only be detected in the source: nothing
-                # is run, and every case fails for that reason.
+                # Something that can only be detected in the source: nothing is run,
+                # and every case this machine can run fails for that reason.
                 detail = self.guard.rule_text()
+                statuses = []
                 for case in cases:
+                    if case.id in self.skips:
+                        self.emit(self.skipped(case))
+                        statuses.append("skipped")
+                        continue
                     wire_id = self.wire[case.id]
                     shown = detail if case.public or args.reveal else None
                     self.emit({"event": "case_start", "id": wire_id})
                     self.emit(self.case_end(wire_id, "fail", 0.0, found.message, shown, "", []))
-                self.end("wrong_answer", ["fail"] * len(cases), len(cases), [])
+                    statuses.append("fail")
+                self.finish(problem, cases, statuses, [])
                 return 0
 
         solution, failure = self.import_solution(problem, solution_path)
@@ -213,30 +235,138 @@ class Worker:
             statuses = []
             for case in cases:
                 statuses.append("skipped")
+                if case.id in self.skips:
+                    self.emit(self.skipped(case))
+                    continue
                 # One line only: the traceback is on the `end` event, once.
                 self.emit(
                     self.case_end(
-                        self.wire[case.id], "skipped", 0.0, "not run: " + message, None, "", []
+                        self.wire[case.id], "skipped", 0.0, "not run: " + message, None, "", [],
+                        skip={"kind": "aborted"},
                     )
-                )
+                )  # fmt: skip
             self.end("import_error", statuses, len(cases), [], message=message, detail=detail)
             return 0
 
-        store = ModuleStore(problem, solution, fw, oracle_fw)
-        statuses: list[str] = []
+        store = ModuleStore(problem, solution, fw, oracle_fw, models_dir=models)
+        statuses = []
         case_metrics: list[list[dict[str, Any]]] = []
         for case in cases:
+            if case.id in self.skips:
+                self.emit(self.skipped(case))
+                statuses.append("skipped")
+                continue
             result = self.run_case(problem, case, store, solution_path)
             statuses.append(result["status"])
             case_metrics.append(result["metrics"])
             self.emit(result)
-        self.end(
-            protocol.verdict_for(statuses),
-            statuses,
-            len(cases),
-            protocol.summarize_metrics(case_metrics),
-        )
+        self.finish(problem, cases, statuses, protocol.summarize_metrics(case_metrics))
         return 0
+
+    # -- cases this machine cannot run ---------------------------------------------
+
+    def plan_skips(self, problem: Problem, cases: list, models: Path) -> None:
+        """Decide, before anything runs, which cases this machine cannot run and why.
+
+        A case is skipped when the hardware it ``requires`` is absent, or when an
+        asset it needs is not downloaded. Hardware is checked first: fetching weights
+        would not help on a machine that cannot run the case anyway.
+        """
+        if problem.requires not in hardware.REQUIREMENTS:
+            raise HarnessFailure(
+                f"problem.toml: requires must be one of {', '.join(hardware.REQUIREMENTS)}"
+            )
+        self.hardware_met = hardware.available(problem.requires)
+        states = {spec.name: assets.state_of(spec, models) for spec in problem.assets}
+        for case in cases:
+            if case.requires != "cpu":
+                if case.requires != problem.requires:
+                    raise HarnessFailure(
+                        f"case {case.id!r} has requires={case.requires!r}, but problem.toml "
+                        f"says requires = {problem.requires!r}; a case may require only "
+                        '"cpu" or what the problem requires'
+                    )
+                if not self.hardware_met:
+                    self.skips[case.id] = (
+                        {"kind": "hardware", "requires": case.requires},
+                        "skipped: " + hardware.missing_message(case.requires),
+                    )
+                    continue
+            for name in case.assets if case.assets is not None else tuple(states):
+                if name not in states:
+                    raise HarnessFailure(
+                        f"case {case.id!r} names the asset {name!r}, which problem.toml "
+                        "does not declare in `[[assets]]`"
+                    )
+                if not states[name].present:
+                    self.skips[case.id] = (
+                        {"kind": "asset", "asset": name},
+                        "skipped: " + assets.missing_message(states[name].spec),
+                    )
+                    break
+
+    def case_info(self, case: Any, identity: dict[str, tuple[str, str]]) -> dict[str, Any]:
+        info: dict[str, Any] = {
+            "id": identity[case.id][0],
+            "name": identity[case.id][1],
+            "public": case.public,
+        }
+        if case.requires != "cpu":
+            info["requires"] = case.requires
+        return info
+
+    def skipped(self, case: Any) -> dict[str, Any]:
+        skip, message = self.skips[case.id]
+        return self.case_end(self.wire[case.id], "skipped", 0.0, message, None, "", [], skip=skip)
+
+    def finish(self, problem: Problem, cases: list, statuses: list[str], metrics: list) -> None:
+        """Emit ``end`` with the verdict, explaining an incomplete run in words."""
+        kinds = [self.skips[c.id][0]["kind"] for c in cases if c.id in self.skips]
+        verdict = protocol.verdict_for(
+            statuses, skip_kinds=kinds, hardware_met=self.hardware_met
+        )
+        extra: dict[str, Any] = {}
+        passed = sum(1 for s in statuses if s == "pass")
+        ran = len(statuses) - len(kinds)
+        if verdict == "assets_missing":
+            names = dict.fromkeys(
+                self.skips[c.id][0]["asset"]
+                for c in cases
+                if c.id in self.skips and self.skips[c.id][0]["kind"] == "asset"
+            )
+            specs = [problem.asset(name) for name in names]
+            commands = " and ".join(f"`{spec.fetch_command}`" for spec in specs)
+            which = ", ".join(spec.describe() for spec in specs)
+            ran_text = f"{passed} of {ran} cases that could run passed; " if ran else ""
+            extra["message"] = (
+                f"{ran_text}{len(kinds)} of {len(cases)} cases were skipped because a model "
+                f"asset is not downloaded: {which}. Fetch with {commands}, then run again."
+            )
+            extra["missing_assets"] = [
+                {
+                    "name": spec.name,
+                    "repo": spec.repo,
+                    "size_mb": spec.size_mb,
+                    "fetch_command": spec.fetch_command,
+                }
+                for spec in specs
+            ]
+        elif verdict == "hardware_missing":
+            need = hardware.describe(problem.requires)
+            if kinds:
+                ran_text = f"{passed} of {ran} cases that could run passed; " if ran else ""
+                extra["message"] = (
+                    f"{ran_text}{len(kinds)} of {len(cases)} cases were skipped because they "
+                    f"need {need}, which this machine does not have. The solution can only "
+                    "be accepted on a machine that runs every case."
+                )
+            else:
+                extra["message"] = (
+                    f"every case passed, but this problem requires {need}, which this "
+                    "machine does not have, so the run does not count as accepted"
+                )
+            extra["missing_hardware"] = problem.requires
+        self.end(verdict, statuses, len(cases), metrics, **extra)
 
     def import_solution(
         self, problem: Problem, path: Path
@@ -303,8 +433,10 @@ class Worker:
         detail: str | None,
         stdout: str,
         metrics: list[dict[str, Any]],
+        *,
+        skip: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        return {
+        event = {
             "event": "case_end",
             "id": case_id,
             "status": status,
@@ -314,6 +446,9 @@ class Worker:
             "stdout": stdout,
             "metrics": metrics,
         }
+        if skip is not None:
+            event["skip"] = skip  # why a skipped case did not run (protocol.SKIP_KINDS)
+        return event
 
     def run_case(self, problem: Problem, case: Any, store: Any, solution_path: Path) -> dict:
         from whetstone.judge.context import Context

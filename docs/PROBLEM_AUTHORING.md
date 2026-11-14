@@ -19,6 +19,12 @@ live under `python/tests/fixtures/catalog/problems/judges/`:
 | simclock | `dynamic-batcher` |
 | service | `sse-tokens` |
 
+Miniatures of the milestone 3 features live under
+`python/tests/fixtures/m3/problems/`: `gpu/mlx-scale` (an MLX-only problem with a
+memory limit and a throughput metric, section 13), `gpu/cuda-scale` (CPU cases plus a
+case that needs CUDA, section 14), and `real/asset-vocab` (a model asset, a fixture
+file, and cases that need no download, section 15).
+
 All commands below run from the repository root. Always pass both extras; a bare
 `uv sync` removes the optional frameworks.
 
@@ -26,7 +32,9 @@ All commands below run from the repository root. Always pass both extras; a bare
 uv run --project python --extra jax --extra mlx ws <command>
 ```
 
-The rest of this guide abbreviates that prefix to `ws`.
+The rest of this guide abbreviates that prefix to `ws`. Downloading model weights and
+generating fixtures from a reference implementation additionally need `--extra models`
+(section 15); nothing else does.
 
 ## 1. Workflow
 
@@ -40,8 +48,9 @@ ws validate top-p-filter -v                        # the gate; must pass before 
 uv run --project python --extra jax --extra mlx ruff check problems/decoding/top-p-filter
 ```
 
-`ws new <track>/<id>` takes `--frameworks torch,jax,mlx` (the default) or
-`--frameworks python`, plus `--title` and `--difficulty`. It writes a complete toy
+`ws new <track>/<id>` takes `--frameworks torch,jax,mlx` (the default),
+`--frameworks python`, or `--frameworks mlx` (an MLX-only problem, section 13), plus
+`--title` and `--difficulty`. It writes a complete toy
 problem in the house layout and creates `track.toml` if the track is new. `ws validate`
 refuses any problem that still contains `TODO(author)`.
 
@@ -75,8 +84,15 @@ Metadata must be complete and consistent:
   equals the parent directory name; `difficulty`, `judges`, `requires`, and `frameworks`
   use known values; `entry` is a non-empty list of Python names; `time_limit_s` is
   positive; every prerequisite id exists.
-- `frameworks` is either `["python"]` or a set of tensor frameworks that includes
-  `"torch"` (the oracle is written in torch).
+- `frameworks` is `["python"]`, or a set of tensor frameworks that includes `"torch"`
+  (the oracle is written in torch), or exactly `["mlx"]` (an MLX-only problem, whose
+  MLX reference is the oracle; section 13).
+- `requires = "mlx-gpu"` needs `"mlx"` in `frameworks`, and `requires = "cuda"` needs
+  `"torch"`. A case may require only `"cpu"` or what the problem requires (section 14).
+- Every `[[assets]]` table is well formed (section 15): a lowercase `name`, a `repo`,
+  a full 40-character `revision`, `files` that can only select safetensors, tokenizer,
+  and config files, a positive `size_mb`. Two problems that use one asset name agree on
+  its repository and revision, and a house model's name means the house model.
 - `track.toml` exists with `id` (equal to the directory name), `title`, `description`,
   and `order`.
 - `statement.md`, `hints.md`, `editorial.md`, and `tests.py` exist and are not empty; no
@@ -86,12 +102,35 @@ Metadata must be complete and consistent:
 - At least one mutant exists, and line 1 of every mutant is `# BUG: <what is wrong>`.
 - The tests define at least one public and at least one hidden case.
 - Every name in `forbidden` (section 4.1) resolves to a real attribute that the harness
-  can guard, in every framework the names mention. A typo, or a function that a
-  framework release renamed, fails validation instead of silently enforcing nothing.
+  can guard safely, in every framework the names mention. A typo, a function that a
+  framework release renamed, a dtype or constant (not callable), or a C type that
+  cannot be guarded without breaking it for everyone fails validation with the reason,
+  instead of silently enforcing nothing. Every entry of `forbidden_source` is a single
+  identifier.
 - Nothing contains `TODO(author)`.
 
 It warns (without failing) when the cases of a reference submit take more than 3
 seconds in total.
+
+**When this machine cannot run every case.** A case may need hardware the machine does
+not have (section 14) or a model asset that is not downloaded (section 15). Such cases
+are skipped by the harness, and validation never counts what it did not see:
+
+- The reference must pass every case that *can* run. The cases that could not are
+  listed in a warning on the problem ("only 2 of 3 cases could run on this machine
+  (all passed); 1 was NOT validated: needs an NVIDIA GPU (CUDA) ..."). The problem is
+  still `ok`, but the warning is printed on every run, not only with `-v`.
+- The starter must be rejected by the cases that run here. A starter that survives
+  them is an error, whatever the skipped cases would have said.
+- A mutant that survives the cases that run here is reported as "NOT validated": only
+  a machine that runs the skipped cases can tell whether a test catches it.
+- If nothing could run (every case needs the missing asset or hardware), the problem
+  is reported as `SKIP`, with the reason, and the summary line counts it separately:
+  "80 of 81 problems passed validation; 1 skipped (not validated on this machine, see
+  above)". A skip does not fail the command. Static checks (metadata, files, the
+  `forbidden` list) still run.
+- `ws validate --require-assets` makes a missing asset an error. Use it on the machine
+  that is supposed to validate everything (and in CI once that machine has the weights).
 
 Harness runs execute in parallel (`-j N`, default 4), with one exception that needs no
 flag: problems whose `judges` include `speed` or `service` are timing-sensitive, so
@@ -113,7 +152,12 @@ problems/<track>/<id>/
   hints.md
   editorial.md
   mutants/<bug_name>.py       oracle framework only; line 1: # BUG: <what is wrong>
+  fixtures/                   optional: committed reference outputs (section 15)
 ```
+
+The **oracle framework** is torch when the problem lists it, `python` for a
+framework-free problem, and `mlx` for an MLX-only problem. The oracle reference and
+every mutant are written in it.
 
 `track.toml`:
 
@@ -124,7 +168,8 @@ description = "One or two sentences shown on the track page."
 order = 10
 ```
 
-`problem.toml` (every key is required, except `forbidden`):
+`problem.toml` (every key is required, except `forbidden`, `forbidden_source`, and
+`[[assets]]`):
 
 ```toml
 id = "stable-softmax"
@@ -143,7 +188,17 @@ forbidden = [                     # optional: calls the statement rules out (sec
     "torch.softmax", "torch.nn.functional.softmax", "torch.Tensor.softmax",
     "jax.nn.softmax", "mlx.core.softmax",
 ]
+forbidden_source = ["bfloat16"]   # optional: identifiers ruled out of the source (section 4.1)
+
+[[assets]]                        # optional, repeatable: model weights (section 15)
+name = "granite-4.0-350m"
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
+files = ["config.json", "tokenizer.json", "model.safetensors"]
+size_mb = 712
 ```
+
+`requires` is the hardware a solution needs before it can be *accepted* (section 14).
 
 A solution that fails to import, or lacks an `entry` name, gets the `import_error`
 verdict before any case runs. Entry names can be functions, classes, or (for service
@@ -212,7 +267,7 @@ def very_negative(ctx):
         ctx.check(fn, x, axis=-1)
 ```
 
-### `@case(name, *, public=False, id=None, time_limit_s=None, frameworks=None)`
+### `@case(name, *, public=False, id=None, time_limit_s=None, frameworks=None, requires="cpu", assets=None)`
 
 - `name`: what the learner reads. State what is checked: "large logits: a row spanning
   -1e4 to 1e4", not "test 3".
@@ -232,6 +287,12 @@ reordering hidden cases renumbers the ones after it. So name hidden cases and th
 functions for yourself and for reviewers, as descriptively as public ones.
 - `time_limit_s`: overrides the problem's per-case limit.
 - `frameworks`: restricts the case to some solution frameworks. Rarely needed.
+- `requires`: the hardware the case needs, `"cpu"` (the default: it runs on every
+  machine) or the problem's own `requires` (`"mlx-gpu"`, `"cuda"`). Where the hardware
+  is absent the case is `skipped` with the reason. Section 14.
+- `assets`: the names of the problem's `[[assets]]` the case needs. The default is all
+  of them; `assets=[]` marks a case that needs no download. A case whose asset is not
+  on disk is `skipped` with the fetch command. Section 15.
 
 Cases run in definition order. Put the worked example from the statement first, then
 progressively harder public cases, then hidden ones.
@@ -249,13 +310,16 @@ needs. A good split is 3 to 5 public and 4 to 8 hidden.
 | `ctx.call(name, *args, **kwargs)` | Call the solution. numpy in, numpy out. |
 | `ctx.expected(name, *args, **kwargs)` | Call the oracle reference the same way. |
 | `ctx.baseline(name, *args, **kwargs)` | Call the reference written in the solution's framework. |
-| `ctx.check_speed(name, *args, max_ratio=..., **kwargs)` | Speed judge (section 5.5). |
+| `ctx.check_speed(name, *args, max_ratio=..., tokens=None, **kwargs)` | Speed judge (section 5.5). |
+| `ctx.compare_speed(run_solution, run_reference, *, max_ratio=..., label=...)` | Speed judge for prepared callables: compiled functions, loops (section 5.5). |
 | `ctx.randn(*shape, scale=1.0, loc=0.0)` | float32 normal array from `ctx.rng`. |
 | `ctx.uniform(*shape, low=0.0, high=1.0)` | float32 uniform array in `[low, high)`. |
 | `ctx.randint(low, high, shape)` | int64 array in `[low, high)`. |
 | `ctx.rng`, `ctx.seed` | The case's numpy `Generator` and its seed. |
 | `ctx.child_rng(i)` | An independent generator for trial `i` (property tests). |
-| `ctx.metric(name, value, unit=None, limit=None)` | Report a number with the case. |
+| `ctx.metric(name, value, unit=None, limit=None, *, higher_is_better=False)` | Report a number with the case. |
+| `ctx.asset(name, file=None)` | Path of a downloaded model asset, or of one file in it (section 15). |
+| `ctx.fixture(name)`, `ctx.fixture_path(name)` | A committed reference output from the problem's `fixtures/` directory, loaded by extension; or just its path (section 15). |
 | `ctx.solution`, `ctx.oracle`, `ctx.reference` | The modules: the learner's, the oracle reference, the same-framework reference. |
 | `ctx.fw`, `ctx.oracle_fw` | Framework adapters (section 6) for the solution and for the oracle. |
 | `ctx.framework`, `ctx.problem` | The solution's framework name; the problem metadata. |
@@ -265,8 +329,33 @@ needs. A good split is 3 to 5 public and 4 to 8 hidden.
 
 `ctx.call`, `ctx.expected`, and `ctx.baseline` convert for you: every numpy array in the
 arguments (also inside lists, tuples, and dicts) becomes a tensor of the target
-framework, and every tensor in the result becomes a numpy array. Python scalars, lists
-of ints, strings, and other objects pass through unchanged.
+framework, and every tensor in the result becomes a numpy array. Python scalars,
+strings, and other objects pass through unchanged.
+
+> [!IMPORTANT]
+> **Containers are rebuilt, so `ctx.call` cannot test in-place mutation.** To convert
+> the arrays inside a list, tuple, or dict, `ctx.call` builds a new container, even
+> when there is nothing in it to convert. The solution therefore never receives the
+> very object your test holds: `ctx.call("push", heap, 3)` leaves the test's `heap`
+> untouched however correct the solution is. (This is deliberate. `ctx.check` passes
+> the same arguments to the oracle next, and they must not have been changed.) When
+> the specification is "modifies its argument", call the solution directly, which
+> converts nothing:
+>
+> ```python
+> @case("push keeps the heap property, in place", public=True)
+> def push_in_place(ctx):
+>     heap = [1, 5, 3]
+>     result = ctx.solution.push(heap, 0)       # the solution gets this very list
+>     check.that(result is None, "push: must return None and modify the list")
+>     check.equal(heap, [0, 1, 3, 5], label="heap after push")
+> ```
+>
+> For a tensor problem, convert by hand around the direct call:
+> `x = ctx.fw.tensor(array)`, `ctx.solution.fn(x)`, then `ctx.fw.to_numpy(x)`. Calls
+> made this way are still covered by the `forbidden` guards. Remember that JAX arrays
+> are immutable, so an in-place specification is only possible for `python`, torch,
+> and MLX-only problems.
 
 > [!NOTE]
 > **Dtypes of converted inputs.** Floating arrays arrive as float32. Integer arrays
@@ -317,15 +406,41 @@ got =
    [nan,  0.,  0.]]
 ```
 
-A shape mismatch is reported first and alone (`softmax: shape mismatch: expected
-(4, 8), got (4,)`), then dtype, then values with the worst index, the maximum absolute
-and relative error, and an excerpt around the worst element.
+A shape mismatch is reported first and alone (`softmax: got shape (4,), which is not the
+expected shape`), then dtype, then values with the worst index and an excerpt around
+the worst element; the expected shape, the expected dtype, and the exact errors are in
+the detail.
 
 **The message is shown for hidden cases; the detail is not.** So a message must never
-contain expected values. All `check` helpers follow this. When you write your own
-failure with `check.that(condition, message, detail)`, put the specifics in `detail`.
-Plain `assert` works too (it counts as a failed case), but its text becomes the message,
-so prefer `check.that`.
+reveal what the test expects or what it passed in: no expected value, shape, length,
+dtype, set of keys, or exception type, and no input. A message says what the solution
+*produced* and where it went wrong; the detail carries the expected side. All `check`
+helpers follow this:
+
+| failure | message (always shown) | detail (public cases only) |
+|---|---|---|
+| wrong shape | `tokens: got shape (4,), which is not the expected shape` | both shapes |
+| wrong length | `tokens: got 3 items, which is not the expected number` | both lengths, both lists |
+| wrong values | `y: 2 of 60 values differ from the expected result (largest error on the order of 1e-01, at index [1, 13])` | exact errors, expected and got |
+| wrong dtype | `y: got dtype float64, which is not the expected dtype` | both dtypes |
+| wrong dict keys | `stats: got a dict whose keys are not the expected keys` | both key lists |
+| wrong exception | `decode: raised KeyError, which is not the exception the statement specifies here` | the expected type |
+
+The error of a float comparison is given as an order of magnitude only: next to the
+learner's own value, the exact error would give the expected value away, while the
+magnitude still tells "float noise, loosen nothing, fix the formula" (1e-01) from "a
+precision problem" (1e-05).
+
+One deliberate exception: **limits**. The limit of `check.cost`, `check.at_most`,
+`check.memory`, and the speed judge is reported with the metric on every case, hidden
+or not, because the app draws the bar from it, and the failure message repeats it
+(`tokens_processed: 114 tokens exceeds the limit of 15 tokens`). Never use a secret as
+a limit; state limits in the statement.
+
+When you write your own failure with `check.that(condition, message, detail)`, follow
+the same rule: describe what the solution did in `message`, put the specifics in
+`detail`. Plain `assert` works too (it counts as a failed case), but its text becomes
+the message, so prefer `check.that`.
 
 An exception raised by the solution is an `error` (verdict `runtime_error`).
 
@@ -377,6 +492,19 @@ A name is the full dotted path, starting at the package, of one of:
 | a method on a tensor or other class | `torch.Tensor.softmax` | `x.softmax(-1)` |
 | a class | `torch.nn.RMSNorm`, `mlx.nn.RoPE` | constructing it (also through a subclass) |
 
+Two kinds of names cannot be guarded, and `ws validate` refuses them with the reason
+rather than accept a rule it cannot enforce:
+
+- **Something that is not called**: a dtype (`torch.bfloat16`), a constant. There is
+  no call to intercept. Use `forbidden_source` (below).
+- **A type implemented in C that takes its arguments in `__new__`**, such as
+  `json.scanner.make_scanner`. Replacing the constructor of such a type breaks it for
+  every caller in the process (an earlier version of the harness did, and `json.loads`
+  stopped working). Validation says: "is a type implemented in C that takes its
+  arguments in `__new__`; a guard on it would break it for every caller. Rule out its
+  identifier with `forbidden_source = ["make_scanner"]` instead". Python classes, and
+  C types with an `__init__`, are guarded as before.
+
 How it works, so you can predict it:
 
 - Each name is replaced, for the whole run, by a guard that inspects the call stack.
@@ -413,8 +541,31 @@ How it works, so you can predict it:
 - It is a guard against taking the shortcut, not a sandbox. Code written to defeat it
   can; the tests still have to make sure the answer is right.
 
-Every problem with a `forbidden` list needs a mutant that takes the shortcut (section
-11), and the statement must still state the rule in words.
+**`forbidden_source`: identifiers that may not appear in the solution.** For a rule
+about something that is mentioned rather than called, list plain identifiers:
+
+```toml
+forbidden_source = ["bfloat16"]
+```
+
+Before anything runs, the harness parses the solution file and fails every case if the
+identifier appears as a bare name (`bfloat16`), an attribute (`torch.bfloat16`,
+`x.bfloat16()`), any part of an import (`from torch import bfloat16`; for
+`"safetensors"`, also `import safetensors.torch`), a keyword argument, or a string that
+is exactly the identifier (`dtype="bfloat16"`, `getattr(torch, "bfloat16")`). Comments,
+docstrings, and longer strings do not count. The message is
+`` `bfloat16` is not allowed in this problem (used at torch.py line 6) ``, on public and
+hidden cases alike.
+
+It is a blunt instrument, by design: it cannot tell `torch.bfloat16` from a local
+variable the learner happened to call `bfloat16`. Use it for identifiers nobody uses by
+accident (a dtype name, a package name such as `safetensors` or `tokenizers`), prefer
+`forbidden` whenever the thing is called, and never hand-roll a source scan in
+`tests.py`: `problems/foundations/bf16-decode` shows the supported way. The starter
+and the references must not contain the identifier either (docstrings may).
+
+Every problem with a `forbidden` or `forbidden_source` list needs a mutant that takes
+the shortcut (section 11), and the statement must still state the rule in words.
 
 ### The `check` helpers
 
@@ -432,8 +583,9 @@ Every problem with a `forbidden` list needs a mutant that takes the shortcut (se
 | `check.forall(prop, *, trials=25)` | Property judge. |
 | `check.distribution(samples, probs, *, delta=1e-10, label)` | Statistical judge, categorical. |
 | `check.mean(values, expected, *, low, high, delta=1e-10, label)` | Statistical judge, bounded mean. |
-| `check.cost(counters, name, *, at_most=None, exactly=None, at_least=None, unit=None)` | Cost judge. |
+| `check.cost(counters, name, *, at_most=None, exactly=None, at_least=None, unit=None, metric=None)` | Cost judge. `metric=` names the reported metric (default: the counter's name). |
 | `check.at_most(name, value, limit, *, unit=None)` | Bound a measured value and report it as a metric. |
+| `check.memory(measurement, *, at_most_mib, what="peak", metric=None)` | Memory limit on an `mlx_memory` measurement (section 13). |
 
 Always pass a `label` that names the quantity (`label="tokens"`); it starts the message.
 
@@ -611,6 +763,22 @@ State the cost limit in the statement, with the reasoning, and make the bound ti
 enough that the classic waste (re-feeding the prefix, one extra forward pass) exceeds
 it.
 
+**Two kit objects with the same counter.** A case reports one value per metric name,
+and by default the metric is named after the counter, so the second of two
+`check.cost(..., "tokens_processed")` calls replaces the first in what the learner
+sees. When a case has a draft and a target model (or two caches, two engines), name
+each metric:
+
+```python
+draft, target = draft_target_pair(ctx.fw, seed=4)
+ctx.call("speculative_decode", draft, target, prompt, 24)
+check.cost(draft.counters, "tokens_processed", at_most=60, unit="tokens", metric="draft_tokens")
+check.cost(target.counters, "tokens_processed", at_most=20, unit="tokens", metric="target_tokens")
+```
+
+The failure message uses the metric's name too
+(`target_tokens: 31 tokens exceeds the limit of 20 tokens`).
+
 ### 5.5 speed
 
 The solution is timed against the reference in the same framework, and must be within a
@@ -623,13 +791,71 @@ def fast_enough(ctx):
     ctx.check_speed("pairwise_sq_dists", ctx.randn(48, 16), ctx.randn(48, 16), max_ratio=5.0)
 ```
 
-`ctx.check_speed(name, *args, max_ratio, rounds=7, warmup=2, **kwargs)` converts the
-inputs once, runs `warmup` untimed calls of each implementation, then `rounds` rounds
-in which both are measured, alternating which goes first, and compares the medians.
-Each measurement repeats the call until it lasts about 5 ms, and forces the result
-before the clock stops (`mx.eval` for MLX, `block_until_ready` for JAX, an MPS or CUDA
-synchronize for torch), so lazy frameworks are timed doing the work. It reports the
-`slowdown` metric and fails beyond `max_ratio`.
+`ctx.check_speed(name, *args, max_ratio, rounds=7, warmup=2, tokens=None, **kwargs)`
+converts the inputs once, runs `warmup` untimed calls of each implementation, then
+`rounds` rounds in which both are measured, alternating which goes first, and compares
+the medians. Each measurement repeats the call until it lasts about 5 ms, and forces
+the result before the clock stops (`fw.sync`: `mx.eval` then `mx.synchronize` for MLX,
+`block_until_ready` for JAX, an MPS or CUDA synchronize for torch), so lazy frameworks
+are timed doing the work. It reports the `slowdown` metric and fails beyond
+`max_ratio`.
+
+**What "forcing the result" means on MLX.** MLX computes nothing until asked, so an
+unforced result would be timed building a graph. `fw.sync` evaluates every array it
+can reach from the returned value: inside tuples, lists, and dicts, in the parameters
+of an `mlx.nn.Module`, and in the attributes of a plain object such as a cache class
+the solution defines (a few levels deep). Then it calls `mx.synchronize()`, which
+waits for work a solution scheduled with `mx.async_eval` and did not wait for. So a
+solution cannot look fast by returning a lazy cache or by leaving work in flight, and
+a solution is not charged for anything it does not return or hold. If the value that
+matters is not reachable from the return value, return it from your callable
+(`ctx.compare_speed`).
+
+**Tokens per second.** Pass `tokens=N` (how many tokens one call produces or
+processes) and the solution's throughput is reported as a second metric,
+`tokens_per_s` (unit `tok/s`). It is informational: it has no limit and never fails a
+case, because an absolute rate means nothing across machines. The verdict is still
+decided by `slowdown`. Across the cases of a run the app shows the *lowest*
+`tokens_per_s` (the metric is marked higher-is-better) and the highest `slowdown`.
+
+```python
+@case("cached generation is within 3x of the reference", time_limit_s=30)
+def cached_speed(ctx):
+    ctx.check_speed("generate", weights, cfg, prompt, 24, max_ratio=3.0, tokens=24, rounds=3)
+```
+
+**Compiled functions, loops, anything that is prepared first:
+`ctx.compare_speed`.** When the entry point returns the thing to time (a function
+built with `mx.compile`, a step closure), or the timed work is a loop the test drives,
+build it outside the timer and hand over two zero-argument callables. Whatever they
+return is forced as above.
+
+```python
+@case("the compiled step is within 2x of the reference's", requires="mlx-gpu")
+def compiled_speed(ctx):
+    def loop(make_step):
+        lm = MLXTinyLM(seed=5)
+        step = make_step(lm)                      # built, not yet traced
+
+        def run():
+            token, state = mx.array([3], dtype=mx.int32), lm.init_state(max_len=64)
+            for _ in range(32):
+                token, state = step(token, state)
+            return token, state                   # forced by the judge
+
+        return run
+
+    ctx.compare_speed(loop(ctx.solution.make_step), loop(ctx.reference.make_step),
+                      max_ratio=2.0, label="32 compiled steps", tokens=32)
+```
+
+The first `warmup` calls absorb tracing, kernel compilation, and allocator growth for
+both sides; keep `warmup` at 2 or more for anything compiled. A function compiled with
+`mx.compile` retraces when an input's shape or dtype changes, so a callable that feeds
+different shapes on every call measures tracing, not the compiled code: that is the
+right test for a retracing bug and the wrong one for steady-state speed. On MLX the
+default `rounds=7` is fine for work in the millisecond range; lower it (3) when one
+call takes hundreds of milliseconds.
 
 Rules:
 
@@ -643,10 +869,12 @@ Rules:
 - The baseline is always the same-framework reference, so `reference/<framework>.py`
   must be the idiomatic fast solution in that framework. Never compare across
   frameworks: JAX runs on the CPU here, MLX and torch may use the GPU.
-- For custom timing (a class, a multi-step protocol), use
-  `whetstone.judge.speed.compare(run_solution, run_reference)` and
-  `speed.require(result, max_ratio=..., label=..., ctx=ctx)`. Each callable must call
-  `ctx.fw.sync(result)` itself.
+- For custom timing (a class, a multi-step protocol), use `ctx.compare_speed` (above).
+  The lower-level pair `whetstone.judge.speed.compare(run_solution, run_reference)`
+  and `speed.require(result, max_ratio=..., label=..., ctx=ctx, tokens=None)` remains;
+  with it each callable must call `ctx.fw.sync(result)` itself.
+- A speed case that only makes sense on a GPU gets `requires=` (section 14), so a
+  machine without one skips it instead of timing a CPU fallback.
 
 ### 5.6 simclock
 
@@ -1338,6 +1566,36 @@ workloads.drive(sim, requests, scheduler.submit)
   returns a coroutine it is started with `sim.spawn`. Same-instant arrivals are
   delivered in list order. Call it before `sim.run()`.
 
+> [!IMPORTANT]
+> **Arrival callbacks must be synchronous.** `drive` calls `on_arrival` from a timer
+> at the arrival instant. A plain function runs right there, among the timers of that
+> instant. An `async def` callback does not: calling it only creates a coroutine,
+> which `drive` hands to `sim.spawn`, and a spawned task starts once *all* timers due
+> at that instant have fired. One of those timers may be the completion of an engine
+> step (`SimEngine` completes a step that ends at `t` after the ordinary timers at
+> `t`, priority `STEP_DONE_PRIORITY`, precisely so that an arrival at `t` is already
+> there when the scheduler plans its next step). Measured, for a request that arrives
+> at the instant a step ends:
+>
+> | `on_arrival` | when its body runs | what the scheduler sees when it wakes |
+> |---|---|---|
+> | plain function | before the step completes (`engine.busy` is still true) | the request |
+> | `async def`, enqueues at once | after the step has completed (`engine.busy` is false, the step's tokens are in the trace) | the request |
+> | `async def` with any `await` before it enqueues | after the step has completed | **nothing**: the scheduler resumes first and plans its next step without the request |
+>
+> So an async callback observes the engine one step later than a synchronous one, and
+> with a single `await` in front of the enqueue the request misses the step entirely.
+> A reference and a solution that differ only in this then disagree on exactly the
+> cases with coinciding times, which are the cases `quantum_s` and `bursty` exist to
+> produce.
+>
+> Specify `submit(request)` as a plain method that only enqueues (append to a list,
+> `queue.put_nowait`, set an `asyncio.Event`) and returns, and pass that to `drive`.
+> If the solution's API has to be `async def submit`, do not pass it to `drive`:
+> pass a plain function that records the arrival
+> (`workloads.drive(sim, requests, pending.append)`) and let a task you spawn feed the
+> solution, with the statement saying when a same-instant arrival counts.
+
 ### ScriptedLM
 
 A scripted token source for service problems: the "model" behind `make_app(lm)`.
@@ -1395,6 +1653,14 @@ async for piece in lm.stream(prompt, max_tokens):      # stream.aclose() to stop
 
 `SimModel` is described in section 5.6. `Counters("a", "b")` is the counter object for
 new kit objects: `counters.add("a", n)`, attribute access, `snapshot()`, `reset()`.
+
+### Real models, MLX tools, CountingFile
+
+The kit objects added for milestone 3 are documented where they are used:
+`MLXTinyLM`, `EvalSpy`, `TraceCounter`, and `mlx_memory` in section 13; `RealModel`,
+`RealLM`, `RealConfig`, `Weights`, `SafetensorsFile`, `ByteLevelBPE`, `dequantize`,
+`unpack_codes`, `bf16_to_f32`, `CountingFile`, and the house models `SMALL` and
+`LARGE_8BIT` in section 15.
 
 ### Adding a kit object
 
@@ -1610,9 +1876,17 @@ spent in cases, and warns when the cases take more than 3 s.
 - Starting the harness and importing torch (always needed, for the oracle) costs about
   2 s before the first case; JAX adds about 1 s. That is fixed, so the cases are what
   you control: aim for a total under one second in torch and MLX and under two in JAX.
-- JAX compiles each new operation and shape the first time it is used, about 50 to
-  200 ms per case of fresh shapes. Limit random sweeps to about ten shape
-  combinations, and prefer few distinct shapes.
+- **JAX costs about 0.15 to 0.2 s for every new input shape.** JAX traces and compiles
+  each operation the first time it sees a combination of input shapes and dtypes, and
+  keeps the result for the rest of the process. The cost is per *new shape*, not per
+  case and not per call: a second case that uses the shapes of the first pays nothing,
+  and a property test over 25 random shapes pays 25 times, about 4 s, for work that
+  takes torch a few milliseconds. So **share shapes across cases**: pick two or three
+  shapes for the whole `tests.py` (module-level constants help), draw fresh *values*
+  per trial but not fresh shapes, and when a property needs varied shapes, draw them
+  from a short fixed list (`rng.choice([(4, 8), (2, 3, 8)])`) rather than from a range.
+  `ws validate -v` prints the time in cases per framework; when the JAX figure is ten
+  times the torch one, count your distinct shapes.
 - Keep tensors small: tests check correctness, not scale. A few thousand elements is
   plenty except in speed cases.
 - `time_limit_s` is per case; 10 is right for almost everything. A correct solution
@@ -1635,8 +1909,8 @@ stuck case is reported as `timeout` and the remaining cases as `skipped`.
 
 ## 11. Mutants
 
-A mutant is a wrong solution, written in the oracle framework (`torch`, or `python`),
-that the tests must reject. Mutants are how we know the tests test something. Line 1
+A mutant is a wrong solution, written in the oracle framework (`torch`; `python` for a
+framework-free problem; `mlx` for an MLX-only problem), that the tests must reject. Mutants are how we know the tests test something. Line 1
 is `# BUG: <what is wrong>`, one sentence precise enough that a reviewer can see the
 bug in the code below it.
 
@@ -1710,7 +1984,701 @@ default set surprise authors of otherwise idiomatic code:
 Fix the code rather than adding `# noqa`; a learner reads references and mutants as
 examples of good style.
 
-## 13. Checklist before you open a pull request
+## 13. MLX-only problems
+
+A problem about MLX itself (laziness, `mx.compile`, unified memory, Metal kernels) has
+nothing to say in torch or JAX. Declare it for MLX alone:
+
+```toml
+frameworks = ["mlx"]
+requires = "mlx-gpu"
+```
+
+```sh
+ws new mlx/mlx-lazy-eval-placement --frameworks mlx
+```
+
+What changes, compared with a three-framework problem:
+
+- **The oracle is `reference/mlx.py`.** There is no torch reference. `ctx.expected`,
+  `ctx.check`, and `ctx.oracle` use the MLX reference; `ctx.oracle_fw` is the MLX
+  adapter; `ctx.baseline` and `ctx.reference` are the same module. The harness does not
+  import torch for the run.
+- **Mutants are written in MLX** (`mutants/<bug>.py` starts with `import mlx.core as
+  mx`), since they are judged as MLX solutions.
+- **The functional rule relaxes.** "State in, state out" exists for JAX. An MLX-only
+  problem may specify classes with mutable state (`class KVCache` with
+  `update_and_fetch`), generators, and in-place updates, as the curriculum's MLX track
+  does. Randomness is still an input.
+- **Numpy stays at the test boundary.** `ctx.call` hands the solution `mx.array`s and
+  gives the test numpy arrays, which *evaluates* the result. That is what a numeric
+  check wants and exactly what a test about laziness must avoid: there, call
+  `ctx.solution.fn(...)` directly and inspect the `mx.array` it returns (the examples
+  below do).
+- A numeric check against a numpy or kit oracle is as good as one against the
+  reference: use `check.allclose(ctx.call(...), numpy_oracle(...))` whenever the
+  reference would otherwise be checked against itself.
+
+`python/tests/fixtures/m3/problems/gpu/mlx-scale` is a complete miniature.
+
+### MLXTinyLM
+
+`TinyLM` computes in numpy, which is useless for problems about MLX. `MLXTinyLM` is
+the same kind of model built from `mlx.nn`, so its outputs are lazy graphs and it can
+be traced by `mx.compile`.
+
+```python
+from whetstone.kit import MLXTinyLM
+
+lm = MLXTinyLM(seed=0)                       # vocab 64, width 32, 2 layers, 4 heads, RoPE
+logits, cache = lm(tokens)                   # tokens: (T,) or (B, T); nothing computed yet
+logits, cache = lm(next_tokens, cache)       # continue; logits: (T, V) or (B, T, V)
+mx.eval(logits, cache)                       # cache: a list of (keys, values) per layer
+```
+
+- Options: `MLXTinyLM(seed, *, vocab_size=64, d_model=32, n_layers=2, n_heads=4,
+  n_kv_heads=None, rope=True, dtype=None)`. `n_kv_heads` below `n_heads` gives
+  grouped-query attention; `rope=False` adds sinusoidal positions to the embeddings
+  instead; `dtype=mx.float16` gives a half-precision model. The weights are a pure
+  function of the seed and the sizes.
+- It is an `nn.Module`: `lm.parameters()`, `nn.quantize(lm, ...)`, `tree_flatten` work.
+- The cache is a plain list of `(keys, values)` tuples of shape `(B, n_kv_heads,
+  length, head_dim)`: it can be passed to `mx.eval` and across an `mx.compile`
+  boundary. It grows by concatenation, so its shapes change every step.
+- **Fixed shapes, for compiled loops:** `state = lm.init_state(max_len, batch_size=1)`
+  and `logits, state = lm.step(token, state)` with `token` of shape `(B,)` and
+  `logits` of shape `(B, V)`. `state` is `{"keys": [...], "values": [...], "length":
+  int32 scalar array}` with buffers of length `max_len` whose shapes never change, so
+  a function built on `step` and compiled is traced once.
+- **Ragged batches:** `lm(tokens, cache, mask=..., positions=...)`. `mask` is an
+  additive mask broadcastable to `(B, 1, T, length + T)` that replaces the causal one;
+  `positions` are the absolute positions for RoPE, `(T,)` or `(B, T)`. With left
+  padding, the mask hides the pads and the positions start after them; then every row
+  equals its single-sequence result.
+- `lm.counters.forward_calls` counts runs of the model's **Python body** and
+  `tokens_processed` the tokens those runs were given. In an ordinary loop that is the
+  number of calls. Inside `mx.compile` the body runs only when the function is traced,
+  so the same counter is the number of traces.
+
+> [!NOTE]
+> `mx.compile` retraces when an input's **dtype** changes as well as its shape.
+> `mx.argmax` returns uint32, so a loop that starts from an int32 token and feeds the
+> argmax back is traced twice. Either cast in the step (`.astype(mx.int32)`) or allow
+> for it in the limit; say which in the statement.
+
+### EvalSpy: where evaluation happens
+
+```python
+from whetstone.kit import EvalSpy, MLXTinyLM
+
+@case("one evaluation per generated token, and no hidden reads", public=True)
+def evaluation_placement(ctx):
+    lm = MLXTinyLM(seed=7)
+    with EvalSpy() as spy:                        # watches the solution file
+        tokens = ctx.solution.generate(lm, [1, 2, 3], 8)
+    check.that(spy.implicit == 0,
+               f"generate: {spy.implicit} implicit evaluations (.item(), print, np.array, ...)",
+               spy.describe())
+    check.at_most("evaluations", spy.evals, 8)
+    check.equal([int(t) for t in tokens], expected_tokens, label="tokens")
+```
+
+`EvalSpy` records, in order, every evaluation made **by code in the solution file**
+(pass `file=` to watch another file): `spy.events` is a list of `SpyEvent(kind, what,
+line)`; `spy.evals`, `spy.async_evals`, and `spy.implicit` count the kinds `"eval"`
+(`mx.eval`), `"async_eval"` (`mx.async_eval`), and `"read"`; `spy.kinds()` is the
+sequence of kinds; `spy.describe()` is one line per event for a failure detail. It
+observes calls through `sys.monitoring`, so nothing in MLX is patched, aliases
+(`from mlx.core import eval`) are seen, and the kit's and MLX's own evaluations do not
+count.
+
+- A **read** is a call that has to compute an array to return: `x.item()`,
+  `x.tolist()`, `np.array(x)`, `np.asarray(x)`, `float(x)`, `int(x)`, `bool(x)`,
+  `str(x)`, `repr(x)`, `format(x)`, `print(x)`, `memoryview(x)`, with the array as the
+  first argument.
+- **Not seen**, because Python makes no call for them: `if x:` and `while x:` on an
+  array, an array inside an f-string, and an array that is not the first argument
+  (`print("loss", x)`). Do not write a mutant whose only fault is one of these.
+- Order matters for streaming: with `mx.async_eval`, the kinds of a correct
+  `stream_generate` read `["async_eval", "async_eval", "read", "async_eval", "read",
+  ...]`: step `t + 1` is scheduled before token `t` is read. Assert on `spy.kinds()`.
+- The test's own code is not watched: evaluate and convert freely after the `with`
+  block. Call the solution directly inside it; `ctx.call` would add nothing to the
+  count (the judge is not the solution file), but it does evaluate the result.
+
+### TraceCounter: how often a compiled function is traced
+
+```python
+from whetstone.kit import TraceCounter
+
+tc = TraceCounter()
+step = ctx.solution.make_step(lambda x: tc.mark(x) * 2)    # mark is the identity
+for _ in range(50):
+    out = step(mx.array(1.0))
+mx.eval(out)
+check.at_most("traces", tc.count, 1)
+```
+
+`mx.compile` runs the Python function only to trace it; later calls with the same
+input shapes and dtypes replay the recorded graph. So the number of times a Python
+body runs is the number of traces. `tc.mark(x)` returns `x` and counts the call;
+`tc.wrap(fn)` returns `fn` with its runs counted; `tc.reset()` zeroes it. When the
+solution compiles a function around a kit model, `lm.counters.forward_calls` is the
+same measurement with no extra object:
+
+```python
+lm = MLXTinyLM(seed=1)
+step = ctx.solution.make_step(lm)
+token, state = mx.array([3], dtype=mx.int32), lm.init_state(max_len=64)
+for _ in range(50):
+    token, state = step(token, state)
+    mx.eval(token, state)
+check.cost(lm.counters, "forward_calls", at_most=1, metric="traces")
+```
+
+A solution that compiles inside the loop shows 50, one that lets the dtype drift
+shows 2, one that concatenates the cache shows 50.
+
+### Memory: `mlx_memory` and `check.memory`
+
+```python
+from whetstone.kit import mlx_memory
+
+# Rejects promotes: a float32 result is 4 MiB, the float16 one 2 MiB.
+@case("a float16 input stays float16 and stays small", requires="mlx-gpu")
+def half_precision(ctx):
+    x = ctx.fw.tensor(ctx.randn(1024, 1024), dtype=np.float16)
+    ctx.fw.sync(x)                           # allocate the input before measuring
+    with mlx_memory() as mem:
+        y = ctx.solution.scale(x, 2.0)
+        ctx.fw.sync(y)                       # force the work inside the block
+    check.memory(mem, at_most_mib=3.0)
+```
+
+`mlx_memory()` empties MLX's buffer cache (`mx.clear_cache`), resets the high-water
+mark (`mx.reset_peak_memory`), and notes what is already in use
+(`mx.get_active_memory`). After the block (and an `mx.synchronize`):
+
+| attribute | meaning |
+|---|---|
+| `mem.peak_bytes`, `mem.peak_mib` | `mx.get_peak_memory()` minus what was in use on entry: the most the block held at once, above its inputs. |
+| `mem.active_bytes`, `mem.active_mib` | `mx.get_active_memory()` minus the same: what the block left allocated (results still referenced). |
+| `mem.cache_bytes` | `mx.get_cache_memory()`: freed buffers MLX keeps for reuse. |
+| `mem.baseline_bytes` | what was in use on entry. |
+
+`check.memory(mem, *, at_most_mib, what="peak", metric=None)` reports the value in MiB
+as the metric `peak_memory` (or `active_memory` with `what="active"`, or `metric`)
+with its limit, and fails beyond it. Rules that keep memory cases honest:
+
+- **Force the work inside the block.** MLX is lazy: an unevaluated result has
+  allocated nothing and measures zero. `ctx.fw.sync(result)` (or `ctx.call`, which
+  converts to numpy) forces it. A case that forgets this passes everything.
+- **Create inputs before the block** and evaluate them, so they are in the baseline.
+- **Leave a margin on both sides.** Array sizes are exact, but the allocator rounds
+  and kernels use scratch space. Size the test so the reference uses at most two
+  thirds of the limit and the approach you want to rule out at least one and a half
+  times it; a factor of two between them (float16 versus float32, in place versus a
+  copy, quantized versus dequantized) is the natural gap. Never test for equality.
+- Use megabytes, not kilobytes: below about 1 MiB the allocator's rounding is the
+  signal.
+- Memory cases are GPU cases: give them `requires="mlx-gpu"` (section 14) and list
+  `cost` in `judges`.
+- The names are those of MLX 0.32.4: `mx.get_peak_memory`, `mx.reset_peak_memory`,
+  `mx.get_active_memory`, `mx.get_cache_memory`, `mx.clear_cache`, `mx.synchronize`
+  (the same functions also exist under `mx.metal`; use the top-level names, which do
+  not depend on the backend). After `mx.reset_peak_memory()` the peak reads 0 until
+  the next allocation and then tracks total active memory, which is why the kit
+  subtracts the baseline. Re-check when the pin moves.
+
+### CountingFile: how much of a file was read
+
+```python
+from whetstone.kit import CountingFile
+
+@case("only the requested tensor is read", assets=["granite-4.2-3b-mlx-8bit"])
+def reads_one_tensor(ctx):
+    with CountingFile(ctx.asset("granite-4.2-3b-mlx-8bit", "model.safetensors")) as f:
+        weight = ctx.solution.load_quantized(f, "model.layers.0.self_attn.k_proj")
+        check.at_most("megabytes_read", f.counters.bytes_read / 1e6, 4.0, unit="MB")
+```
+
+`CountingFile(path, page_size=16384)` is a read-only file that counts what is read
+from it, usable as a file (`read`, `seek`, `tell`, `readinto`) and as a mapping
+(`len(f)`, `f[a:b]`). A slice is a zero-copy `memoryview` of the memory-mapped file
+(`np.frombuffer(f[a:b], dtype)` wraps it without copying) and is charged as `b - a`
+bytes. `f.counters.bytes_read` and `f.counters.reads` are the totals;
+`f.pages_touched` is the number of distinct pages the requested ranges cover. Counting
+is by the ranges asked for, not by page faults the operating system saw, so it is
+exact and identical on every machine: a loader that takes `f[:]` or `f.read()` and
+picks out one tensor is charged for the whole file.
+
+## 14. Hardware requirements and skipped cases
+
+`requires` in `problem.toml` names the hardware a solution needs before it can be
+accepted: `"cpu"`, `"mlx-gpu"` (an Apple GPU usable by MLX), or `"cuda"` (an NVIDIA GPU
+usable by torch). Each case has a requirement of its own:
+
+```python
+@case("the mask is built without a host round trip", public=True)       # requires="cpu"
+def cpu_logic(ctx): ...
+
+@case("the result is on the CUDA device", requires="cuda")
+def on_cuda(ctx):
+    out = ctx.solution.scale(torch.ones(3), 2.0, torch.device("cuda"))
+    check.that(out.device.type == "cuda", f"scale: the result is on {out.device.type}")
+```
+
+The rules:
+
+1. A case runs when the machine has what the case requires. The default is `"cpu"`:
+   the case runs everywhere. A case may require only `"cpu"` or the problem's own
+   `requires`; anything else is a harness error (and fails validation).
+2. A case whose hardware is absent is reported with status `skipped` and the message
+   "skipped: needs an NVIDIA GPU (CUDA), which this machine does not have". It is not
+   run, and neither is anything before it skipped on its account: the other cases run
+   normally.
+3. **A run with a skipped case is never `accepted`.** If something that ran failed,
+   the verdict is the failure's, as always (`wrong_answer`, `runtime_error`,
+   `time_limit`). If everything that ran passed, the verdict is `hardware_missing`.
+4. If the problem's `requires` is not met, the verdict is `hardware_missing` even when
+   no case was marked and every case passed (for example `ws run`, which executes only
+   the public cases, on a `cuda` problem whose public cases are all CPU cases). An
+   `accepted` verdict therefore always means: every case ran, on the required
+   hardware.
+
+What a learner without the hardware sees, in the app and in `ws submit`:
+
+```
+cuda-scale / torch / submit  python 3.15.2, device cpu, torch 2.15.0
+  PASS  cpu        scales on the CPU  0.4 ms
+  PASS  hidden-1   Hidden case 1  0.2 ms
+  SKIP  hidden-2   Hidden case 2
+      skipped: needs an NVIDIA GPU (CUDA), which this machine does not have
+Not accepted: hardware missing  2/3 passed, 1 skipped in 1.21 s
+  2 of 2 cases that could run passed; 1 of 3 cases were skipped because they need an
+  NVIDIA GPU (CUDA), which this machine does not have. The solution can only be
+  accepted on a machine that runs every case.
+```
+
+That is the intended presentation of "passed everything this machine can run": a
+distinct, neutral outcome that says how many cases passed, how many were skipped and
+why, and that the problem is not solved yet. It does not mark the problem as solved
+and it is not shown as a failure of the learner's code.
+
+How to split a problem:
+
+- **CPU cases carry the logic and decide validation.** Everything about correctness
+  that does not need the device goes in unmarked cases: they run for every learner
+  and on the machine that validates the catalog. A CUDA problem's solution takes
+  `device` as an argument and must work for `torch.device("cpu")`.
+- **Marked cases check only what the hardware makes observable**: where a tensor
+  lives, a speed or memory property of the GPU path, a Metal kernel. Keep them few.
+- Every mutant should be caught by a CPU case if at all possible. A mutant that only
+  a marked case catches is reported by `ws validate` as "NOT validated" on a machine
+  without the hardware (section 1), which is honest and unsatisfying.
+- For the MLX track (`requires = "mlx-gpu"`), mark the cases that need the GPU:
+  memory limits, speed, Metal kernels. Apple silicon always has the GPU, so in
+  practice everything runs; the marks decide what happens elsewhere, and they tell
+  the reader which cases are about the device.
+
+To see how a problem behaves on a machine you do not have, override detection:
+
+```sh
+WHETSTONE_HARDWARE=cpu ws submit cuda-scale --reference     # pretend: no GPU of any kind
+WHETSTONE_HARDWARE=cpu,cuda ws submit cuda-scale --reference   # pretend CUDA is there
+```
+
+`WHETSTONE_HARDWARE` is a comma-separated list of what to treat as present (`cpu` is
+always included). It changes which cases are skipped, nothing else: pretending CUDA
+exists on a Mac makes the CUDA cases run and fail with torch's own error. Without the
+variable, `mlx-gpu` means `mx.metal.is_available()` with a GPU default device, and
+`cuda` means `torch.cuda.is_available()`.
+
+`python/tests/fixtures/m3/problems/gpu/cuda-scale` is a complete miniature.
+
+## 15. Model assets and real-model problems
+
+Some problems run on the weights of a real open model. Weights are never committed:
+a problem *declares* what it needs, the learner downloads it once with `ws assets
+fetch` (or the app's button), and it lives in `.whetstone/models/` under the
+repository root, which is gitignored.
+
+### The house models
+
+| | small | large (as problems load it) |
+|---|---|---|
+| asset name | `granite-4.0-350m` | `granite-4.2-3b-mlx-8bit` |
+| repository | `ibm-granite/granite-4.0-350m` | `lmstudio-community/granite-4.2-3b-MLX-8bit` |
+| pinned revision | `bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2` | `7c630b526561db6b4641767c54595fe494176695` |
+| on disk | 712 MB (weights 704.8 MB, BF16) | 3.90 GB (weights 3.89 GB, 8-bit) |
+| parameters | 352.4 M | 3.66 B |
+| use | CPU tests in every framework | MLX-only problems |
+
+Both are in the kit as `whetstone.kit.SMALL` and `LARGE_8BIT` (`AssetSpec` objects),
+and `ws assets fetch <name>` knows them before any problem declares them, so you can
+download first and write the problem second:
+
+```sh
+uv run --project python --extra models ws assets fetch granite-4.0-350m
+```
+
+Use the house models unless a problem truly cannot. Every extra model is another
+download for the learner.
+
+### Declaring an asset
+
+```toml
+[[assets]]
+name = "granite-4.0-350m"
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
+files = ["config.json", "generation_config.json", "tokenizer.json", "tokenizer_config.json", "chat_template.jinja", "special_tokens_map.json", "model.safetensors"]
+size_mb = 712
+```
+
+Print the block for a house model instead of typing it:
+
+```sh
+uv run --project python python -c "from whetstone.kit import SMALL; from whetstone.kit.realmodel import asset_toml; print(asset_toml(SMALL))"
+```
+
+| key | meaning |
+|---|---|
+| `name` | The directory under `.whetstone/models/` and the name used by `ctx.asset`, `@case(assets=...)`, and `ws assets fetch`. Lowercase letters and digits with `.`, `_`, `-` between them. |
+| `repo` | The Hugging Face repository id. |
+| `revision` | The full 40-character commit hash. A branch name such as `main` is refused: it can move, and fixtures are only valid for the bytes they were made from. |
+| `files` | File names or glob patterns inside the repository. Only `*.safetensors` and the tokenizer and config files can be assets (`config.json`, `generation_config.json`, `tokenizer.json`, `tokenizer_config.json`, `special_tokens_map.json`, `added_tokens.json`, `vocab.json`, `merges.txt`, `chat_template.jinja`, `model.safetensors.index.json`). Nothing that executes or unpickles is ever downloaded: no `.bin`, `.pt`, `.pkl`, `.py`, even when a glob would match it. A pattern that selects nothing is an error. |
+| `size_mb` | The approximate download size in megabytes, shown before downloading. |
+
+One asset name means one repository and revision across the whole catalog (validation
+checks it); `fetch` downloads the union of the `files` that the problems using a name
+ask for. A problem may declare several assets.
+
+### What the learner and the harness do
+
+- `ws assets list` shows every asset the catalog declares, whether it is present, its
+  size, and which problems use it. `ws assets fetch <name>...` (or `--all`) downloads.
+  Fetching needs the `models` extra (`huggingface_hub`); nothing else in the harness
+  does. A fetch is pinned to the declared revision, verifies each file's size and (for
+  the weights) SHA-256, and can be repeated: files that are complete are not
+  downloaded again, so an interrupted fetch continues with the file it was on, and
+  fetching a present asset does nothing and needs no network.
+- An asset is **present** when its directory holds a manifest for the declared
+  repository and revision that covers the declared `files`, and every file has its
+  recorded size. Anything else (nothing there, another revision, a missing or
+  truncated file) counts as not downloaded.
+- **A case whose asset is not present is skipped**, with the message "skipped: model
+  asset `granite-4.0-350m` (ibm-granite/granite-4.0-350m, about 712 MB) is not
+  downloaded; fetch it with `ws assets fetch granite-4.0-350m`". The other cases run.
+  If nothing that ran failed, the run ends with the verdict **`assets_missing`**
+  (shown as "Not judged: model asset missing") and a message naming the asset and the
+  command; it is never `accepted`. If every case needs the asset, nothing runs and the
+  solution is not even imported.
+- By default **every case needs every asset** of the problem. Mark the cases that do
+  not with `assets=[]`, and a case that needs only one of several with
+  `assets=["name"]`. Do this whenever a problem has cases on synthetic inputs: a
+  learner can then work on those before downloading 700 MB.
+
+```python
+@case("a file written in the test", public=True, assets=[])
+def synthetic(ctx):
+    ...                                   # runs with nothing downloaded
+
+@case("the real checkpoint: 226 tensors", public=True)
+def real_checkpoint(ctx):
+    path = ctx.asset("granite-4.0-350m", "model.safetensors")   # a pathlib.Path
+    ...
+```
+
+`ctx.asset(name)` is the asset's directory, `ctx.asset(name, file)` the path of one
+file in it. Inside a case that needs the asset it is always there (otherwise the case
+would have been skipped). Asking for an asset the problem does not declare is an
+error naming the declared ones.
+
+To see what a learner without the download sees, point the harness at an empty
+directory: `WHETSTONE_MODELS_DIR=/nonexistent ws submit <id> --reference`.
+(`WHETSTONE_MODELS_DIR` replaces `<root>/.whetstone/models` everywhere.)
+
+### The machine-readable forms (what the desktop app calls)
+
+Both commands read the catalog under the content root (`WHETSTONE_ROOT`, else the
+working directory's repository).
+
+`ws assets list --json` prints one JSON document on stdout and exits 0. It needs no
+extra and no network.
+
+```json
+{
+  "models_dir": "/abs/learnai/.whetstone/models",
+  "assets": [
+    {
+      "name": "granite-4.0-350m",
+      "repo": "ibm-granite/granite-4.0-350m",
+      "revision": "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2",
+      "files": ["config.json", "tokenizer.json", "model.safetensors"],
+      "size_mb": 712,
+      "state": "missing",
+      "present": false,
+      "reason": null,
+      "path": "/abs/learnai/.whetstone/models/granite-4.0-350m",
+      "bytes_on_disk": 0,
+      "problems": ["real-model-block", "real-model-logits"],
+      "fetch_command": "ws assets fetch granite-4.0-350m"
+    }
+  ],
+  "issues": [{"problem": "some-problem", "message": "asset `x`: `revision` must be ..."}]
+}
+```
+
+`state` is `present`, `missing` (nothing usable on disk), or `incomplete` (a directory
+exists but it is another revision, lacks declared files, or a file is damaged; `reason`
+says which). `present` is `state == "present"`. `size_mb` is the declared approximate
+download size; `bytes_on_disk` is what is there now. `files` is the union of the
+patterns of the problems in `problems`. Assets are sorted by name.
+
+`ws assets fetch <name>... --json` (or `--all --json`) writes one line per event to
+stdout, each `@@WS@@ ` followed by a single-line JSON object, the framing of the
+harness protocol; any other line is a log line. It needs `--extra models`. Exit code
+0 when every asset ended with `ok: true`, 1 when one failed, 2 for a usage error (an
+unknown name; nothing is printed to stdout then).
+
+```jsonc
+{"event":"asset_start","asset":"granite-4.0-350m","repo":"ibm-granite/granite-4.0-350m","revision":"bd8a...","path":"/abs/.../granite-4.0-350m","files":[{"path":"config.json","size":1764},{"path":"model.safetensors","size":704786224}],"total_bytes":711966212}
+{"event":"asset_progress","asset":"granite-4.0-350m","file":"model.safetensors","file_bytes":150763002,"file_total":704786224,"done_bytes":150771331,"total_bytes":711966212}
+{"event":"asset_file","asset":"granite-4.0-350m","file":"model.safetensors","size":704786224,"cached":false}
+{"event":"asset_end","asset":"granite-4.0-350m","ok":true,"path":"/abs/.../granite-4.0-350m","bytes":711966212,"message":null}
+```
+
+- `asset_start`: once per asset, after the file list is known. Absent when the fetch
+  fails before that (no network, `huggingface_hub` missing); then the only event is a
+  failed `asset_end`.
+- `asset_progress`: at most about four per second per file, plus one when a file
+  completes. `done_bytes / total_bytes` is the fraction for the whole asset and never
+  decreases; `file_bytes / file_total` is the current file.
+- `asset_file`: once per file, in path order; `cached: true` means it was already
+  complete and was not downloaded.
+- `asset_end`: exactly once per asset, always last. On failure `ok` is false,
+  `bytes` is 0, and `message` is one line saying what went wrong; running the command
+  again resumes.
+
+### Fixtures: committed reference outputs
+
+Reference logits, token ids, and text for real-model problems come from an
+established implementation, are generated once, and are committed as small files in
+the problem's `fixtures/` directory, together with the script that made them:
+
+```
+problems/transformer/real-model-logits/
+  fixtures/make.py          regenerates everything below; needs the `models` extra
+  fixtures/logits.npz
+  fixtures/prompts.json
+```
+
+`ctx.fixture(name)` loads one by extension: `.npz` gives a dict of numpy arrays,
+`.npy` an array, `.json` the parsed JSON, `.txt` a string, anything else `bytes`.
+Pickled data is never loaded. `ctx.fixture_path(name)` is the path.
+
+```python
+@case("matches transformers on the worked prompt", public=True)
+def worked_prompt(ctx):
+    model = RealModel(ctx.asset("granite-4.0-350m"))
+    reference = ctx.fixture("logits.npz")
+    ids = reference["ids_0"]
+    logits = ctx.call("granite_logits", model.weights(), model.config, ids)
+    check.equal(logits.argmax(-1), reference["argmax_0"], label="argmax tokens")
+    check.allclose(logits[:, reference["columns"]], reference["logits_0"],
+                   rtol=1e-3, atol=1e-3, label="logits")
+```
+
+Rules for fixtures:
+
+- **Keep them small.** A full logits row of the house models is 100352 floats; store
+  what the test compares: the argmax per position, the logits at a fixed set of
+  columns, the top few of the last position, a few columns of a hidden state. The
+  kit's own fixture for three prompts is 18 kB.
+- **`fixtures/make.py` is the pattern in
+  `python/tests/fixtures/realmodel/make.py`**: resolve the asset, run `transformers`
+  (float32, CPU) and `tokenizers`, save with `np.savez_compressed`, and record the
+  asset's revision in the file so a test can refuse a stale fixture. Run it with
+  `uv run --project python --extra models python problems/<track>/<id>/fixtures/make.py`.
+- Prompts are at most 16 tokens on the small model so a CPU forward pass stays well
+  under a second (the kit's numpy reference takes about 0.1 s for 16 tokens after
+  the weights are decoded, which costs about 1 s once per run).
+- Fixtures for the large model come from `mlx-lm`. Note that `mlx_lm.load` runs the
+  8-bit checkpoint in **bfloat16**; its logits differ from a float32 run of the same
+  weights by up to about 0.4 (on logits of magnitude 25), enough to flip a near-tie.
+  Call `model.set_dtype(mx.float32)` before generating fixtures (then a from-scratch
+  float32 implementation agrees to about 1e-5), choose prompts whose greedy tokens
+  have a clear margin, and say in the statement which dtype the fixture used.
+
+### RealModel: config, tokenizer, weights
+
+```python
+from whetstone.kit import RealModel
+
+model = RealModel(ctx.asset("granite-4.0-350m"))
+model.config            # RealConfig: the architecture, normalized (below)
+model.config_json       # the raw config.json dict
+model.tokenizer         # ByteLevelBPE built from tokenizer.json
+model.tokenizer_json    # the parsed tokenizer.json (what a tokenizer problem hands over)
+model.chat_template     # the Jinja template text, or None
+model.checkpoint        # SafetensorsFile: the memory-mapped checkpoint
+model.weights()         # name -> tensor, decoded lazily (below)
+model.lm()              # RealLM: the reference forward pass, called like TinyLM
+model.dequantized(name) # float32 weights of one layer of a quantized checkpoint
+```
+
+Nothing is read until used, and everything needs only numpy: the kit does not import
+`transformers`, `tokenizers`, or `safetensors`, so real-model problems run without the
+`models` extra once the asset is on disk.
+
+**`model.weights()`** is a lazy mapping from checkpoint names
+(`"model.layers.0.self_attn.q_proj.weight"`) to tensors. A tensor is decoded the
+first time it is asked for (BF16 and F16 become float32; the packed uint32 words of a
+quantized checkpoint stay uint32) and cached for the process, so the cases of a run
+share it and a test that touches two layers pays for two layers. Pass it through
+`ctx.call` and the solution receives tensors of its own framework, like any kit
+object; `model.weights(ctx.fw)` binds it yourself. In a `python` problem the values
+are numpy arrays. `weights.raw(name)` is the zero-copy view of the stored bytes (BF16
+as uint16), for problems about the file format.
+
+**`model.checkpoint`** is a `SafetensorsFile`: `names()`, `info(name)` (the header
+entry: `dtype`, `shape`, `data_offsets`), `raw(name)`, `array(name)`, `metadata`,
+`header`, `data_start`, `nbytes`, `n_parameters()`. Use it for oracles of the
+`safetensors-parse` and sizing problems. `bf16_to_f32(bits)` decodes uint16 bit
+patterns.
+
+**`model.tokenizer`** is a `ByteLevelBPE`: `encode(text) -> list[int]` (nothing is
+added around the text), `decode(ids, skip_special_tokens=False)`, `token_bytes(id)`,
+`vocab` (token string to id), `ranks` (merge pair to rank), `added` and `specials`
+(added-token text to id), `vocab_size`. Its ids equal those of the `tokenizers`
+library (the judge's tests compare them on about 220 strings per model).
+
+**`model.config`** is a `RealConfig` with the fields `model_type`, `n_layers`,
+`d_model`, `n_heads`, `n_kv_heads`, `head_dim`, `d_ff`, `vocab_size`, `max_positions`,
+`norm_eps`, `rope_theta`, `attention_scale`, `embedding_multiplier`,
+`residual_multiplier`, `logits_scaling`, `tied_embeddings`, `fused_mlp`,
+`quantization` (`(bits, group_size)` or `None`), `bos_id`, `eos_id`, `pad_id`. Hand it
+to the solution as `cfg` when the problem is about the forward pass rather than about
+reading `config.json`.
+
+### What the house models are (verified)
+
+Facts every real-model author needs; all were checked against the downloaded files
+and against `transformers` 5.23 and `mlx-lm` 0.32.2, which load both natively.
+
+| | `granite-4.0-350m` | `granite-4.2-3b-mlx-8bit` |
+|---|---|---|
+| `model_type` | `granitemoehybrid` (28 attention layers, no experts) | `granite` |
+| layers, width | 28, 1024 | 40, 2560 |
+| heads, KV heads, head dim | 16, 4, 64 | 40, 8, 64 |
+| MLP | SwiGLU 2048, gate and up fused in `shared_mlp.input_linear` `[4096, 1024]` (gate rows first), `shared_mlp.output_linear` | SwiGLU 8192, `mlp.gate_proj`, `mlp.up_proj`, `mlp.down_proj` |
+| attention scale | 1/64 | 1/64 |
+| embedding x, residual x, logits / | 12, 0.263, 4 | 1, 1, 1 |
+| output head | tied to the embedding (no `lm_head.weight`) | separate `lm_head` |
+| norm, positions | RMSNorm eps 1e-5 pre-norm; RoPE theta 1e7 | the same |
+| tensors | 226, all BF16 | 927: packed U32 weights with BF16 scales and biases; BF16 norms |
+| vocabulary | 100352 | 100352 |
+| special tokens | `<|end_of_text|>` 100257 (BOS and EOS), `<|pad|>` 100256, roles `<|start_of_role|>` 100264 and `<|end_of_role|>` 100265 | `<|im_start|>` 100256, `<|im_end|>` 100257 (EOS), `<s>` 100283 (BOS), `<think>` 100274 |
+| pre-tokenizer | `Split` with the cl100k pattern (digit runs cut in threes) | `ByteLevel` with the GPT-2 pattern |
+| chat format | `<|start_of_role|>user<|end_of_role|>...<|end_of_text|>` | ChatML with `<think>`; `enable_thinking` defaults to true |
+
+> [!WARNING]
+> **The two models do not share a tokenizer.** They have the same 100000 merges and
+> the same ordinary vocabulary, but different pre-tokenizers and different special
+> tokens at the same ids (100257 is `<|end_of_text|>` in one and `<|im_end|>` in the
+> other), so the same text gives
+> different ids ("In 2026" is `[644, 220, 2366, 21]` for the small model and
+> `[644, 220, 508, 1627]` for the large). A tokenizer or chat-template problem is
+> about one named model; never reuse ids across the two.
+
+**What a from-scratch forward pass must do to match the small model's logits.** This
+is the complete list, in order; a solution that gets all nine right agrees with
+`transformers` to about 1e-4 on logits of magnitude 25 (measured: 8.4e-5), and one
+that misses any single item is off by far more than any tolerance:
+
+1. Embed with `model.embed_tokens.weight` and **multiply by 12**
+   (`embedding_multiplier`). No position embedding; the tokenizer adds no BOS.
+2. 28 pre-norm blocks: `x = x + 0.263 * attn(norm1(x))`, then
+   `x = x + 0.263 * mlp(norm2(x))` (`residual_multiplier`, on both branches).
+3. RMSNorm: `x / sqrt(mean(x^2) + 1e-5) * weight`, epsilon inside the square root,
+   no bias.
+4. Grouped-query attention: 16 query heads, 4 key and value heads, each KV head
+   serving 4 consecutive query heads. No biases anywhere.
+5. RoPE on queries and keys, theta 1e7, in the half-split layout: dimension `i`
+   pairs with `i + 32`; `x' = x * cos + rotate(x) * sin` with
+   `rotate([a, b]) = [-b, a]`. (`nn.RoPE(64, traditional=False, base=1e7)` and
+   `mx.fast.rope` produce exactly this; `traditional=True` does not.)
+6. Attention logits are `q @ k^T` **times 1/64** (`attention_multiplier`), which is
+   `1 / head_dim`, not `1 / sqrt(head_dim)`; then the causal mask and softmax.
+7. SwiGLU with the **fused input matrix**: `u = input_linear(h)` has 4096 columns;
+   the first 2048 are the gate, the last 2048 are up;
+   `output_linear(silu(gate) * up)`.
+8. `model.norm`, then the head, which is the **embedding matrix itself**, then
+   **divide by 4** (`logits_scaling`).
+9. The weights are bfloat16 on disk and must be used as float32.
+
+`RealLM` implements exactly this list (`whetstone/kit/realmodel.py`, about 150 lines,
+meant to be read by authors, not linked from statements of problems that ask for it).
+The large model needs the same list with the multipliers at 1, separate MLP matrices,
+a separate head, and quantized linear layers.
+
+**Tolerances that hold** (small model, 16-token prompts): float32 in numpy, torch,
+JAX, or MLX agrees with the fixture to 1e-4 absolute, so `rtol=1e-3, atol=1e-3` is
+safe; an MLX forward in float16 is off by up to 0.06 and in bfloat16 by up to 0.4,
+with the same argmax on ordinary prompts. For a float16 case use `atol=0.25` and
+compare argmax only where the fixture's top-two margin exceeds 1.
+
+### RealLM: the reference forward pass on demand
+
+```python
+lm = RealModel(ctx.asset("granite-4.0-350m")).lm()
+logits, cache = lm(tokens)              # tokens: (T,) or (B, T) ids; logits float32
+logits, cache = lm(next_tokens, cache)  # continue the prefix; cache is immutable
+```
+
+Called like `TinyLM`: numpy inside, tensors of the solution's framework at the
+boundary (numpy in a `python` problem), `lm.counters.forward_calls` and
+`tokens_processed`, `with_framework`. Use it where a problem needs the real model as
+a *given*: the `forward` callable of `real-model-perplexity`, the single-token `step`
+of `real-model-chat-turn`, the logit KL divergence of `quantize-real-weights`. Its
+pieces are available for oracles: `lm.embed(ids)`, `lm.block(x, layer,
+positions=None, past=None)`, `lm.head(x)`, and `lm.hidden_states(tokens)` (the state
+after the embedding and after each block; `transformers` applies the final norm to
+its last entry, the kit does not). The cache holds keys and values at KV-head width,
+keys already rotated. It refuses a quantized checkpoint: the float weights of the 3B
+model would be 14.6 GB.
+
+Prefer a committed fixture to `RealLM` as the *oracle* of a problem that asks the
+learner to implement the forward pass: the fixture comes from an independent
+implementation. Use `RealLM` to cross-check your fixture while authoring.
+
+### The 8-bit MLX checkpoint layout (verified)
+
+`lmstudio-community/granite-4.2-3b-MLX-8bit` is what `mlx_lm.convert -q --q-bits 8`
+writes. `config.json` carries `"quantization": {"group_size": 64, "bits": 8, "mode":
+"affine"}`; the safetensors metadata is `{"format": "mlx"}`. Every `nn.Linear` and the
+embedding (and the separate `lm_head`) is stored as three tensors:
+
+| tensor | dtype | shape | meaning |
+|---|---|---|---|
+| `<name>.weight` | U32 | `[out, in / 4]` | the 8-bit codes, four per little-endian word: code `j` of a word is bits `8j` to `8j + 7`, so the bytes of the buffer in order are the codes in order |
+| `<name>.scales` | BF16 | `[out, in / 64]` | one scale per group of 64 consecutive input positions |
+| `<name>.biases` | BF16 | `[out, in / 64]` | one bias per group |
+
+`w[o, i] = code[o, i] * scales[o, i // 64] + biases[o, i // 64]`. Norm gains stay
+BF16 (`model.norm.weight`, `[2560]`). For `model.layers.0.self_attn.k_proj`:
+`weight` `[512, 640]`, `scales` and `biases` `[512, 40]`, dequantized `[512, 2560]`.
+The kit's `unpack_codes(words, bits=8)` and `dequantize(words, scales, biases,
+group_size=64, bits=8)` implement this in numpy and equal `mx.dequantize` bit for bit
+on the real file; `mx.quantized_matmul(x, w, scales, biases, transpose=True,
+group_size=64, bits=8)` on the packed tensors reproduces `mlx-lm`'s logits to 1.2e-5
+in float32. Scales and biases must be converted from BF16 before use.
+
+`python/tests/fixtures/m3/problems/real/asset-vocab` is a complete miniature of an
+asset problem (with a made-up asset that the tests install themselves).
+
+## 16. Checklist before you open a pull request
 
 - `ws validate <id> -v` passes, with no warning.
 - `ruff check problems/<track>/<id>` is clean.
@@ -1720,9 +2688,116 @@ examples of good style.
 - `ws submit <id> --mutant <one>` without `--reveal` shows nothing about the hidden
   cases beyond "Hidden case N" and a message free of expected values.
 - If the statement forbids a call: `forbidden` lists every spelling of it in every
-  framework, and a mutant takes the shortcut.
+  framework, and a mutant takes the shortcut. If it forbids something that is not
+  called (a dtype, a package), `forbidden_source` names the identifier.
+- If the problem has `requires` other than `cpu`: `WHETSTONE_HARDWARE=cpu ws submit
+  <id> --reference` passes every case that still runs, skips the rest with a clear
+  reason, and ends with "Not accepted: hardware missing" (section 14).
+- If the problem has `[[assets]]`: it validates with the asset present
+  (`ws validate <id> --require-assets`) and behaves sensibly without it
+  (`WHETSTONE_MODELS_DIR=/nonexistent ws submit <id> --reference`); fixtures are small
+  and `fixtures/make.py` regenerates them (section 15).
+- If a case has a memory limit: the reference uses at most two thirds of it and the
+  mutant it is written for at least one and a half times it (section 13).
 - Every statistical case takes under about 3 s in every framework.
 - The first public case is the statement's worked example.
 - No expected values appear in any failure message of a hidden case.
 - The statement specifies every choice that affects the output, and its Constraints
   section states the tolerance and any cost or speed limit.
+
+## 17. Contract additions of milestone 3 (to mirror in ARCHITECTURE.md)
+
+The judge implements the following; each block is worded to be pasted into the named
+section of `docs/ARCHITECTURE.md`. Everything is additive: a run of a problem with
+`requires = "cpu"` and no `[[assets]]` produces the same events as before, plus
+`end.skipped` and `start.requires`.
+
+**3.1 Environment.** Optional extras: `jax`, `mlx`, `models` (huggingface_hub,
+safetensors, tokenizers, transformers, and mlx-lm on macOS). `models` is needed only
+by `ws assets fetch` and by authors generating fixtures; the harness and the kit read
+downloaded files with numpy.
+
+**3.2 Frameworks.** A problem may be MLX-only (`frameworks = ["mlx"]`). Its oracle is
+`reference/mlx.py` and its mutants are written in MLX. Every other tensor problem
+includes `torch`.
+
+**3.3 Problem directory.**
+
+```toml
+requires = "cpu"                 # cpu | mlx-gpu | cuda: hardware needed to be accepted
+forbidden_source = ["bfloat16"]  # optional: identifiers that may not appear in the solution's source
+
+[[assets]]                       # optional, repeatable: model files the problem needs
+name = "granite-4.0-350m"        # directory under <root>/.whetstone/models/
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"   # full commit hash
+files = ["config.json", "tokenizer.json", "model.safetensors"]   # names or globs; safetensors, tokenizer, and config files only
+size_mb = 712                    # approximate download size
+```
+
+Optional `fixtures/` directory: committed reference outputs loaded by the tests.
+Cases declare what they need with `@case(requires=..., assets=[...])`; the default is
+`requires="cpu"` and every asset of the problem. Assets live in
+`<root>/.whetstone/models/<name>/` (gitignored) beside a `whetstone-asset.json`
+manifest; an asset is present when the manifest matches the declared repository and
+revision, covers the declared files, and every file has its recorded size.
+
+**3.5 Harness command.** No new flags. Two environment variables:
+`WHETSTONE_MODELS_DIR` (replaces `<root>/.whetstone/models`) and `WHETSTONE_HARDWARE`
+(comma-separated list of hardware to treat as present, for tests and previews).
+
+**3.6 Event protocol.**
+
+```jsonc
+{"event":"start", ..., "cases":[{"id":"c1","name":"...","public":true,"requires":"cuda"}],   // `requires` only when not "cpu"
+   "requires":"cuda","requires_met":false}
+{"event":"case_end","id":"hidden-2","status":"skipped","duration_ms":0,
+   "message":"skipped: needs an NVIDIA GPU (CUDA), which this machine does not have",
+   "detail":null,"stdout":"","metrics":[],
+   "skip":{"kind":"hardware","requires":"cuda"}}      // or {"kind":"asset","asset":"<name>"} or {"kind":"aborted"}
+{"event":"end","status":"hardware_missing","passed":2,"total":3,"skipped":1,"duration_ms":210.0,"metrics":[...],
+   "message":"2 of 2 cases that could run passed; 1 of 3 cases were skipped because ...",
+   "missing_hardware":"cuda"}                         // with assets_missing: "missing_assets":[{"name","repo","size_mb","fetch_command"}]
+```
+
+- Final `status` adds `assets_missing` and `hardware_missing`. Precedence when mixed:
+  import_error, runtime_error, time_limit, wrong_answer, assets_missing,
+  hardware_missing, accepted.
+- A case is `skipped`, without being run, when the hardware it requires is absent
+  (`skip.kind = "hardware"`) or an asset it needs is not downloaded (`"asset"`); cases
+  skipped because the run stopped early have `skip.kind = "aborted"`. Every skipped
+  `case_end` carries `skip` and a one-line `message`.
+- `accepted` means every selected case ran and passed on a machine that has the
+  problem's `requires`. If nothing that ran failed but a case was skipped for an
+  asset, the status is `assets_missing`; if a case was skipped for hardware, or the
+  problem's `requires` is not met, it is `hardware_missing`. A failure among the cases
+  that ran decides the status as before. When no case can run, the solution is not
+  imported.
+- `end` always carries `skipped` (the number of skipped cases). For the two new
+  statuses it carries `message` (what was skipped, why, and what to do) and
+  `missing_assets` or `missing_hardware`.
+- A metric may carry `"higher_is_better": true` (throughput); the run-level value of
+  such a metric is the smallest across cases instead of the largest.
+- Presentation: `assets_missing` and `hardware_missing` are neither success nor a
+  failure of the learner's code. Show "N of M cases passed; K skipped", the `message`,
+  and for `assets_missing` an action that runs the fetch. They never mark a problem
+  solved; store them like any other non-accepted submit.
+
+**3.7 CLI.** `ws assets list [--json]`, `ws assets fetch <name>... | --all [--json]
+[--no-verify]` (schemas in section 15), and `ws validate --require-assets`. `validate`
+reports a problem as `ok`, `FAIL`, or `SKIP` (nothing could run on this machine;
+does not fail the command) and warns about every case it could not run.
+
+**4 Core API.**
+
+```ts
+type Verdict = ... | "assets_missing" | "hardware_missing";
+interface Metric { name: string; value: number; unit?: string; limit?: number; higherIsBetter?: boolean; }
+interface CaseInfo { id: string; name: string; public: boolean; requires?: Requires; }
+type Skip = { kind: "hardware"; requires: Requires } | { kind: "asset"; asset: string } | { kind: "aborted" };
+interface CaseResult { ...; skip?: Skip; }
+interface MissingAsset { name: string; repo: string; sizeMb: number; fetchCommand: string; }
+// RunEvent "start" gains requires: Requires and requiresMet: boolean;
+// RunEvent "end" gains skipped: number, missingAssets?: MissingAsset[], missingHardware?: Requires.
+```
+

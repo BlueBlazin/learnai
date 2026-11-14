@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from whetstone.hardware import REQUIREMENTS
+
 _ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 #: The ids hidden cases get on the wire (``hidden-1``, ``hidden-2``, ...); a real case id
 #: must not look like one.
@@ -27,6 +29,10 @@ class Case:
     fn: Callable[[Any], None]
     time_limit_s: float | None = None
     frameworks: tuple[str, ...] | None = None
+    #: Hardware the case needs: ``cpu`` (the default: runs everywhere), ``mlx-gpu``, ``cuda``.
+    requires: str = "cpu"
+    #: Names of the problem's assets the case needs; None means all of them.
+    assets: tuple[str, ...] | None = None
 
     def applies_to(self, framework: str) -> bool:
         return self.frameworks is None or framework in self.frameworks
@@ -39,6 +45,8 @@ def case(
     id: str | None = None,
     time_limit_s: float | None = None,
     frameworks: Sequence[str] | None = None,
+    requires: str = "cpu",
+    assets: Sequence[str] | None = None,
 ) -> Callable[[Callable[[Any], None]], Callable[[Any], None]]:
     """Register a test case.
 
@@ -53,6 +61,13 @@ def case(
                   hidden case.
     time_limit_s  overrides the problem's per-case limit.
     frameworks    restrict the case to these solution frameworks (rarely needed).
+    requires      hardware the case needs: ``"cpu"`` (default: the case runs on every
+                  machine), or the problem's own ``requires`` (``"mlx-gpu"`` or
+                  ``"cuda"``). Where the hardware is absent the case is reported as
+                  ``skipped`` with the reason, and the run cannot be ``accepted``.
+    assets        names of the problem's ``[[assets]]`` this case needs. Default: all
+                  of them. ``assets=[]`` marks a case that needs no download (a
+                  synthetic input). A case whose asset is not on disk is ``skipped``.
 
     Cases run in the order they are defined. The function takes one argument, the
     ``Context``; it passes by returning and fails by raising ``CheckFailure`` (which is
@@ -60,6 +75,12 @@ def case(
     """
     if not isinstance(name, str) or not name.strip():
         raise ValueError("@case needs a non-empty name")
+    if requires not in REQUIREMENTS:
+        raise ValueError(f"@case requires= must be one of {', '.join(REQUIREMENTS)}")
+    if assets is not None and (
+        isinstance(assets, str) or not all(isinstance(item, str) for item in assets)
+    ):
+        raise ValueError("@case assets= must be a list of asset names")
 
     def register(fn: Callable[[Any], None]) -> Callable[[Any], None]:
         case_id = id if id is not None else fn.__name__
@@ -78,6 +99,8 @@ def case(
                     fn=fn,
                     time_limit_s=time_limit_s,
                     frameworks=tuple(frameworks) if frameworks is not None else None,
+                    requires=requires,
+                    assets=tuple(assets) if assets is not None else None,
                 )
             )
         return fn

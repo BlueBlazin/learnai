@@ -97,12 +97,15 @@ headers (append `/raw/main/config.json` or `/tree/main` to a repo URL):
 | tokenizer | byte-level BPE, `tokenizer.json` | same |
 | chat template | ChatML-style | ChatML-style with `<think>`; `enable_thinking` defaults to true |
 
-Not verified (the first M3 author must check before writing fixtures): that
-`transformers` loads both model types natively (inferred from the absence of `auto_map`
-and modeling `.py` files); pre-norm placement (inferred from tensor names
-`input_layernorm`, `post_attention_layernorm`); the exact place each multiplier is
-applied. The multipliers are a feature for teaching: "match the reference logits" fails
-loudly until every one is in the right place.
+**Verified in milestone 3.** Both models load natively in `transformers` and `mlx-lm`,
+and a from-scratch forward pass matches the reference logits (largest error 8.4e-5).
+The pinned revisions, the exact place of every multiplier, the 8-bit checkpoint layout,
+and the tokenizer details are recorded in `docs/PROBLEM_AUTHORING.md` section 15, which
+supersedes this table where they differ. Known differences: the two tokenizers differ
+in pre-tokenizer and special tokens; the small model's chat format is
+`<|start_of_role|>user<|end_of_role|>...<|end_of_text|>`, not ChatML; `mlx-lm` runs the
+model in bfloat16, so compare against it with a tolerance of about 0.4 in logits or
+load float32. Granite was chosen; the fallback below was tested and not needed.
 
 **Fallback pair** if Granite turns out to need custom code:
 [`Qwen/Qwen3-0.6B`](https://huggingface.co/Qwen/Qwen3-0.6B) (751.6 M stored, 1.50 GB;
@@ -119,7 +122,7 @@ Gemma 4 E2B/E4B (any-to-any, 5.1 B total, no sub-1B variant), LFM2.5 and LFM3
 (gated).
 
 **Rules for real-model problems.** Weights are never committed. The kit downloads them
-on demand into `.whetstone/assets/` [kit: `assets`], and a problem whose assets are
+on demand into `.whetstone/models/` (`ws assets fetch <name>`), and a problem whose assets are
 absent reports every case as `skipped` with a message naming the download command.
 Reference outputs (logits, token ids, text) are small fixture files committed inside
 the problem directory, generated once by a script the author also commits
@@ -154,7 +157,7 @@ Python inside, the solution's framework at the boundary, functional, `counters`,
 
 | name | interface | first used by |
 |---|---|---|
-| `assets` | `assets.path("granite-4.0-350m", "model.safetensors") -> Path` or raises `AssetMissing`; registry of repo id, revision hash, file list, sizes, SHA-256; CLI `ws assets pull <name>`. `problem.toml` gains `assets = ["granite-4.0-350m"]`; the harness skips all cases when an asset is missing. | every real-model problem |
+| `assets` | `assets.path("granite-4.0-350m", "model.safetensors") -> Path` or raises `AssetMissing`; registry of repo id, revision hash, file list, sizes, SHA-256; CLI `ws assets fetch <name>`. As built: `[[assets]]` tables in `problem.toml`, `ctx.asset(name, file)` in tests, and cases that need a missing asset are skipped (see PROBLEM_AUTHORING section 15). | every real-model problem |
 | `fixtures` | `ctx.fixture("logits.npz")` loads a file from the problem's `fixtures/` directory. | every real-model problem |
 | MLX-only oracle | `ws validate` accepts `frameworks = ["mlx"]` with `reference/mlx.py` as the oracle (today a tensor problem must list `torch`). | track `mlx` |
 | `EvalSpy` | `with EvalSpy() as spy:` counts `mx.eval`, `mx.async_eval`, and implicit evaluations (`.item()`, `.tolist()`, `np.array(x)`, printing) with the call site; `spy.evals`, `spy.implicit`. | `mlx-lazy-eval-placement`, `mlx-streaming-generate` |

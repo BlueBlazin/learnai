@@ -14,6 +14,16 @@ uv run --extra jax --extra mlx ws list
 uv run --extra jax --extra mlx ws validate --all
 ```
 
+The `models` extra (huggingface_hub, safetensors, tokenizers, transformers, mlx-lm) is
+for real-model problems: `ws assets fetch` needs it to download weights into
+`../.whetstone/models/`, and authors need it to generate reference fixtures. The
+judge, the kit loaders, and the app do not: they read the downloaded files with numpy.
+
+```sh
+uv run --extra jax --extra mlx --extra models ws assets fetch granite-4.0-350m
+uv run --extra jax --extra mlx --extra models pytest   # also compares with transformers
+```
+
 ## Layout
 
 ```
@@ -23,12 +33,16 @@ src/whetstone/
   capture.py      file-descriptor-level output capture
   protocol.py     the @@WS@@ event format
   problem.py      problem.toml / track.toml loading, catalog discovery
+  assets.py       [[assets]]: declarations, what is on disk, ws assets list | fetch
+  hardware.py     which `requires` this machine meets (mlx-gpu, cuda)
   judge/          the test authoring API: @case, Context, check, adapters,
                   speed, simclock, service
-  kit/            objects problems hand to solutions: TinyLM, SimModel, Counters
-  cli.py          ws list | run | submit | validate | new
+  kit/            objects problems hand to solutions: TinyLM, SimModel, Counters,
+                  MLXTinyLM and the MLX instruments, RealModel and the real-model loaders
+  cli.py          ws list | run | submit | validate | new | assets
   validate.py     the quality gate
   scaffold.py     ws new
   render.py       terminal rendering of the event stream
-tests/            pytest suite; fixtures/catalog holds one miniature problem per judge type
+tests/            pytest suite; fixtures/catalog holds one miniature problem per judge type,
+                  fixtures/m3 the MLX-only, hardware-requirement, and asset miniatures
 ```

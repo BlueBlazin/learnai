@@ -5,9 +5,6 @@ the comparison, so that NaN payloads, the sign of zero, and subnormals all count
 failure details print bit patterns in hexadecimal.
 """
 
-import ast
-from pathlib import Path
-
 import numpy as np
 
 from whetstone.judge import case, check
@@ -82,29 +79,6 @@ def worked_example(ctx):
     check_decode(ctx, bits, [0x3F800000, 0xC0200000, 0x40490000, 0x7F800000, 0x00010000])
     x = np.array([1.0, -2.5, 3.14159265, 0.1, 1.00390625, 1.01171875], dtype=np.float32)
     check_encode(ctx, x, [0x3F80, 0xC020, 0x4049, 0x3DCD, 0x3F80, 0x3F82])
-
-
-# Rejects uses_dtype_cast (and any other spelling of the dtype, in every framework).
-@case("the framework's bfloat16 dtype is not used", public=True)
-def no_bfloat16_dtype(ctx):
-    tree = ast.parse(Path(ctx.solution.__file__).read_text(encoding="utf-8"))
-    lines = sorted(
-        {
-            node.lineno
-            for node in ast.walk(tree)
-            if (isinstance(node, ast.Attribute) and node.attr == "bfloat16")
-            or (isinstance(node, ast.Name) and node.id == "bfloat16")
-            or (isinstance(node, ast.Constant) and node.value == "bfloat16")
-            or (isinstance(node, ast.alias) and node.name == "bfloat16")
-        }
-    )
-    check.that(
-        not lines,
-        "the `bfloat16` dtype is not allowed in this problem "
-        f"(used at line {', '.join(map(str, lines))})",
-        "Do the conversion on the bit patterns: integer operations, plus one "
-        "reinterpretation of 32 bits between an integer type and float32.",
-    )
 
 
 # Rejects ieee_half: 0x3C00 is 1.0 in half precision and 0.0078125 in bfloat16.

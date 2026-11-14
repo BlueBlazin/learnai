@@ -10,7 +10,8 @@ prerequisites = []
 requires = "cpu"
 entry = ["bf16_to_f32", "f32_to_bf16"]
 time_limit_s = 10
-# The statement's rule: no bfloat16 dtype. The harness can guard the one callable
-# spelling; tests.py scans the source for the dtype itself (torch.bfloat16, mx.bfloat16,
-# jnp.bfloat16, "bfloat16"), which is an object and not a call.
-forbidden = ["torch.Tensor.bfloat16"]
+# The statement's rule: no bfloat16 dtype, in any spelling. A dtype is an object, not a
+# call, so there is nothing to guard at run time: the identifier itself is ruled out of
+# the solution's source (torch.bfloat16, Tensor.bfloat16(), mx.bfloat16, jnp.bfloat16,
+# "bfloat16"). Rejects the mutants uses_builtin and uses_dtype_cast.
+forbidden_source = ["bfloat16"]

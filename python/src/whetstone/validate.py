@@ -3,6 +3,14 @@
 For every supported framework of a problem: the reference is accepted and the starter
 is not. Every mutant is rejected. Metadata is complete and consistent. This module
 returns findings; the CLI prints them.
+
+A machine cannot always run every case: a case may need hardware it lacks
+(``requires``) or a model asset that is not downloaded (``[[assets]]``). The harness
+reports such cases as skipped and ends with ``hardware_missing`` or ``assets_missing``
+instead of ``accepted``. Validation then judges what did run and says, as a warning on
+the problem, what was not validated here; a problem of which nothing could run is
+reported as skipped, never as passed. ``require_assets`` turns a missing asset into an
+error.
 """
 
 from __future__ import annotations
@@ -17,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from whetstone import runner
+from whetstone import assets, runner
 from whetstone.problem import (
     DIFFICULTIES,
     FRAMEWORKS,
@@ -28,6 +36,7 @@ from whetstone.problem import (
     load_problem,
     problem_dirs,
 )
+from whetstone.protocol import INCOMPLETE_VERDICTS
 
 ID_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 #: The same pattern as whetstone.judge.forbidden.NAME_PATTERN, which is not imported
@@ -70,10 +79,26 @@ class Report:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     checks: list[str] = field(default_factory=list)  # what passed, for the printed report
+    #: Why nothing of some reference run could be judged on this machine.
+    skips: list[str] = field(default_factory=list)
+    #: Whether at least one reference ran at least one case.
+    ran: bool = False
 
     @property
     def ok(self) -> bool:
         return not self.errors
+
+    @property
+    def skipped(self) -> bool:
+        """Nothing is wrong, but nothing of the behavior could be checked here."""
+        return self.ok and bool(self.skips) and not self.ran
+
+    @property
+    def status(self) -> str:
+        """``ok``, ``fail``, or ``skipped``."""
+        if not self.ok:
+            return "fail"
+        return "skipped" if self.skipped else "ok"
 
 
 def _nonempty(path: Path) -> bool:
@@ -99,12 +124,15 @@ def check_metadata(directory: Path, catalog_ids: dict[str, list[Path]]) -> tuple
             err(f"problem.toml: missing key `{key}`")
         elif not isinstance(raw[key], kind) or isinstance(raw[key], bool):
             err(f"problem.toml: `{key}` has the wrong type")
-    for key in ("frameworks", "judges", "tags", "prerequisites", "entry", "forbidden"):
+    lists = ("frameworks", "judges", "tags", "prerequisites", "entry", "forbidden")
+    for key in (*lists, "forbidden_source"):
         value = raw.get(key)
         if isinstance(value, list) and not all(isinstance(item, str) for item in value):
             err(f"problem.toml: `{key}` must be a list of strings")
     if "forbidden" in raw and not isinstance(raw["forbidden"], list):
         err("problem.toml: `forbidden` must be a list of dotted names")
+    if "forbidden_source" in raw and not isinstance(raw["forbidden_source"], list):
+        err("problem.toml: `forbidden_source` must be a list of identifiers")
     if report.errors:
         return report, None
 
@@ -140,8 +168,17 @@ def check_metadata(directory: Path, catalog_ids: dict[str, list[Path]]) -> tuple
             err(f"problem.toml: unknown framework {name!r}")
     if "python" in frameworks and len(frameworks) > 1:
         err('problem.toml: "python" cannot be combined with tensor frameworks')
-    if any(f in TENSOR_FRAMEWORKS for f in frameworks) and "torch" not in frameworks:
-        err('problem.toml: tensor problems must support "torch" (the oracle is written in it)')
+    tensor = [f for f in frameworks if f in TENSOR_FRAMEWORKS]
+    if tensor and "torch" not in frameworks and frameworks != ("mlx",):
+        err(
+            'problem.toml: tensor problems must support "torch" (the oracle is written in '
+            'it); the one exception is an MLX-only problem, `frameworks = ["mlx"]`, whose '
+            "reference/mlx.py is the oracle"
+        )
+    if problem.requires == "mlx-gpu" and "mlx" not in frameworks:
+        err('problem.toml: requires = "mlx-gpu" needs "mlx" in frameworks')
+    if problem.requires == "cuda" and "torch" not in frameworks:
+        err('problem.toml: requires = "cuda" needs "torch" in frameworks')
 
     if not problem.judges:
         err("problem.toml: judges is empty")
@@ -160,6 +197,23 @@ def check_metadata(directory: Path, catalog_ids: dict[str, list[Path]]) -> tuple
             err(
                 f"problem.toml: forbidden name {name!r} must be a dotted name such as "
                 "`torch.softmax` or `torch.Tensor.softmax`"
+            )
+    if len(set(problem.forbidden_source)) != len(problem.forbidden_source):
+        err("problem.toml: forbidden_source contains duplicates")
+    for name in problem.forbidden_source:
+        if not name.isidentifier():
+            err(
+                f"problem.toml: forbidden_source entry {name!r} must be a single identifier "
+                "such as `bfloat16` (dotted names that can be called go in `forbidden`)"
+            )
+    for error in problem.asset_errors:
+        err(f"problem.toml: {error}")
+    for spec in problem.assets:
+        house = _house_models().get(spec.name)
+        if house is not None and (spec.repo, spec.revision) != (house.repo, house.revision):
+            err(
+                f"problem.toml: asset `{spec.name}` is a house model and must be "
+                f"{house.repo} at revision {house.revision} (whetstone.kit.realmodel)"
             )
     for prerequisite in problem.prerequisites:
         if prerequisite == problem.id:
@@ -250,12 +304,76 @@ def _jobs(problem: Problem) -> list[_Job]:
     return jobs
 
 
-def _judge(report: Report, problem: Problem, job: _Job, result: runner.RunResult) -> None:
+def _house_models() -> dict[str, assets.AssetSpec]:
+    """The kit's house models. Read from the source file's constants without importing
+    the kit package (numpy and every kit module) just to compare two strings."""
+    global _HOUSE
+    if _HOUSE is None:
+        import ast
+
+        _HOUSE = {}
+        source = Path(__file__).parent / "kit" / "realmodel.py"
+        for node in ast.parse(source.read_text(encoding="utf-8")).body:
+            if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)):
+                continue
+            if getattr(node.value.func, "id", None) != "AssetSpec":
+                continue
+            fields = {
+                keyword.arg: keyword.value.value
+                for keyword in node.value.keywords
+                if isinstance(keyword.value, ast.Constant)
+            }
+            _HOUSE[fields["name"]] = assets.AssetSpec(
+                fields["name"], fields["repo"], fields["revision"], (), float(fields["size_mb"])
+            )
+    return _HOUSE
+
+
+_HOUSE: dict[str, assets.AssetSpec] | None = None
+
+
+def _not_run(result: runner.RunResult) -> str:
+    """Why cases were skipped, from an incomplete run: one line."""
+    reasons = dict.fromkeys(
+        str(c.get("message", "")).removeprefix("skipped: ")
+        for c in result.cases
+        if c.get("status") == "skipped"
+    )
+    return "; ".join(reason for reason in reasons if reason) or "cases were skipped"
+
+
+def _judge(
+    report: Report,
+    problem: Problem,
+    job: _Job,
+    result: runner.RunResult,
+    *,
+    require_assets: bool = False,
+) -> None:
     verdict = result.verdict
     end = result.end or {}
     explanation = f": {end['message']}" if end.get("message") else ""
+    incomplete = verdict in INCOMPLETE_VERDICTS
+    passed, skipped = int(end.get("passed", 0)), int(end.get("skipped", 0))
+    if incomplete and verdict == "assets_missing" and require_assets:
+        if job.kind == "reference":
+            report.errors.append(f"{job.label}: a required model asset is missing{explanation}")
+        return
+    if incomplete and passed == 0:
+        # Nothing ran: there is no behavior to judge, for this file or any other.
+        if job.kind == "reference":
+            report.skips.append(f"{job.label}: not validated here: {_not_run(result)}")
+        return
     if job.kind == "reference":
-        if verdict != "accepted":
+        if incomplete:
+            report.ran = True
+            cases = (result.start or {}).get("cases", [])
+            report.warnings.append(
+                f"{job.label}: only {passed} of {len(cases)} cases could run on this machine "
+                f"(all passed); {skipped} {'was' if skipped == 1 else 'were'} NOT validated: "
+                f"{_not_run(result)}"
+            )
+        elif verdict != "accepted":
             failing = [c for c in result.cases if c.get("status") != "pass"]
             first = f" (first failing case {failing[0]['id']}: {failing[0].get('message')})"
             report.errors.append(
@@ -263,6 +381,7 @@ def _judge(report: Report, problem: Problem, job: _Job, result: runner.RunResult
                 f"{first if failing else ''}"
             )
             return
+        report.ran = True
         cases = (result.start or {}).get("cases", [])
         public = sum(1 for c in cases if c.get("public"))
         if public == 0:
@@ -276,12 +395,18 @@ def _judge(report: Report, problem: Problem, job: _Job, result: runner.RunResult
                 f"{job.label}: the cases took {in_cases:.1f} s; a full submit should "
                 "finish in a few seconds"
             )
+        outcome = f"passed {passed} of {len(cases)} cases" if incomplete else "accepted"
         report.checks.append(
-            f"{job.label} accepted, {len(cases)} cases, {seconds:.2f} s ({in_cases:.2f} s in cases)"
+            f"{job.label} {outcome}, {len(cases)} cases, {seconds:.2f} s ({in_cases:.2f} s in cases)"
         )
     elif job.kind == "starter":
         if verdict == "accepted":
             report.errors.append(f"{job.label}: must not be accepted, but it was")
+        elif incomplete:
+            report.errors.append(
+                f"{job.label}: passes every case that can run on this machine; the cases "
+                "that run everywhere must reject the starter"
+            )
         elif verdict not in REJECTED:
             report.errors.append(
                 f"{job.label}: must run and be rejected by the tests, got {verdict}{explanation}"
@@ -292,6 +417,11 @@ def _judge(report: Report, problem: Problem, job: _Job, result: runner.RunResult
         if verdict == "accepted":
             report.errors.append(
                 f"{job.label}: was accepted; no test catches this bug. Add a case that does."
+            )
+        elif incomplete:
+            report.warnings.append(
+                f"{job.label}: NOT validated: no case that can run on this machine catches "
+                f"it, and {skipped} could not run ({_not_run(result)})"
             )
         elif verdict not in REJECTED:
             report.errors.append(
@@ -334,13 +464,26 @@ def check_forbidden(names: tuple[str, ...]) -> dict[str, str]:
     return {str(name): str(problem) for name, problem in result.items()}
 
 
-def validate(root: Path, directories: list[Path], jobs: int | None = None) -> list[Report]:
+def validate(
+    root: Path,
+    directories: list[Path],
+    jobs: int | None = None,
+    *,
+    require_assets: bool = False,
+) -> list[Report]:
     """Validate the given problem directories against the catalog under ``root``.
 
     Harness runs execute ``jobs`` at a time, except those of timing-sensitive problems
     (``TIMING_SENSITIVE_JUDGES``), which run one after another once the parallel batch
     has finished, so that nothing else competes with a measurement.
+
+    ``require_assets``: a problem whose model asset is not downloaded is an error
+    instead of being skipped (for the machine that is meant to validate everything).
     """
+    _, asset_issues = assets.catalog(root)
+    conflicts: dict[str, list[str]] = {}
+    for problem_id, message in asset_issues:
+        conflicts.setdefault(problem_id, []).append(message)
     catalog_ids: dict[str, list[Path]] = {}
     for path in problem_dirs(root):
         try:
@@ -358,6 +501,11 @@ def validate(root: Path, directories: list[Path], jobs: int | None = None) -> li
     for directory in directories:
         report, problem = check_metadata(directory, catalog_ids)
         reports.append(report)
+        if problem is not None and not problem.asset_errors:
+            # Two problems naming one asset must agree on what it is.
+            report.errors.extend(
+                f"problem.toml: {message}" for message in conflicts.get(problem.id, [])
+            )
         if problem is None or not report.ok:
             continue  # behavioral checks on a malformed problem only add noise
         if problem.forbidden:
@@ -385,8 +533,8 @@ def validate(root: Path, directories: list[Path], jobs: int | None = None) -> li
                     f"forbidden: {len(problem.forbidden)} names resolve and can be guarded"
                 )
         for item, result in zip(parallel, results, strict=True):
-            _judge(item[0], item[1], item[2], result)
+            _judge(item[0], item[1], item[2], result, require_assets=require_assets)
     # The pool is idle now: timing-sensitive runs get the machine to themselves.
     for item in serial:
-        _judge(item[0], item[1], item[2], execute(item))
+        _judge(item[0], item[1], item[2], execute(item), require_assets=require_assets)
     return reports

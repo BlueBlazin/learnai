@@ -1,0 +1,4 @@
+id = "gpu"
+title = "GPU Fixtures"
+description = "Problems with hardware requirements, for the judge's own tests."
+order = 10

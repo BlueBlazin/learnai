@@ -1,0 +1,19 @@
+id = "asset-vocab"
+title = "Read a Vocabulary Size"
+track = "real"
+order = 10
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["fixture"]
+prerequisites = []
+requires = "cpu"
+entry = ["vocab_size"]
+time_limit_s = 5
+
+[[assets]]
+name = "tiny-test-model"
+repo = "whetstone-tests/tiny-test-model"
+revision = "0123456789abcdef0123456789abcdef01234567"
+files = ["config.json", "*.safetensors"]
+size_mb = 0.01

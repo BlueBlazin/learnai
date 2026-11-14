@@ -13,6 +13,8 @@ VERDICT_TEXT = {
     "time_limit": "Time limit exceeded",
     "import_error": "Import error",
     "harness_error": "Harness error",
+    "assets_missing": "Not judged: model asset missing",
+    "hardware_missing": "Not accepted: hardware missing",
 }
 STATUS_TEXT = {
     "pass": "PASS",
@@ -23,7 +25,7 @@ STATUS_TEXT = {
 }
 _COLORS = {
     "pass": "32", "fail": "31", "error": "31", "timeout": "33", "skipped": "2",
-    "accepted": "32", "dim": "2", "bold": "1",
+    "accepted": "32", "incomplete": "33", "dim": "2", "bold": "1",
 }  # fmt: skip
 
 
@@ -93,8 +95,13 @@ class Renderer:
         status = str(event.get("status"))
         verdict = VERDICT_TEXT.get(status, status)
         style = "accepted" if status == "accepted" else "fail"
+        if status in ("assets_missing", "hardware_missing"):
+            style = "incomplete"
         seconds = float(event.get("duration_ms", 0)) / 1000
-        summary = f"{event.get('passed', 0)}/{event.get('total', 0)} passed in {seconds:.2f} s"
+        skipped = f", {event['skipped']} skipped" if event.get("skipped") else ""
+        summary = (
+            f"{event.get('passed', 0)}/{event.get('total', 0)} passed{skipped} in {seconds:.2f} s"
+        )
         self.line(f"{self.paint(verdict, style)}  {summary}")
         if event.get("message"):
             self.line(f"  {event['message']}")

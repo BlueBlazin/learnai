@@ -62,8 +62,10 @@ One uv project at `python/` with ONE virtual environment.
 
 - Base dependencies always present: `torch` (the oracle runtime), `numpy`, `httpx`,
   `uvicorn`, `starlette`, plus judge internals.
-- Optional extras: `jax`, `mlx`. Later: `models` (safetensors, tokenizers,
-  huggingface_hub) for real-weight problems.
+- Optional extras: `jax`, `mlx`, `models` (huggingface_hub, safetensors, tokenizers,
+  transformers, and mlx-lm on macOS). `models` is needed only by `ws assets fetch` and
+  by authors generating fixtures; the harness and the kit read downloaded files with
+  numpy.
 - The Python version is pinned in `python/.python-version` (see VERSIONS.md).
 - All tensors in tests are **float32** unless a problem is about dtypes. MLX has no
   float64 on GPU and JAX defaults to 32-bit; tolerances must be chosen for float32.
@@ -78,6 +80,9 @@ A problem lists the frameworks a solution may be written in:
 | `jax` | JAX (CPU on Apple Silicon). APIs must therefore be functional: state in, state out. |
 | `mlx` | MLX (Apple GPU). |
 | `python` | Framework-free problems (tokenizers, schedulers, servers). |
+
+A problem may be MLX-only (`frameworks = ["mlx"]`). Its oracle is `reference/mlx.py`
+and its mutants are written in MLX. Every other tensor problem includes `torch`.
 
 Rule for framework-neutral problems: the function signatures are identical across
 frameworks and differ only in tensor type. **Randomness is an input**: a solution never
@@ -111,13 +116,35 @@ frameworks = ["torch", "jax", "mlx"]     # or ["python"]
 judges = ["numeric"]             # numeric | property | statistical | cost | speed | simclock | service
 tags = ["softmax", "numerics"]
 prerequisites = []               # problem ids
-requires = "cpu"                 # cpu | mlx-gpu | cuda
+requires = "cpu"                 # cpu | mlx-gpu | cuda: hardware needed to be accepted
 entry = ["softmax"]              # names the solution must define
 time_limit_s = 10                # default per-case limit
 ```
 
 `forbidden` (optional): a list of dotted names the solution must not call, for example
 `["torch.softmax", "torch.nn.functional.softmax"]`. A violation fails the case.
+`forbidden_source` (optional): identifiers that may not appear in the solution's source
+(an AST check), for names that cannot be guarded at call time, for example
+`["bfloat16"]`.
+
+`[[assets]]` (optional, repeatable): model files the problem needs.
+
+```toml
+[[assets]]
+name = "granite-4.0-350m"        # directory under <root>/.whetstone/models/
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"   # full commit hash
+files = ["config.json", "tokenizer.json", "model.safetensors"]   # names or globs; safetensors, tokenizer, and config files only
+size_mb = 712                    # approximate download size
+```
+
+Model assets live in `<root>/.whetstone/models/<name>/` (gitignored) beside a
+`whetstone-asset.json` manifest. An asset is present when the manifest matches the
+declared repository and revision, covers the declared files, and every file has its
+recorded size. Cases declare what they need with `@case(requires=..., assets=[...])`;
+the default is `requires="cpu"` and every asset of the problem.
+
+Optional `fixtures/` directory: committed reference outputs loaded by the tests.
 
 Optional `assets/` directory: figures for the statement (SVG preferred, PNG allowed),
 referenced from Markdown as `![caption](assets/<file>)`. SVG figures must read well in
@@ -169,6 +196,9 @@ uv run --project <root>/python [--extra jax] [--extra mlx] -- \
   for harness or usage failure.
 - The solution runs inside this subprocess. Core enforces an overall wall-clock limit
   and kills the process group on cancel or timeout.
+- Environment variables: `WHETSTONE_MODELS_DIR` replaces `<root>/.whetstone/models`;
+  `WHETSTONE_HARDWARE` is a comma-separated list of hardware to treat as present (tests
+  and previews only).
 
 ### 3.6 Event protocol
 
@@ -188,9 +218,43 @@ non-prefixed stdout line and all stderr as diagnostic log output.
 {"event":"end","status":"accepted","passed":5,"total":5,"duration_ms":210.0,"metrics":[...]}
 ```
 
+Skipped cases and the two "not judged" endings:
+
+```jsonc
+{"event":"start", ..., "cases":[{"id":"c1","name":"...","public":true,"requires":"cuda"}],   // `requires` only when not "cpu"
+   "requires":"cuda","requires_met":false}
+{"event":"case_end","id":"hidden-2","status":"skipped","duration_ms":0,
+   "message":"skipped: needs an NVIDIA GPU (CUDA), which this machine does not have",
+   "detail":null,"stdout":"","metrics":[],
+   "skip":{"kind":"hardware","requires":"cuda"}}      // or {"kind":"asset","asset":"<name>"} or {"kind":"aborted"}
+{"event":"end","status":"hardware_missing","passed":2,"total":3,"skipped":1,"duration_ms":210.0,"metrics":[...],
+   "message":"2 of 2 cases that could run passed; 1 of 3 cases were skipped because ...",
+   "missing_hardware":"cuda"}                         // with assets_missing: "missing_assets":[{"name","repo","size_mb","fetch_command"}]
+```
+
 - Case `status`: `pass | fail | error | timeout | skipped`.
-- Final `status`: `accepted | wrong_answer | runtime_error | time_limit | import_error | harness_error`.
-  Precedence when mixed: import_error, runtime_error, time_limit, wrong_answer.
+- Final `status`: `accepted | wrong_answer | runtime_error | time_limit | import_error
+  | harness_error | assets_missing | hardware_missing`. Precedence when mixed:
+  import_error, runtime_error, time_limit, wrong_answer, assets_missing,
+  hardware_missing, accepted.
+- A case is `skipped`, without being run, when the hardware it requires is absent
+  (`skip.kind = "hardware"`) or an asset it needs is not downloaded (`"asset"`); cases
+  skipped because the run stopped early have `skip.kind = "aborted"`. Every skipped
+  `case_end` carries `skip` and a one-line `message`.
+- `accepted` means every selected case ran and passed on a machine that has the
+  problem's `requires`. If nothing that ran failed but a case was skipped for an asset,
+  the status is `assets_missing`; if a case was skipped for hardware, or the problem's
+  `requires` is not met, it is `hardware_missing`. A failure among the cases that ran
+  decides the status as before. When no case can run, the solution is not imported.
+- `end` always carries `skipped` (the number of skipped cases). For the two new
+  statuses it carries `message` (what was skipped, why, and what to do) and
+  `missing_assets` or `missing_hardware`.
+- A metric may carry `"higher_is_better": true` (throughput); the run-level value of
+  such a metric is the smallest across cases instead of the largest.
+- Presentation: `assets_missing` and `hardware_missing` are neither success nor a
+  failure of the learner's code. Show "N of M cases passed; K skipped", the `message`,
+  and for `assets_missing` an action that fetches the asset. They never mark a problem
+  solved; they are stored like any other non-accepted submit.
 - Hidden cases have the opaque id `hidden-N` and the name "Hidden case N", keep the
   one-line `message`, and always have `detail: null`. For a hidden `error`, `message` is
   the exception line plus the location in the solution file. Skipped cases have
@@ -206,11 +270,25 @@ non-prefixed stdout line and all stderr as diagnostic log output.
 ### 3.7 CLI
 
 `uv run --project python ws <command>`: `list`, `run <id> [-f framework]`,
-`submit <id> [-f framework]`, `validate [<id> | --all]`, `new <track>/<id>`.
+`submit <id> [-f framework]`, `validate [<id> | --all] [--require-assets]`,
+`new <track>/<id>`, `assets list [--json]`,
+`assets fetch <name>... | --all [--json] [--no-verify]`.
+
+`ws assets list --json` prints one JSON document (`models_dir`, `assets[]` with `name`,
+`repo`, `revision`, `files`, `size_mb`, `state` = `present | missing | incomplete`,
+`present`, `reason`, `path`, `bytes_on_disk`, `problems`, `fetch_command`, and
+`issues[]`); it needs no extra and no network. `ws assets fetch ... --json` needs
+`--extra models` and writes `@@WS@@ `-prefixed events `asset_start`, `asset_progress`,
+`asset_file`, and `asset_end` (exactly one per asset, last, with `ok` and `message`);
+exit code 0 when every asset succeeded, 1 when one failed, 2 for a usage error. A fetch
+is pinned to the declared revision, verified, and resumable per file. Full schemas:
+PROBLEM_AUTHORING section 15.
 
 `validate` is the quality gate. For every supported framework of a problem: the reference
 is accepted; the starter is not accepted. Every mutant is rejected. Metadata is complete
-and consistent. A problem that fails validation must not be merged.
+and consistent. A problem that fails validation must not be merged. `validate` reports
+each problem as `ok`, `FAIL`, or `SKIP` (nothing could run on this machine; does not
+fail the command) and warns about every case it could not run.
 
 Authoring details (the test API, the framework adapter, the kit) are specified in
 `docs/PROBLEM_AUTHORING.md`, owned by the Python judge.
@@ -228,7 +306,8 @@ type ProblemStatus = "todo" | "attempted" | "solved";
 type RunMode = "run" | "submit";
 type CaseStatus = "pass" | "fail" | "error" | "timeout" | "skipped";
 type Verdict = "accepted" | "wrong_answer" | "runtime_error" | "time_limit"
-             | "import_error" | "harness_error" | "canceled";
+             | "import_error" | "harness_error" | "canceled"
+             | "assets_missing" | "hardware_missing";
 
 interface Track { id: string; title: string; description: string; order: number;
                   problemCount: number; solvedCount: number; }
@@ -237,6 +316,7 @@ interface ProblemSummary {
   id: string; title: string; track: string; order: number; difficulty: Difficulty;
   frameworks: Framework[]; judges: JudgeKind[]; tags: string[]; prerequisites: string[];
   requires: Requires; status: ProblemStatus; solvedFrameworks: Framework[];
+  assets: string[];             // names of the model assets the problem declares
 }
 
 interface ProblemDetail extends ProblemSummary {
@@ -250,26 +330,33 @@ interface ProblemDetail extends ProblemSummary {
 
 interface SolutionFile { code: string; isStarter: boolean; path: string; }
 
-interface Metric { name: string; value: number; unit?: string; limit?: number; }
+interface Metric { name: string; value: number; unit?: string; limit?: number;
+                   higherIsBetter?: boolean; }
 
-interface CaseInfo { id: string; name: string; public: boolean; }
+interface CaseInfo { id: string; name: string; public: boolean; requires?: Requires; }
+type Skip = { kind: "hardware"; requires: Requires } | { kind: "asset"; asset: string }
+          | { kind: "aborted" };
 interface CaseResult { id: string; status: CaseStatus; durationMs: number;
                        message: string | null; detail: string | null;
-                       stdout: string; metrics: Metric[]; }
+                       stdout: string; metrics: Metric[]; skip?: Skip; }
+interface MissingAsset { name: string; repo: string; sizeMb: number; }
 
 type RunEvent =
   | { type: "preparing"; message: string }                      // environment sync, spawn
-  | { type: "start"; cases: CaseInfo[]; env: Record<string, string> }
+  | { type: "start"; cases: CaseInfo[]; env: Record<string, string>;
+      requires: Requires; requiresMet: boolean }
   | { type: "caseStart"; id: string }
   | { type: "caseEnd"; result: CaseResult }
   | { type: "log"; stream: "stdout" | "stderr"; text: string }  // diagnostics
   | { type: "end"; verdict: Verdict; passed: number; total: number;
       durationMs: number; metrics: Metric[]; submissionId: number | null;
-      message: string | null; detail: string | null };          // import/harness errors
+      skipped: number;                                          // cases not run
+      missingAssets?: MissingAsset[]; missingHardware?: Requires;
+      message: string | null; detail: string | null };          // import/harness errors, not-judged reasons
 
 interface Submission { id: number; problemId: string; framework: Framework; mode: RunMode;
-                       verdict: Verdict; passed: number; total: number; durationMs: number;
-                       target: string; createdAt: string; }               // ISO 8601
+                       verdict: Verdict; passed: number; total: number; skipped: number;
+                       durationMs: number; target: string; createdAt: string; }   // ISO 8601
 interface StoredCase extends CaseResult { name: string; public: boolean; }
 interface SubmissionDetail extends Submission { code: string; cases: StoredCase[]; metrics: Metric[]; }
 
@@ -282,6 +369,20 @@ interface EnvStatus { uv: string | null; python: string | null; frameworks: Fram
                       root: string; }
 interface Stats { solved: number; total: number; byDifficulty: Record<Difficulty, [number, number]>;
                   streakDays: number; }
+
+type AssetState = "present" | "missing" | "incomplete";
+interface ModelAsset { name: string; repo: string; revision: string; files: string[];
+                       sizeMb: number;          // declared approximate download size
+                       state: AssetState; reason: string | null;   // why it is incomplete
+                       path: string; bytesOnDisk: number; problems: string[]; }
+interface AssetList { modelsDir: string; assets: ModelAsset[]; }
+type AssetEvent =
+  | { type: "preparing"; message: string }                      // environment sync
+  | { type: "start"; asset: string; totalBytes: number }
+  | { type: "progress"; asset: string; file: string; doneBytes: number; totalBytes: number }
+  | { type: "assetEnd"; asset: string; ok: boolean; message: string | null }
+  | { type: "log"; text: string }
+  | { type: "done"; ok: boolean; canceled: boolean; message: string | null };  // always last
 ```
 
 Commands (Tauri command names are snake_case; the `Backend` interface uses camelCase):
@@ -307,6 +408,10 @@ Commands (Tauri command names are snake_case; the `Backend` interface uses camel
 | `list_paths` | | `Path[]` |
 | `get_problem_asset` | `id, path` | `string`: a `data:` URL. `path` is relative to the problem's `assets/` directory and may not escape it; only `.svg` and `.png`, at most 1 MiB; an SVG must be UTF-8 and a PNG must have the PNG signature |
 | `list_catalog_issues` | | `{ path: string; message: string }[]` (malformed tracks, problems, and paths, and path entries that were skipped) |
+| `list_assets` | | `AssetList` (runs `ws assets list --json`) |
+| `fetch_assets` | `names: string[]` + event sink | `jobId: string`; stream of `AssetEvent` (runs `ws assets fetch <names> --json` with `--extra models`) |
+| `cancel_asset_fetch` | `jobId` | |
+| `remove_asset` | `name` | `AssetList`; deletes `<models dir>/<name>` after checking that `name` is a declared asset |
 
 Rules: only `submit` runs are stored as submissions with a code snapshot; `run` results
 are ephemeral. A canceled submit, or one whose process never launched, is not stored.
@@ -320,12 +425,20 @@ ending today or yesterday. A problem is `solved` once any framework has an accep
 Solutions live at `workspace/<problem id>/<framework>.py` so they can be edited in any
 editor; the app re-reads the file when the window regains focus.
 
+Model assets: one fetch job at a time (a second `fetch_assets` fails with a clear
+message). Canceling kills the process group; completed files are kept, so a later fetch
+resumes. `cancel_asset_fetch` on an unknown or finished job is a no-op. `remove_asset`
+fails while a fetch is running. The app never downloads anything without an explicit
+click. `assets_missing` and `hardware_missing` submits are stored (with `skipped`) but
+never count as solved or toward the streak.
+
 ### 4.1 Transports
 
 **Tauri.** One `#[tauri::command]` per row above. JavaScript passes camelCase argument
 names (Tauri maps them to snake_case Rust parameters). Streaming commands take an extra
-argument `onEvent: Channel<RunEvent>` (or `Channel<InstallEvent>`); `start_run` returns
-the `runId` immediately and events flow over the channel until `end`. Errors are
+argument `onEvent: Channel<RunEvent>` (or `Channel<InstallEvent>`, `Channel<AssetEvent>`);
+`start_run` returns the `runId` immediately and events flow over the channel until `end`
+(`fetch_assets` likewise returns the `jobId` and streams until `done`). Errors are
 returned as a string message.
 
 **Devbridge (HTTP, dev and test only).** Listens on `127.0.0.1:1421`, CORS open to the
@@ -340,6 +453,8 @@ Vite dev origin.
   subscriber that connects late; the stream closes after `end`.
 - `POST /api/env_install` returns `{"jobId": "..."}`; events at
   `GET /api/jobs/<jobId>/events`, same rules, closing after `done`.
+- `POST /api/fetch_assets` returns `{"jobId": "..."}`; `AssetEvent`s at the same
+  `GET /api/jobs/<jobId>/events`, closing after `done`.
 
 `InstallEvent = { type: "log"; text: string } | { type: "done"; ok: boolean; message: string | null }`.
 The Tauri `env_install` command resolves with no value once the install has finished

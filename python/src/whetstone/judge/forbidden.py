@@ -18,6 +18,10 @@ What a name can be:
   softmax`` and private re-exports do not get around it;
 * a method on a class (``torch.Tensor.softmax``);
 * a class (``torch.nn.RMSNorm``, ``mlx.nn.RoPE``): constructing it is the violation.
+  The guard goes on the class's ``__init__`` (or on a ``__new__`` written in Python).
+  A type implemented in C that constructs in ``__new__``
+  (``json.scanner.make_scanner``) cannot be guarded without breaking it for every
+  caller, so ``ws validate`` refuses the name and points to ``forbidden_source``.
 
 Because the stack is inspected, a forbidden function reached *through* another library
 function still counts (``torch.nn.Softmax()(x)`` calls ``torch.nn.functional.softmax``).
@@ -26,6 +30,16 @@ A method on a type that cannot be modified (``mlx.core.array`` is immutable) can
 guarded at run time. For those names only, the solution's source is scanned instead:
 any ``<expression>.<method>`` attribute access that is not on an imported module counts
 (see ``Guard.scan_source``).
+
+What cannot be a name: anything that is not called. A dtype object such as
+``torch.bfloat16`` is only ever *mentioned*, so there is nothing to intercept. Those go
+in the second list, ``forbidden_source``: plain identifiers that must not appear in the
+solution's source at all (``Guard.scan_source``)::
+
+    forbidden_source = ["bfloat16"]
+
+rules out ``torch.bfloat16``, ``from torch import bfloat16``, ``x.bfloat16()``,
+``dtype="bfloat16"``, and ``getattr(torch, "bfloat16")`` alike.
 
 This is a guard against taking the shortcut, not a sandbox: the solution runs in this
 process, and code that sets out to defeat the guard (another thread, ``getattr`` with a
@@ -110,8 +124,15 @@ def resolve(name: str) -> tuple[Any, str, Any]:
 class Guard:
     """Installs, enforces, and removes the guards for one run."""
 
-    def __init__(self, names: Iterable[str], solution_file: str | os.PathLike[str]) -> None:
+    def __init__(
+        self,
+        names: Iterable[str],
+        solution_file: str | os.PathLike[str],
+        source_names: Iterable[str] = (),
+    ) -> None:
         self.names = tuple(dict.fromkeys(names))
+        #: Identifiers that must not appear in the solution's source (``forbidden_source``).
+        self.source_names = tuple(dict.fromkeys(source_names))
         self.solution_file = str(solution_file)
         self.violations: list[Violation] = []
         #: name -> why it could not be guarded (reported by ``ws validate``).
@@ -154,7 +175,7 @@ class Guard:
         if isinstance(value, type):
             # Guard construction and keep the class object: isinstance checks and
             # subclasses inside the framework must keep working.
-            self._guard_class_attribute(name, value, "__init__")
+            self._guard_construction(name, value)
         elif isinstance(container, type):
             try:
                 self._guard_class_attribute(name, container, attr)
@@ -162,11 +183,44 @@ class Guard:
                 self.static[attr] = name  # immutable type: enforced by the source scan
         elif isinstance(container, types.ModuleType):
             if not callable(value):
-                raise Unresolved("is not callable")
+                raise Unresolved(
+                    "is not callable, so there is no call to guard (a dtype or a constant "
+                    "is only mentioned); list its identifier in `forbidden_source` instead"
+                )
             self._aliases[id(value)] = (value, self._guarded(name, value))
             self._searched.clear()  # a new function: every module has to be searched again
         else:
             raise Unresolved(f"is an attribute of a {type(container).__name__}, not of a module")
+
+    def _guard_construction(self, name: str, cls: type) -> None:
+        """Guard the constructor of ``cls`` without changing how it constructs.
+
+        Where the guard goes depends on where the class takes its arguments:
+
+        * a class with an ``__init__`` (its own or a base's): on ``__init__``;
+        * a class that constructs in a ``__new__`` written in Python: on ``__new__``;
+        * a class with neither: on ``__init__``, which then takes no arguments.
+
+        What is left is a type written in C that takes its arguments in ``__new__``
+        (``json.scanner.make_scanner``). Neither attribute can be replaced on such a
+        type without breaking it for every caller: an added ``__init__`` makes
+        ``object.__init__`` reject the constructor arguments, and once ``__new__`` has
+        been assigned, CPython refuses to call the original C constructor at all
+        ("is not safe, use object.__new__()"), even after the assignment is undone.
+        So it is refused, and ``ws validate`` says to use ``forbidden_source``.
+        """
+        if cls.__init__ is not object.__init__ or cls.__new__ is object.__new__:
+            self._guard_class_attribute(name, cls, "__init__")
+            return
+        raw = inspect.getattr_static(cls, "__new__")
+        if isinstance(raw, staticmethod) and isinstance(raw.__func__, types.FunctionType):
+            self._guard_class_attribute(name, cls, "__new__")
+            return
+        raise Unresolved(
+            "is a type implemented in C that takes its arguments in `__new__`; a guard on "
+            "it would break it for every caller. Rule out its identifier with "
+            f"`forbidden_source = [\"{name.rsplit('.', 1)[-1]}\"]` instead"
+        )
 
     def _guard_class_attribute(self, name: str, cls: type, attr: str) -> None:
         raw = inspect.getattr_static(cls, attr)
@@ -252,9 +306,14 @@ class Guard:
             frame = frame.f_back
 
     def rule_text(self) -> str:
-        return "The statement rules these out for this problem:\n" + "".join(
-            f"  {name}\n" for name in self.names
-        )
+        text = ""
+        if self.names:
+            text += "The statement rules these out for this problem:\n"
+            text += "".join(f"  {name}\n" for name in self.names)
+        if self.source_names:
+            text += "These identifiers may not appear in the solution at all:\n"
+            text += "".join(f"  {name}\n" for name in self.source_names)
+        return text
 
     def take(self) -> list[Violation]:
         """Violations recorded since the last call (also those the solution swallowed)."""
@@ -262,19 +321,28 @@ class Guard:
         return taken
 
     def scan_source(self) -> Violation | None:
-        """Find a forbidden method of an immutable type in the solution's source.
+        """Find what only the solution's source can show. Returns the first finding.
 
-        Only for the names in ``self.static``. Reports the first ``<expr>.<method>``
-        whose expression is not a chain of names starting at an imported module (those
-        are module functions, which the run-time guards cover).
+        Two rules. Every identifier in ``self.source_names`` (``forbidden_source``):
+        see ``find_identifiers``. And every method in ``self.static`` (a forbidden
+        method of an immutable type): the first ``<expr>.<method>`` whose expression is
+        not a chain of names starting at an imported module (those are module
+        functions, which the run-time guards cover).
         """
-        if not self.static:
+        if not self.static and not self.source_names:
             return None
         try:
             with open(self.solution_file, encoding="utf-8") as handle:
                 tree = ast.parse(handle.read())
         except OSError, SyntaxError, ValueError:
             return None  # importing the solution reports this properly
+        base_name = os.path.basename(self.solution_file)
+        named = find_identifiers(tree, self.source_names)
+        if named:
+            line, name = min(named)
+            return Violation(name, base_name, line)
+        if not self.static:
+            return None
         imported: set[str] = set()
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -293,7 +361,44 @@ class Guard:
         if not found:
             return None
         line, name = min(found)
-        return Violation(name, os.path.basename(self.solution_file), line)
+        return Violation(name, base_name, line)
+
+
+def find_identifiers(tree: ast.AST, identifiers: Iterable[str]) -> list[tuple[int, str]]:
+    """Where the given identifiers appear in a parsed module: ``(line, identifier)``.
+
+    An identifier counts wherever the source could be naming the thing: as a bare name
+    (``bfloat16``), as an attribute (``torch.bfloat16``, ``x.bfloat16()``), as any part
+    of an imported name (``from torch import bfloat16``, ``import safetensors.torch``
+    for ``safetensors``), as a keyword argument, and as a string that is exactly the
+    identifier (``getattr(torch, "bfloat16")``, ``dtype="bfloat16"``). Comments and
+    longer strings (docstrings) do not count.
+    """
+    wanted = set(identifiers)
+    found: list[tuple[int, str]] = []
+    if not wanted:
+        return found
+    for node in ast.walk(tree):
+        hits: Iterable[str] = ()
+        if isinstance(node, ast.Name):
+            hits = (node.id,)
+        elif isinstance(node, ast.Attribute):
+            hits = (node.attr,)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            hits = (node.value,)
+        elif isinstance(node, ast.keyword) and node.arg is not None:
+            hits = (node.arg,)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            parts = [part for alias in node.names for part in alias.name.split(".")]
+            parts += [alias.asname for alias in node.names if alias.asname]
+            if isinstance(node, ast.ImportFrom) and node.module:
+                parts += node.module.split(".")
+            hits = parts
+        line = getattr(node, "lineno", None)
+        if line is None:
+            continue
+        found.extend((line, hit) for hit in hits if hit in wanted)
+    return found
 
 
 def check_names(names: Iterable[str]) -> dict[str, str]:

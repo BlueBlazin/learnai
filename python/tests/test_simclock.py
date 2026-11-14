@@ -255,7 +255,7 @@ def test_trace_queries_and_latencies():
         assert [e["id"] for e in sim.trace.of("done")] == ["a", "b"]
         assert sim.trace.latencies("arrive", "done") == [1.5, 2.0]
         sim.trace.record("arrive", id="lost")
-        with pytest.raises(CheckFailure, match="arrive 'lost' never reached 'done'"):
+        with pytest.raises(CheckFailure, match="a 'arrive' event never reached 'done'"):
             sim.trace.latencies("arrive", "done")
 
 

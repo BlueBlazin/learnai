@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from whetstone.assets import AssetSpec, parse_assets
+
 FRAMEWORKS = ("torch", "jax", "mlx", "python")
 TENSOR_FRAMEWORKS = ("torch", "jax", "mlx")
 DIFFICULTIES = ("easy", "medium", "hard")
@@ -37,11 +39,30 @@ class Problem:
     raw: dict[str, Any]
     #: Optional. Dotted names the solution must not call (see judge/forbidden.py).
     forbidden: tuple[str, ...] = ()
+    #: Optional. Identifiers that must not appear in the solution's source.
+    forbidden_source: tuple[str, ...] = ()
+    #: Optional. Model assets the problem needs (``[[assets]]``, see whetstone/assets.py).
+    assets: tuple[AssetSpec, ...] = ()
+    #: What is wrong with the ``assets`` declaration, for ``ws validate``.
+    asset_errors: tuple[str, ...] = ()
 
     @property
     def oracle_framework(self) -> str:
-        """The framework of the oracle reference: torch, or python when framework-free."""
-        return "torch" if "torch" in self.frameworks else "python"
+        """The framework the oracle reference and the mutants are written in.
+
+        torch when the problem supports it; otherwise the problem's first framework:
+        ``python`` for framework-free problems, ``mlx`` for MLX-only problems.
+        """
+        if "torch" in self.frameworks or not self.frameworks:
+            return "torch"
+        return self.frameworks[0]
+
+    def asset(self, name: str) -> AssetSpec | None:
+        return next((spec for spec in self.assets if spec.name == name), None)
+
+    @property
+    def fixtures_path(self) -> Path:
+        return self.path / "fixtures"
 
     @property
     def tests_path(self) -> Path:
@@ -87,6 +108,7 @@ def load_problem(path: str | os.PathLike[str]) -> Problem:
         value = raw.get(key, default)
         return value if isinstance(value, (int, float)) and not isinstance(value, bool) else default
 
+    assets, asset_errors = parse_assets(raw.get("assets"))
     return Problem(
         path=directory,
         id=str(raw.get("id", directory.name)),
@@ -103,6 +125,9 @@ def load_problem(path: str | os.PathLike[str]) -> Problem:
         time_limit_s=float(number("time_limit_s", 10.0)),
         raw=raw,
         forbidden=_strings(raw.get("forbidden")),
+        forbidden_source=_strings(raw.get("forbidden_source")),
+        assets=tuple(assets),
+        asset_errors=tuple(asset_errors),
     )
 
 

@@ -1,0 +1,4 @@
+id = "real"
+title = "Asset Fixtures"
+description = "Problems that need a downloaded asset, for the judge's own tests."
+order = 20

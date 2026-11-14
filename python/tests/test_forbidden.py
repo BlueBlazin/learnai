@@ -192,7 +192,10 @@ def test_names_that_cannot_be_guarded_are_reported(lib):
     assert problems == {
         "ws_fake_lib.missing": "`missing` does not exist",
         "ws_fake_lib.Tensor.missing": "`missing` does not exist",
-        "ws_fake_lib.constant": "is not callable",
+        "ws_fake_lib.constant": (
+            "is not callable, so there is no call to guard (a dtype or a constant is only "
+            "mentioned); list its identifier in `forbidden_source` instead"
+        ),
         "ws_no_such_package.thing": "cannot import `ws_no_such_package`",
         "notdotted": "must be a dotted name such as `torch.softmax`",
     }

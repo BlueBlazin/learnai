@@ -1,0 +1,12 @@
+id = "cuda-scale"
+title = "Scale on CUDA"
+track = "gpu"
+order = 20
+difficulty = "easy"
+frameworks = ["torch"]
+judges = ["numeric"]
+tags = ["fixture"]
+prerequisites = []
+requires = "cuda"
+entry = ["scale"]
+time_limit_s = 10

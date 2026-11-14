@@ -78,6 +78,7 @@ def stream_events(command: list[str]) -> Iterator[dict[str, Any]]:
             "status": "harness_error",
             "passed": 0,
             "total": 0,
+            "skipped": 0,
             "duration_ms": round((time.monotonic() - started) * 1000, 3),
             "metrics": [],
             "message": f"the harness exited with code {proc.returncode} without an end event",

@@ -1,8 +1,15 @@
 """Assertions for test cases, with failure messages a learner can act on.
 
 Every helper raises ``CheckFailure(message, detail)`` when the check does not hold.
-The ``message`` is one line and never contains expected values (it is shown for hidden
-cases too); the ``detail`` has the numbers and excerpts and is dropped for hidden cases.
+The ``message`` is one line and is shown for hidden cases too, so it never contains
+what the test expects (values, shapes, lengths, dtypes, keys, exception types) or what it
+passed in: it says what the solution produced and where it went wrong. The ``detail``
+has the expected side, the numbers, and the excerpts, and is dropped for hidden cases.
+
+One deliberate exception: the limit of a metric (``check.cost``, ``check.at_most``,
+``check.memory``, the speed judge). A limit is reported with the metric on every case,
+hidden or not, because the app draws the bar from it, so the message may repeat it.
+Never use a secret as a limit.
 
 Use as ``from whetstone.judge import check`` and then ``check.allclose(...)``.
 """
@@ -45,6 +52,16 @@ def _join(*parts: str | None) -> str:
 
 def _index(idx: Sequence[int]) -> str:
     return "[" + ", ".join(str(int(i)) for i in idx) + "]" if len(idx) else "(scalar)"
+
+
+def _magnitude(error: float) -> str:
+    """An error as an order of magnitude ("1e-03"), which is all a message may say.
+
+    The exact error next to the learner's own value would give the expected value away.
+    """
+    if not math.isfinite(error):
+        return "infinite"
+    return f"1e{math.floor(math.log10(error)):+03d}" if error > 0 else "0"
 
 
 def _fmt(value: Any) -> str:
@@ -104,8 +121,12 @@ def _excerpt(got: np.ndarray, expected: np.ndarray, idx: tuple[int, ...], width:
 def _check_shape(got: np.ndarray, expected: np.ndarray, label: str, context: str | None) -> None:
     if got.shape != expected.shape:
         raise CheckFailure(
-            f"{label}: shape mismatch: expected {tuple(expected.shape)}, got {tuple(got.shape)}",
-            _join(context, f"expected shape: {tuple(expected.shape)}", f"got shape: {got.shape}"),
+            f"{label}: got shape {tuple(got.shape)}, which is not the expected shape",
+            _join(
+                context,
+                f"expected shape: {tuple(expected.shape)}",
+                f"     got shape: {tuple(got.shape)}",
+            ),
         )
 
 
@@ -118,8 +139,13 @@ def _check_dtype(got: np.ndarray, expected: np.ndarray, label: str, context: str
         same = got.dtype.itemsize == expected.dtype.itemsize
     if not same:
         raise CheckFailure(
-            f"{label}: dtype mismatch: expected {expected.dtype}, got {got.dtype}",
-            _join(context, "The result must have the same dtype as the reference's result."),
+            f"{label}: got dtype {got.dtype}, which is not the expected dtype",
+            _join(
+                context,
+                f"expected dtype: {expected.dtype}",
+                f"     got dtype: {got.dtype}",
+                "The result must have the same dtype as the reference's result.",
+            ),
         )
 
 
@@ -131,7 +157,8 @@ def shape(got: Any, expected_shape: Sequence[int], *, label: str = "output") -> 
     array = _coerce(got, label, None)
     if tuple(array.shape) != tuple(expected_shape):
         raise CheckFailure(
-            f"{label}: shape mismatch: expected {tuple(expected_shape)}, got {tuple(array.shape)}"
+            f"{label}: got shape {tuple(array.shape)}, which is not the expected shape",
+            f"expected shape: {tuple(expected_shape)}\n     got shape: {tuple(array.shape)}\n",
         )
 
 
@@ -207,7 +234,8 @@ def allclose(
     else:
         message = (
             f"{label}: {n_bad} of {size} values differ from the expected result "
-            f"(max abs error {_fmt(err[worst])} at index {_index(worst)})"
+            f"(largest error on the order of {_magnitude(float(err[worst]))}, "
+            f"at index {_index(worst)})"
         )
 
     lines = [
@@ -270,9 +298,15 @@ def equal(got: Any, expected: Any, *, label: str = "output", context: str | None
     if isinstance(expected, (list, tuple)) and isinstance(got, (list, tuple)):
         if len(got) != len(expected):
             raise CheckFailure(
-                f"{label}: expected {len(expected)} item{'' if len(expected) == 1 else 's'}, "
-                f"got {len(got)}",
-                _join(context, f"expected: {_short(expected)}", f"     got: {_short(got)}"),
+                f"{label}: got {len(got)} item{'' if len(got) == 1 else 's'}, "
+                "which is not the expected number",
+                _join(
+                    context,
+                    f"expected {len(expected)} item{'' if len(expected) == 1 else 's'}, "
+                    f"got {len(got)}",
+                    f"expected: {_short(expected)}",
+                    f"     got: {_short(got)}",
+                ),
             )
         for i, (g, e) in enumerate(zip(got, expected, strict=True)):
             if _holds_array(g) or _holds_array(e):
@@ -371,10 +405,14 @@ def match(
         return
     if isinstance(expected, dict):
         if not isinstance(got, dict) or set(got) != set(expected):
-            keys = sorted(map(str, got)) if isinstance(got, dict) else type(got).__name__
+            if isinstance(got, dict):
+                message = f"{label}: got a dict whose keys are not the expected keys"
+                have = f"     got keys: {sorted(map(str, got))}"
+            else:
+                message = f"{label}: expected a dict, got a {type(got).__name__}"
+                have = None
             raise CheckFailure(
-                f"{label}: expected a dict with keys {sorted(map(str, expected))}, got {keys}",
-                _join(context),
+                message, _join(context, f"expected keys: {sorted(map(str, expected))}", have)
             )
         for key, value in expected.items():
             match(got[key], value, rtol=rtol, atol=atol, dtype=dtype,
@@ -389,16 +427,16 @@ def match(
         # (one message, with the position) instead of as len(expected) tiny tensors.
         if not isinstance(got, (list, tuple)):
             raise CheckFailure(
-                f"{label}: expected a list of {len(expected)} scalars, got a "
-                f"{type(got).__name__}",
-                _join(context),
+                f"{label}: expected a list of scalars, got a {type(got).__name__}",
+                _join(context, f"expected a list of {len(expected)} scalars"),
             )
         want = np.array([item.item() for item in expected])
         have = _scalars(list(got))
         if want.dtype.kind == "f":
             if len(have) != len(want):
                 raise CheckFailure(
-                    f"{label}: expected {len(want)} values, got {len(have)}", _join(context)
+                    f"{label}: got {len(have)} values, which is not the expected number",
+                    _join(context, f"expected {len(want)} values, got {len(have)}"),
                 )
             allclose(have, want, rtol=rtol, atol=atol, label=label, context=context)
         else:
@@ -410,10 +448,12 @@ def match(
     )
     if nested:
         if not isinstance(got, (tuple, list)) or len(got) != len(expected):
-            what = f"{len(got)} values" if isinstance(got, (tuple, list)) else type(got).__name__
-            raise CheckFailure(
-                f"{label}: expected {len(expected)} values, got {what}", _join(context)
-            )
+            if isinstance(got, (tuple, list)):
+                message = f"{label}: got {len(got)} values, which is not the expected number"
+            else:
+                kind = type(expected).__name__
+                message = f"{label}: expected a {kind} of values, got a {type(got).__name__}"
+            raise CheckFailure(message, _join(context, f"expected {len(expected)} values"))
         for i, (g, e) in enumerate(zip(got, expected, strict=True)):
             match(g, e, rtol=rtol, atol=atol, dtype=dtype, label=f"{label}[{i}]", context=context)
         return
@@ -435,10 +475,14 @@ def raises(
         raise
     except Exception as exc:  # noqa: BLE001
         raise CheckFailure(
-            f"{label}: expected {exception.__name__}, but {type(exc).__name__} was raised",
-            f"{type(exc).__name__}: {exc}\n",
+            f"{label}: raised {type(exc).__name__}, which is not the exception the "
+            "statement specifies here",
+            f"expected {exception.__name__}\n{type(exc).__name__}: {exc}\n",
         ) from None
-    raise CheckFailure(f"{label}: expected {exception.__name__}, but nothing was raised")
+    raise CheckFailure(
+        f"{label}: returned normally where the statement specifies an exception",
+        f"expected {exception.__name__}, but nothing was raised\n",
+    )
 
 
 # -- property judge ------------------------------------------------------------------
@@ -543,8 +587,8 @@ def distribution(
         if outside.any():
             first = int(np.argmax(outside))
             raise CheckFailure(
-                f"{label}: sample {first} is {_fmt(values[first])}, "
-                f"which is not an outcome in range({k})"
+                f"{label}: sample {first} is {_fmt(values[first])}, which is not a valid outcome",
+                f"outcomes are the integers in range({k})\n",
             )
         observed = np.bincount(rounded, minlength=k).astype(np.int64)
     else:
@@ -572,7 +616,7 @@ def distribution(
         )
     raise CheckFailure(
         f"{label}: the empirical distribution does not match the target: outcome {worst} "
-        f"occurs {direction} often than it should ({n} samples)",
+        f"occurs {direction} often than it should",
         _join(
             f"{n} samples, {k} outcomes; allowed frequencies have false-failure "
             f"probability below {delta:g}",
@@ -604,15 +648,16 @@ def mean(
         raise CheckFailure(f"{label}: no values to average")
     if array.min() < low or array.max() > high:
         raise CheckFailure(
-            f"{label}: values fall outside the possible range [{low:g}, {high:g}]",
-            f"min {array.min():g}, max {array.max():g}\n",
+            f"{label}: values fall outside the possible range "
+            f"(min {array.min():g}, max {array.max():g})",
+            f"possible range: [{low:g}, {high:g}]\n",
         )
     eps = (high - low) * math.sqrt(math.log(2 / delta) / (2 * n))
     observed = float(array.mean())
     if abs(observed - expected) > eps:
         raise CheckFailure(
-            f"{label}: the average over {n} samples is not consistent with the target",
-            f"expected {expected:.6g} +/- {eps:.3g} (false-failure probability below "
+            f"{label}: the average over the samples is not consistent with the target",
+            f"{n} samples; expected {expected:.6g} +/- {eps:.3g} (false-failure probability below "
             f"{delta:g}), observed {observed:.6g}\n",
         )
 
@@ -632,6 +677,33 @@ def at_most(name: str, value: float, limit: float, *, unit: str | None = None) -
         )
 
 
+def memory(
+    measurement: Any,
+    *,
+    at_most_mib: float,
+    what: str = "peak",
+    metric: str | None = None,
+) -> None:
+    """Memory judge: assert on a measurement from ``whetstone.kit.mlx_memory``.
+
+        with mlx_memory() as mem:
+            out = ctx.call("forward_f16", params, x)     # ctx.call forces the result
+        check.memory(mem, at_most_mib=24)
+
+    ``what`` is ``"peak"`` (the high-water mark above what was already allocated when
+    the block began) or ``"active"`` (what the block left allocated). The value is
+    reported in MiB as the metric ``peak_memory`` or ``active_memory`` (or ``metric``)
+    with the limit, whether or not it holds. Allocator behavior varies a little from
+    run to run and between MLX versions, so put the limit well clear of both sides:
+    at least 1.5 times what the reference uses and well under what the approach you
+    want to rule out uses.
+    """
+    if what not in ("peak", "active"):
+        raise ValueError('what must be "peak" or "active"')
+    value = getattr(measurement, f"{what}_bytes") / 2**20
+    at_most(metric or f"{what}_memory", round(value, 3), at_most_mib, unit="MiB")
+
+
 def cost(
     counters: Any,
     name: str,
@@ -640,18 +712,27 @@ def cost(
     exactly: float | None = None,
     at_least: float | None = None,
     unit: str | None = None,
+    metric: str | None = None,
 ) -> None:
     """Cost judge: assert on an instrumentation counter of a kit object.
 
     ``counters`` is a kit ``Counters`` object or a mapping; ``name`` is the counter.
     The value is reported as a metric (with ``at_most`` or ``exactly`` as its limit)
     whether or not the assertion holds. Counts are exact, so there is no tolerance.
+
+    The metric is named after the counter unless ``metric`` says otherwise. A case
+    reports one value per metric name, so when two kit objects have the same counter
+    (a draft and a target model), give each its own name::
+
+        check.cost(draft.counters, "tokens_processed", at_most=40, metric="draft_tokens")
+        check.cost(target.counters, "tokens_processed", at_most=12, metric="target_tokens")
     """
     if isinstance(counters, Mapping):
         value = counters[name]
     else:
         value = getattr(counters, name)
     limit = at_most if at_most is not None else exactly
+    name = metric if metric is not None else name
     ctx = current_or_none()
     if ctx is not None:
         ctx.metric(name, value, unit, limit)

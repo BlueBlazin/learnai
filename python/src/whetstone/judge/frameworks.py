@@ -18,6 +18,7 @@ Conversion rules (``tensor``):
 
 from __future__ import annotations
 
+from types import ModuleType
 from typing import Any
 
 import numpy as np
@@ -218,9 +219,25 @@ class MlxFramework(Framework):
         return np.array(value)
 
     def sync(self, *values: Any) -> None:
-        tensors = [t for t in _leaves(values) if self.is_tensor(t)]
+        """Force every array reachable from ``values``, then wait for the GPU.
+
+        ``mx.eval`` computes the arrays (MLX builds a graph and does no work until
+        asked); ``mx.synchronize`` then waits for anything still in flight, which is
+        what a solution leaves behind when it schedules work with ``mx.async_eval``
+        and returns. Arrays are found inside tuples, lists, and dicts, in the
+        parameters of an ``mlx.nn.Module``, and in the attributes of plain objects (a
+        cache class): an unevaluated cache must not make a solution look fast.
+        """
+        tensors = [t for t in _leaves(values, deep=True) if self.is_tensor(t)]
         if tensors:
             self.xp.eval(*tensors)
+        self.xp.synchronize()
+
+    def memory(self) -> Any:
+        """A context manager measuring MLX memory (see ``whetstone.kit.mlx_memory``)."""
+        from whetstone.kit.mlxtools import mlx_memory
+
+        return mlx_memory()
 
 
 class PythonFramework(Framework):
@@ -245,16 +262,28 @@ class PythonFramework(Framework):
         return np.asarray(value)
 
 
-def _leaves(obj: Any):
-    """Yield the non-container values inside nested tuples, lists, and dicts."""
+def _leaves(obj: Any, *, deep: bool = False, _depth: int = 0, _seen: set[int] | None = None):
+    """Yield the non-container values inside nested tuples, lists, and dicts.
+
+    ``deep=True`` also looks inside the instance attributes of ordinary objects (a
+    solution's cache class, an ``mlx.nn.Module``, which is a dict), a few levels down
+    and never twice into the same object.
+    """
     if isinstance(obj, (tuple, list)):
         for item in obj:
-            yield from _leaves(item)
+            yield from _leaves(item, deep=deep, _depth=_depth, _seen=_seen)
     elif isinstance(obj, dict):
         for item in obj.values():
-            yield from _leaves(item)
+            yield from _leaves(item, deep=deep, _depth=_depth, _seen=_seen)
     else:
         yield obj
+        attributes = getattr(obj, "__dict__", None) if deep and _depth < 4 else None
+        plain = not isinstance(obj, (type, ModuleType)) and not callable(obj)
+        if isinstance(attributes, dict) and attributes and plain:
+            seen = set() if _seen is None else _seen
+            if id(obj) not in seen:
+                seen.add(id(obj))
+                yield from _leaves(attributes, deep=True, _depth=_depth + 1, _seen=seen)
 
 
 _CLASSES = {

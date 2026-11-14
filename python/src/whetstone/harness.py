@@ -90,6 +90,7 @@ def _end_event(status: str, started: float, **extra: Any) -> dict[str, Any]:
         "status": status,
         "passed": 0,
         "total": 0,
+        "skipped": 0,
         "duration_ms": round((time.monotonic() - started) * 1000, 3),
         "metrics": [],
     }
@@ -105,6 +106,9 @@ class Supervisor:
         self.cases: list[dict[str, Any]] = []
         self.statuses: dict[str, str] = {}
         self.case_metrics: list[list[dict[str, Any]]] = []
+        #: The ``kind`` of every skipped case the worker reported (protocol.SKIP_KINDS).
+        self.skip_kinds: list[str] = []
+        self.hardware_met = True
         self.saw_start = False
         self.final_status: str | None = None
         # What the worker is doing right now: None, or {"phase": "import" | "case", ...}.
@@ -128,8 +132,11 @@ class Supervisor:
         if kind == "start":
             self.saw_start = True
             self.cases = [c for c in event.get("cases", []) if isinstance(c, dict)]
+            self.hardware_met = bool(event.get("requires_met", True))
         elif kind == "case_end":
             self.statuses[str(event.get("id"))] = str(event.get("status"))
+            if event.get("status") == "skipped":
+                self.skip_kinds.append(str((event.get("skip") or {}).get("kind", "aborted")))
             self.case_metrics.append(event.get("metrics") or [])
             self._set_activity({"phase": "idle"})
         elif kind == "end":
@@ -223,12 +230,18 @@ class Supervisor:
                     "detail": None,
                     "stdout": "",
                     "metrics": [],
+                    "skip": {"kind": "aborted"},
                 }
             )
 
         statuses = list(self.statuses.values())
         if activity.get("phase") in ("import", "case"):
-            verdict = protocol.verdict_for(statuses, import_failed=import_failed)
+            verdict = protocol.verdict_for(
+                statuses,
+                import_failed=import_failed,
+                skip_kinds=self.skip_kinds,
+                hardware_met=self.hardware_met,
+            )
         else:
             verdict = "harness_error"
         self.final_status = verdict
@@ -238,6 +251,7 @@ class Supervisor:
                 self.started_at,
                 passed=sum(1 for s in statuses if s == "pass"),
                 total=len(self.cases),
+                skipped=sum(1 for s in statuses if s == "skipped"),
                 metrics=protocol.summarize_metrics(self.case_metrics),
                 **end_extra,
             )

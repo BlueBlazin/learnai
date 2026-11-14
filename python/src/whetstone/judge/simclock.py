@@ -236,8 +236,9 @@ class Trace:
             ident = event.fields[key]
             if ident not in ended:
                 raise CheckFailure(
-                    f"{start} {ident!r} never reached {end!r}",
-                    f"{len(self.of(start))} {start} events, {len(ended)} {end} events\n",
+                    f"a {start!r} event never reached {end!r}",
+                    f"{key} {ident!r}: {len(self.of(start))} {start} events, "
+                    f"{len(ended)} {end} events\n",
                 )
             result.append(ended[ident] - event.time)
         return result
