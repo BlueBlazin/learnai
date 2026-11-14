@@ -18,6 +18,8 @@ const COMMANDS: &[&str] = &[
     "env_install",
     "get_stats",
     "list_catalog_issues",
+    "list_paths",
+    "get_problem_asset",
 ];
 
 fn main() {

@@ -1,0 +1,25 @@
+# Inference 75: a starter path over the problems that exist today. It will grow to the
+# full 75 as the catalog does. Format: docs/ARCHITECTURE.md section 3.3, "Paths".
+id = "inference-75"
+title = "Inference 75"
+description = "The shortest route through LLM inference: from the arithmetic inside one layer to the systems that serve tokens to many users at once."
+
+[[stages]]
+title = "Numerics and the forward pass"
+description = "The functions a decoder runs for every token, written from their formulas with the float32 edge cases that break naive versions."
+problems = ["stable-softmax", "rmsnorm", "causal-self-attention", "rope"]
+
+[[stages]]
+title = "From text to tokens and back"
+description = "What goes into the model and how its logits become the next token: byte-level BPE, then the filters and penalties a sampler applies."
+problems = ["bpe-encode", "top-p-filtering", "repetition-penalty"]
+
+[[stages]]
+title = "Making generation cheap"
+description = "The three standard ways to spend less compute per token: reuse past work, shrink the weights, and verify several drafted tokens in one pass."
+problems = ["cached-greedy-decode", "affine-int8", "speculative-sampling-step"]
+
+[[stages]]
+title = "Serving many requests"
+description = "The model as a service: grouping requests into batches under a latency budget, and streaming tokens to a client as they are produced."
+problems = ["dynamic-batcher", "sse-token-stream"]

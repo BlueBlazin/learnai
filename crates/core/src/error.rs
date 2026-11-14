@@ -43,6 +43,17 @@ pub enum CoreError {
     #[error("missing file {}", .0.display())]
     MissingFile(PathBuf),
 
+    /// A statement asset is larger than core is willing to serve.
+    #[error("asset {} is {size} bytes; the limit is {limit} bytes", .path.display())]
+    AssetTooLarge {
+        /// The asset file.
+        path: PathBuf,
+        /// Its size in bytes.
+        size: u64,
+        /// The largest size served.
+        limit: u64,
+    },
+
     /// Another install is already in progress.
     #[error("an environment install is already running")]
     InstallInProgress,
@@ -107,6 +118,7 @@ impl CoreError {
                 | CoreError::EditorialLocked(_)
                 | CoreError::InstallInProgress
                 | CoreError::InvalidArgument(_)
+                | CoreError::AssetTooLarge { .. }
         )
     }
 }

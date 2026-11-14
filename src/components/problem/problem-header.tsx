@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import { AppLink } from "@/components/app/app-link";
 import { MetaItem, MetaList } from "@/components/app/meta-list";
 import type { ProblemDetail, ProblemSummary, Track } from "@/lib/api";
@@ -6,6 +5,7 @@ import { REQUIRES_LABEL } from "@/lib/labels";
 import { routes } from "@/lib/routes";
 import { DifficultyMark } from "./difficulty-mark";
 import { JudgeList } from "./judge-list";
+import { PrerequisiteList } from "./prerequisite-list";
 import { StatusMark } from "./status-mark";
 
 /**
@@ -19,7 +19,7 @@ export function ProblemHeader({
 }: {
   problem: ProblemDetail;
   track?: Track;
-  /** Summaries of the problems this one builds on, when known. */
+  /** The problems this one builds on, with their status, when known. */
   prerequisites?: ProblemSummary[];
 }) {
   return (
@@ -49,12 +49,7 @@ export function ProblemHeader({
         ) : null}
         {prerequisites.length > 0 ? (
           <MetaItem label="Builds on">
-            {prerequisites.map((prerequisite, index) => (
-              <Fragment key={prerequisite.id}>
-                {index > 0 ? ", " : null}
-                <AppLink to={routes.problem(prerequisite.id)}>{prerequisite.title}</AppLink>
-              </Fragment>
-            ))}
+            <PrerequisiteList prerequisites={prerequisites} />
           </MetaItem>
         ) : null}
       </MetaList>

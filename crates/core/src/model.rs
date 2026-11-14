@@ -445,6 +445,37 @@ pub struct CatalogIssue {
     pub message: String,
 }
 
+/// One stage of a study path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathStage {
+    /// Display title.
+    pub title: String,
+    /// One-sentence description.
+    pub description: String,
+    /// Ids of existing problems, in study order.
+    pub problems: Vec<String>,
+}
+
+/// A curated, ordered study plan with progress. `Path` in the TypeScript contract; named
+/// `StudyPath` here so it does not collide with [`std::path::Path`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StudyPath {
+    /// Path id.
+    pub id: String,
+    /// Display title.
+    pub title: String,
+    /// One-sentence description.
+    pub description: String,
+    /// Stages in order.
+    pub stages: Vec<PathStage>,
+    /// Number of problems on the path.
+    pub problem_count: u32,
+    /// Number of those that are solved.
+    pub solved_count: u32,
+}
+
 /// A submission with its code snapshot and per-case results.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -628,6 +659,31 @@ mod tests {
                 message: "title is empty".into()
             }),
             json!({"path": "/r/problems/t/p/problem.toml", "message": "title is empty"})
+        );
+    }
+
+    #[test]
+    fn paths_match_the_contract() {
+        let path = StudyPath {
+            id: "inference-75".into(),
+            title: "Inference 75".into(),
+            description: "One sentence.".into(),
+            stages: vec![PathStage {
+                title: "Numerics".into(),
+                description: "Another.".into(),
+                problems: vec!["stable-softmax".into()],
+            }],
+            problem_count: 1,
+            solved_count: 0,
+        };
+        assert_eq!(
+            json!(path),
+            json!({
+                "id": "inference-75", "title": "Inference 75", "description": "One sentence.",
+                "stages": [{"title": "Numerics", "description": "Another.",
+                            "problems": ["stable-softmax"]}],
+                "problemCount": 1, "solvedCount": 0
+            })
         );
     }
 

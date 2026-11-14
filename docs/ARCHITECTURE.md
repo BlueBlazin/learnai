@@ -138,7 +138,8 @@ problems = ["stable-softmax", "rmsnorm"]
 ```
 
 A problem id that does not exist in the catalog is skipped and reported as a catalog
-issue; it never breaks the path.
+issue; it never breaks the path. Paths are listed in file-name order; the first is the
+learner's study path.
 
 ### 3.4 Judge types
 
@@ -304,8 +305,8 @@ Commands (Tauri command names are snake_case; the `Backend` interface uses camel
 | `get_stats` | | `Stats` |
 
 | `list_paths` | | `Path[]` |
-| `get_problem_asset` | `id, path` | `string`: a `data:` URL. `path` is relative to the problem's `assets/` directory and may not escape it; only `.svg` and `.png` |
-| `list_catalog_issues` | | `{ path: string; message: string }[]` (malformed problems) |
+| `get_problem_asset` | `id, path` | `string`: a `data:` URL. `path` is relative to the problem's `assets/` directory and may not escape it; only `.svg` and `.png`, at most 1 MiB; an SVG must be UTF-8 and a PNG must have the PNG signature |
+| `list_catalog_issues` | | `{ path: string; message: string }[]` (malformed tracks, problems, and paths, and path entries that were skipped) |
 
 Rules: only `submit` runs are stored as submissions with a code snapshot; `run` results
 are ephemeral. A canceled submit, or one whose process never launched, is not stored.

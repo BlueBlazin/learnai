@@ -13,6 +13,8 @@ $$
 
 with base $b = 10000$.
 
+![Positions $m = 0, 1, 2, 3$ for $d = 4$ and $b = 100$. Each pair is a point in its own plane, turned counterclockwise by $m\,\theta_i$: the first pair moves one radian per position, the second a tenth of that.](assets/pair-rotation.svg)
+
 Implement `apply_rope(x, positions, base)`.
 
 ## Interface

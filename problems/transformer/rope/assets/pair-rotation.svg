@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 246">
+  <title>RoPE rotates each pair of dimensions by an angle proportional to position</title>
+  <desc>Two unit circles. In the first, the vector (1, 0) is shown turned by 0, 1, 2 and 3 radians: pair 0 at positions 0 to 3 with theta 1. In the second it is turned by 0, 0.1, 0.2 and 0.3 radians: pair 1 at the same positions with theta 0.1.</desc>
+  <!-- Geometry: the tip for position p sits at angle p * theta on a circle of radius 78 around each center. -->
+  <!-- Pair 0: the plane of (x0, x1), theta = 1 -->
+  <g>
+    <text x="124" y="15" text-anchor="middle" font-size="13" style="font-family: var(--figure-serif)">Pair 0:  θ₀ = 1</text>
+    <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+      <line x1="20" y1="142" x2="228" y2="142"/>
+      <line x1="124" y1="48" x2="124" y2="236"/>
+      <circle cx="124" cy="142" r="78" stroke-dasharray="2 4"/>
+    </g>
+    <g font-size="13" style="font-family: var(--figure-serif); fill: var(--figure-muted)">
+      <text x="233" y="146"><tspan font-style="italic">x</tspan>₀</text>
+      <text x="124" y="41" text-anchor="middle"><tspan font-style="italic">x</tspan>₁</text>
+    </g>
+    <g stroke-width="1.5" stroke-linecap="round">
+      <line x1="124" y1="142" x2="55.7" y2="132.3" fill="none" style="stroke: var(--figure-accent)"/>
+      <polygon points="46.8,131 56.1,129.1 55.2,135.4" style="fill: var(--figure-accent)"/>
+      <line x1="124" y1="142" x2="95.3" y2="79.3" fill="none" style="stroke: var(--figure-accent)"/>
+      <polygon points="91.5,71.1 98.2,77.9 92.4,80.6" style="fill: var(--figure-accent)"/>
+      <line x1="124" y1="142" x2="161.3" y2="83.9" fill="none" style="stroke: var(--figure-accent)"/>
+      <polygon points="166.1,76.4 164,85.7 158.6,82.2" style="fill: var(--figure-accent)"/>
+      <line x1="124" y1="142" x2="193" y2="142" fill="none" stroke="currentColor"/>
+      <polygon points="202,142 193,145.2 193,138.8"/>
+    </g>
+    <g font-size="13" style="font-family: var(--figure-serif)">
+      <text x="208" y="160" text-anchor="start"><tspan font-style="italic">p</tspan> = 0</text>
+      <text x="173.1" y="69.4" text-anchor="start" style="fill: var(--figure-accent)"><tspan font-style="italic">p</tspan> = 1</text>
+      <text x="84.5" y="63.1" text-anchor="end" style="fill: var(--figure-accent)"><tspan font-style="italic">p</tspan> = 2</text>
+      <text x="38.8" y="126" text-anchor="end" style="fill: var(--figure-accent)"><tspan font-style="italic">p</tspan> = 3</text>
+    </g>
+    <!-- the angle of one step -->
+    <path d="M152 142 A28 28 0 0 0 139.1 118.4" fill="none" stroke-width="1.5" style="stroke: var(--figure-straw)"/>
+    <text x="155.6" y="129.7" font-size="13" style="font-family: var(--figure-serif); fill: var(--figure-straw)">θ₀</text>
+  </g>
+  <!-- Pair 1: the plane of (x2, x3), theta = 0.1 -->
+  <g>
+    <text x="352" y="15" text-anchor="middle" font-size="13" style="font-family: var(--figure-serif)">Pair 1:  θ₁ = 0.1</text>
+    <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+      <line x1="248" y1="142" x2="456" y2="142"/>
+      <line x1="352" y1="48" x2="352" y2="236"/>
+      <circle cx="352" cy="142" r="78" stroke-dasharray="2 4"/>
+    </g>
+    <g font-size="13" style="font-family: var(--figure-serif); fill: var(--figure-muted)">
+      <text x="461" y="146"><tspan font-style="italic">x</tspan>₂</text>
+      <text x="352" y="41" text-anchor="middle"><tspan font-style="italic">x</tspan>₃</text>
+    </g>
+    <g stroke-width="1.5" stroke-linecap="round">
+      <line x1="352" y1="142" x2="417.9" y2="121.6" fill="none" style="stroke: var(--figure-accent)"/>
+      <polygon points="426.5,118.9 418.9,124.7 417,118.6" style="fill: var(--figure-accent)"/>
+      <line x1="352" y1="142" x2="419.6" y2="128.3" fill="none" style="stroke: var(--figure-accent)"/>
+      <polygon points="428.4,126.5 420.3,131.4 419,125.2" style="fill: var(--figure-accent)"/>
+      <line x1="352" y1="142" x2="420.7" y2="135.1" fill="none" style="stroke: var(--figure-accent)"/>
+      <polygon points="429.6,134.2 421,138.3 420.3,131.9" style="fill: var(--figure-accent)"/>
+      <line x1="352" y1="142" x2="421" y2="142" fill="none" stroke="currentColor"/>
+      <polygon points="430,142 421,145.2 421,138.8"/>
+    </g>
+    <g font-size="13" style="font-family: var(--figure-serif)">
+      <text x="436" y="160" text-anchor="start"><tspan font-style="italic">p</tspan> = 0</text>
+      <text x="434.5" y="119.9" text-anchor="start" style="fill: var(--figure-accent)"><tspan font-style="italic">p</tspan> = 3</text>
+    </g>
+  </g>
+</svg>

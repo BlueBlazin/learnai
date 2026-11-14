@@ -19,6 +19,7 @@ import {
   serializeFilters,
 } from "@/lib/filters";
 import { pluralize } from "@/lib/format";
+import { unmetPrerequisites } from "@/lib/paths";
 import { routes } from "@/lib/routes";
 
 const route = getRouteApi("/library");
@@ -37,6 +38,8 @@ function LibraryScreen() {
 
   const matches = useMemo(() => filterProblems(problems.data ?? [], filters), [problems.data, filters]);
   const groups = useMemo(() => groupByTrack(matches, tracks.data ?? []), [matches, tracks.data]);
+  // Computed over the whole catalog: a prerequisite hidden by a filter still counts.
+  const unmet = useMemo(() => unmetPrerequisites(problems.data ?? []), [problems.data]);
   const narrowed = activeFilterCount({ ...filters, track: null }) > 0;
 
   // "/" focuses search, as in most catalogs.
@@ -130,6 +133,7 @@ function LibraryScreen() {
                   track={group.track}
                   problems={group.problems}
                   filtered={narrowed}
+                  unmet={unmet}
                 />
               ))
             )}

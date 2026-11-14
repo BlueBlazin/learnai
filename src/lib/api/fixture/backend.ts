@@ -5,6 +5,7 @@ import type {
   EnvStatus,
   Framework,
   InstallEvent,
+  Path,
   ProblemDetail,
   ProblemStatus,
   ProblemSummary,
@@ -16,6 +17,7 @@ import type {
   Track,
 } from "../types";
 import { buildCatalog, type FixtureProblem, hash, renderTemplate } from "./catalog";
+import { FIXTURE_PATHS } from "./paths";
 import { buildPlan, simulateRun, verdictOf } from "./runs";
 
 export interface FixtureOptions {
@@ -421,6 +423,44 @@ export class FixtureBackend implements Backend {
       },
     ]);
 
+  /**
+   * The fixture path, with core's rule applied: an id the catalog does not know
+   * is dropped, and a stage left empty is not listed.
+   */
+  listPaths = (): Promise<Path[]> =>
+    this.respond(() =>
+      FIXTURE_PATHS.map((path) => {
+        const stages = path.stages
+          .map((stage) => ({ ...stage, problems: stage.problems.filter((id) => this.problems.has(id)) }))
+          .filter((stage) => stage.problems.length > 0);
+        const ids = stages.flatMap((stage) => stage.problems);
+        return {
+          id: path.id,
+          title: path.title,
+          description: path.description,
+          stages,
+          problemCount: ids.length,
+          solvedCount: ids.filter((id) => this.stateOf(id).status === "solved").length,
+        };
+      }),
+    );
+
+  /** Serves the figures bundled with authored fixture statements, with core's path rules. */
+  getProblemAsset = (id: string, path: string): Promise<string> =>
+    this.respond(() => {
+      const problem = this.problem(id);
+      if (path === "" || path.startsWith("/") || path.includes("\\") || path.split("/").some(isDotSegment)) {
+        throw new Error(`invalid asset path \`${path}\`: it must stay inside the problem's assets directory`);
+      }
+      if (!/\.(svg|png)$/i.test(path)) {
+        throw new Error(`invalid asset path \`${path}\`: only .svg and .png files are served`);
+      }
+      const svg = problem.assets[path];
+      if (svg === undefined)
+        throw new Error(`missing file ${ROOT}/problems/${problem.meta.track}/${id}/assets/${path}`);
+      return `data:image/svg+xml;base64,${base64(svg)}`;
+    });
+
   /** Consecutive local days, ending today or yesterday, with an accepted submit. */
   private streak(): number {
     const days = new Set(
@@ -439,6 +479,17 @@ export class FixtureBackend implements Backend {
 
 function key(id: string, framework: Framework): string {
   return `${id}/${framework}`;
+}
+
+function isDotSegment(segment: string): boolean {
+  return segment === "" || segment === "." || segment === "..";
+}
+
+/** Base64 of the UTF-8 encoding of `text`. */
+function base64(text: string): string {
+  let binary = "";
+  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+  return btoa(binary);
 }
 
 function dayKey(date: Date): string {

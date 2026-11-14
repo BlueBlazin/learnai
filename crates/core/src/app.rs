@@ -1,6 +1,6 @@
 //! The [`Core`] facade: one method per command in `docs/ARCHITECTURE.md` section 4.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -9,9 +9,11 @@ use crate::env::Environment;
 use crate::error::{CoreError, Result};
 use crate::harness::{HarnessCommand, HarnessJob, UvHarness};
 use crate::model::{
-    Difficulty, EnvStatus, Framework, InstallEvent, ProblemDetail, ProblemStatus, ProblemSummary,
-    RunEvent, RunMode, SolutionFile, Stats, Submission, SubmissionDetail, Track,
+    Difficulty, EnvStatus, Framework, InstallEvent, PathStage, ProblemDetail, ProblemStatus,
+    ProblemSummary, RunEvent, RunMode, SolutionFile, Stats, StudyPath, Submission,
+    SubmissionDetail, Track,
 };
+use crate::paths::load_paths;
 use crate::progress::{current_streak, derive_status};
 use crate::run::{RunLimits, RunPlan, RunRegistry};
 use crate::sink::EventSink;
@@ -103,21 +105,67 @@ impl Core {
             .load()
     }
 
-    /// Malformed tracks and problems found by the latest catalog scan.
+    /// Malformed tracks, problems, and paths found by the latest scan.
     pub fn catalog_issues(&self) -> Vec<CatalogIssue> {
-        self.catalog().issues().to_vec()
+        let catalog = self.catalog();
+        let mut issues = catalog.issues().to_vec();
+        issues.extend(load_paths(&self.inner.root, &catalog).1);
+        issues
     }
 
     /// `list_catalog_issues`: the same issues in wire form.
     pub fn list_catalog_issues(&self) -> Vec<crate::model::CatalogIssue> {
-        self.catalog()
-            .issues()
-            .iter()
+        self.catalog_issues()
+            .into_iter()
             .map(|issue| crate::model::CatalogIssue {
                 path: issue.path.to_string_lossy().into_owned(),
-                message: issue.message.clone(),
+                message: issue.message,
             })
             .collect()
+    }
+
+    /// `list_paths`: every valid study path, sorted by file name, with progress.
+    pub fn list_paths(&self) -> Result<Vec<StudyPath>> {
+        let catalog = self.catalog();
+        let (paths, _issues) = load_paths(&self.inner.root, &catalog);
+        let solved: HashSet<String> = self
+            .summaries(&catalog)?
+            .into_iter()
+            .filter(|summary| summary.status == ProblemStatus::Solved)
+            .map(|summary| summary.id)
+            .collect();
+        Ok(paths
+            .into_iter()
+            .map(|path| {
+                let (mut problem_count, mut solved_count) = (0, 0);
+                for id in path.problem_ids() {
+                    problem_count += 1;
+                    solved_count += u32::from(solved.contains(id));
+                }
+                StudyPath {
+                    id: path.id,
+                    title: path.title,
+                    description: path.description,
+                    stages: path
+                        .stages
+                        .into_iter()
+                        .map(|stage| PathStage {
+                            title: stage.title,
+                            description: stage.description,
+                            problems: stage.problems,
+                        })
+                        .collect(),
+                    problem_count,
+                    solved_count,
+                }
+            })
+            .collect())
+    }
+
+    /// `get_problem_asset`: a statement figure as a `data:` URL. `path` is relative to
+    /// the problem's `assets/` directory and may not escape it; only `.svg` and `.png`.
+    pub fn get_problem_asset(&self, id: &str, path: &str) -> Result<String> {
+        crate::assets::read_asset(&self.catalog().problem(id)?.dir, path)
     }
 
     fn summarize(

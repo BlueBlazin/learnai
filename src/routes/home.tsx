@@ -3,15 +3,17 @@ import { Page, Section } from "@/components/app/page";
 import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
 import { ContinueEntry } from "@/components/home/continue-entry";
 import { GettingStarted } from "@/components/home/getting-started";
+import { PathProgress } from "@/components/home/path-progress";
 import { ProgressSummary } from "@/components/home/progress-summary";
 import { TrackProgress } from "@/components/home/track-progress";
 import { SubmissionList } from "@/components/problem/submission-list";
 import { EnvironmentNotice } from "@/components/workbench/environment-notice";
 import { useGo } from "@/hooks/use-go";
-import { useEnvStatus, useProblems, useStats, useSubmissions, useTracks } from "@/lib/api/queries";
+import { useEnvStatus, usePaths, useProblems, useStats, useSubmissions, useTracks } from "@/lib/api/queries";
 import { useEnvInstall } from "@/lib/api/use-env-install";
 import { pickContinue } from "@/lib/continue";
 import { environmentProblem } from "@/lib/environment";
+import { nextOnPath, pathEntries } from "@/lib/paths";
 import { routes } from "@/lib/routes";
 
 const RECENT_COUNT = 8;
@@ -22,6 +24,7 @@ export function HomeScreen() {
   const tracks = useTracks();
   const problems = useProblems();
   const submissions = useSubmissions();
+  const paths = usePaths();
   const env = useEnvStatus();
   const { state: install, install: startInstall } = useEnvInstall();
 
@@ -29,12 +32,20 @@ export function HomeScreen() {
     () => new Map((problems.data ?? []).map((problem) => [problem.id, problem.title])),
     [problems.data],
   );
+  // The study path is the first one the content root defines. A path that fails to
+  // load never blocks Home: the suggestion falls back to catalog order.
+  const path = paths.data?.[0] ?? null;
+  const pathsSettled = paths.data !== undefined || paths.isError;
   const target = useMemo(
     () =>
-      problems.data && tracks.data && submissions.data
-        ? pickContinue(problems.data, tracks.data, submissions.data)
+      problems.data && tracks.data && submissions.data && pathsSettled
+        ? pickContinue(problems.data, tracks.data, submissions.data, path)
         : undefined,
-    [problems.data, tracks.data, submissions.data],
+    [problems.data, tracks.data, submissions.data, pathsSettled, path],
+  );
+  const nextStep = useMemo(
+    () => (path && problems.data ? nextOnPath(pathEntries(path, problems.data)) : null),
+    [path, problems.data],
   );
   // Until something has been attempted there is no progress to report: Home shows
   // how a problem works and what the tracks cover instead of a page of zeros.
@@ -73,6 +84,7 @@ export function HomeScreen() {
           problem={target.problem}
           track={tracks.data?.find((track) => track.id === target.problem.track)}
           lastSubmission={target.lastSubmission}
+          onPath={target.onPath}
           firstRun={firstRun}
           onOpen={() => go(routes.problem(target.problem.id))}
         />
@@ -110,6 +122,11 @@ export function HomeScreen() {
               <Section title="Progress">
                 {stats.data ? <ProgressSummary stats={stats.data} /> : <LoadingLines />}
               </Section>
+              {path ? (
+                <Section title="Path">
+                  <PathProgress path={path} next={nextStep} />
+                </Section>
+              ) : null}
               <Section title="Tracks">
                 {tracks.data ? <TrackProgress tracks={tracks.data} /> : <LoadingLines />}
               </Section>

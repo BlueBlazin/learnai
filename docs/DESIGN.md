@@ -86,6 +86,15 @@ steps of roughly 1.2.
   formula.
 - Unordered lists use a short dash, ordered lists use tabular sans numerals in
   muted ink.
+- Figures are numbered and captioned the way a textbook sets them: the drawing
+  flush left on the measure, then "Figure N." in semibold ink and the caption
+  in the interface sans at 13px, in secondary ink. An image alone on its
+  paragraph is a figure; its alt text is the caption and may contain math. An
+  author's SVG is sanitized (shapes and text only) and inlined, so its
+  `currentColor` ink and the figure palette follow the theme. It is scaled to
+  the measure, to at most 4/3 of its natural size: a drawing 480 units wide
+  fills the 640px measure, and text drawn at 13 units stays between about 12
+  and 17 pixels across pane widths.
 
 ## 3. Color
 
@@ -112,6 +121,14 @@ black, with the same hues lifted.
 | `pass` / `fail` / `warn` | `0.49 0.105 158` / `0.51 0.17 27` / `0.53 0.11 68` | `0.77 0.12 158` / `0.74 0.14 25` / `0.80 0.11 80` | outcomes only |
 | `straw` | `0.93 0.075 96` | `0.38 0.055 92` | highlight |
 
+Figures drawn by problem authors get a palette of their own (`--figure-*`), so
+a drawing never invents a color: `ink`, `muted`, and `faint` are the text,
+secondary, and decoration inks, `accent` is temper blue, and `straw` is the
+other temper color at a strength that reads as a line (`0.56 0.115 72` light,
+`0.82 0.105 84` dark). Blue and straw differ in lightness as well as hue, and
+figures label their series, so the pair survives color-vision deficiency.
+`--figure-sans`, `--figure-serif`, and `--figure-mono` are the three families.
+
 The listing surface is exposed to Tailwind as `listing`, not `code`: `text-code`
 is the code type size, and a color token of the same name would make that one
 utility set the text to the color of its own block.
@@ -136,6 +153,11 @@ does not.
   label (`VerdictMark`, `CaseMark`). Pass is green, wrong answers and errors
   are red, time limits and judge failures are amber, canceled is gray. Red and
   green are never the only difference between two states.
+- **Prerequisites** are advice, never a gate. The problem header lists what a
+  problem builds on, each with its status mark and a link (`PrerequisiteList`).
+  In lists, a problem whose prerequisites are not solved yet carries the words
+  "best after ..." beside its title in secondary ink (`PrerequisiteNote`): no
+  lock, no dimming, and the row opens like any other.
 - **Metrics over a limit** show the value in red, a warning icon, and the words
   "over the limit of" (`MetricList`).
 
@@ -209,13 +231,14 @@ Composed components, by area (all shown in their states at
 | Area | Components |
 |---|---|
 | `app/` | `AppShell`, `CommandPalette`, `AppLink`, `InlineButton`, `IconButton`, `ActionButton`, `CopyButton`, `ConfirmDialog`, `ShortcutHint`, `Page`, `PageHeader`, `Section`, `ScreenMessage`, `MetaList` / `MetaItem`, `RuledList`, `DisclosureChevron`, `Notice`, `EmptyState`, `ErrorState`, `LoadingLines` |
-| `prose/` | `Prose`, `CodeBlock` (both lazy; `CodeFrame` is the block they share with their fallbacks) |
+| `prose/` | `Prose`, `CodeBlock` (both lazy; `CodeFrame` is the block they share with their fallbacks), `Figure`, `SvgFigureBody`, `ProblemFigures` |
 | `editor/` | `CodeEditor` |
-| `problem/` | `DifficultyMark`, `StatusMark`, `JudgeList`, `FrameworkList`, `FrameworkSwitcher`, `ProgressRule`, `ProblemTable`, `ProblemHeader`, `HintList`, `EditorialPanel`, `SubmissionList`, `SubmissionView` |
+| `problem/` | `DifficultyMark`, `StatusMark`, `JudgeList`, `FrameworkList`, `FrameworkSwitcher`, `ProgressRule`, `ProblemTable`, `ProblemHeader`, `PrerequisiteList`, `PrerequisiteNote`, `HintList`, `EditorialPanel`, `SubmissionList`, `SubmissionView` |
 | `results/` | `ResultsPanel`, `VerdictHeader`, `VerdictMark`, `CaseMark`, `CaseList`, `MetricList`, `OutputBlock`, `RunProgress` |
 | `library/` | `LibraryFilterBar`, `FilterSelect`, `TrackList`, `TrackSection` |
 | `workbench/` | `StatementPane`, `EditorPane`, `PaneToolbar`, `EnvironmentNotice`, `SaveIndicator` |
-| `home/` | `ContinueEntry`, `GettingStarted`, `ProgressSummary`, `TrackProgress` |
+| `path/` | `PathSummary`, `PathStage`, `PathEntryList` |
+| `home/` | `ContinueEntry`, `GettingStarted`, `ProgressSummary`, `PathProgress`, `TrackProgress` |
 | `settings/` | `EnvironmentPanel`, `InstallButton`, `UvGuideButton`, `ThemePicker`, `ContentPanel`, `PathField`, `CatalogIssueList` |
 
 Patterns that recur, and the one component that owns each:
@@ -228,6 +251,10 @@ Patterns that recur, and the one component that owns each:
   pass, fail).
 - Nothing here, failed, or loading: `EmptyState`, `ErrorState`, `LoadingLines`;
   for a whole screen, inside `ScreenMessage`.
+- A numbered, captioned drawing: `Figure`; an author's SVG inside it:
+  `SvgFigureBody`. `ProblemFigures` wraps the prose of one problem so that
+  `assets/...` images resolve through the backend; `Prose` itself knows nothing
+  about problems.
 - Copy to the clipboard: `CopyButton`. A row that opens: `Collapsible` with
   `DisclosureChevron`.
 
@@ -235,6 +262,45 @@ Home has two states. Until anything has been attempted it is a title page:
 the first problem, how a problem works (`GettingStarted`), and what the tracks
 cover (`TrackProgress` as contents). After that it reports progress and recent
 submissions. It never shows a page of zeros.
+
+The suggestion at the top of Home follows the study path (the first path the
+content root defines). Unfinished submitted work comes first ("Continue where
+you left off"); otherwise it is the next unsolved problem on the path, which
+for a new user is the path's first problem ("Start here") and after a solve is
+the one that follows it ("Up next"). The entry says where the problem sits
+("Inference 75, No. 2 of 12") and links to the path. Without a path, or once it
+is finished, the suggestion falls back to catalog order.
+
+### The Path screen
+
+A path is its own destination in the app bar ("Path", between Home and
+Library), not a section of the Library. The Library is a catalog: organized by
+track, filtered, searched, windowed for hundreds of rows. A path is a reading
+order: a few dozen problems in a sequence someone chose, cutting across
+tracks. Folding it into the Library would have meant either a second axis in
+the track column or a filter that reorders the table, and in both cases the
+sequence, which is the whole point, would be one option among filters. As a
+screen of its own it can be what it is: the table of contents of the course.
+
+It is set like one. The path's title and one-sentence description head the
+page, then a sentence of progress (`PathSummary`: "3 of 12 problems solved.
+Next is ..., in Part I."; before anything is solved it gives the length and
+the starting point instead of zeros). Each stage is a part under an ink rule
+(`PathStage`): "Part II", its title, what it covers, and its count in a margin
+column; beside it the problems as lines (`PathEntryList`) with the status
+mark, the running number along the whole path, the title in the reading serif
+(wrapping, never truncated), and the difficulty mark. The whole line opens the
+problem. Stages are numbered in roman numerals so they are never confused
+with the running problem numbers.
+
+What it deliberately is not: a roadmap. There are no nodes and connectors, no
+locked steps, no percentages, no badges for finishing a part. The next problem
+is marked by the words "Up next" and a medium weight, nothing else. A
+prerequisite that is earlier on the same path gets no remark, because the
+order of the list already says so; one that is off the path gets the usual
+"best after ...". When the content root defines several paths, a row of text
+tabs above the title switches between them; with one path there is no
+switcher.
 
 Conventions:
 

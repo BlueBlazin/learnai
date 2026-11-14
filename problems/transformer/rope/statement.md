@@ -37,6 +37,8 @@ $$
 So $\theta_0 = 1$ (the first pair turns by one radian per position) and the last pair
 has $\theta_{D/2-1} = \text{base}^{-(D-2)/D}$, the slowest rotation.
 
+![Positions $p = 0, 1, 2, 3$ for $D = 4$ and $\text{base} = 100$, the setting of the example below. Each pair is a point in its own plane, turned counterclockwise by $p\,\theta_i$: the first pair moves one radian per position, the second a tenth of that.](assets/pair-rotation.svg)
+
 This is the **interleaved** convention: the one in the RoFormer paper that introduced
 RoPE, and the one in Meta's Llama reference implementation, which treats each adjacent
 pair as one complex number and multiplies it by $e^{\mathrm{i} p \theta_i}$. It is not

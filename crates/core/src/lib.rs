@@ -8,6 +8,8 @@
 //! - [`model`]: wire types (camelCase JSON, mirrors the TypeScript contract)
 //! - [`root`]: content root resolution
 //! - [`catalog`]: tracks and problems on disk, with a cheap incremental reload
+//! - [`paths`]: study paths under `paths/`
+//! - [`assets`]: statement figures served as `data:` URLs
 //! - [`solutions`]: the user's files under `workspace/`
 //! - [`store`]: SQLite state (submissions, editorial unlocks, settings)
 //! - [`progress`]: status derivation and streak math
@@ -16,11 +18,13 @@
 //! - [`app`]: the [`Core`] facade
 
 pub mod app;
+pub mod assets;
 pub mod catalog;
 pub mod env;
 pub mod error;
 pub mod harness;
 pub mod model;
+pub mod paths;
 pub mod progress;
 pub mod protocol;
 pub mod root;

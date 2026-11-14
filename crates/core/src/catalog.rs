@@ -425,7 +425,8 @@ fn parse_track(text: &str, dir: &Path) -> std::result::Result<TrackMeta, String>
     })
 }
 
-fn is_slug(id: &str) -> bool {
+/// Whether `id` is a valid identifier: only a-z, 0-9, `-`, and `_`.
+pub(crate) fn is_slug(id: &str) -> bool {
     !id.is_empty()
         && id
             .bytes()

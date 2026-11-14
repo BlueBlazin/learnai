@@ -130,7 +130,24 @@ export interface SubmissionDetail extends Submission {
   metrics: Metric[];
 }
 
-/** A malformed track or problem that the catalog skipped. */
+/** One stage of a study path. `problems` holds existing problem ids only, in study order. */
+export interface PathStage {
+  title: string;
+  description: string;
+  problems: string[];
+}
+
+/** A curated, ordered study plan (`paths/<id>.toml`) with progress. */
+export interface Path {
+  id: string;
+  title: string;
+  description: string;
+  stages: PathStage[];
+  problemCount: number;
+  solvedCount: number;
+}
+
+/** A malformed track, problem, or path that the catalog skipped. */
 export interface CatalogIssue {
   path: string;
   message: string;

@@ -21,8 +21,14 @@ export interface ProblemSearch {
   submission?: number;
 }
 
+export interface PathsSearch {
+  /** The path to show; the first one when absent. */
+  path?: string;
+}
+
 export type RouteTarget =
   | { to: "/" }
+  | { to: "/paths"; search: PathsSearch }
   | { to: "/library"; search: LibrarySearch }
   | { to: "/settings" }
   | { to: "/dev/components" }
@@ -30,6 +36,8 @@ export type RouteTarget =
 
 export const routes = {
   home: (): RouteTarget => ({ to: "/" }),
+  /** The study path with this id, or the first path when no id is given. */
+  paths: (path?: string): RouteTarget => ({ to: "/paths", search: path ? { path } : {} }),
   library: (search: LibrarySearch = {}): RouteTarget => ({ to: "/library", search }),
   settings: (): RouteTarget => ({ to: "/settings" }),
   devComponents: (): RouteTarget => ({ to: "/dev/components" }),

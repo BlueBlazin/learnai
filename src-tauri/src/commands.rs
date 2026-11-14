@@ -8,7 +8,7 @@ use tauri::State;
 use tauri::ipc::Channel;
 use whetstone_core::{
     CatalogIssue, Core, EnvStatus, Framework, InstallEvent, ProblemDetail, ProblemSummary,
-    RunEvent, RunMode, SolutionFile, Stats, Submission, SubmissionDetail, Track,
+    RunEvent, RunMode, SolutionFile, Stats, StudyPath, Submission, SubmissionDetail, Track,
 };
 
 /// Shared application state: the core, or the reason it could not be opened.
@@ -206,6 +206,23 @@ pub async fn get_stats(state: State<'_, AppState>) -> CommandResult<Stats> {
 pub async fn list_catalog_issues(state: State<'_, AppState>) -> CommandResult<Vec<CatalogIssue>> {
     with_core(state, "list_catalog_issues", |core| {
         Ok(core.list_catalog_issues())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_paths(state: State<'_, AppState>) -> CommandResult<Vec<StudyPath>> {
+    with_core(state, "list_paths", |core| core.list_paths()).await
+}
+
+#[tauri::command]
+pub async fn get_problem_asset(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+) -> CommandResult<String> {
+    with_core(state, "get_problem_asset", move |core| {
+        core.get_problem_asset(&id, &path)
     })
     .await
 }

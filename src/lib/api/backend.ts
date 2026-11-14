@@ -3,6 +3,7 @@ import type {
   EnvStatus,
   Framework,
   InstallEvent,
+  Path,
   ProblemDetail,
   ProblemSummary,
   RunEvent,
@@ -57,8 +58,17 @@ export interface Backend {
 
   getStats(): Promise<Stats>;
 
-  /** Malformed tracks and problems the catalog skipped. Empty when everything loaded. */
+  /** Malformed tracks, problems, and paths the catalog skipped. Empty when everything loaded. */
   listCatalogIssues(): Promise<CatalogIssue[]>;
+
+  /** Study paths, in file-name order, with progress. */
+  listPaths(): Promise<Path[]>;
+
+  /**
+   * A statement figure as a `data:` URL. `path` is relative to the problem's
+   * `assets/` directory and may not escape it; only `.svg` and `.png` are served.
+   */
+  getProblemAsset(id: string, path: string): Promise<string>;
 }
 
 export const LOCAL_TARGET = "local";

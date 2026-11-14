@@ -6,6 +6,7 @@ import { HintList } from "@/components/problem/hint-list";
 import { ProblemHeader } from "@/components/problem/problem-header";
 import { SubmissionList } from "@/components/problem/submission-list";
 import { SubmissionView } from "@/components/problem/submission-view";
+import { ProblemFigures } from "@/components/prose/problem-figures";
 import { Prose } from "@/components/prose/prose";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -63,104 +64,107 @@ export function StatementPane({
   const unlock = useUnlockEditorial(problem.id);
   const reference = useReference(problem.id, framework, problem.editorialUnlocked && tab === "editorial");
 
+  // Figures in the statement, hints, and editorial all resolve against this problem's assets.
   return (
-    <Tabs value={tab} onValueChange={(value) => onTabChange(value as StatementTab)} className="h-full">
-      <PaneToolbar className="items-stretch justify-between pr-2 pl-6">
-        <TabsList>
-          <TabsTrigger value="statement">Statement</TabsTrigger>
-          <TabsTrigger value="hints">Hints</TabsTrigger>
-          <TabsTrigger value="editorial">Editorial</TabsTrigger>
-          <TabsTrigger value="submissions">
-            Submissions
-            {submissions.data && submissions.data.length > 0 ? (
-              <span className="tabular text-xs text-faint">{submissions.data.length}</span>
+    <ProblemFigures problemId={problem.id}>
+      <Tabs value={tab} onValueChange={(value) => onTabChange(value as StatementTab)} className="h-full">
+        <PaneToolbar className="items-stretch justify-between pr-2 pl-6">
+          <TabsList>
+            <TabsTrigger value="statement">Statement</TabsTrigger>
+            <TabsTrigger value="hints">Hints</TabsTrigger>
+            <TabsTrigger value="editorial">Editorial</TabsTrigger>
+            <TabsTrigger value="submissions">
+              Submissions
+              {submissions.data && submissions.data.length > 0 ? (
+                <span className="tabular text-xs text-faint">{submissions.data.length}</span>
+              ) : null}
+            </TabsTrigger>
+          </TabsList>
+          <div className="flex items-center">
+            <IconButton
+              label={previous ? `Previous: ${previous.title}` : "No previous problem"}
+              disabled={!previous}
+              onClick={() => previous && onNavigate(previous)}
+            >
+              <ChevronLeft />
+            </IconButton>
+            <IconButton
+              label={next ? `Next: ${next.title}` : "No next problem"}
+              disabled={!next}
+              onClick={() => next && onNavigate(next)}
+            >
+              <ChevronRight />
+            </IconButton>
+          </div>
+        </PaneToolbar>
+
+        <TabsContent value="statement">
+          <PageScroll>
+            <ProblemHeader problem={problem} track={track} prerequisites={prerequisites} />
+            <Prose>{problem.statement}</Prose>
+          </PageScroll>
+        </TabsContent>
+
+        <TabsContent value="hints">
+          <PageScroll>
+            <HintList
+              hints={problem.hints}
+              revealed={hintsRevealed}
+              onReveal={(count) => revealHint(problem.id, count)}
+            />
+          </PageScroll>
+        </TabsContent>
+
+        <TabsContent value="editorial">
+          <PageScroll>
+            {unlock.error ? (
+              <ErrorState title="The editorial could not be revealed" error={unlock.error} />
             ) : null}
-          </TabsTrigger>
-        </TabsList>
-        <div className="flex items-center">
-          <IconButton
-            label={previous ? `Previous: ${previous.title}` : "No previous problem"}
-            disabled={!previous}
-            onClick={() => previous && onNavigate(previous)}
-          >
-            <ChevronLeft />
-          </IconButton>
-          <IconButton
-            label={next ? `Next: ${next.title}` : "No next problem"}
-            disabled={!next}
-            onClick={() => next && onNavigate(next)}
-          >
-            <ChevronRight />
-          </IconButton>
-        </div>
-      </PaneToolbar>
-
-      <TabsContent value="statement">
-        <PageScroll>
-          <ProblemHeader problem={problem} track={track} prerequisites={prerequisites} />
-          <Prose>{problem.statement}</Prose>
-        </PageScroll>
-      </TabsContent>
-
-      <TabsContent value="hints">
-        <PageScroll>
-          <HintList
-            hints={problem.hints}
-            revealed={hintsRevealed}
-            onReveal={(count) => revealHint(problem.id, count)}
-          />
-        </PageScroll>
-      </TabsContent>
-
-      <TabsContent value="editorial">
-        <PageScroll>
-          {unlock.error ? (
-            <ErrorState title="The editorial could not be revealed" error={unlock.error} />
-          ) : null}
-          <EditorialPanel
-            unlocked={problem.editorialUnlocked}
-            editorial={problem.editorial}
-            reference={reference.data}
-            referenceError={reference.error}
-            framework={framework}
-            revealing={unlock.isPending}
-            onReveal={() => unlock.mutate()}
-          />
-        </PageScroll>
-      </TabsContent>
-
-      <TabsContent value="submissions">
-        <PageScroll>
-          {submissionId !== null ? (
-            <SubmissionView
-              submission={submission.data?.problemId === problem.id ? submission.data : undefined}
-              error={
-                submission.error ??
-                (submission.data && submission.data.problemId !== problem.id
-                  ? new Error("That submission belongs to a different problem.")
-                  : null)
-              }
-              onBack={() => onOpenSubmission(null)}
-              onRetry={() => void submission.refetch()}
+            <EditorialPanel
+              unlocked={problem.editorialUnlocked}
+              editorial={problem.editorial}
+              reference={reference.data}
+              referenceError={reference.error}
+              framework={framework}
+              revealing={unlock.isPending}
+              onReveal={() => unlock.mutate()}
             />
-          ) : submissions.error ? (
-            <ErrorState error={submissions.error} onRetry={() => void submissions.refetch()} />
-          ) : !submissions.data ? (
-            <LoadingLines />
-          ) : submissions.data.length === 0 ? (
-            <EmptyState title="No submissions yet">
-              Submit runs your code against every case, hidden ones included, and keeps a copy of the code
-              here.
-            </EmptyState>
-          ) : (
-            <SubmissionList
-              className="max-w-measure"
-              submissions={submissions.data}
-              onOpen={(item) => onOpenSubmission(item.id)}
-            />
-          )}
-        </PageScroll>
-      </TabsContent>
-    </Tabs>
+          </PageScroll>
+        </TabsContent>
+
+        <TabsContent value="submissions">
+          <PageScroll>
+            {submissionId !== null ? (
+              <SubmissionView
+                submission={submission.data?.problemId === problem.id ? submission.data : undefined}
+                error={
+                  submission.error ??
+                  (submission.data && submission.data.problemId !== problem.id
+                    ? new Error("That submission belongs to a different problem.")
+                    : null)
+                }
+                onBack={() => onOpenSubmission(null)}
+                onRetry={() => void submission.refetch()}
+              />
+            ) : submissions.error ? (
+              <ErrorState error={submissions.error} onRetry={() => void submissions.refetch()} />
+            ) : !submissions.data ? (
+              <LoadingLines />
+            ) : submissions.data.length === 0 ? (
+              <EmptyState title="No submissions yet">
+                Submit runs your code against every case, hidden ones included, and keeps a copy of the code
+                here.
+              </EmptyState>
+            ) : (
+              <SubmissionList
+                className="max-w-measure"
+                submissions={submissions.data}
+                onOpen={(item) => onOpenSubmission(item.id)}
+              />
+            )}
+          </PageScroll>
+        </TabsContent>
+      </Tabs>
+    </ProblemFigures>
   );
 }

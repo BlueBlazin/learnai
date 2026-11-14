@@ -17,18 +17,24 @@ import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
 import { CodeEditor } from "@/components/editor/code-editor";
 import { ContinueEntry } from "@/components/home/continue-entry";
 import { GettingStarted } from "@/components/home/getting-started";
+import { PathProgress } from "@/components/home/path-progress";
 import { ProgressSummary } from "@/components/home/progress-summary";
 import { TrackProgress } from "@/components/home/track-progress";
 import { FilterSelect } from "@/components/library/filter-select";
 import { LibraryFilterBar } from "@/components/library/library-filter-bar";
 import { TrackList } from "@/components/library/track-list";
 import { TrackSection } from "@/components/library/track-section";
+import { PathEntryList } from "@/components/path/path-entry-list";
+import { PathStage } from "@/components/path/path-stage";
+import { PathSummary } from "@/components/path/path-summary";
 import { DifficultyMark } from "@/components/problem/difficulty-mark";
 import { EditorialPanel } from "@/components/problem/editorial-panel";
 import { FrameworkList } from "@/components/problem/framework-list";
 import { FrameworkSwitcher } from "@/components/problem/framework-switcher";
 import { HintList } from "@/components/problem/hint-list";
 import { JudgeList } from "@/components/problem/judge-list";
+import { PrerequisiteList } from "@/components/problem/prerequisite-list";
+import { PrerequisiteNote } from "@/components/problem/prerequisite-note";
 import { ProblemHeader } from "@/components/problem/problem-header";
 import { ProblemTable } from "@/components/problem/problem-table";
 import { ProgressRule } from "@/components/problem/progress-rule";
@@ -36,6 +42,7 @@ import { StatusMark } from "@/components/problem/status-mark";
 import { SubmissionList } from "@/components/problem/submission-list";
 import { SubmissionView } from "@/components/problem/submission-view";
 import { CodeBlock } from "@/components/prose/code-block";
+import { Figure, SvgFigureBody } from "@/components/prose/figure";
 import { Prose } from "@/components/prose/prose";
 import { CaseList } from "@/components/results/case-list";
 import { CaseMark } from "@/components/results/case-mark";
@@ -60,6 +67,7 @@ import {
   DIFFICULTIES,
   type Framework,
   type JudgeKind,
+  type Path,
   type ProblemDetail,
   type ProblemSummary,
   STATUSES,
@@ -71,6 +79,7 @@ import {
 import { initialRunState, type RunState } from "@/lib/api/run-state";
 import type { InstallState } from "@/lib/api/use-env-install";
 import { EMPTY_FILTERS, type LibraryFilters } from "@/lib/filters";
+import { nextOnPath, pathEntries, unmetPrerequisites } from "@/lib/paths";
 import { routes } from "@/lib/routes";
 import type { ThemePreference } from "@/stores/theme";
 
@@ -117,6 +126,55 @@ const PROBLEMS: ProblemSummary[] = [
     judges: ["simclock", "service"],
   }),
 ];
+
+/** A short path over the sample problems: one solved, one up next, one that builds on an unsolved problem. */
+const PATH_PROBLEMS: ProblemSummary[] = [
+  PROBLEMS[0] as ProblemSummary,
+  PROBLEMS[1] as ProblemSummary,
+  { ...(PROBLEMS[2] as ProblemSummary), prerequisites: ["scaled-dot-product-attention"] },
+  PROBLEMS[3] as ProblemSummary,
+];
+const PATH: Path = {
+  id: "inference-75",
+  title: "Inference 75",
+  description: "The shortest route through LLM inference, from one layer's arithmetic to serving many users.",
+  stages: [
+    {
+      title: "Numerics and the forward pass",
+      description: "The functions a decoder runs for every token, written from their formulas.",
+      problems: ["a", "scaled-dot-product-attention", "c"],
+    },
+    {
+      title: "Serving many requests",
+      description: "The model as a service: batching under a latency budget and streaming tokens.",
+      problems: ["d"],
+    },
+  ],
+  problemCount: 4,
+  solvedCount: 1,
+};
+const PATH_ENTRIES = pathEntries(PATH, PATH_PROBLEMS);
+const PATH_NEXT = nextOnPath(PATH_ENTRIES);
+const PATH_UNMET = unmetPrerequisites(PATH_PROBLEMS);
+
+/** A small figure in the authoring conventions: currentColor ink, the palette through style, text at 13 units on a 480-unit drawing. */
+const SAMPLE_FIGURE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 96">
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="12" y1="70" x2="468" y2="70"/>
+  </g>
+  <g fill="none" stroke-width="1.5" stroke-linecap="round">
+    <path d="M12 70 C 100 70, 130 14, 240 14 S 380 70, 468 70" stroke="currentColor"/>
+    <path d="M12 70 C 150 70, 180 40, 240 40 S 330 70, 468 70" style="stroke: var(--figure-accent)"/>
+    <path d="M240 14 V 70" stroke-dasharray="2 4" style="stroke: var(--figure-straw)"/>
+  </g>
+  <g font-size="13" style="font-family: var(--figure-serif)">
+    <text x="12" y="14">ink: currentColor</text>
+    <text x="12" y="32" style="fill: var(--figure-accent)">accent</text>
+    <text x="12" y="50" style="fill: var(--figure-straw)">straw</text>
+    <text x="12" y="90" style="fill: var(--figure-muted)">muted, on a faint axis</text>
+  </g>
+  <script>window.figureScriptRan = true</script>
+</svg>`;
 
 const TRACKS: Track[] = [
   {
@@ -606,6 +664,22 @@ function DevComponentsScreen() {
         <Specimen name="Prose: compact">
           <Prose size="compact">{DETAIL.hints[1] ?? ""}</Prose>
         </Specimen>
+        <Specimen name="Figure with SvgFigureBody: an author's SVG, sanitized and inlined (its script element is dropped); a figure whose file failed; not an SVG">
+          <div className="flex max-w-measure flex-col gap-8">
+            <Figure
+              number={1}
+              caption="Two curves and a guide, in the figure palette. The colors follow the theme because the SVG is part of the page."
+            >
+              <SvgFigureBody source={SAMPLE_FIGURE} label="Two curves and a guide in the figure palette" />
+            </Figure>
+            <Figure number={2} caption="The caption stands even when the drawing cannot be shown.">
+              <Notice>The figure could not be loaded: missing file assets/attention-mask.svg</Notice>
+            </Figure>
+            <Figure number={3} caption="A file that does not parse as SVG.">
+              <SvgFigureBody source="<svg><g></svg>" label="Broken" />
+            </Figure>
+          </div>
+        </Specimen>
         <Specimen name="CodeBlock: plain, with line numbers, unknown language">
           <div className="flex max-w-measure flex-col gap-3">
             <CodeBlock code={SAMPLE_CODE} language="python" />
@@ -628,6 +702,23 @@ function DevComponentsScreen() {
         </Specimen>
         <Specimen name="ProblemTable: solved, not started, attempted, long title">
           <ProblemTable problems={PROBLEMS} label="Sample problems" />
+        </Specimen>
+        <Specimen name="ProblemTable with unmet prerequisites noted beside the title">
+          <ProblemTable
+            problems={PATH_PROBLEMS}
+            label="Sample problems with prerequisites"
+            unmet={PATH_UNMET}
+          />
+        </Specimen>
+        <Specimen name="PrerequisiteList (problem header); PrerequisiteNote: one, several, none">
+          <div className="flex flex-col gap-3 text-xs">
+            <PrerequisiteList prerequisites={PROBLEMS.slice(0, 3)} />
+            <div className="flex items-baseline gap-8">
+              <PrerequisiteNote unmet={PROBLEMS.slice(1, 2)} />
+              <PrerequisiteNote unmet={PROBLEMS.slice(1, 4)} />
+              <PrerequisiteNote unmet={[]} />
+            </div>
+          </div>
         </Specimen>
         <Specimen name="HintList: partly revealed, none">
           <div className="flex flex-col gap-6">
@@ -760,8 +851,50 @@ function DevComponentsScreen() {
         ))}
       </Section>
 
+      <Section title="Path" aside="path/, home/">
+        <Specimen name="PathSummary: under way, not started, finished">
+          <PathSummary path={PATH} next={PATH_NEXT} />
+          <PathSummary path={{ ...PATH, solvedCount: 0 }} next={PATH_ENTRIES[0]?.[0] ?? null} />
+          <PathSummary path={{ ...PATH, solvedCount: 4 }} next={null} />
+        </Specimen>
+        <Specimen name="PathStage: a part with the next problem and an unmet prerequisite; a part not begun">
+          <PathStage
+            number={1}
+            stage={PATH.stages[0] as Path["stages"][number]}
+            entries={PATH_ENTRIES[0] ?? []}
+            nextId={PATH_NEXT?.problem.id}
+            unmet={PATH_UNMET}
+          />
+          <PathStage
+            number={2}
+            stage={PATH.stages[1] as Path["stages"][number]}
+            entries={PATH_ENTRIES[1] ?? []}
+            nextId={PATH_NEXT?.problem.id}
+            unmet={PATH_UNMET}
+          />
+        </Specimen>
+        <Specimen name="PathEntryList on its own">
+          <div className="flex max-w-measure">
+            <PathEntryList entries={PATH_ENTRIES[0] ?? []} label="Sample entries" />
+          </div>
+        </Specimen>
+        <Specimen name="PathProgress (Home): under way, finished">
+          <div className="grid grid-cols-2 gap-10">
+            <PathProgress path={PATH} next={PATH_NEXT} />
+            <PathProgress path={{ ...PATH, solvedCount: 4 }} next={null} />
+          </div>
+        </Specimen>
+      </Section>
+
       <Section title="Home and settings" aside="home/, settings/">
-        <Specimen name="ContinueEntry: first run, resuming, and up next">
+        <Specimen name="ContinueEntry: first run on a path, first run without one, resuming, and up next">
+          <ContinueEntry
+            problem={PROBLEMS[0] as ProblemSummary}
+            track={TRACKS[1]}
+            onPath={{ path: PATH, position: 1 }}
+            firstRun
+            onOpen={() => {}}
+          />
           <ContinueEntry
             problem={PROBLEMS[1] as ProblemSummary}
             track={TRACKS[1]}

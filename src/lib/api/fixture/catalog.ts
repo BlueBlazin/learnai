@@ -26,6 +26,8 @@ export interface FixtureProblem {
   editorial: string;
   entry: string[];
   timeLimitS: number;
+  /** Statement figures by path relative to the problem's `assets/` directory: SVG source. */
+  assets: Record<string, string>;
   cases: FixtureCase[];
   /** Code templates with `{{import}}` and `{{T}}` placeholders. */
   starterTemplate: string;
@@ -46,6 +48,27 @@ const content = import.meta.glob<string>("./content/*/*", {
 
 function file(id: string, name: string): string | null {
   return content[`./content/${id}/${name}`] ?? null;
+}
+
+/**
+ * Statement figures. The fixtures have no drawings of their own: the rotary
+ * problem borrows the figure of the real `rope` problem, so the figure
+ * components can be worked on against the file authors actually ship.
+ */
+const ropeFigures = import.meta.glob<string>("../../../../problems/transformer/rope/assets/*.svg", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
+
+const FIGURES: Record<string, Record<string, string>> = {
+  "rotary-embeddings": Object.fromEntries(
+    Object.entries(ropeFigures).map(([path, svg]) => [path.slice(path.lastIndexOf("/") + 1), svg]),
+  ),
+};
+
+function assetsOf(id: string): Record<string, string> {
+  return FIGURES[id] ?? {};
 }
 
 const TENSOR_FRAMEWORKS: Framework[] = ["torch", "jax", "mlx"];
@@ -267,7 +290,7 @@ export function hash(text: string): number {
   return (h >>> 0) / 4294967296;
 }
 
-function slug(title: string): string {
+export function slug(title: string): string {
   return title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -358,6 +381,7 @@ function fillerProblems(track: FixtureTrack, startOrder: number): FixtureProblem
       editorial: `The reference for *${title}* is a single pass over the input. This editorial is a fixture placeholder.`,
       entry: [entry],
       timeLimitS: 10,
+      assets: {},
       cases: [
         { name: "small input", public: true },
         { name: "typical input", public: true },
@@ -397,6 +421,7 @@ function authoredProblem(spec: Authored): FixtureProblem {
     editorial: file(spec.id, "editorial.md") ?? "",
     entry: spec.entry,
     timeLimitS: spec.timeLimitS ?? 10,
+    assets: assetsOf(spec.id),
     cases: [
       ...spec.publicCases.map((name) => ({ name, public: true })),
       ...Array.from({ length: spec.hiddenCases }, (_, i) => ({

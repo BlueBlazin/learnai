@@ -2,7 +2,13 @@ import { createHashHistory, createRootRoute, createRoute, createRouter } from "@
 import { ScreenMessage } from "@/components/app/page";
 import { ErrorState, LoadingLines } from "@/components/app/states";
 import { parseFilters, serializeFilters } from "@/lib/filters";
-import { type LibrarySearch, type ProblemSearch, STATEMENT_TABS, type StatementTab } from "@/lib/routes";
+import {
+  type LibrarySearch,
+  type PathsSearch,
+  type ProblemSearch,
+  STATEMENT_TABS,
+  type StatementTab,
+} from "@/lib/routes";
 import { HomeScreen } from "@/routes/home";
 import { RootLayout } from "@/routes/root";
 
@@ -35,6 +41,13 @@ const libraryRoute = createRoute({
   validateSearch: (search: Record<string, unknown>): LibrarySearch => serializeFilters(parseFilters(search)),
 }).lazy(() => import("@/routes/library").then((module) => module.Route));
 
+const pathsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/paths",
+  validateSearch: (search: Record<string, unknown>): PathsSearch =>
+    typeof search.path === "string" && search.path ? { path: search.path } : {},
+}).lazy(() => import("@/routes/paths").then((module) => module.Route));
+
 const problemRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/problems/$problemId",
@@ -64,6 +77,7 @@ const devComponentsRoute = import.meta.env.DEV
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
+  pathsRoute,
   libraryRoute,
   problemRoute,
   settingsRoute,

@@ -1,17 +1,21 @@
 import { cn } from "cn";
-import { type ComponentProps, isValidElement, memo, type ReactNode } from "react";
+import { type ComponentProps, isValidElement, memo, type ReactNode, useContext } from "react";
 import Markdown, { type Components } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { InlineButton } from "@/components/app/inline-button";
+import { Notice } from "@/components/app/notice";
 import { openExternal } from "@/lib/platform";
+import { AssetFigureContext } from "./asset-figure-context";
 import { CodeBlockContent } from "./code-block-content";
-import { remarkProse } from "./remark-prose";
+import { Figure } from "./figure";
+import { ASSET_PREFIX, remarkProse } from "./remark-prose";
 
 const CALLOUT_LABEL: Record<string, string> = { note: "Note", tip: "Tip", warning: "Warning" };
 
 const remarkPlugins = [remarkGfm, remarkMath, remarkProse];
+const captionRemarkPlugins = [remarkMath];
 const rehypePlugins = [[rehypeKatex, { throwOnError: false, strict: false }]] as ComponentProps<
   typeof Markdown
 >["rehypePlugins"];
@@ -22,6 +26,62 @@ function Pre({ children }: { children?: ReactNode }) {
     return <CodeBlockContent code={String(children.props.children ?? "")} language={language} />;
   }
   return <pre>{children}</pre>;
+}
+
+/** A figure caption: one line of Markdown (math, emphasis, code) with no paragraph around it. */
+const captionComponents: Components = {
+  p: ({ children }) => <>{children}</>,
+  a: ({ children }) => <>{children}</>,
+  img: () => null,
+};
+
+function Caption({ children }: { children: string }) {
+  return (
+    <Markdown
+      remarkPlugins={captionRemarkPlugins}
+      rehypePlugins={rehypePlugins}
+      components={captionComponents}
+    >
+      {children}
+    </Markdown>
+  );
+}
+
+/**
+ * A paragraph that holds only an image (see remark-prose.ts). A file under
+ * `assets/` is drawn by whoever supplies the text's assets (`ProblemFigures`);
+ * any other URL is an ordinary image.
+ */
+function ProseFigure({
+  src,
+  number,
+  alt,
+  caption,
+}: {
+  src: string;
+  number: number;
+  alt: string;
+  caption: string;
+}) {
+  const AssetFigure = useContext(AssetFigureContext);
+  const captionNode = caption ? <Caption>{caption}</Caption> : null;
+  if (!src.startsWith(ASSET_PREFIX)) {
+    return (
+      <Figure number={number} caption={captionNode}>
+        <img src={src} alt={alt} />
+      </Figure>
+    );
+  }
+  if (!AssetFigure) {
+    return (
+      <Figure number={number} caption={captionNode}>
+        <Notice>This figure belongs to a problem and cannot be shown here.</Notice>
+      </Figure>
+    );
+  }
+  return (
+    <AssetFigure path={src.slice(ASSET_PREFIX.length)} number={number} alt={alt} caption={captionNode} />
+  );
 }
 
 const components: Components = {
@@ -43,12 +103,17 @@ const components: Components = {
       </aside>
     );
   },
-  img: ({ node: _node, alt, title, ...props }) => (
-    <figure>
-      <img alt={alt ?? ""} {...props} />
-      {title ? <figcaption>{title}</figcaption> : null}
-    </figure>
-  ),
+  figure: ({ node: _node, ...props }) => {
+    const data = props as Record<`data-${"src" | "number" | "alt" | "caption"}`, string | number | undefined>;
+    return (
+      <ProseFigure
+        src={String(data["data-src"] ?? "")}
+        number={Number(data["data-number"] ?? 1)}
+        alt={String(data["data-alt"] ?? "")}
+        caption={String(data["data-caption"] ?? "")}
+      />
+    );
+  },
 };
 
 export interface ProseProps {

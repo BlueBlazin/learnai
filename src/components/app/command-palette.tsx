@@ -1,4 +1,4 @@
-import { BookOpen, House, Monitor, Moon, Play, Send, Settings, Sun } from "lucide-react";
+import { BookOpen, House, ListOrdered, Monitor, Moon, Play, Send, Settings, Sun } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { StatusMark } from "@/components/problem/status-mark";
 import {
@@ -105,6 +105,10 @@ export function CommandPalette() {
             <CommandItem onSelect={() => navigate(routes.home())}>
               <House />
               Home
+            </CommandItem>
+            <CommandItem onSelect={() => navigate(routes.paths())}>
+              <ListOrdered />
+              Path
             </CommandItem>
             <CommandItem onSelect={() => navigate(routes.library())}>
               <BookOpen />

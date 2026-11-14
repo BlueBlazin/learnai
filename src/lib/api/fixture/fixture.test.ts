@@ -265,6 +265,69 @@ describe("FixtureBackend", () => {
     }
   });
 
+  it("serves a 75-problem path over its own catalog, in stages, with progress that follows a solve", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const [paths, problems] = await Promise.all([backend.listPaths(), backend.listProblems()]);
+    expect(paths.map((path) => path.id)).toEqual(["inference-75"]);
+    const path = paths[0];
+    if (!path) throw new Error("no path");
+
+    const ids = path.stages.flatMap((stage) => stage.problems);
+    expect(ids.length).toBe(75);
+    expect(new Set(ids).size).toBe(75);
+    expect(path.problemCount).toBe(75);
+    expect(path.stages.length).toBeGreaterThanOrEqual(6);
+    const byId = new Map(problems.map((problem) => [problem.id, problem]));
+    for (const stage of path.stages) {
+      expect(stage.title).not.toBe("");
+      expect(stage.description).toMatch(/\.$/);
+    }
+    // Every entry exists, and nothing comes before one of its prerequisites.
+    ids.forEach((id, position) => {
+      const problem = byId.get(id);
+      expect(problem, id).toBeDefined();
+      for (const prerequisite of problem?.prerequisites ?? []) {
+        const at = ids.indexOf(prerequisite);
+        if (at !== -1) expect(at, `${prerequisite} before ${id}`).toBeLessThan(position);
+      }
+    });
+    expect(path.solvedCount).toBe(ids.filter((id) => byId.get(id)?.status === "solved").length);
+    expect(path.solvedCount).toBeGreaterThan(0);
+    expect(path.solvedCount).toBeLessThan(75);
+
+    const target = ids.find((id) => {
+      const problem = byId.get(id);
+      return problem?.status === "todo" && problem.frameworks.includes("torch");
+    });
+    if (!target) throw new Error("nothing left to solve");
+    await backend.writeSolution(target, "torch", "def solution(x): return x\n");
+    expect((await runToEnd(backend, target, "submit")).at(-1)).toMatchObject({ verdict: "accepted" });
+    expect((await backend.listPaths())[0]?.solvedCount).toBe(path.solvedCount + 1);
+  });
+
+  it("serves statement figures as data URLs and refuses anything else", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const statement = (await backend.getProblem("rotary-embeddings")).statement;
+    expect(statement).toContain("](assets/pair-rotation.svg)");
+
+    const url = await backend.getProblemAsset("rotary-embeddings", "pair-rotation.svg");
+    expect(url.startsWith("data:image/svg+xml;base64,")).toBe(true);
+    const svg = new TextDecoder().decode(
+      Uint8Array.from(atob(url.slice(url.indexOf(",") + 1)), (char) => char.charCodeAt(0)),
+    );
+    expect(svg.startsWith("<svg")).toBe(true);
+    expect(svg).toContain("θ");
+
+    await expect(backend.getProblemAsset("rotary-embeddings", "../statement.md")).rejects.toThrow(
+      "must stay inside",
+    );
+    await expect(backend.getProblemAsset("rotary-embeddings", "notes.txt")).rejects.toThrow(
+      "only .svg and .png",
+    );
+    await expect(backend.getProblemAsset("rotary-embeddings", "missing.svg")).rejects.toThrow("missing file");
+    await expect(backend.getProblemAsset("nope", "pair-rotation.svg")).rejects.toThrow("Unknown problem");
+  });
+
   it("reports one framework as not installed and installs it with a streamed log", async () => {
     const backend = new FixtureBackend({ speed: 0 });
     const before = await backend.envStatus();

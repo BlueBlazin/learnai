@@ -10,16 +10,19 @@ export function RuledList({
   framed = true,
   className,
   children,
+  "aria-label": label,
 }: {
   /** Render an `<ol>`: the order of the rows carries meaning. */
   ordered?: boolean;
   framed?: boolean;
   className?: string;
   children: ReactNode;
+  "aria-label"?: string;
 }) {
   const List = ordered ? "ol" : "ul";
   return (
     <List
+      aria-label={label}
       className={cn(
         "flex flex-col divide-y divide-border/70",
         framed && "border-y border-border/70",

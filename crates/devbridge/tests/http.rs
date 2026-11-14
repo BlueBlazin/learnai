@@ -447,6 +447,107 @@ async fn errors_are_json_with_meaningful_statuses() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn paths_and_assets_over_http() {
+    let bridge = Bridge::start().await;
+    let root = bridge.root.path();
+
+    // No paths directory: an empty list, not an error.
+    assert_eq!(bridge.call("list_paths", json!({})).await, json!([]));
+
+    fs::create_dir_all(root.join("paths")).expect("mkdir");
+    fs::write(
+        root.join("paths/starter.toml"),
+        "id = \"starter\"\ntitle = \"Starter Path\"\ndescription = \"A short path.\"\n\n\
+         [[stages]]\ntitle = \"Warm-up\"\ndescription = \"First steps.\"\n\
+         problems = [\"add-two\", \"missing\", \"hard-one\"]\n",
+    )
+    .expect("write");
+    assert_eq!(
+        bridge.call("list_paths", json!({})).await,
+        json!([{
+            "id": "starter", "title": "Starter Path", "description": "A short path.",
+            "stages": [{"title": "Warm-up", "description": "First steps.",
+                        "problems": ["add-two", "hard-one"]}],
+            "problemCount": 2, "solvedCount": 0
+        }])
+    );
+    let issues = bridge.call("list_catalog_issues", json!({})).await;
+    assert!(issues.as_array().expect("array").iter().any(|i| {
+        i["path"]
+            .as_str()
+            .is_some_and(|p| p.ends_with("starter.toml"))
+            && i["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("`missing`"))
+    }));
+
+    // Progress follows an accepted submit.
+    let started = bridge
+        .call("start_run", json!({"problemId": "add-two", "framework": "torch", "mode": "submit", "target": "local"}))
+        .await;
+    let run_id = started["runId"].as_str().expect("runId");
+    bridge.events(&format!("/api/runs/{run_id}/events")).await;
+    assert_eq!(
+        bridge.call("list_paths", json!({})).await[0]["solvedCount"],
+        1
+    );
+
+    // Assets.
+    let assets = root.join("problems/basics/add-two/assets");
+    fs::create_dir_all(&assets).expect("mkdir");
+    fs::write(assets.join("figure.svg"), "<svg/>").expect("write");
+    fs::write(assets.join("notes.txt"), "x").expect("write");
+    fs::write(assets.join("huge.png"), vec![0u8; 1024 * 1024 + 1]).expect("write");
+    assert_eq!(
+        bridge
+            .call(
+                "get_problem_asset",
+                json!({"id": "add-two", "path": "figure.svg"})
+            )
+            .await,
+        json!("data:image/svg+xml;base64,PHN2Zy8+")
+    );
+    let cases = [
+        (
+            json!({"id": "add-two", "path": "../statement.md"}),
+            StatusCode::BAD_REQUEST,
+            "must stay inside",
+        ),
+        (
+            json!({"id": "add-two", "path": "notes.txt"}),
+            StatusCode::BAD_REQUEST,
+            "only .svg and .png",
+        ),
+        (
+            json!({"id": "add-two", "path": "huge.png"}),
+            StatusCode::BAD_REQUEST,
+            "the limit is",
+        ),
+        (
+            json!({"id": "add-two", "path": "nope.svg"}),
+            StatusCode::NOT_FOUND,
+            "missing file",
+        ),
+        (
+            json!({"id": "nope", "path": "figure.svg"}),
+            StatusCode::NOT_FOUND,
+            "unknown problem `nope`",
+        ),
+        (
+            json!({"id": "add-two"}),
+            StatusCode::BAD_REQUEST,
+            "missing field `path`",
+        ),
+    ];
+    for (body, status, needle) in cases {
+        let (got, value) = bridge.post("get_problem_asset", body.clone()).await;
+        assert_eq!(got, status, "{body}: {value}");
+        let message = value["error"].as_str().expect("error message");
+        assert!(message.contains(needle), "{body}: {message}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn cors_allows_only_the_dev_origin() {
     let bridge = Bridge::start().await;
     let preflight = |origin: &'static str| {

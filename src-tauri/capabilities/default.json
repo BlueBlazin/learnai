@@ -22,6 +22,8 @@
     "allow-env-status",
     "allow-env-install",
     "allow-get-stats",
-    "allow-list-catalog-issues"
+    "allow-list-catalog-issues",
+    "allow-list-paths",
+    "allow-get-problem-asset"
   ]
 }

@@ -39,6 +39,8 @@ export const keys = {
   env: ["env"] as const,
   stats: ["stats"] as const,
   catalogIssues: ["catalogIssues"] as const,
+  paths: ["paths"] as const,
+  asset: (id: string, path: string) => ["asset", id, path] as const,
 };
 
 /** Everything a stored submission or a status change can affect. */
@@ -49,6 +51,7 @@ export function invalidateProgress(client: QueryClient, problemId: string): Prom
     client.invalidateQueries({ queryKey: keys.problem(problemId) }),
     client.invalidateQueries({ queryKey: ["submissions"] }),
     client.invalidateQueries({ queryKey: keys.stats }),
+    client.invalidateQueries({ queryKey: keys.paths }),
   ]);
 }
 
@@ -110,6 +113,21 @@ export function useStats() {
 
 export function useCatalogIssues() {
   return useQuery({ queryKey: keys.catalogIssues, queryFn: () => backend.listCatalogIssues() });
+}
+
+export function usePaths() {
+  return useQuery({ queryKey: keys.paths, queryFn: () => backend.listPaths() });
+}
+
+/** A statement figure as a `data:` URL. `problemId` null: the prose has no problem to resolve against. */
+export function useProblemAsset(problemId: string | null, path: string) {
+  return useQuery({
+    queryKey: keys.asset(problemId ?? "", path),
+    queryFn: () => backend.getProblemAsset(problemId as string, path),
+    enabled: problemId !== null,
+    // Long enough that tab switches never refetch; short enough that an author sees an edit.
+    staleTime: 5 * 60_000,
+  });
 }
 
 export function useUnlockEditorial(id: string) {

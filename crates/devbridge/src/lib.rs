@@ -82,6 +82,13 @@ struct IdArgs {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct AssetArgs {
+    id: String,
+    path: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SolutionArgs {
     id: String,
     framework: Framework,
@@ -222,6 +229,11 @@ fn dispatch(bridge: &Bridge, command: &str, body: &[u8]) -> Result<Value, ApiErr
         }
         "get_stats" => reply(core.get_stats()?),
         "list_catalog_issues" => reply(core.list_catalog_issues()),
+        "list_paths" => reply(core.list_paths()?),
+        "get_problem_asset" => {
+            let a: AssetArgs = args(body)?;
+            reply(core.get_problem_asset(&a.id, &a.path)?)
+        }
         other => Err(ApiError::new(
             StatusCode::NOT_FOUND,
             format!("unknown command `{other}`"),

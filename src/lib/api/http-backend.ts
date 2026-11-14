@@ -172,4 +172,7 @@ export class HttpBackend implements Backend {
 
   listCatalogIssues = () =>
     this.call<Awaited<ReturnType<Backend["listCatalogIssues"]>>>("list_catalog_issues");
+
+  listPaths = () => this.call<Awaited<ReturnType<Backend["listPaths"]>>>("list_paths");
+  getProblemAsset = (id: string, path: string) => this.call<string>("get_problem_asset", { id, path });
 }

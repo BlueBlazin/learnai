@@ -9,19 +9,76 @@
  * The blockquote becomes an `<aside class="callout" data-kind="note">`. Kinds:
  * note, tip, warning. Anything else stays an ordinary quotation.
  *
+ * A paragraph that holds nothing but an image becomes a numbered figure:
+ *
+ *     ![The caption, set beneath the figure.](assets/rotation.svg)
+ *
+ * The paragraph becomes a `<figure data-src data-number data-alt data-caption>`;
+ * figures are numbered in document order from 1. `data-caption` is the caption
+ * as the author wrote it (Markdown: it may hold math and emphasis), `data-alt`
+ * the same as plain text. An image inside a sentence stays an inline image.
+ *
  * And punctuation that follows inline math is bound to it (`bindMathPunctuation`).
  */
+
+/** Image URLs under this prefix name a file in the problem's `assets/` directory. */
+export const ASSET_PREFIX = "assets/";
 
 interface Node {
   type: string;
   value?: string;
+  url?: string;
+  alt?: string | null;
+  position?: { start: { offset?: number }; end: { offset?: number } };
   children?: Node[];
   data?: { hName?: string; hProperties?: Record<string, unknown> };
 }
 
 const MARKER = /^\[!(NOTE|TIP|WARNING)\][ \t]*\n?/i;
 
-function visit(node: Node): void {
+/** The image of a paragraph that contains only that image (and whitespace), if it is one. */
+function soleImage(node: Node): Node | null {
+  if (node.type !== "paragraph") return null;
+  const content = (node.children ?? []).filter((child) => !(child.type === "text" && !child.value?.trim()));
+  const only = content.length === 1 ? content[0] : undefined;
+  return only?.type === "image" ? only : null;
+}
+
+/**
+ * The caption of an image as written between `![` and `](`. The syntax tree
+ * keeps only the plain-text `alt`, which loses math and emphasis, so the label
+ * is cut from the source; without positions the plain text stands in.
+ */
+function captionSource(image: Node, source: string): string {
+  const start = image.position?.start.offset;
+  const end = image.position?.end.offset;
+  const raw = start !== undefined && end !== undefined ? source.slice(start, end) : "";
+  const close = raw.lastIndexOf("](");
+  return raw.startsWith("![") && close !== -1 ? raw.slice(2, close) : (image.alt ?? "");
+}
+
+interface State {
+  source: string;
+  figures: number;
+}
+
+function visit(node: Node, counter: State): void {
+  const image = soleImage(node);
+  if (image) {
+    counter.figures += 1;
+    node.children = [];
+    node.data = {
+      ...node.data,
+      hName: "figure",
+      hProperties: {
+        "data-src": image.url ?? "",
+        "data-number": counter.figures,
+        "data-alt": image.alt ?? "",
+        "data-caption": captionSource(image, counter.source),
+      },
+    };
+    return;
+  }
   if (node.type === "blockquote") {
     const first = node.children?.[0];
     const text = first?.type === "paragraph" ? first.children?.[0] : undefined;
@@ -40,7 +97,7 @@ function visit(node: Node): void {
   if (node.children && node.type !== "mathWithPunctuation") {
     node.children = bindMathPunctuation(node.children);
   }
-  for (const child of node.children ?? []) visit(child);
+  for (const child of node.children ?? []) visit(child, counter);
 }
 
 const LEADING_PUNCTUATION = /^[,.;:!?)\]]+/;
@@ -73,5 +130,6 @@ function bindMathPunctuation(children: Node[]): Node[] {
 }
 
 export function remarkProse() {
-  return (tree: unknown) => visit(tree as Node);
+  return (tree: unknown, file?: unknown) =>
+    visit(tree as Node, { source: file === undefined ? "" : String(file), figures: 0 });
 }

@@ -9,9 +9,12 @@ export function TrackSection({
   track,
   problems,
   filtered,
+  unmet,
 }: {
   track: Track;
   problems: ProblemSummary[];
+  /** Unsolved prerequisites by problem id, noted quietly beside the titles. */
+  unmet?: Map<string, ProblemSummary[]>;
   /** True when filters are hiding some of the track's problems. */
   filtered: boolean;
 }) {
@@ -36,7 +39,7 @@ export function TrackSection({
           {track.description}
         </p>
       ) : null}
-      <ProblemTable problems={problems} label={`${track.title} problems`} />
+      <ProblemTable problems={problems} label={`${track.title} problems`} unmet={unmet} />
     </section>
   );
 }

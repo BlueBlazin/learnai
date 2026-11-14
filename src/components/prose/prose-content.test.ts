@@ -36,6 +36,27 @@ describe("ProseContent", () => {
     expect(html.match(/math-nowrap/g)?.length).toBeGreaterThanOrEqual(5);
   });
 
+  it("turns an image on its own line into a numbered figure with a typeset caption", () => {
+    const html = render(
+      [
+        "Before.",
+        "![The pair $(x_0, x_1)$ turns by *one* radian.](assets/rotation.svg)",
+        "An inline ![mark](assets/mark.png) stays inline.",
+        "![Second figure](https://example.com/plot.png)",
+      ].join("\n\n"),
+    );
+    expect(html.match(/<figure class="figure">/g)?.length).toBe(2);
+    // Numbered in document order; the caption keeps its math and emphasis.
+    expect(html).toMatch(/Figure 1\.<\/span> The pair <span class="katex">.*<em>one<\/em> radian\./);
+    expect(html).toContain("Figure 2.</span> Second figure");
+    // Without a problem to resolve against, an asset is named, not requested.
+    expect(html).toContain("This figure belongs to a problem");
+    expect(html).not.toContain('src="assets/rotation.svg"');
+    // The plain-text alternative has no markup in it.
+    expect(html).toContain('<img src="https://example.com/plot.png" alt="Second figure"/>');
+    expect(html).toContain('<p>An inline <img src="assets/mark.png" alt="mark"/> stays inline.</p>');
+  });
+
   it("renders the same document repeatedly without growing the tree", () => {
     const first = render(SAMPLE);
     for (let i = 0; i < 5; i++) expect(render(SAMPLE)).toBe(first);

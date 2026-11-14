@@ -156,6 +156,17 @@
 
   --shadow-float: 0 1px 2px oklch(0.25 0.022 262 / 8%), 0 8px 24px oklch(0.25 0.022 262 / 10%);
 
+  /* Figure palette: what an author's SVG may use besides currentColor. Two hues,
+     the two temper colors, plus two quieter inks. See docs/PROBLEM_AUTHORING.md. */
+  --figure-ink: var(--foreground);
+  --figure-muted: var(--muted-foreground);
+  --figure-faint: var(--faint);
+  --figure-accent: var(--primary);
+  --figure-straw: oklch(0.56 0.115 72);
+  --figure-sans: var(--font-sans);
+  --figure-serif: var(--font-serif);
+  --figure-mono: var(--font-mono);
+
   color-scheme: light;
 }
 
@@ -200,6 +211,8 @@
   --editor-active-line: oklch(0.9 0.008 255 / 4%);
 
   --shadow-float: 0 1px 2px oklch(0 0 0 / 30%), 0 10px 28px oklch(0 0 0 / 35%);
+
+  --figure-straw: oklch(0.82 0.105 84);
 
   color-scheme: dark;
 }

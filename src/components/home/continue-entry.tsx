@@ -3,25 +3,29 @@ import { AppLink } from "@/components/app/app-link";
 import { DifficultyMark } from "@/components/problem/difficulty-mark";
 import { StatusMark } from "@/components/problem/status-mark";
 import { Button } from "@/components/ui/button";
-import type { ProblemSummary, Submission, Track } from "@/lib/api";
+import type { Path, ProblemSummary, Submission, Track } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/format";
 import { VERDICT_LABEL } from "@/lib/labels";
 import { routes } from "@/lib/routes";
 
 /**
  * The problem to pick up next, as the opening of the home page: where you left
- * off if there is recent work, otherwise the first unsolved problem. For someone
- * who has not started (`firstRun`) it is the invitation to begin.
+ * off if there is recent work, otherwise the next unsolved problem on the study
+ * path (or in the catalog, when there is no path). For someone who has not
+ * started (`firstRun`) it is the invitation to begin.
  */
 export function ContinueEntry({
   problem,
   track,
   lastSubmission,
+  onPath,
   firstRun = false,
   onOpen,
 }: {
   problem: ProblemSummary;
   track?: Track;
+  /** The study path the problem is on and its place there; shown instead of the track. */
+  onPath?: { path: Path; position: number };
   /** The most recent submission on this problem, when it is the reason for the suggestion. */
   lastSubmission?: Submission;
   /** Nothing has been attempted yet. */
@@ -39,9 +43,18 @@ export function ContinueEntry({
         </AppLink>
       </h1>
       <p className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-muted-foreground">
-        <span>
-          {track?.title ?? problem.track}, No. {problem.order}
-        </span>
+        {onPath ? (
+          <span>
+            <AppLink to={routes.paths(onPath.path.id)} tone="quiet" className="text-muted-foreground">
+              {onPath.path.title}
+            </AppLink>
+            , No. {onPath.position} of {onPath.path.problemCount}
+          </span>
+        ) : (
+          <span>
+            {track?.title ?? problem.track}, No. {problem.order}
+          </span>
+        )}
         <DifficultyMark difficulty={problem.difficulty} />
         {lastSubmission ? (
           <span>
@@ -58,7 +71,8 @@ export function ContinueEntry({
           <ArrowRight data-icon="inline-end" />
         </Button>
         {firstRun ? (
-          <span className="text-sm">
+          <span className="flex gap-5 text-sm">
+            {onPath ? <AppLink to={routes.paths(onPath.path.id)}>See the whole path</AppLink> : null}
             <AppLink to={routes.library()}>Browse the library</AppLink>
           </span>
         ) : null}
