@@ -1,0 +1,12 @@
+id = "mlx-metal-kernel-elementwise"
+title = "A Custom Metal Kernel"
+track = "mlx"
+order = 140
+difficulty = "medium"
+frameworks = ["mlx"]
+judges = ["numeric"]
+tags = ["mlx", "metal", "custom-kernel", "gpu", "silu", "half-precision"]
+prerequisites = []
+requires = "mlx-gpu"
+entry = ["fused_silu_mul"]
+time_limit_s = 10

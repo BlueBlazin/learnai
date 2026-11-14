@@ -1,0 +1,6 @@
+[
+  "The capital of France is Paris. The capital of Japan is",
+  "def square(x):\n    return x * x\n\nprint(",
+  "<|start_of_role|>user<|end_of_role|>Name a color.<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>",
+  "🗡️ blades; 東京 is in the"
+]

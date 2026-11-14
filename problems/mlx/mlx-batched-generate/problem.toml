@@ -1,0 +1,12 @@
+id = "mlx-batched-generate"
+title = "Batched Generation with Ragged Prompts"
+track = "mlx"
+order = 160
+difficulty = "hard"
+frameworks = ["mlx"]
+judges = ["numeric", "cost"]
+tags = ["mlx", "batching", "padding", "attention-mask", "kv-cache", "eos", "greedy-decoding"]
+prerequisites = ["batched-cached-decode", "padded-batch-invariance"]
+requires = "mlx-gpu"
+entry = ["batch_generate"]
+time_limit_s = 10

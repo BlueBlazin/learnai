@@ -1,0 +1,31 @@
+id = "mlx-real-8bit-generate"
+title = "Running a 3B Model at 8 Bits"
+track = "mlx"
+order = 180
+difficulty = "hard"
+frameworks = ["mlx"]
+judges = ["numeric", "cost"]
+tags = ["mlx", "real-model", "granite", "quantization", "quantized-matmul", "kv-cache", "async-eval", "memory"]
+prerequisites = ["mlx-real-model-forward", "mlx-quantized-linear", "mlx-streaming-generate"]
+requires = "mlx-gpu"
+entry = ["load_model", "generate"]
+# The cases on small models take milliseconds. The cases on the real checkpoint set
+# their own limit of 120 s: reading 3.9 GB from a cold disk takes several seconds, and
+# a solution that dequantizes 3.66 billion weights is slow before it is rejected.
+time_limit_s = 20
+# The statement's rule: build and run the model yourself. mlx-lm and transformers may
+# not be imported, and the kit's model loader and reference model may not be used.
+# Rejects the mutant uses_mlx_lm.
+forbidden = [
+    "whetstone.kit.realmodel.RealLM",
+    "whetstone.kit.realmodel.RealModel",
+]
+forbidden_source = ["mlx_lm", "transformers"]
+
+# config.json and the 8-bit checkpoint; no tokenizer: prompts are given as token ids.
+[[assets]]
+name = "granite-4.2-3b-mlx-8bit"
+repo = "lmstudio-community/granite-4.2-3b-MLX-8bit"
+revision = "7c630b526561db6b4641767c54595fe494176695"
+files = ["config.json", "model.safetensors"]
+size_mb = 3890

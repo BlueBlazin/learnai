@@ -1,0 +1,30 @@
+id = "mlx-real-model-forward"
+title = "A Real Model in mlx.nn"
+track = "mlx"
+order = 170
+difficulty = "hard"
+frameworks = ["mlx"]
+judges = ["numeric"]
+tags = ["mlx", "real-model", "granite", "module-tree", "fused-attention", "rope", "half-precision"]
+prerequisites = ["real-model-logits", "mlx-weights-load"]
+requires = "mlx-gpu"
+entry = ["Granite"]
+# A real-model case builds the 28-layer module, reads 705 MB of bfloat16 weights, and
+# converts them (about 1 s, once per dtype per run); a forward pass is then about 50 ms.
+time_limit_s = 30
+# The statement's rule: write the module yourself. The kit's reference model (and the
+# RealModel that builds it) may not be constructed from the solution, and mlx-lm and
+# transformers may not be imported. Rejects the mutant uses_mlx_lm.
+forbidden = [
+    "whetstone.kit.realmodel.RealLM",
+    "whetstone.kit.realmodel.RealModel",
+]
+forbidden_source = ["mlx_lm", "transformers"]
+
+# The checkpoint, plus config.json, which the kit reads the architecture from.
+[[assets]]
+name = "granite-4.0-350m"
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
+files = ["config.json", "model.safetensors"]
+size_mb = 705

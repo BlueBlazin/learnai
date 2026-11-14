@@ -1,0 +1,14 @@
+[
+  {
+    "prompt": "The capital of France is Paris. The capital of Japan is",
+    "continuation": " Tokyo. The capital of Brazil is Bras"
+  },
+  {
+    "prompt": "<|im_start|>system\n<|im_end|>\n<|im_start|>user\nName the three primary colors.<|im_end|>\n<|im_start|>assistant\n<think>\n",
+    "continuation": "Okay, the user asked: \"Name"
+  },
+  {
+    "prompt": "<|im_start|>system\n<|im_end|>\n<|im_start|>user\nReply with exactly one word: yes<|im_end|>\n<|im_start|>assistant\n<think></think>",
+    "continuation": "yes<|im_end|>"
+  }
+]
