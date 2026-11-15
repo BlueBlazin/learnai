@@ -1,0 +1,12 @@
+id = "semantic-cache"
+title = "A Semantic Response Cache"
+track = "systems"
+order = 80
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric", "simclock"]
+tags = ["caching", "embeddings", "cosine-similarity", "ttl", "lru", "cache-key"]
+prerequisites = ["vector-topk-search"]
+requires = "cpu"
+entry = ["SemanticCache", "namespace_of"]
+time_limit_s = 10

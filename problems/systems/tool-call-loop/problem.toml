@@ -1,0 +1,12 @@
+id = "tool-call-loop"
+title = "A Tool-Calling Loop"
+track = "systems"
+order = 100
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric", "cost", "simclock"]
+tags = ["agents", "tool-calling", "function-calling", "asyncio", "chat-completions", "error-handling"]
+prerequisites = ["tool-call-stream-parser"]
+requires = "cpu"
+entry = ["run_agent"]
+time_limit_s = 5

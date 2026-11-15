@@ -1,0 +1,12 @@
+id = "pipeline-parallel-schedule"
+title = "Pipeline Parallelism Across Devices"
+track = "systems"
+order = 120
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["pipeline-parallelism", "scheduling", "multi-gpu", "asyncio", "throughput", "discrete-event"]
+prerequisites = ["device-map-solver"]
+requires = "cpu"
+entry = ["run_pipeline"]
+time_limit_s = 10

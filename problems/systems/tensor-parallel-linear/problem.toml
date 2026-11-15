@@ -1,0 +1,12 @@
+id = "tensor-parallel-linear"
+title = "Tensor-Parallel Layers on Simulated Devices"
+track = "systems"
+order = 110
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["tensor-parallelism", "model-parallelism", "all-reduce", "mlp", "multi-gpu", "sharding"]
+prerequisites = ["swiglu-mlp"]
+requires = "cpu"
+entry = ["shard_weights", "tp_mlp"]
+time_limit_s = 10
