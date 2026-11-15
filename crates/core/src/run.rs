@@ -17,6 +17,7 @@ use crate::model::{
     Verdict,
 };
 use crate::protocol::{HarnessEvent, StdoutLine, parse_stdout_line, stringify_env};
+use crate::review::{Clock, Recorded, format_time, record_accepted};
 use crate::sink::SharedSink;
 use crate::store::{NewSubmission, Store};
 use crate::stream::{Message, spawn_reader};
@@ -67,6 +68,11 @@ pub(crate) struct RunPlan {
     pub limits: RunLimits,
     pub store: Arc<Store>,
     pub sink: SharedSink<RunEvent>,
+    /// Where the time of the submission (and of a review it advances) comes from.
+    pub clock: Arc<dyn Clock>,
+    /// The problem's review attempts, removed once an accepted review submit resolves
+    /// the review. The run is a review run exactly when `job.review` is set.
+    pub review_dir: std::path::PathBuf,
 }
 
 /// Active runs, by run id.
@@ -403,6 +409,35 @@ impl Run {
         }
     }
 
+    /// Applies a stored accepted submit to the problem's review schedule. A failure
+    /// here is logged and never changes the verdict.
+    fn schedule_review(&self, now: chrono::DateTime<chrono::Utc>) {
+        let recorded = record_accepted(
+            &self.plan.store,
+            &self.plan.problem_id,
+            self.plan.job.review,
+            now,
+        );
+        match recorded {
+            // The review is resolved: its next attempt starts from the starter again.
+            Ok(Recorded::Advanced) => {
+                if let Err(e) = std::fs::remove_dir_all(&self.plan.review_dir)
+                    && e.kind() != std::io::ErrorKind::NotFound
+                {
+                    self.log(
+                        LogStream::Stderr,
+                        format!("Could not remove the review attempt: {e}"),
+                    );
+                }
+            }
+            Ok(Recorded::Scheduled | Recorded::Unchanged) => {}
+            Err(e) => self.log(
+                LogStream::Stderr,
+                format!("Could not update the review schedule: {e}"),
+            ),
+        }
+    }
+
     /// Stores the submission if appropriate and emits the single `end` event.
     fn end(&mut self, outcome: Outcome) {
         if self.ended {
@@ -444,6 +479,7 @@ impl Run {
         // Canceled runs and runs whose judge never started are not attempts.
         let store =
             self.plan.job.mode == RunMode::Submit && launched && verdict != Verdict::Canceled;
+        let now = self.plan.clock.now();
         let submission_id = if store {
             let stored = self.plan.store.insert_submission(&NewSubmission {
                 problem_id: &self.plan.problem_id,
@@ -455,10 +491,11 @@ impl Run {
                 skipped,
                 duration_ms,
                 target: self.plan.target.name(),
-                created_at: &crate::now_iso8601(),
+                created_at: &format_time(now),
                 code: &self.plan.code,
                 cases: &self.results,
                 metrics: &metrics,
+                review: self.plan.job.review,
             });
             match stored {
                 Ok(id) => Some(id),
@@ -473,6 +510,10 @@ impl Run {
         } else {
             None
         };
+
+        if submission_id.is_some() && verdict == Verdict::Accepted {
+            self.schedule_review(now);
+        }
 
         tracing::info!(
             problem = %self.plan.problem_id,

@@ -7,13 +7,24 @@ import { PathProgress } from "@/components/home/path-progress";
 import { ProgressSummary } from "@/components/home/progress-summary";
 import { TrackProgress } from "@/components/home/track-progress";
 import { SubmissionList } from "@/components/problem/submission-list";
+import { ReviewList } from "@/components/review/review-list";
+import { UpcomingReviews } from "@/components/review/upcoming-reviews";
 import { EnvironmentNotice } from "@/components/workbench/environment-notice";
 import { useGo } from "@/hooks/use-go";
-import { useEnvStatus, usePaths, useProblems, useStats, useSubmissions, useTracks } from "@/lib/api/queries";
+import {
+  useEnvStatus,
+  usePaths,
+  useProblems,
+  useReviews,
+  useStats,
+  useSubmissions,
+  useTracks,
+} from "@/lib/api/queries";
 import { useEnvInstall } from "@/lib/api/use-env-install";
 import { pickContinue } from "@/lib/continue";
 import { environmentProblem } from "@/lib/environment";
 import { nextOnPath, pathEntries } from "@/lib/paths";
+import { dueReviews, reviewEntries } from "@/lib/reviews";
 import { routes } from "@/lib/routes";
 
 const RECENT_COUNT = 8;
@@ -27,6 +38,12 @@ export function HomeScreen() {
   const paths = usePaths();
   const env = useEnvStatus();
   const { state: install, install: startInstall } = useEnvInstall();
+  // Reviews never block Home: while they load, fail, or are turned off, nothing about them shows.
+  const reviews = useReviews();
+  const due = useMemo(
+    () => reviewEntries(dueReviews(reviews.data ?? []), problems.data ?? [], tracks.data ?? []),
+    [reviews.data, problems.data, tracks.data],
+  );
 
   const titles = useMemo(
     () => new Map((problems.data ?? []).map((problem) => [problem.id, problem.title])),
@@ -101,6 +118,15 @@ export function HomeScreen() {
         </div>
       ) : null}
 
+      {due.length > 0 ? (
+        <Section title="Due for review" aside="Solve each one again from the blank starter.">
+          <ReviewList
+            entries={due}
+            onOpen={(entry) => go(routes.problem(entry.review.problemId, { review: true }))}
+          />
+        </Section>
+      ) : null}
+
       <div className="grid grid-cols-2 gap-x-14">
         {firstRun === undefined ? (
           <>
@@ -121,6 +147,7 @@ export function HomeScreen() {
             <div>
               <Section title="Progress">
                 {stats.data ? <ProgressSummary stats={stats.data} /> : <LoadingLines />}
+                {due.length === 0 ? <UpcomingReviews reviews={reviews.data ?? []} className="pt-5" /> : null}
               </Section>
               {path ? (
                 <Section title="Path">

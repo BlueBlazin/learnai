@@ -29,6 +29,13 @@ const COMMANDS: &[&str] = &[
     "add_target",
     "remove_target",
     "check_target",
+    "list_reviews",
+    "start_review",
+    "read_review_solution",
+    "write_review_solution",
+    "resolve_review",
+    "get_settings",
+    "set_reviews_enabled",
 ];
 
 fn main() {

@@ -57,6 +57,7 @@ const problemRoute = createRoute({
     return {
       ...(tab && tab !== "statement" ? { tab } : {}),
       ...(Number.isInteger(submission) && submission > 0 ? { submission } : {}),
+      ...(search.review === true || search.review === "true" || search.review === 1 ? { review: true } : {}),
     };
   },
 }).lazy(() => import("@/routes/problem").then((module) => module.Route));

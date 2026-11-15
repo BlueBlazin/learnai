@@ -58,11 +58,18 @@ import { ResultsPanel } from "@/components/results/results-panel";
 import { RunProgress } from "@/components/results/run-progress";
 import { VerdictHeader } from "@/components/results/verdict-header";
 import { VerdictMark } from "@/components/results/verdict-mark";
+import { ReviewDueNotice } from "@/components/review/review-due-notice";
+import { ReviewHidden } from "@/components/review/review-hidden";
+import { ReviewList } from "@/components/review/review-list";
+import { ReviewOutcomeNote } from "@/components/review/review-outcome";
+import { ReviewStrip } from "@/components/review/review-strip";
+import { UpcomingReviews } from "@/components/review/upcoming-reviews";
 import { CatalogIssueList } from "@/components/settings/catalog-issue-list";
 import { ContentPanel } from "@/components/settings/content-panel";
 import { EnvironmentPanel } from "@/components/settings/environment-panel";
 import { InstallButton, UvGuideButton } from "@/components/settings/install-actions";
 import { PathField } from "@/components/settings/path-field";
+import { ReviewSetting } from "@/components/settings/review-setting";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { AddTargetForm } from "@/components/targets/add-target-form";
 import { CheckStepList } from "@/components/targets/check-step-list";
@@ -86,6 +93,7 @@ import {
   type Path,
   type ProblemDetail,
   type ProblemSummary,
+  type Review,
   STATUSES,
   type Submission,
   type SubmissionDetail,
@@ -101,6 +109,7 @@ import type { AssetFetchController } from "@/lib/api/use-asset-fetch";
 import type { InstallState } from "@/lib/api/use-env-install";
 import { EMPTY_FILTERS, type LibraryFilters } from "@/lib/filters";
 import { nextOnPath, pathEntries, unmetPrerequisites } from "@/lib/paths";
+import { dueReviews, reviewEntries } from "@/lib/reviews";
 import { routes } from "@/lib/routes";
 import type { ThemePreference } from "@/stores/theme";
 
@@ -584,7 +593,72 @@ const SUBMISSIONS: Submission[] = SUBMISSION_VERDICTS.map((verdict, index) => ({
   createdAt: new Date(
     Date.now() - ([5, 190, 60 * 26, 60 * 24 * 9, 60 * 24 * 11, 60 * 24 * 12][index] ?? 5) * 60_000,
   ).toISOString(),
+  // The newest one is a review attempt.
+  review: index === 0,
 }));
+
+/** Review schedules: two due (one long overdue, on its last review), two still to come. */
+const REVIEW_NOW = new Date("2026-11-15T10:00:00");
+const review = (problemId: string, stage: number, dueInDays: number): Review => ({
+  problemId,
+  stage,
+  intervalDays: [3, 7, 21, 60, 180][stage] ?? 180,
+  dueAt: new Date(REVIEW_NOW.getTime() + dueInDays * 86_400_000 - 3_600_000).toISOString(),
+  lastReviewedAt: stage === 0 ? null : "2026-11-01T09:00:00.000Z",
+  due: dueInDays <= 0,
+});
+const REVIEWS: Review[] = [review("a", 4, -3), review("d", 1, 0), review("b", 0, 2), review("c", 2, 19)];
+
+/** A capstone's cases in stages, part-way through a run: stage one done, stage two running. */
+const stagedCase = (
+  id: string,
+  name: string,
+  stage: string,
+  state: "pending" | "running" | "done",
+  over: Partial<CaseResult> = {},
+  isPublic = true,
+) => ({
+  info: { id, name, public: isPublic, stage },
+  state,
+  result: state === "done" ? result(id, over) : null,
+});
+const STAGED_RUNNING = [
+  stagedCase("s1", "round-trips ASCII", "1: Tokenizer", "done"),
+  stagedCase("s2", "round-trips multi-byte text", "1: Tokenizer", "done"),
+  stagedCase("s3", "Hidden case 1", "1: Tokenizer", "done", {}, false),
+  stagedCase("s4", "greedy decode matches the reference", "Stage 2: Decode loop", "done"),
+  stagedCase("s5", "Hidden case 2", "Stage 2: Decode loop", "running", {}, false),
+  stagedCase("s6", "Hidden case 3", "Stage 2: Decode loop", "pending", {}, false),
+  stagedCase("s7", "Hidden case 4", "3: Serving", "pending", {}, false),
+  stagedCase("s8", "Hidden case 5", "3: Serving", "pending", {}, false),
+];
+/** The same capstone finished: a failure in stage two, a case skipped for hardware in stage three. */
+const STAGED_ENDED = [
+  ...STAGED_RUNNING.slice(0, 4),
+  stagedCase(
+    "s5",
+    "Hidden case 2",
+    "Stage 2: Decode loop",
+    "done",
+    { status: "fail", message: "Output does not match the reference" },
+    false,
+  ),
+  stagedCase("s6", "Hidden case 3", "Stage 2: Decode loop", "done", {}, false),
+  stagedCase("s7", "Hidden case 4", "3: Serving", "done", {}, false),
+  stagedCase(
+    "s8",
+    "Hidden case 5",
+    "3: Serving",
+    "done",
+    {
+      status: "skipped",
+      durationMs: 0,
+      message: "skipped: needs an NVIDIA GPU (CUDA), which this machine does not have",
+      skip: { kind: "hardware", requires: "cuda" },
+    },
+    false,
+  ),
+];
 
 /** A stored submission that was not judged on every case: history keeps the skips, not the run's message. */
 const NOT_JUDGED_SUBMISSION: SubmissionDetail = {
@@ -594,6 +668,19 @@ const NOT_JUDGED_SUBMISSION: SubmissionDetail = {
   skipped: 2,
   code: SAMPLE_CODE,
   cases: SKIPPED_FOR_ASSET.map((c) => ({ ...c.result, name: c.info.name, public: c.info.public })),
+  metrics: [],
+};
+
+/** A stored submission of a staged problem: the stages come back from history as they ran. */
+const STAGED_SUBMISSION: SubmissionDetail = {
+  ...(SUBMISSIONS[1] as Submission),
+  passed: 6,
+  total: 8,
+  skipped: 1,
+  code: SAMPLE_CODE,
+  cases: STAGED_ENDED.flatMap((c) =>
+    c.result ? [{ ...c.result, name: c.info.name, public: c.info.public, stage: c.info.stage }] : [],
+  ),
   metrics: [],
 };
 
@@ -716,6 +803,7 @@ function DevComponentsScreen() {
   const [code, setCode] = useState(SAMPLE_CODE);
   const [judge, setJudge] = useState<JudgeKind | null>(null);
   const [pickedTarget, setPickedTarget] = useState("local");
+  const [reviewsOn, setReviewsOn] = useState(true);
 
   return (
     <Page>
@@ -981,7 +1069,7 @@ function DevComponentsScreen() {
             />
           </div>
         </Specimen>
-        <Specimen name="SubmissionList: per problem, and with problem titles">
+        <Specimen name="SubmissionList: per problem, and with problem titles; the newest is a review attempt">
           <div className="flex max-w-measure flex-col gap-6">
             <SubmissionList submissions={SUBMISSIONS} onOpen={() => {}} />
             <SubmissionList
@@ -991,10 +1079,16 @@ function DevComponentsScreen() {
             />
           </div>
         </Specimen>
-        <Specimen name="SubmissionView: loaded, not judged (skipped cases), loading, failed">
+        <Specimen name="SubmissionView: loaded, not judged (skipped cases), a staged problem, during a review (code hidden), loading, failed">
           <div className="flex flex-col gap-8">
             <SubmissionView submission={SUBMISSION_DETAIL} onBack={() => {}} />
             <SubmissionView submission={NOT_JUDGED_SUBMISSION} onBack={() => {}} />
+            <SubmissionView submission={STAGED_SUBMISSION} onBack={() => {}} />
+            <SubmissionView
+              submission={{ ...SUBMISSION_DETAIL, review: true }}
+              codeHidden
+              onBack={() => {}}
+            />
             <SubmissionView onBack={() => {}} />
             <SubmissionView
               error={new Error("Unknown submission: 99")}
@@ -1072,6 +1166,12 @@ function DevComponentsScreen() {
             <CaseList cases={SKIPPED_FOR_HARDWARE} ended />
           </div>
         </Specimen>
+        <Specimen name="CaseList with stages (a capstone): streaming, with the count of each stage following the run; ended, with a failure and a skipped case">
+          <div className="flex max-w-measure flex-col gap-8">
+            <CaseList cases={STAGED_RUNNING} ended={false} />
+            <CaseList cases={STAGED_ENDED} ended />
+          </div>
+        </Specimen>
         <Specimen name="OutputBlock: neutral, failure, tall">
           <div className="flex max-w-measure flex-col gap-3">
             <OutputBlock label="Printed output">{"nucleus sizes: [2]\n"}</OutputBlock>
@@ -1110,6 +1210,109 @@ function DevComponentsScreen() {
             </div>
           </Specimen>
         ))}
+      </Section>
+
+      <Section title="Review" aside="review/, settings/">
+        <Specimen name="ReviewList (Home): overdue on the last review, due today">
+          <div className="max-w-measure">
+            <ReviewList
+              entries={reviewEntries(dueReviews(REVIEWS), PROBLEMS, TRACKS)}
+              now={REVIEW_NOW}
+              onOpen={() => {}}
+            />
+          </div>
+        </Specimen>
+        <Specimen name="UpcomingReviews (Home, when nothing is due): several, one, none (renders nothing)">
+          <div className="flex flex-col gap-2">
+            <UpcomingReviews reviews={REVIEWS} now={REVIEW_NOW} />
+            <UpcomingReviews reviews={REVIEWS.slice(2, 3)} now={REVIEW_NOW} />
+            <UpcomingReviews reviews={[]} now={REVIEW_NOW} />
+          </div>
+        </Specimen>
+        <Specimen name="ReviewStrip (under the editor toolbar): in progress, busy during a run, an action that failed">
+          <div className="flex max-w-measure flex-col gap-4 border-x border-t">
+            <ReviewStrip
+              review={REVIEWS[1] as Review}
+              onForgot={noop}
+              onSnooze={noop}
+              onStartOver={noop}
+              onRetire={noop}
+              onLeave={noop}
+            />
+            <ReviewStrip
+              review={REVIEWS[0] as Review}
+              busy
+              onForgot={noop}
+              onSnooze={noop}
+              onStartOver={noop}
+              onRetire={noop}
+              onLeave={noop}
+            />
+            <ReviewStrip
+              review={REVIEWS[1] as Review}
+              error="state database error: database is locked"
+              onForgot={noop}
+              onSnooze={noop}
+              onStartOver={noop}
+              onRetire={noop}
+              onLeave={noop}
+            />
+          </div>
+        </Specimen>
+        <Specimen name="ReviewDueNotice (normal workspace): strip, inline">
+          <div className="flex max-w-measure flex-col gap-4">
+            <div className="border-x border-t">
+              <ReviewDueNotice review={REVIEWS[0] as Review} now={REVIEW_NOW} onStart={noop} />
+            </div>
+            <ReviewDueNotice review={REVIEWS[1] as Review} now={REVIEW_NOW} onStart={noop} layout="inline" />
+          </div>
+        </Specimen>
+        <Specimen name="ReviewHidden: hints, editorial, submission code">
+          <div className="flex flex-col gap-6">
+            <ReviewHidden what="The hints are" />
+            <ReviewHidden what="The editorial and the reference solution are" />
+          </div>
+        </Specimen>
+        <Specimen name="ReviewOutcomeNote (under an accepted review verdict): next review scheduled, mastered">
+          <div className="flex max-w-measure flex-col gap-3">
+            <ReviewOutcomeNote
+              now={REVIEW_NOW}
+              outcome={{ kind: "advanced", label: "Review 2 of 5", next: review("d", 2, 21) }}
+            />
+            <ReviewOutcomeNote now={REVIEW_NOW} outcome={{ kind: "mastered", label: "Review 5 of 5" }} />
+          </div>
+        </Specimen>
+        <Specimen name="ResultsPanel: an accepted review submit, with what it led to">
+          <div className="h-64 max-w-measure border">
+            <ResultsPanel
+              run={run({
+                phase: "done",
+                review: true,
+                verdict: "accepted",
+                passed: 5,
+                total: 5,
+                durationMs: 84.2,
+                env: ENV,
+                submissionId: 31,
+                cases: CASES.slice(0, 1),
+              })}
+              onCancel={noop}
+              note={
+                <ReviewOutcomeNote
+                  now={REVIEW_NOW}
+                  outcome={{ kind: "advanced", label: "Review 2 of 5", next: review("d", 2, 21) }}
+                />
+              }
+            />
+          </div>
+        </Specimen>
+        <Specimen name="ReviewSetting (Settings): on, off, saving">
+          <div className="flex flex-col gap-6">
+            <ReviewSetting enabled={reviewsOn} onChange={setReviewsOn} />
+            <ReviewSetting enabled={false} onChange={noop} />
+            <ReviewSetting enabled disabled onChange={noop} />
+          </div>
+        </Specimen>
       </Section>
 
       <Section title="Path" aside="path/, home/">
@@ -1178,6 +1381,7 @@ function DevComponentsScreen() {
                 total: 189,
                 byDifficulty: { easy: [22, 60], medium: [13, 92], hard: [2, 37] },
                 streakDays: 6,
+                reviewsDue: 2,
               }}
             />
             <ProgressSummary
@@ -1186,6 +1390,7 @@ function DevComponentsScreen() {
                 total: 189,
                 byDifficulty: { easy: [0, 60], medium: [0, 92], hard: [0, 37] },
                 streakDays: 0,
+                reviewsDue: 0,
               }}
             />
           </div>

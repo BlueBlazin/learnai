@@ -9,7 +9,8 @@ import { hostOf } from "@/lib/targets";
 /**
  * Stored submissions, newest first: verdict, cases passed (and skipped, when
  * any were), framework, time taken, and when; a submission judged on a remote
- * machine names it. With `titles`, each row also names its problem (Home).
+ * machine names it, and a review attempt is marked "Review". With `titles`,
+ * each row also names its problem (Home).
  */
 export function SubmissionList({
   submissions,
@@ -47,6 +48,7 @@ export function SubmissionList({
                   {submission.passed} / {submission.total}
                   {submission.skipped > 0 ? `, ${submission.skipped} skipped` : null}
                 </span>
+                {submission.review ? <span className="shrink-0 text-muted-foreground">Review</span> : null}
                 {hostOf(submission.target) ? (
                   <span className="truncate text-muted-foreground">on {hostOf(submission.target)}</span>
                 ) : null}

@@ -1,7 +1,7 @@
 //! Persistent state in SQLite at `<root>/.whetstone/state.db`.
 //!
 //! Holds submissions (with the code snapshot and per-case results), editorial unlocks,
-//! and settings. The schema is versioned with `PRAGMA user_version`; each entry of
+//! review schedules, and settings. The schema is versioned with `PRAGMA user_version`; each entry of
 //! [`MIGRATIONS`] upgrades the database by one version.
 
 use std::collections::HashMap;
@@ -46,12 +46,32 @@ const MIGRATIONS: &[&str] = &[
      );",
     // Version 2: cases that were not run (missing hardware or model assets).
     "ALTER TABLE submissions ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0;",
+    // Version 3: spaced re-solve. One schedule per problem, and a mark on the submits
+    // that were review attempts. Problems solved before this version get a schedule
+    // dated from their first accepted submit.
+    "ALTER TABLE submissions ADD COLUMN review INTEGER NOT NULL DEFAULT 0;
+     CREATE TABLE reviews (
+         problem_id       TEXT PRIMARY KEY,
+         stage            INTEGER NOT NULL,
+         due_at           TEXT NOT NULL,
+         last_reviewed_at TEXT,
+         retired          INTEGER NOT NULL DEFAULT 0
+     );
+     INSERT INTO reviews (problem_id, stage, due_at)
+     SELECT problem_id, 0, strftime('%Y-%m-%dT%H:%M:%fZ', MIN(created_at), '+3 days')
+     FROM submissions WHERE verdict = 'accepted' GROUP BY problem_id;",
 ];
 
-const SUBMISSION_COLUMNS: &str = "id, problem_id, framework, mode, verdict, passed, total, duration_ms, target, created_at, skipped";
+/// Schedules a first review for every solved problem that has no schedule, dated from
+/// its first accepted submit. The same statement as the version 3 backfill.
+const BACKFILL_REVIEWS: &str = "INSERT OR IGNORE INTO reviews (problem_id, stage, due_at)
+     SELECT problem_id, 0, strftime('%Y-%m-%dT%H:%M:%fZ', MIN(created_at), ?1)
+     FROM submissions WHERE verdict = 'accepted' GROUP BY problem_id";
+
+const SUBMISSION_COLUMNS: &str = "id, problem_id, framework, mode, verdict, passed, total, duration_ms, target, created_at, skipped, review";
 
 /// Index of the first column after [`SUBMISSION_COLUMNS`] in a wider `SELECT`.
-const AFTER_SUBMISSION_COLUMNS: usize = 11;
+const AFTER_SUBMISSION_COLUMNS: usize = 12;
 
 /// A submission about to be stored.
 #[derive(Debug, Clone)]
@@ -82,6 +102,23 @@ pub struct NewSubmission<'a> {
     pub cases: &'a [StoredCase],
     /// Run-level metrics.
     pub metrics: &'a [Metric],
+    /// Whether this was a review attempt (judged the review file).
+    pub review: bool,
+}
+
+/// The review schedule of one problem, as stored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewRow {
+    /// Problem id.
+    pub problem_id: String,
+    /// 0-based index into the review intervals.
+    pub stage: u32,
+    /// When the next review is due, ISO 8601 in UTC.
+    pub due_at: String,
+    /// When the problem was last reviewed successfully.
+    pub last_reviewed_at: Option<String>,
+    /// True once reviews for the problem have ended (mastered or stopped).
+    pub retired: bool,
 }
 
 /// What the submissions table says about one problem.
@@ -130,8 +167,8 @@ impl Store {
         conn.execute(
             "INSERT INTO submissions (problem_id, framework, mode, verdict, passed, total,
                                       duration_ms, target, created_at, code, cases, metrics,
-                                      skipped)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                                      skipped, review)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 new.problem_id,
                 new.framework.as_str(),
@@ -146,6 +183,7 @@ impl Store {
                 serde_json::to_string(new.cases)?,
                 serde_json::to_string(new.metrics)?,
                 new.skipped,
+                new.review,
             ],
         )?;
         Ok(conn.last_insert_rowid())
@@ -236,6 +274,63 @@ impl Store {
         )?)
     }
 
+    /// Creates the review schedule of a problem unless it already has one (active or
+    /// retired). Returns whether a schedule was created.
+    pub fn create_review(&self, problem_id: &str, due_at: &str) -> Result<bool> {
+        let created = self.conn().execute(
+            "INSERT OR IGNORE INTO reviews (problem_id, stage, due_at) VALUES (?1, 0, ?2)",
+            params![problem_id, due_at],
+        )?;
+        Ok(created > 0)
+    }
+
+    /// The review schedule of a problem, retired or not.
+    pub fn review(&self, problem_id: &str) -> Result<Option<ReviewRow>> {
+        Ok(self
+            .conn()
+            .query_row(
+                &format!("SELECT {REVIEW_COLUMNS} FROM reviews WHERE problem_id = ?1"),
+                params![problem_id],
+                review_from_row,
+            )
+            .optional()?)
+    }
+
+    /// Every review schedule that has not been retired, soonest due first.
+    pub fn active_reviews(&self) -> Result<Vec<ReviewRow>> {
+        let conn = self.conn();
+        let mut statement = conn.prepare(&format!(
+            "SELECT {REVIEW_COLUMNS} FROM reviews WHERE retired = 0 ORDER BY due_at, problem_id"
+        ))?;
+        let rows = statement.query_map([], review_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Replaces the review schedule of a problem.
+    pub fn save_review(&self, review: &ReviewRow) -> Result<()> {
+        self.conn().execute(
+            "UPDATE reviews SET stage = ?2, due_at = ?3, last_reviewed_at = ?4, retired = ?5
+             WHERE problem_id = ?1",
+            params![
+                review.problem_id,
+                review.stage,
+                review.due_at,
+                review.last_reviewed_at,
+                review.retired,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Schedules a first review, `first_interval_days` after the first accepted submit,
+    /// for every solved problem that has no schedule. Returns how many were created.
+    pub fn backfill_reviews(&self, first_interval_days: u32) -> Result<usize> {
+        Ok(self.conn().execute(
+            BACKFILL_REVIEWS,
+            params![format!("+{first_interval_days} days")],
+        )?)
+    }
+
     /// Reads a JSON-encoded setting.
     pub fn setting<T: DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
         let text: Option<String> = self
@@ -288,6 +383,19 @@ fn submission_from_row(row: &Row<'_>) -> rusqlite::Result<Submission> {
         target: row.get(8)?,
         created_at: row.get(9)?,
         skipped: row.get(10)?,
+        review: row.get(11)?,
+    })
+}
+
+const REVIEW_COLUMNS: &str = "problem_id, stage, due_at, last_reviewed_at, retired";
+
+fn review_from_row(row: &Row<'_>) -> rusqlite::Result<ReviewRow> {
+    Ok(ReviewRow {
+        problem_id: row.get(0)?,
+        stage: row.get(1)?,
+        due_at: row.get(2)?,
+        last_reviewed_at: row.get(3)?,
+        retired: row.get(4)?,
     })
 }
 
@@ -332,6 +440,7 @@ mod tests {
             code: "def f(): ...\n",
             cases: &[],
             metrics: &[],
+            review: false,
         }
     }
 
@@ -514,6 +623,115 @@ mod tests {
         let store = Store::open(&path)?;
         assert_eq!(store.get_submission(new)?.submission.skipped, 3);
         assert_eq!(store.list_submissions(None)?.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn a_version_2_database_gains_reviews_for_what_was_already_solved() -> Result<()> {
+        let tmp = tempfile::tempdir().map_err(|e| CoreError::io("create", Path::new("tmp"), e))?;
+        let path = tmp.path().join("state.db");
+        {
+            // The schema exactly as version 2 shipped it.
+            let conn = Connection::open(&path)?;
+            conn.execute_batch(MIGRATIONS[0])?;
+            conn.execute_batch(MIGRATIONS[1])?;
+            conn.pragma_update(None, "user_version", 2)?;
+            for (problem, verdict, created_at) in [
+                ("a", "wrong_answer", "2026-10-01T08:00:00.000Z"),
+                ("a", "accepted", "2026-10-02T23:30:00.250Z"),
+                ("a", "accepted", "2026-10-20T10:00:00.000Z"),
+                ("b", "accepted", "2026-10-30T12:00:00.000Z"),
+                ("c", "runtime_error", "2026-10-05T10:00:00.000Z"),
+                ("d", "hardware_missing", "2026-10-06T10:00:00.000Z"),
+            ] {
+                conn.execute(
+                    "INSERT INTO submissions (problem_id, framework, mode, verdict, passed,
+                                              total, duration_ms, target, created_at, code,
+                                              cases, metrics, skipped)
+                     VALUES (?1, 'torch', 'submit', ?2, 1, 1, 1.0, 'local', ?3, 'code',
+                             '[]', '[]', 0)",
+                    params![problem, verdict, created_at],
+                )?;
+            }
+        }
+        let store = Store::open(&path)?;
+
+        // One schedule per solved problem, three days after its first accepted submit;
+        // problems that were only attempted or not judged get none.
+        let reviews = store.active_reviews()?;
+        let summary: Vec<_> = reviews
+            .iter()
+            .map(|r| (r.problem_id.as_str(), r.stage, r.due_at.as_str()))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("a", 0, "2026-10-05T23:30:00.250Z"),
+                ("b", 0, "2026-11-02T12:00:00.000Z"),
+            ]
+        );
+        assert!(
+            reviews
+                .iter()
+                .all(|r| !r.retired && r.last_reviewed_at.is_none())
+        );
+        assert_eq!(store.review("c")?, None);
+
+        // Old submits are not reviews; new ones carry the mark.
+        assert!(store.list_submissions(None)?.iter().all(|s| !s.review));
+        let id = store.insert_submission(&NewSubmission {
+            review: true,
+            ..submission("a", Framework::Torch, Verdict::Accepted)
+        })?;
+        assert!(store.get_submission(id)?.submission.review);
+
+        // Reopening does not migrate or backfill twice.
+        drop(store);
+        let store = Store::open(&path)?;
+        assert_eq!(store.active_reviews()?.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn review_schedules_are_created_once_saved_and_backfilled() -> Result<()> {
+        let store = Store::open_in_memory()?;
+        assert!(store.create_review("a", "2026-11-04T10:00:00.000Z")?);
+        assert!(!store.create_review("a", "2030-01-01T00:00:00.000Z")?);
+        assert!(store.create_review("b", "2026-11-02T10:00:00.000Z")?);
+
+        // Soonest due first.
+        let order: Vec<_> = store
+            .active_reviews()?
+            .into_iter()
+            .map(|r| r.problem_id)
+            .collect();
+        assert_eq!(order, ["b", "a"]);
+
+        let mut review = store.review("a")?.expect("review");
+        review.stage = 2;
+        review.due_at = "2026-12-01T10:00:00.000Z".into();
+        review.last_reviewed_at = Some("2026-11-10T10:00:00.000Z".into());
+        store.save_review(&review)?;
+        assert_eq!(store.review("a")?, Some(review.clone()));
+
+        // A retired schedule is kept but no longer active, and never recreated.
+        review.retired = true;
+        store.save_review(&review)?;
+        assert_eq!(store.active_reviews()?.len(), 1);
+        assert!(!store.create_review("a", "2030-01-01T00:00:00.000Z")?);
+
+        // The backfill only adds schedules for solved problems that have none.
+        store.insert_submission(&submission("a", Framework::Torch, Verdict::Accepted))?;
+        store.insert_submission(&submission("c", Framework::Torch, Verdict::Accepted))?;
+        store.insert_submission(&submission("d", Framework::Torch, Verdict::WrongAnswer))?;
+        assert_eq!(store.backfill_reviews(3)?, 1);
+        let c = store.review("c")?.expect("backfilled");
+        assert_eq!(
+            (c.stage, c.due_at.as_str()),
+            (0, "2026-11-17T10:00:00.000Z")
+        );
+        assert_eq!(store.review("d")?, None);
+        assert_eq!(store.backfill_reviews(3)?, 0);
         Ok(())
     }
 

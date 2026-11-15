@@ -1,6 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { Backend, StartRunArgs } from "./backend";
-import type { AssetEvent, Framework, InstallEvent, RunEvent, TargetCheckEvent } from "./types";
+import type { AssetEvent, Framework, InstallEvent, ReviewAction, RunEvent, TargetCheckEvent } from "./types";
 
 /** Tauri rejects with the command's error string; normalize to Error. */
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -78,4 +78,18 @@ export class TauriBackend implements Backend {
     channel.onmessage = onEvent;
     return call<string>("check_target", { name, onEvent: channel });
   }
+
+  listReviews = () => call<Awaited<ReturnType<Backend["listReviews"]>>>("list_reviews");
+  startReview = (id: string, framework: Framework) =>
+    call<Awaited<ReturnType<Backend["startReview"]>>>("start_review", { id, framework });
+  readReviewSolution = (id: string, framework: Framework) =>
+    call<Awaited<ReturnType<Backend["readReviewSolution"]>>>("read_review_solution", { id, framework });
+  writeReviewSolution = (id: string, framework: Framework, code: string) =>
+    call<void>("write_review_solution", { id, framework, code });
+  resolveReview = (id: string, action: ReviewAction) =>
+    call<Awaited<ReturnType<Backend["resolveReview"]>>>("resolve_review", { id, action });
+
+  getSettings = () => call<Awaited<ReturnType<Backend["getSettings"]>>>("get_settings");
+  setReviewsEnabled = (enabled: boolean) =>
+    call<Awaited<ReturnType<Backend["setReviewsEnabled"]>>>("set_reviews_enabled", { enabled });
 }

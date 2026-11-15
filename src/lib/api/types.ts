@@ -83,6 +83,8 @@ export interface CaseInfo {
   public: boolean;
   /** Hardware the case needs; absent when it runs everywhere. */
   requires?: Requires;
+  /** The stage the case belongs to (capstones); absent for unstaged problems. */
+  stage?: string;
 }
 
 /** Why a case was not run. */
@@ -145,6 +147,27 @@ export type RunEvent =
       detail: string | null;
     };
 
+/** The review schedule of a solved problem (spaced re-solve, section 4.2). */
+export interface Review {
+  problemId: string;
+  /** 0-based index into the review intervals: the first review is stage 0. */
+  stage: number;
+  intervalDays: number;
+  /** ISO 8601. */
+  dueAt: string;
+  lastReviewedAt: string | null;
+  due: boolean;
+}
+
+/** How a review is resolved without solving it. */
+export type ReviewAction = "forgot" | "snooze" | "retire";
+
+/** App settings kept by the core. */
+export interface Settings {
+  /** Whether solved problems are scheduled for review. */
+  reviewsEnabled: boolean;
+}
+
 export interface Submission {
   id: number;
   problemId: string;
@@ -159,12 +182,16 @@ export interface Submission {
   target: string;
   /** ISO 8601. */
   createdAt: string;
+  /** A review attempt, judged from the review file. */
+  review: boolean;
 }
 
 /** A case result as stored with a submission: the result plus the case's name and visibility. */
 export interface StoredCase extends CaseResult {
   name: string;
   public: boolean;
+  /** The stage the case belongs to, when the problem has stages. */
+  stage?: string;
 }
 
 export interface SubmissionDetail extends Submission {
@@ -214,6 +241,8 @@ export interface Stats {
   total: number;
   byDifficulty: Record<Difficulty, [number, number]>;
   streakDays: number;
+  /** Reviews that are due now; 0 while reviews are turned off. */
+  reviewsDue: number;
 }
 
 export type InstallEvent =

@@ -282,3 +282,44 @@ describe("runReducer", () => {
     expect(play([begin], assets).missingAssets).toEqual([]);
   });
 });
+
+describe("review runs and staged cases", () => {
+  const END: RunEvent = {
+    type: "end",
+    verdict: "accepted",
+    passed: 3,
+    total: 3,
+    durationMs: 12,
+    metrics: [],
+    submissionId: 4,
+    skipped: 0,
+    message: null,
+    detail: null,
+  };
+
+  it("remembers that a run judges a review attempt until the next run begins", () => {
+    const review = play([{ ...begin, review: true }, event(START), event(END)]);
+    expect(review.review).toBe(true);
+    expect(review.phase).toBe("done");
+    expect(play([begin], review).review).toBe(false);
+    expect(play([begin]).review).toBe(false);
+  });
+
+  it("keeps the stage of each announced case as results stream in", () => {
+    const staged = [
+      { id: "t1", name: "tokenize", public: true, stage: "1: Tokenizer" },
+      { id: "s1", name: "Hidden case 1", public: false, stage: "Stage 2: Sampler" },
+    ];
+    const state = play([
+      begin,
+      event({ ...START, cases: staged }),
+      event({ type: "caseStart", id: "t1" }),
+      event({ type: "caseEnd", result: result("t1") }),
+      event({ type: "caseEnd", result: result("s1", "skipped") }),
+    ]);
+    expect(state.cases.map((c) => [c.info.stage, c.result?.status])).toEqual([
+      ["1: Tokenizer", "pass"],
+      ["Stage 2: Sampler", "skipped"],
+    ]);
+  });
+});

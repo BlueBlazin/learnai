@@ -22,7 +22,8 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 use whetstone_core::{
-    AssetEvent, Core, CoreError, Framework, InstallEvent, RunEvent, RunMode, TargetCheckEvent,
+    AssetEvent, Core, CoreError, Framework, InstallEvent, ReviewAction, RunEvent, RunMode,
+    TargetCheckEvent,
 };
 
 use crate::events::{EventLog, LogRegistry};
@@ -111,6 +112,21 @@ struct StartRunArgs {
     framework: Framework,
     mode: RunMode,
     target: String,
+    #[serde(default)]
+    review: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolveReviewArgs {
+    id: String,
+    action: ReviewAction,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnabledArgs {
+    enabled: bool,
 }
 
 #[derive(Deserialize)]
@@ -220,15 +236,14 @@ fn dispatch(bridge: &Bridge, command: &str, body: &[u8]) -> Result<Value, ApiErr
             let a: StartRunArgs = args(body)?;
             let log = EventLog::new();
             let sink = Arc::clone(&log);
-            let run_id = core.start_run(
-                &a.problem_id,
-                a.framework,
-                a.mode,
-                &a.target,
-                move |event: RunEvent| {
-                    sink.push(&event, matches!(event, RunEvent::End { .. }));
-                },
-            )?;
+            let on_event = move |event: RunEvent| {
+                sink.push(&event, matches!(event, RunEvent::End { .. }));
+            };
+            let run_id = if a.review {
+                core.start_review_run(&a.problem_id, a.framework, a.mode, &a.target, on_event)?
+            } else {
+                core.start_run(&a.problem_id, a.framework, a.mode, &a.target, on_event)?
+            };
             bridge.runs.insert(run_id.clone(), log);
             Ok(json!({ "runId": run_id }))
         }
@@ -297,6 +312,27 @@ fn dispatch(bridge: &Bridge, command: &str, body: &[u8]) -> Result<Value, ApiErr
             })?;
             bridge.jobs.insert(job_id.clone(), log);
             Ok(json!({ "jobId": job_id }))
+        }
+        "list_reviews" => reply(core.list_reviews()?),
+        "start_review" => {
+            let a: SolutionArgs = args(body)?;
+            reply(core.start_review(&a.id, a.framework)?)
+        }
+        "read_review_solution" => {
+            let a: SolutionArgs = args(body)?;
+            reply(core.read_review_solution(&a.id, a.framework)?)
+        }
+        "write_review_solution" => {
+            let a: WriteSolutionArgs = args(body)?;
+            reply(core.write_review_solution(&a.id, a.framework, &a.code)?)
+        }
+        "resolve_review" => {
+            let a: ResolveReviewArgs = args(body)?;
+            reply(core.resolve_review(&a.id, a.action)?)
+        }
+        "get_settings" => reply(core.get_settings()?),
+        "set_reviews_enabled" => {
+            reply(core.set_reviews_enabled(args::<EnabledArgs>(body)?.enabled)?)
         }
         other => Err(ApiError::new(
             StatusCode::NOT_FOUND,

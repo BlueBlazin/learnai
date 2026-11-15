@@ -673,3 +673,194 @@ describe("FixtureBackend run targets", () => {
     expect(after).toEqual(before);
   });
 });
+
+describe("FixtureBackend reviews", () => {
+  const NOW = new Date(2026, 10, 15, 10, 0, 0);
+  const clock = () => {
+    let now = NOW.getTime();
+    return { now: () => new Date(now), advanceDays: (days: number) => (now += days * 86_400_000) };
+  };
+  const reviewRun = (
+    backend: FixtureBackend,
+    problemId: string,
+    mode: RunMode,
+    framework: "torch" | "python" = "torch",
+  ): Promise<RunEvent[]> =>
+    new Promise((resolve, reject) => {
+      const events: RunEvent[] = [];
+      backend
+        .startRun({ problemId, framework, mode, target: "local", review: true }, (event) => {
+          events.push(event);
+          if (event.type === "end") resolve(events);
+        })
+        .catch(reject);
+    });
+  const SOLVED = "import torch\n\n\ndef softmax(x):\n    return torch.softmax(x, -1)\n";
+
+  it("seeds a few due reviews and a schedule for every solved problem", async () => {
+    const backend = new FixtureBackend({ speed: 0, now: () => new Date(NOW) });
+    const reviews = await backend.listReviews();
+    const problems = await backend.listProblems();
+    const solved = problems.filter((problem) => problem.status === "solved");
+    expect(reviews).toHaveLength(solved.length);
+    expect(reviews.every((r) => solved.some((problem) => problem.id === r.problemId))).toBe(true);
+    // Soonest due first.
+    const times = reviews.map((r) => Date.parse(r.dueAt));
+    expect(times).toEqual([...times].sort((a, b) => a - b));
+
+    const due = reviews.filter((r) => r.due);
+    expect(due.map((r) => [r.problemId, r.stage])).toEqual([
+      ["stable-softmax", 1],
+      ["causal-mask", 2],
+      ["bpe-merge", 4],
+      ["log-sum-exp", 0],
+    ]);
+    expect((await backend.getStats()).reviewsDue).toBe(4);
+    expect(reviews.find((r) => r.problemId === "stable-softmax")?.intervalDays).toBe(7);
+  });
+
+  it("keeps the review attempt apart from the saved solution and judges it in a review run", async () => {
+    const backend = new FixtureBackend({ speed: 0, now: () => new Date(NOW) });
+    const saved = await backend.readSolution("stable-softmax", "torch");
+    const blank = await backend.readReviewSolution("stable-softmax", "torch");
+    expect(blank.isStarter).toBe(true);
+    expect(blank.path).toContain("workspace/stable-softmax/review/torch.py");
+    expect(saved.isStarter).toBe(false);
+
+    // The blank starter raises: the review run judges it, not the solved saved file.
+    const failed = await reviewRun(backend, "stable-softmax", "submit");
+    expect(failed.at(-1)).toMatchObject({ type: "end", verdict: "runtime_error" });
+    expect((await backend.listSubmissions("stable-softmax"))[0]).toMatchObject({ review: true });
+    expect((await backend.listReviews()).find((r) => r.problemId === "stable-softmax")?.stage).toBe(1);
+
+    await backend.writeReviewSolution("stable-softmax", "torch", SOLVED);
+    expect((await backend.readSolution("stable-softmax", "torch")).code).toBe(saved.code);
+    expect((await backend.readReviewSolution("stable-softmax", "torch")).code).toBe(SOLVED);
+    expect((await backend.startReview("stable-softmax", "torch")).isStarter).toBe(true);
+  });
+
+  it("advances on an accepted review submit, and masters the problem after the last one", async () => {
+    const time = clock();
+    const backend = new FixtureBackend({ speed: 0, now: time.now });
+
+    await backend.writeReviewSolution("stable-softmax", "torch", SOLVED);
+    // A review `run` and a normal accepted submit leave the schedule alone.
+    await reviewRun(backend, "stable-softmax", "run");
+    await runToEnd(backend, "stable-softmax", "submit");
+    expect((await backend.listReviews()).find((r) => r.problemId === "stable-softmax")).toMatchObject({
+      stage: 1,
+      due: true,
+    });
+
+    const events = await reviewRun(backend, "stable-softmax", "submit");
+    expect(events.at(-1)).toMatchObject({ type: "end", verdict: "accepted" });
+    const next = (await backend.listReviews()).find((r) => r.problemId === "stable-softmax");
+    expect(next).toMatchObject({ stage: 2, intervalDays: 21, due: false });
+    expect(Date.parse(next?.dueAt ?? "")).toBe(time.now().getTime() + 21 * 86_400_000);
+    expect(next?.lastReviewedAt).toBe(time.now().toISOString());
+    // The attempt is gone: the next review starts from the starter.
+    expect((await backend.readReviewSolution("stable-softmax", "torch")).isStarter).toBe(true);
+    expect((await backend.getStats()).reviewsDue).toBe(3);
+
+    // bpe-merge is on its last review.
+    await backend.writeReviewSolution("bpe-merge", "python", "def merge(ids, pair, new):\n    return ids\n");
+    await reviewRun(backend, "bpe-merge", "submit", "python");
+    expect((await backend.listReviews()).some((r) => r.problemId === "bpe-merge")).toBe(false);
+    await expect(backend.startReview("bpe-merge", "python")).rejects.toThrow("no review is scheduled");
+    await expect(reviewRun(backend, "bpe-merge", "run", "python")).rejects.toThrow("no review is scheduled");
+  });
+
+  it("schedules a first review when a problem is first solved", async () => {
+    const backend = new FixtureBackend({ speed: 0, now: () => new Date(NOW) });
+    const id = "scaled-dot-product-attention";
+    expect((await backend.listReviews()).some((r) => r.problemId === id)).toBe(false);
+    await backend.writeSolution(id, "torch", "def attention(q, k, v, mask=None):\n    return q\n");
+    const events = await runToEnd(backend, id, "submit");
+    expect(events.at(-1)).toMatchObject({ verdict: "accepted" });
+    const scheduled = (await backend.listReviews()).find((r) => r.problemId === id);
+    expect(scheduled).toMatchObject({ stage: 0, intervalDays: 3, due: false, lastReviewedAt: null });
+    expect(Date.parse(scheduled?.dueAt ?? "")).toBe(NOW.getTime() + 3 * 86_400_000);
+  });
+
+  it("resolves a review: forgot restarts, snooze waits a day, retire ends", async () => {
+    const time = clock();
+    const backend = new FixtureBackend({ speed: 0, now: time.now });
+    const find = (reviews: Awaited<ReturnType<FixtureBackend["listReviews"]>>, id: string) =>
+      reviews.find((r) => r.problemId === id);
+
+    await backend.writeReviewSolution("causal-mask", "torch", "attempt");
+    const snoozed = find(await backend.resolveReview("causal-mask", "snooze"), "causal-mask");
+    expect(snoozed).toMatchObject({ stage: 2, due: false });
+    expect(Date.parse(snoozed?.dueAt ?? "")).toBe(time.now().getTime() + 86_400_000);
+    expect((await backend.readReviewSolution("causal-mask", "torch")).code).toBe("attempt");
+
+    const forgot = find(await backend.resolveReview("causal-mask", "forgot"), "causal-mask");
+    expect(forgot).toMatchObject({ stage: 0, intervalDays: 3, due: false });
+    expect((await backend.readReviewSolution("causal-mask", "torch")).isStarter).toBe(true);
+    time.advanceDays(1);
+    expect(find(await backend.listReviews(), "causal-mask")?.due).toBe(true);
+
+    expect(find(await backend.resolveReview("causal-mask", "retire"), "causal-mask")).toBeUndefined();
+    await expect(backend.resolveReview("causal-mask", "snooze")).rejects.toThrow("no review is scheduled");
+  });
+
+  it("hides everything while reviews are off and keeps the schedules", async () => {
+    const backend = new FixtureBackend({ speed: 0, now: () => new Date(NOW) });
+    const before = await backend.listReviews();
+    expect(await backend.getSettings()).toEqual({ reviewsEnabled: true });
+    expect(await backend.setReviewsEnabled(false)).toEqual({ reviewsEnabled: false });
+    expect(await backend.listReviews()).toEqual([]);
+    expect((await backend.getStats()).reviewsDue).toBe(0);
+    await expect(backend.startReview("stable-softmax", "torch")).rejects.toThrow("turned off");
+    await expect(reviewRun(backend, "stable-softmax", "run")).rejects.toThrow("turned off");
+    await backend.setReviewsEnabled(true);
+    expect(await backend.listReviews()).toEqual(before);
+  });
+});
+
+describe("FixtureBackend case stages", () => {
+  it("announces stages for a capstone, stores them, and leaves other problems unstaged", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const capstone = "tiny-inference-engine";
+    expect((await backend.getProblem(capstone)).track).toBe("capstones");
+
+    // The seeded attempt is a stored submission with stages.
+    const seeded = await backend.listSubmissions(capstone);
+    expect(seeded).toHaveLength(1);
+    const stored = await backend.getSubmission(seeded[0]?.id ?? -1);
+    expect(stored.verdict).toBe("wrong_answer");
+    expect([...new Set(stored.cases.map((c) => c.stage))]).toEqual([
+      "1: Tokenizer",
+      "Stage 2: Decode loop",
+      "3: Serving",
+    ]);
+
+    // A live run announces the same stages, hidden cases included.
+    const events = await new Promise<RunEvent[]>((resolve, reject) => {
+      const collected: RunEvent[] = [];
+      backend
+        .startRun({ problemId: capstone, framework: "python", mode: "submit", target: "local" }, (event) => {
+          collected.push(event);
+          if (event.type === "end") resolve(collected);
+        })
+        .catch(reject);
+    });
+    const start = events.find((event) => event.type === "start");
+    expect(start?.type === "start" && start.cases.map((c) => [c.public, c.stage])).toEqual([
+      [true, "1: Tokenizer"],
+      [true, "1: Tokenizer"],
+      [false, "1: Tokenizer"],
+      [true, "Stage 2: Decode loop"],
+      [false, "Stage 2: Decode loop"],
+      [false, "Stage 2: Decode loop"],
+      [false, "3: Serving"],
+      [false, "3: Serving"],
+    ]);
+    // Stages gate nothing: every case ran even though one failed.
+    expect(events.filter((event) => event.type === "caseEnd")).toHaveLength(8);
+
+    const plain = await runToEnd(backend, "stable-softmax", "submit");
+    const plainStart = plain.find((event) => event.type === "start");
+    expect(plainStart?.type === "start" && plainStart.cases.every((c) => c.stage === undefined)).toBe(true);
+  });
+});

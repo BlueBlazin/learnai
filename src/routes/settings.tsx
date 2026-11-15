@@ -5,6 +5,7 @@ import { ErrorState, LoadingLines } from "@/components/app/states";
 import { ModelsPanel } from "@/components/models/models-panel";
 import { ContentPanel } from "@/components/settings/content-panel";
 import { EnvironmentPanel } from "@/components/settings/environment-panel";
+import { ReviewSetting } from "@/components/settings/review-setting";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { TargetsPanel } from "@/components/targets/targets-panel";
 import { backend } from "@/lib/api";
@@ -16,6 +17,8 @@ import {
   useProblems,
   useRemoveAsset,
   useRemoveTarget,
+  useSetReviewsEnabled,
+  useSettings,
   useSshHosts,
   useTargets,
 } from "@/lib/api/queries";
@@ -44,6 +47,8 @@ function SettingsScreen() {
   const addTarget = useAddTarget();
   const removeTarget = useRemoveTarget();
   const { checks, check } = useTargetCheck();
+  const settings = useSettings();
+  const setReviews = useSetReviewsEnabled();
   // What this computer is comes from a check. The local check installs nothing, so
   // it runs by itself the first time, once the environment exists to ask.
   const localUnchecked = targets.data?.[0]?.kind === "local" && targets.data[0].lastCheck === null;
@@ -136,6 +141,29 @@ function SettingsScreen() {
               onCheck={check}
               onAdd={(host) => addTarget.mutate({ host })}
               onRemove={(name) => removeTarget.mutate(name)}
+            />
+          </div>
+        )}
+      </Section>
+
+      <Section title="Review" aside="Solving a problem once is not the same as keeping it.">
+        {settings.error ? (
+          <ErrorState
+            title="The settings could not be read"
+            error={settings.error}
+            onRetry={() => void settings.refetch()}
+          />
+        ) : !settings.data ? (
+          <LoadingLines lines={2} />
+        ) : (
+          <div className="flex flex-col gap-3">
+            {setReviews.error ? (
+              <ErrorState title="The setting could not be saved" error={setReviews.error} className="py-0" />
+            ) : null}
+            <ReviewSetting
+              enabled={settings.data.reviewsEnabled}
+              disabled={setReviews.isPending}
+              onChange={(enabled) => setReviews.mutate(enabled)}
             />
           </div>
         )}

@@ -19,6 +19,8 @@ export interface ProblemSearch {
   tab?: StatementTab;
   /** A stored submission to open in the Submissions tab. */
   submission?: number;
+  /** Review mode: the editor holds the review attempt and Run and Submit judge it. */
+  review?: boolean;
 }
 
 export interface PathsSearch {

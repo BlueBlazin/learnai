@@ -4,6 +4,7 @@ import { RuledList } from "@/components/app/ruled-list";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { CaseInfo, CaseResult } from "@/lib/api";
 import { formatDuration } from "@/lib/format";
+import { groupByStage, type ListedCase, stageComplete, stageCount } from "@/lib/stages";
 import { CaseMark } from "./case-mark";
 import { MetricList } from "./metric-list";
 import { OutputBlock } from "./output-block";
@@ -103,29 +104,72 @@ function CaseRow({
   );
 }
 
-/** The list of cases for a live run or a stored submission. The first failure starts open. */
-export function CaseList({
+function CaseRows({
   cases,
   ended,
+  firstFailure,
+  label,
 }: {
-  cases: { info: CaseInfo; state: "pending" | "running" | "done"; result: CaseResult | null }[];
-  /** True once the run is over: cases that never ran are labeled as such. */
+  cases: ListedCase[];
   ended: boolean;
+  /** Id of the case that starts open. */
+  firstFailure: string | undefined;
+  label?: string;
 }) {
-  const firstFailure = cases.findIndex(
-    (c) => c.result && c.result.status !== "pass" && c.result.status !== "skipped",
-  );
   return (
-    <RuledList ordered>
-      {cases.map((c, index) => (
+    <RuledList ordered aria-label={label}>
+      {cases.map((c) => (
         <CaseRow
           key={c.info.id}
           info={c.info}
           state={ended && c.state !== "done" ? "not-run" : c.state}
           result={c.result}
-          defaultOpen={index === firstFailure}
+          defaultOpen={c.info.id === firstFailure}
         />
       ))}
     </RuledList>
+  );
+}
+
+/**
+ * The list of cases for a live run or a stored submission. The first failure
+ * starts open. When the problem has stages (a capstone), the cases are set
+ * under one heading per stage, in the order the stages first appear, each with
+ * its count of passed cases; the count follows the run as it streams.
+ */
+export function CaseList({
+  cases,
+  ended,
+}: {
+  cases: ListedCase[];
+  /** True once the run is over: cases that never ran are labeled as such. */
+  ended: boolean;
+}) {
+  const firstFailure = cases.find(
+    (c) => c.result && c.result.status !== "pass" && c.result.status !== "skipped",
+  )?.info.id;
+  const stages = groupByStage(cases);
+  if (!stages) return <CaseRows cases={cases} ended={ended} firstFailure={firstFailure} />;
+  return (
+    <div className="flex flex-col gap-5">
+      {stages.map((stage) => (
+        <section key={stage.label} aria-label={stage.heading}>
+          <div className="flex items-baseline justify-between gap-4 px-3 pb-1.5">
+            <h3 className="selectable min-w-0 truncate text-xs font-semibold" title={stage.heading}>
+              {stage.heading}
+            </h3>
+            <span
+              className={cn(
+                "tabular shrink-0 text-xs",
+                stageComplete(stage) ? "text-pass" : "text-muted-foreground",
+              )}
+            >
+              {stageCount(stage)}
+            </span>
+          </div>
+          <CaseRows cases={stage.cases} ended={ended} firstFailure={firstFailure} label={stage.heading} />
+        </section>
+      ))}
+    </div>
   );
 }

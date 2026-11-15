@@ -13,6 +13,7 @@
 //! - [`solutions`]: the user's files under `workspace/`
 //! - [`store`]: SQLite state (submissions, editorial unlocks, settings)
 //! - [`progress`]: status derivation and streak math
+//! - [`review`]: spaced re-solve (the schedule math and the injectable clock)
 //! - [`protocol`], [`harness`], [`target`], [`run`]: the run pipeline
 //! - [`stream`]: reading a subprocess's output as lines (runs, installs, fetches)
 //! - [`uv`], [`env`]: the Python environment
@@ -33,6 +34,7 @@ pub mod paths;
 pub mod progress;
 pub mod protocol;
 pub mod remote;
+pub mod review;
 pub mod root;
 pub mod run;
 pub mod sink;
@@ -49,6 +51,7 @@ pub use error::{CoreError, Result};
 pub use harness::{CommandSpec, HarnessCommand, HarnessJob, ProgramHarness, UvHarness};
 pub use model::*;
 pub use remote::{SshProcess, SshTarget};
+pub use review::{Clock, SystemClock};
 pub use root::{ResolvedRoot, RootInputs, RootSource, resolve_root};
 pub use run::RunLimits;
 pub use sink::EventSink;

@@ -23,9 +23,15 @@ export function ResultsPanel({
   onCancel,
   actions,
   resolution,
+  note,
+  idleHint = "Run checks your code against the public cases. Submit runs every case and records the attempt.",
 }: {
+  /** What the empty panel says Run and Submit do; a review words it for the review. */
+  idleHint?: string;
   run: RunState;
   onCancel: () => void;
+  /** A line under the verdict that says what the run led to: where a review stands after it. */
+  note?: ReactNode;
   /** Controls shown beside the verdict, for example a link to the stored submission. */
   actions?: ReactNode;
   /** Shown under the explanation of a not-judged run: the action that resolves it (a model download). */
@@ -35,9 +41,7 @@ export function ResultsPanel({
     return (
       <div className="h-full bg-paper px-4">
         <EmptyState title="No results yet">
-          <p>
-            Run checks your code against the public cases. Submit runs every case and records the attempt.
-          </p>
+          <p>{idleHint}</p>
           <p className="mt-3 flex gap-5">
             <ShortcutHint label="Run" keys={SHORTCUTS.run} />
             <ShortcutHint label="Submit" keys={SHORTCUTS.submit} />
@@ -84,6 +88,7 @@ export function ResultsPanel({
             actions={actions}
           />
         ) : null}
+        {!active && run.verdict ? note : null}
 
         {run.message ? (
           <p className={cn("selectable max-w-measure text-sm", notJudged ? "text-foreground" : "text-fail")}>

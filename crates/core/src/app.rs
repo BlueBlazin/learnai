@@ -10,12 +10,14 @@ use crate::error::{CoreError, Result};
 use crate::harness::{HarnessCommand, HarnessJob, UvHarness};
 use crate::model::{
     AssetEvent, AssetList, Difficulty, EnvStatus, Extra, Framework, InstallEvent, PathStage,
-    ProblemDetail, ProblemStatus, ProblemSummary, RunEvent, RunMode, SolutionFile, SshHost, Stats,
-    StudyPath, Submission, SubmissionDetail, TargetCheckEvent, TargetInfo, Track,
+    ProblemDetail, ProblemStatus, ProblemSummary, Review, ReviewAction, RunEvent, RunMode,
+    Settings, SolutionFile, SshHost, Stats, StudyPath, Submission, SubmissionDetail,
+    TargetCheckEvent, TargetInfo, Track,
 };
 use crate::models::{ModelAssets, RemoteFetch};
 use crate::paths::load_paths;
 use crate::progress::{current_streak, derive_status};
+use crate::review::{self, Clock, SystemClock};
 use crate::run::{RunLimits, RunPlan, RunRegistry};
 use crate::sink::EventSink;
 use crate::solutions::Workspace;
@@ -37,6 +39,9 @@ pub struct CoreOptions {
     pub limits: RunLimits,
     /// Overrides for the SSH tooling used by remote targets.
     pub ssh: SshOptions,
+    /// Overrides the clock that dates submissions and review schedules; `None` uses
+    /// the system clock. Tests move time through this instead of sleeping.
+    pub clock: Option<Arc<dyn Clock>>,
 }
 
 impl CoreOptions {
@@ -48,6 +53,7 @@ impl CoreOptions {
             uv_program: None,
             limits: RunLimits::default(),
             ssh: SshOptions::default(),
+            clock: None,
         }
     }
 }
@@ -62,6 +68,7 @@ struct Inner {
     targets: Targets,
     runs: Arc<RunRegistry>,
     limits: RunLimits,
+    clock: Arc<dyn Clock>,
 }
 
 /// The application core. Cheap to clone; all clones share state.
@@ -102,6 +109,9 @@ impl Core {
                 targets,
                 runs: Arc::new(RunRegistry::default()),
                 limits: options.limits,
+                clock: options
+                    .clock
+                    .unwrap_or_else(|| Arc::new(SystemClock) as Arc<dyn Clock>),
                 root,
             }),
         })
@@ -320,13 +330,51 @@ impl Core {
         target: &str,
         sink: impl EventSink<RunEvent>,
     ) -> Result<String> {
+        self.launch_run(problem_id, framework, mode, target, false, sink)
+    }
+
+    /// `start_run` with `review: true`: judges the review attempt
+    /// (`workspace/<id>/review/<framework>.py`) instead of the saved solution. An
+    /// accepted review submit advances the problem's review schedule. Fails when the
+    /// problem has no active review or reviews are turned off.
+    pub fn start_review_run(
+        &self,
+        problem_id: &str,
+        framework: Framework,
+        mode: RunMode,
+        target: &str,
+        sink: impl EventSink<RunEvent>,
+    ) -> Result<String> {
+        self.launch_run(problem_id, framework, mode, target, true, sink)
+    }
+
+    fn launch_run(
+        &self,
+        problem_id: &str,
+        framework: Framework,
+        mode: RunMode,
+        target: &str,
+        is_review: bool,
+        sink: impl EventSink<RunEvent>,
+    ) -> Result<String> {
         let catalog = self.catalog();
         let problem = catalog.problem(problem_id)?;
-        let solution = self.inner.workspace.read(problem, framework)?;
+        let workspace = &self.inner.workspace;
+        let (solution, saved) = if is_review {
+            self.active_review(&problem.id)?;
+            (
+                workspace.read_review(problem, framework)?,
+                workspace.review_path(&problem.id, framework),
+            )
+        } else {
+            (
+                workspace.read(problem, framework)?,
+                workspace.path(&problem.id, framework),
+            )
+        };
         let target = self.inner.targets.resolve(target)?;
 
         // Judge the saved file when there is one, else the starter in place.
-        let saved = self.inner.workspace.path(&problem.id, framework);
         let solution_path = if saved.is_file() {
             saved
         } else {
@@ -343,17 +391,111 @@ impl Core {
                 mode,
                 case: None,
                 extras: self.inner.env.enabled_extras()?,
+                review: is_review,
             },
             code: solution.code,
             target,
             limits: self.inner.limits,
             store: Arc::clone(&self.inner.store),
             sink: Arc::new(sink),
+            clock: Arc::clone(&self.inner.clock),
+            review_dir: workspace.review_dir(&problem.id),
         };
         self.inner.runs.start(plan).map_err(|source| CoreError::Io {
             context: "failed to start the run thread".to_owned(),
             source,
         })
+    }
+
+    /// The active review schedule of a problem; an error when reviews are off or the
+    /// problem has none.
+    fn active_review(&self, problem_id: &str) -> Result<crate::store::ReviewRow> {
+        if !review::enabled(&self.inner.store)? {
+            return Err(CoreError::ReviewsDisabled);
+        }
+        self.inner
+            .store
+            .review(problem_id)?
+            .filter(|review| !review.retired)
+            .ok_or_else(|| CoreError::NoActiveReview(problem_id.to_owned()))
+    }
+
+    /// `list_reviews`: the active review schedules of problems in the catalog, soonest
+    /// due first. Empty while reviews are turned off.
+    pub fn list_reviews(&self) -> Result<Vec<Review>> {
+        if !review::enabled(&self.inner.store)? {
+            return Ok(Vec::new());
+        }
+        let catalog = self.catalog();
+        let now = self.inner.clock.now();
+        Ok(self
+            .inner
+            .store
+            .active_reviews()?
+            .into_iter()
+            .filter(|row| catalog.problem(&row.problem_id).is_ok())
+            .map(|row| review::to_wire(row, now))
+            .collect())
+    }
+
+    /// `start_review`: discards any review attempt for the framework and returns the
+    /// starter. The saved solution is not touched.
+    pub fn start_review(&self, id: &str, framework: Framework) -> Result<SolutionFile> {
+        let catalog = self.catalog();
+        let problem = catalog.problem(id)?;
+        self.active_review(&problem.id)?;
+        self.inner.workspace.start_review(problem, framework)
+    }
+
+    /// `read_review_solution`: the review attempt, or the starter if there is none.
+    pub fn read_review_solution(&self, id: &str, framework: Framework) -> Result<SolutionFile> {
+        self.inner
+            .workspace
+            .read_review(self.catalog().problem(id)?, framework)
+    }
+
+    /// `write_review_solution`: saves the review attempt to
+    /// `workspace/<id>/review/<framework>.py`.
+    pub fn write_review_solution(&self, id: &str, framework: Framework, code: &str) -> Result<()> {
+        let catalog = self.catalog();
+        let problem = catalog.problem(id)?;
+        self.active_review(&problem.id)?;
+        self.inner.workspace.write_review(problem, framework, code)
+    }
+
+    /// `resolve_review`: ends a review without solving it (`forgot`, `snooze`, or
+    /// `retire`) and returns the remaining schedules. `forgot` and `retire` remove the
+    /// review attempt; `snooze` keeps it for the next day.
+    pub fn resolve_review(&self, id: &str, action: ReviewAction) -> Result<Vec<Review>> {
+        let current = self.active_review(id)?;
+        let next = review::resolved(&current, action, self.inner.clock.now());
+        self.inner.store.save_review(&next)?;
+        if action != ReviewAction::Snooze {
+            self.inner.workspace.clear_review(id)?;
+        }
+        self.list_reviews()
+    }
+
+    /// `get_settings`: the app settings stored in the state database.
+    pub fn get_settings(&self) -> Result<Settings> {
+        Ok(Settings {
+            reviews_enabled: review::enabled(&self.inner.store)?,
+        })
+    }
+
+    /// `set_reviews_enabled`: turns reviews on or off. Turning them off keeps every
+    /// schedule; turning them on schedules the problems that were solved meanwhile,
+    /// dated from their first accepted submit.
+    pub fn set_reviews_enabled(&self, enabled: bool) -> Result<Settings> {
+        self.inner
+            .store
+            .set_setting(review::ENABLED_SETTING, &enabled)?;
+        if enabled {
+            self.inner
+                .store
+                .backfill_reviews(review::INTERVALS_DAYS[0])?;
+        }
+        self.get_settings()
     }
 
     /// `cancel_run`: kills the run's whole process group. The run ends with verdict
@@ -378,7 +520,7 @@ impl Core {
         let problem = catalog.problem(id)?;
         self.inner
             .store
-            .unlock_editorial(&problem.id, &crate::now_iso8601())?;
+            .unlock_editorial(&problem.id, &review::format_time(self.inner.clock.now()))?;
         self.detail(problem)
     }
 
@@ -520,11 +662,13 @@ impl Core {
             entry.1 += 1;
         }
         let accepted = self.inner.store.accepted_times()?;
+        let reviews_due = self.list_reviews()?.iter().filter(|r| r.due).count();
         Ok(Stats {
             solved,
             total: u32::try_from(summaries.len()).unwrap_or(u32::MAX),
             by_difficulty,
             streak_days: current_streak(accepted.iter().map(String::as_str)),
+            reviews_due: u32::try_from(reviews_due).unwrap_or(u32::MAX),
         })
     }
 }

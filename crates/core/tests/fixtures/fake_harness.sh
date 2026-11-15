@@ -14,6 +14,7 @@
 #   import-error  every case is skipped (no `case_start`); `end` carries message and detail
 #   hardware-missing  the last case needs CUDA and is skipped; ends `hardware_missing`
 #   assets-missing    the last case needs the asset `tiny` and is skipped; ends `assets_missing`
+#   staged      three cases in two stages (`start.cases[].stage`); the last one fails
 # In the hang scenario the child's pid is written to $FAKE_PIDFILE when that is set.
 
 problem= solution= framework= mode=run
@@ -132,6 +133,14 @@ case "$scenario" in
       fi
     done
     ev "{\"event\":\"end\",\"status\":\"assets_missing\",\"passed\":$((total - 1)),\"total\":$total,\"skipped\":1,\"duration_ms\":9.0,\"metrics\":[{\"name\":\"throughput\",\"value\":41.0,\"unit\":\"tok/s\",\"limit\":20,\"higher_is_better\":true}],\"message\":\"Model asset \`tiny\` is not downloaded; fetch it with \`ws assets fetch tiny\`.\",\"missing_assets\":[{\"name\":\"tiny\",\"repo\":\"fake/tiny\",\"size_mb\":0.5,\"fetch_command\":\"ws assets fetch tiny\"}]}"
+    ;;
+  staged)
+    ev "{\"event\":\"start\",\"problem\":\"$(basename "$problem")\",\"framework\":\"$framework\",\"mode\":\"$mode\",\"cases\":[{\"id\":\"t1\",\"name\":\"Encodes ASCII\",\"public\":true,\"stage\":\"1: Tokenizer\"},{\"id\":\"hidden-2\",\"name\":\"Hidden case 2\",\"public\":false,\"stage\":\"1: Tokenizer\"},{\"id\":\"s1\",\"name\":\"Greedy matches argmax\",\"public\":true,\"stage\":\"Stage 2: Sampler\"}],\"env\":{\"python\":\"3.15.2\"}}"
+    total=3
+    pass t1
+    pass hidden-2
+    fail s1
+    finish wrong_answer 2
     ;;
   linger)
     start

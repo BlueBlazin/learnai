@@ -24,6 +24,10 @@ pub struct HarnessJob {
     pub case: Option<String>,
     /// Every installed extra; passed as `--extra` to every `uv run`.
     pub extras: Vec<Extra>,
+    /// Whether `solution` is a review attempt (`workspace/<id>/review/<framework>.py`).
+    /// The harness judges it like any other file; a remote target keeps it apart from
+    /// the saved solution.
+    pub review: bool,
 }
 
 impl HarnessJob {
@@ -162,6 +166,7 @@ mod tests {
             mode: RunMode::Submit,
             case: None,
             extras,
+            review: false,
         }
     }
 

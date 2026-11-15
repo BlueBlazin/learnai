@@ -1,4 +1,15 @@
-import { BookOpen, House, ListOrdered, Monitor, Moon, Play, Send, Settings, Sun } from "lucide-react";
+import {
+  BookOpen,
+  House,
+  ListOrdered,
+  Monitor,
+  Moon,
+  Play,
+  RotateCw,
+  Send,
+  Settings,
+  Sun,
+} from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { StatusMark } from "@/components/problem/status-mark";
 import {
@@ -12,8 +23,9 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { useGo } from "@/hooks/use-go";
-import { useProblems, useTracks } from "@/lib/api/queries";
+import { useProblems, useReviews, useTracks } from "@/lib/api/queries";
 import { isModKey } from "@/lib/platform";
+import { nextDueReview } from "@/lib/reviews";
 import { type RouteTarget, routes } from "@/lib/routes";
 import { useCommandPalette } from "@/stores/command-palette";
 import { type ThemePreference, useThemeStore } from "@/stores/theme";
@@ -34,13 +46,19 @@ function matchAllTerms(value: string, search: string): number {
 
 /**
  * The command palette (Mod-K): jump to any problem, move between screens,
- * switch theme, and run or submit when a problem is open.
+ * switch theme, run or submit when a problem is open, and start the next
+ * review when one is due.
  */
 export function CommandPalette() {
   const { open, setOpen } = useCommandPalette();
   const go = useGo();
   const problems = useProblems();
   const tracks = useTracks();
+  const reviews = useReviews();
+  const nextReview = nextDueReview(reviews.data ?? []);
+  const nextReviewTitle = nextReview
+    ? problems.data?.find((problem) => problem.id === nextReview.problemId)?.title
+    : undefined;
   const workspace = useWorkspaceActions((state) => state.actions);
   const setTheme = useThemeStore((state) => state.setPreference);
 
@@ -98,6 +116,20 @@ export function CommandPalette() {
                 <CommandShortcut>
                   <ShortcutHint keys={SHORTCUTS.submit} />
                 </CommandShortcut>
+              </CommandItem>
+            </CommandGroup>
+          ) : null}
+          {nextReview && nextReviewTitle ? (
+            <CommandGroup heading="Review">
+              <CommandItem
+                value={`Start next review ${nextReviewTitle}`}
+                onSelect={() => navigate(routes.problem(nextReview.problemId, { review: true }))}
+              >
+                <RotateCw />
+                Start next review
+                <span className="ml-auto shrink-0 truncate pl-4 text-xs text-muted-foreground">
+                  {nextReviewTitle}
+                </span>
               </CommandItem>
             </CommandGroup>
           ) : null}

@@ -110,6 +110,13 @@ pub fn run() {
             commands::add_target,
             commands::remove_target,
             commands::check_target,
+            commands::list_reviews,
+            commands::start_review,
+            commands::read_review_solution,
+            commands::write_review_solution,
+            commands::resolve_review,
+            commands::get_settings,
+            commands::set_reviews_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

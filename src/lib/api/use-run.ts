@@ -9,8 +9,11 @@ import type { Framework, RunMode } from "./types";
 export interface RunController {
   state: RunState;
   active: boolean;
-  /** Starts a run on `target` (this computer when omitted). */
-  start: (framework: Framework, mode: RunMode, target?: string) => Promise<void>;
+  /**
+   * Starts a run on `target` (this computer when omitted). With `review` the
+   * judge reads the review attempt instead of the saved solution.
+   */
+  start: (framework: Framework, mode: RunMode, target?: string, review?: boolean) => Promise<void>;
   cancel: () => void;
 }
 
@@ -42,14 +45,15 @@ export function useRun(problemId: string): RunController {
   }, [problemId, abandon]);
 
   const start = useCallback(
-    async (framework: Framework, mode: RunMode, target: string = LOCAL_TARGET) => {
+    async (framework: Framework, mode: RunMode, target: string = LOCAL_TARGET, review = false) => {
       if (live.current) return;
       const token = ++generation.current;
       const run = { runId: null as string | null, cancelRequested: false };
       live.current = run;
-      dispatch({ type: "begin", mode, framework, target });
+      dispatch({ type: "begin", mode, framework, target, review });
       try {
-        const runId = await backend.startRun({ problemId, framework, mode, target }, (event) => {
+        const args = { problemId, framework, mode, target, ...(review ? { review } : {}) };
+        const runId = await backend.startRun(args, (event) => {
           if (generation.current !== token) return;
           dispatch({ type: "event", event });
           if (event.type === "end") {

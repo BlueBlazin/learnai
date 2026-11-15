@@ -33,6 +33,13 @@
     "allow-list-targets",
     "allow-add-target",
     "allow-remove-target",
-    "allow-check-target"
+    "allow-check-target",
+    "allow-list-reviews",
+    "allow-start-review",
+    "allow-read-review-solution",
+    "allow-write-review-solution",
+    "allow-resolve-review",
+    "allow-get-settings",
+    "allow-set-reviews-enabled"
   ]
 }

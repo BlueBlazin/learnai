@@ -1,6 +1,6 @@
 import { focusManager, QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { backend } from "./index";
-import type { Framework } from "./types";
+import type { Framework, ReviewAction } from "./types";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,6 +44,9 @@ export const keys = {
   assets: ["assets"] as const,
   targets: ["targets"] as const,
   sshHosts: ["sshHosts"] as const,
+  reviews: ["reviews"] as const,
+  reviewSolution: (id: string, framework: Framework) => ["reviewSolution", id, framework] as const,
+  settings: ["settings"] as const,
 };
 
 /** Everything a stored submission or a status change can affect. */
@@ -55,6 +58,8 @@ export function invalidateProgress(client: QueryClient, problemId: string): Prom
     client.invalidateQueries({ queryKey: ["submissions"] }),
     client.invalidateQueries({ queryKey: keys.stats }),
     client.invalidateQueries({ queryKey: keys.paths }),
+    // The first accepted submit schedules a review; an accepted review submit moves it on.
+    client.invalidateQueries({ queryKey: keys.reviews }),
   ]);
 }
 
@@ -70,10 +75,19 @@ export function useProblem(id: string) {
   return useQuery({ queryKey: keys.problem(id), queryFn: () => backend.getProblem(id) });
 }
 
-export function useSolution(id: string, framework: Framework | null) {
+/**
+ * The file the editor shows: the saved solution, or with `review` the review
+ * attempt (the starter until something is written to it).
+ */
+export function useSolution(id: string, framework: Framework | null, review = false) {
   return useQuery({
-    queryKey: keys.solution(id, framework ?? "python"),
-    queryFn: () => backend.readSolution(id, framework as Framework),
+    queryKey: review
+      ? keys.reviewSolution(id, framework ?? "python")
+      : keys.solution(id, framework ?? "python"),
+    queryFn: () =>
+      review
+        ? backend.readReviewSolution(id, framework as Framework)
+        : backend.readSolution(id, framework as Framework),
     enabled: framework !== null,
     // The file may be edited in another editor: re-read whenever the window regains focus.
     refetchOnWindowFocus: "always",
@@ -192,5 +206,39 @@ export function useRemoveTarget() {
   return useMutation({
     mutationFn: (name: string) => backend.removeTarget(name),
     onSuccess: (targets) => client.setQueryData(keys.targets, targets),
+  });
+}
+
+/** Active review schedules, soonest due first; empty while reviews are turned off. */
+export function useReviews() {
+  return useQuery({ queryKey: keys.reviews, queryFn: () => backend.listReviews() });
+}
+
+/** Ends a review without solving it; the list the core returns replaces the cached one. */
+export function useResolveReview(problemId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (action: ReviewAction) => backend.resolveReview(problemId, action),
+    onSuccess: (reviews) => {
+      client.setQueryData(keys.reviews, reviews);
+      void client.invalidateQueries({ queryKey: keys.stats });
+    },
+  });
+}
+
+export function useSettings() {
+  return useQuery({ queryKey: keys.settings, queryFn: () => backend.getSettings() });
+}
+
+/** Turns reviews on or off. Everything that shows a review is read again. */
+export function useSetReviewsEnabled() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) => backend.setReviewsEnabled(enabled),
+    onSuccess: (settings) => {
+      client.setQueryData(keys.settings, settings);
+      void client.invalidateQueries({ queryKey: keys.reviews });
+      void client.invalidateQueries({ queryKey: keys.stats });
+    },
   });
 }

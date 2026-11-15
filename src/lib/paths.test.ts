@@ -50,6 +50,7 @@ const submission = (problemId: string, id = 1): Submission => ({
   durationMs: 1,
   target: "local",
   createdAt: "2026-11-14T10:00:00.000Z",
+  review: false,
 });
 
 describe("pathEntries", () => {

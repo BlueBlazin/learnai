@@ -20,7 +20,8 @@ import { SaveIndicator } from "./save-indicator";
  * The right-hand top panel: a toolbar (framework, save state, reset, where to
  * run, Run, Submit) over the code editor. When the environment cannot run the chosen
  * framework, a notice under the toolbar says why and offers the fix; `notices`
- * adds what else stands between a run and an accepted verdict.
+ * adds what else stands between a run and an accepted verdict. In a review
+ * the same pane edits and judges the review attempt.
  */
 export function EditorPane({
   frameworks,
@@ -37,7 +38,13 @@ export function EditorPane({
   notices,
   targetPicker,
   remote = false,
+  review = false,
 }: {
+  /**
+   * The editor holds a review attempt: the strip under the toolbar (passed in
+   * `notices`) owns starting over, so the reset control is not shown here.
+   */
+  review?: boolean;
   frameworks: Framework[];
   framework: Framework;
   solvedFrameworks: Framework[];
@@ -73,23 +80,25 @@ export function EditorPane({
         />
         <SaveIndicator state={editor.saveState} className="pl-1" />
         <div className="ml-auto flex items-center gap-1.5">
-          <ConfirmDialog
-            trigger={
-              <IconButton label="Reset to starter code" disabled={!ready || editor.isStarter || busy}>
-                <RotateCcw />
-              </IconButton>
-            }
-            title="Reset to the starter code?"
-            description={`Your ${FRAMEWORK_LABEL[framework]} solution for this problem will be replaced with the starter. Submitted code stays in your submission history.`}
-            confirmLabel="Reset code"
-            destructive
-            onConfirm={() => void editor.reset()}
-          />
+          {review ? null : (
+            <ConfirmDialog
+              trigger={
+                <IconButton label="Reset to starter code" disabled={!ready || editor.isStarter || busy}>
+                  <RotateCcw />
+                </IconButton>
+              }
+              title="Reset to the starter code?"
+              description={`Your ${FRAMEWORK_LABEL[framework]} solution for this problem will be replaced with the starter. Submitted code stays in your submission history.`}
+              confirmLabel="Reset code"
+              destructive
+              onConfirm={() => void editor.reset()}
+            />
+          )}
           {targetPicker}
           <ActionButton
             variant="outline"
             size="sm"
-            hint="Run the public cases"
+            hint={review ? "Run the public cases on your review attempt" : "Run the public cases"}
             shortcut={SHORTCUTS.run}
             disabled={!ready || busy}
             onClick={onRun}
@@ -99,7 +108,11 @@ export function EditorPane({
           </ActionButton>
           <ActionButton
             size="sm"
-            hint="Run every case and record the attempt"
+            hint={
+              review
+                ? "Run every case; an accepted review moves the schedule on"
+                : "Run every case and record the attempt"
+            }
             shortcut={SHORTCUTS.submit}
             disabled={!ready || busy}
             onClick={onSubmit}
@@ -119,7 +132,7 @@ export function EditorPane({
           <CodeEditor
             value={editor.code}
             onChange={editor.setCode}
-            label={`Solution, ${FRAMEWORK_LABEL[framework]}`}
+            label={`${review ? "Review attempt" : "Solution"}, ${FRAMEWORK_LABEL[framework]}`}
           />
         )}
       </div>

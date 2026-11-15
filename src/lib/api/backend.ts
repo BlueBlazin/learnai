@@ -8,8 +8,11 @@ import type {
   Path,
   ProblemDetail,
   ProblemSummary,
+  Review,
+  ReviewAction,
   RunEvent,
   RunMode,
+  Settings,
   SolutionFile,
   SshHost,
   Stats,
@@ -26,6 +29,8 @@ export interface StartRunArgs {
   mode: RunMode;
   /** Where the judge runs: "local" or the name of an SSH target ("ssh:<alias>"). */
   target: string;
+  /** Judge the review attempt instead of the saved solution. */
+  review?: boolean;
 }
 
 /**
@@ -104,6 +109,20 @@ export interface Backend {
    * carries the result, which the core also saves as the target's `lastCheck`.
    */
   checkTarget(name: string, onEvent: (event: TargetCheckEvent) => void): Promise<string>;
+
+  /** Active review schedules, soonest due first. Empty while reviews are turned off. */
+  listReviews(): Promise<Review[]>;
+  /** Discards the review attempt and resolves with the starter. The saved solution is not touched. */
+  startReview(id: string, framework: Framework): Promise<SolutionFile>;
+  /** The review attempt, or the starter when there is none. */
+  readReviewSolution(id: string, framework: Framework): Promise<SolutionFile>;
+  writeReviewSolution(id: string, framework: Framework, code: string): Promise<void>;
+  /** Ends a review without solving it and resolves with the remaining schedules. */
+  resolveReview(id: string, action: ReviewAction): Promise<Review[]>;
+
+  getSettings(): Promise<Settings>;
+  /** Turns reviews on or off. Schedules are kept while they are off. */
+  setReviewsEnabled(enabled: boolean): Promise<Settings>;
 }
 
 export const LOCAL_TARGET = "local";

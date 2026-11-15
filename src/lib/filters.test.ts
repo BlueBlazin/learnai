@@ -167,6 +167,7 @@ describe("catalog order", () => {
       durationMs: 1,
       target: "local",
       createdAt: "2026-11-14T00:00:00Z",
+      review: false,
     });
     expect(pickContinue(problems, tracks, [submission("softmax"), submission("batching")])?.problem.id).toBe(
       "batching",

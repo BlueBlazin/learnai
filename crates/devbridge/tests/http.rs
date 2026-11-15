@@ -258,7 +258,7 @@ async fn full_run_over_http_and_sse() {
     assert_eq!(
         stats,
         json!({
-            "solved": 1, "total": 3, "streakDays": 1,
+            "solved": 1, "total": 3, "streakDays": 1, "reviewsDue": 0,
             "byDifficulty": {"easy": [1, 1], "medium": [0, 1], "hard": [0, 1]}
         })
     );
@@ -762,6 +762,165 @@ async fn a_not_judged_submit_over_http() {
     let problem = bridge.call("get_problem", json!({"id": "add-two"})).await;
     assert_eq!(problem["status"], "attempted");
     assert_eq!(bridge.call("get_stats", json!({})).await["solved"], 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reviews_and_case_stages_over_http() {
+    let bridge = Bridge::start().await;
+    let submit = async |code: &str, review: bool| {
+        let command = if review {
+            "write_review_solution"
+        } else {
+            "write_solution"
+        };
+        bridge
+            .call(
+                command,
+                json!({"id": "add-two", "framework": "torch", "code": code}),
+            )
+            .await;
+        let run = bridge
+            .call(
+                "start_run",
+                json!({"problemId": "add-two", "framework": "torch", "mode": "submit",
+                       "target": "local", "review": review}),
+            )
+            .await;
+        let run_id = run["runId"].as_str().expect("runId").to_owned();
+        bridge.events(&format!("/api/runs/{run_id}/events")).await
+    };
+
+    assert_eq!(
+        bridge.call("get_settings", json!({})).await,
+        json!({"reviewsEnabled": true})
+    );
+    assert_eq!(bridge.call("list_reviews", json!({})).await, json!([]));
+    // Without a schedule there is nothing to review.
+    let (status, body) = bridge
+        .post(
+            "start_review",
+            json!({"id": "add-two", "framework": "torch"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "no review is scheduled for `add-two`");
+
+    // A staged, failing submit: stages arrive with the announcement and are stored.
+    let events = submit("# scenario: staged\n", false).await;
+    let start = events.iter().find(|e| e["type"] == "start").expect("start");
+    assert_eq!(start["cases"][0]["stage"], "1: Tokenizer");
+    assert_eq!(start["cases"][2]["stage"], "Stage 2: Sampler");
+    let end = events.last().expect("end");
+    let stored = bridge
+        .call("get_submission", json!({"id": end["submissionId"]}))
+        .await;
+    assert_eq!(stored["cases"][1]["stage"], "1: Tokenizer");
+    assert_eq!(stored["review"], false);
+
+    // Solving the problem schedules its first review, three days out.
+    let events = submit("# scenario: happy\n", false).await;
+    assert_eq!(events.last().expect("end")["verdict"], "accepted");
+    let reviews = bridge.call("list_reviews", json!({})).await;
+    assert_eq!(reviews.as_array().expect("array").len(), 1);
+    assert_eq!(reviews[0]["problemId"], "add-two");
+    assert_eq!(reviews[0]["stage"], 0);
+    assert_eq!(reviews[0]["intervalDays"], 3);
+    assert_eq!(reviews[0]["due"], false);
+    assert_eq!(reviews[0]["lastReviewedAt"], Value::Null);
+    assert_eq!(bridge.call("get_stats", json!({})).await["reviewsDue"], 0);
+
+    // The review file starts as the starter and is separate from the saved solution.
+    let blank = bridge
+        .call(
+            "read_review_solution",
+            json!({"id": "add-two", "framework": "torch"}),
+        )
+        .await;
+    assert_eq!(blank["isStarter"], true);
+    assert!(
+        blank["path"]
+            .as_str()
+            .expect("path")
+            .ends_with("workspace/add-two/review/torch.py")
+    );
+
+    // A failing attempt is judged (the saved solution would pass) and stored as a review.
+    let events = submit("# scenario: fail\n", true).await;
+    let end = events.last().expect("end");
+    assert_eq!(end["verdict"], "wrong_answer");
+    let stored = bridge
+        .call("get_submission", json!({"id": end["submissionId"]}))
+        .await;
+    assert_eq!(stored["review"], true);
+    assert_eq!(stored["code"], "# scenario: fail\n");
+    let reset = bridge
+        .call(
+            "start_review",
+            json!({"id": "add-two", "framework": "torch"}),
+        )
+        .await;
+    assert_eq!(reset["isStarter"], true);
+
+    // An accepted review submit advances the schedule.
+    let events = submit("# scenario: happy\n", true).await;
+    assert_eq!(events.last().expect("end")["verdict"], "accepted");
+    let reviews = bridge.call("list_reviews", json!({})).await;
+    assert_eq!(reviews[0]["stage"], 1);
+    assert_eq!(reviews[0]["intervalDays"], 7);
+    let listed = bridge
+        .call("list_submissions", json!({"problemId": "add-two"}))
+        .await;
+    assert_eq!(listed[0]["review"], true);
+
+    // Turning reviews off hides the schedule; turning them on brings it back.
+    assert_eq!(
+        bridge
+            .call("set_reviews_enabled", json!({"enabled": false}))
+            .await,
+        json!({"reviewsEnabled": false})
+    );
+    assert_eq!(bridge.call("list_reviews", json!({})).await, json!([]));
+    let (status, _) = bridge
+        .post(
+            "resolve_review",
+            json!({"id": "add-two", "action": "snooze"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    bridge
+        .call("set_reviews_enabled", json!({"enabled": true}))
+        .await;
+
+    let snoozed = bridge
+        .call(
+            "resolve_review",
+            json!({"id": "add-two", "action": "snooze"}),
+        )
+        .await;
+    assert_eq!(snoozed[0]["stage"], 1);
+    let forgot = bridge
+        .call(
+            "resolve_review",
+            json!({"id": "add-two", "action": "forgot"}),
+        )
+        .await;
+    assert_eq!(forgot[0]["stage"], 0);
+    let (status, _) = bridge
+        .post(
+            "resolve_review",
+            json!({"id": "add-two", "action": "later"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        bridge
+            .call(
+                "resolve_review",
+                json!({"id": "add-two", "action": "retire"})
+            )
+            .await,
+        json!([])
+    );
 }
 
 #[tokio::test]

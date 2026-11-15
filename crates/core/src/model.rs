@@ -352,6 +352,10 @@ pub struct CaseInfo {
     /// Hardware the case needs; absent when it runs everywhere.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requires: Option<Requires>,
+    /// The stage the case belongs to (capstones); absent for unstaged problems. Public
+    /// even for hidden cases.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
 }
 
 impl CaseInfo {
@@ -362,6 +366,7 @@ impl CaseInfo {
             name: name.into(),
             public,
             requires: None,
+            stage: None,
         }
     }
 }
@@ -546,6 +551,9 @@ pub struct Submission {
     pub target: String,
     /// Creation time, ISO 8601 in UTC.
     pub created_at: String,
+    /// Whether this was a review attempt, judged from the review file.
+    #[serde(default)]
+    pub review: bool,
 }
 
 /// A case result as stored with a submission: the result plus the case's display name
@@ -563,6 +571,9 @@ pub struct StoredCase {
     /// Whether the case is public.
     #[serde(default = "default_public")]
     pub public: bool,
+    /// The stage the case belongs to, if the problem has stages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
 }
 
 fn default_public() -> bool {
@@ -575,6 +586,7 @@ impl StoredCase {
         Self {
             name: info.map_or_else(|| result.id.clone(), |i| i.name.clone()),
             public: info.is_none_or(|i| i.public),
+            stage: info.and_then(|i| i.stage.clone()),
             result,
         }
     }
@@ -674,6 +686,47 @@ pub struct Stats {
     pub by_difficulty: BTreeMap<Difficulty, (u32, u32)>,
     /// Consecutive days with an accepted submit, ending today or yesterday.
     pub streak_days: u32,
+    /// Number of reviews that are due now; 0 while reviews are turned off.
+    #[serde(default)]
+    pub reviews_due: u32,
+}
+
+/// The review schedule of a solved problem (spaced re-solve).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Review {
+    /// Problem id.
+    pub problem_id: String,
+    /// 0-based index into the review intervals.
+    pub stage: u32,
+    /// The interval of this stage in days.
+    pub interval_days: u32,
+    /// When the review is due, ISO 8601 in UTC.
+    pub due_at: String,
+    /// When the problem was last reviewed successfully.
+    pub last_reviewed_at: Option<String>,
+    /// Whether the review is due now.
+    pub due: bool,
+}
+
+/// How the learner resolves a review without solving it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReviewAction {
+    /// The learner gave up and looked at their solution: back to the first interval.
+    Forgot,
+    /// Ask again a day later.
+    Snooze,
+    /// Stop reviewing the problem.
+    Retire,
+}
+
+/// App settings stored in the state database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Settings {
+    /// Whether solved problems are scheduled for review.
+    pub reviews_enabled: bool,
 }
 
 /// An event in the stream produced by `env_install`.
@@ -1197,10 +1250,11 @@ mod tests {
             total: 3,
             by_difficulty: Difficulty::ALL.iter().map(|d| (*d, (0, 1))).collect(),
             streak_days: 2,
+            reviews_due: 4,
         };
         assert_eq!(
             json!(stats),
-            json!({"solved": 1, "total": 3, "streakDays": 2,
+            json!({"solved": 1, "total": 3, "streakDays": 2, "reviewsDue": 4,
                    "byDifficulty": {"easy": [0, 1], "medium": [0, 1], "hard": [0, 1]}})
         );
         assert_eq!(
@@ -1210,6 +1264,69 @@ mod tests {
             }),
             json!({"type": "done", "ok": false, "message": null})
         );
+    }
+
+    #[test]
+    fn reviews_stages_and_settings_match_the_contract() {
+        let review = Review {
+            problem_id: "stable-softmax".into(),
+            stage: 1,
+            interval_days: 7,
+            due_at: "2026-11-15T10:00:00.000Z".into(),
+            last_reviewed_at: None,
+            due: true,
+        };
+        assert_eq!(
+            json!(review),
+            json!({"problemId": "stable-softmax", "stage": 1, "intervalDays": 7,
+                   "dueAt": "2026-11-15T10:00:00.000Z", "lastReviewedAt": null, "due": true})
+        );
+        for (action, text) in [
+            (ReviewAction::Forgot, "forgot"),
+            (ReviewAction::Snooze, "snooze"),
+            (ReviewAction::Retire, "retire"),
+        ] {
+            assert_eq!(json!(action), json!(text));
+            assert_eq!(
+                serde_json::from_value::<ReviewAction>(json!(text)).expect("action"),
+                action
+            );
+        }
+        assert_eq!(
+            json!(Settings {
+                reviews_enabled: true
+            }),
+            json!({"reviewsEnabled": true})
+        );
+
+        // A stage travels from the announcement to the stored case; without one the
+        // field is absent, so unstaged problems serialize exactly as before.
+        let staged: CaseInfo = serde_json::from_value(
+            json!({"id": "c1", "name": "Tokenize", "public": true, "stage": "1: Tokenizer"}),
+        )
+        .expect("case");
+        assert_eq!(staged.stage.as_deref(), Some("1: Tokenizer"));
+        let result = CaseResult {
+            id: "c1".into(),
+            status: CaseStatus::Pass,
+            duration_ms: 1.0,
+            message: None,
+            detail: None,
+            stdout: String::new(),
+            metrics: vec![],
+            skip: None,
+        };
+        let stored = json!(StoredCase::new(result.clone(), Some(&staged)));
+        assert_eq!(stored["stage"], "1: Tokenizer");
+        let plain = json!(StoredCase::new(
+            result,
+            Some(&CaseInfo::new("c1", "Tokenize", true))
+        ));
+        assert!(plain.get("stage").is_none());
+        assert!(json!(CaseInfo::new("c1", "n", true)).get("stage").is_none());
+        // Rows stored before stages existed still load.
+        let old: StoredCase = serde_json::from_value(plain).expect("stored case");
+        assert_eq!(old.stage, None);
     }
 
     #[test]

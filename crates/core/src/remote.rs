@@ -415,11 +415,16 @@ impl<'a> Session<'a> {
         Ok(dest)
     }
 
-    /// Copies the solution file to `<root>/workspace/<id>/<framework>.py` and returns
-    /// the remote path.
+    /// Copies the solution file to `<root>/workspace/<id>/<framework>.py` (a review
+    /// attempt to `<root>/workspace/<id>/review/<framework>.py`, so it never replaces
+    /// the saved solution there either) and returns the remote path.
     pub fn sync_solution(&self, job: &HarnessJob) -> Result<String, StepFailure> {
         let (_track, id) = track_and_id(&job.problem_dir)?;
-        let dir = format!("{}/workspace/{id}", self.root);
+        let dir = if job.review {
+            format!("{}/workspace/{id}/review", self.root)
+        } else {
+            format!("{}/workspace/{id}", self.root)
+        };
         self.mkdir(std::slice::from_ref(&dir))?;
         let dest = format!("{dir}/{}.py", job.framework);
         self.rsync(

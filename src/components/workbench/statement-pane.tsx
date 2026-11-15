@@ -8,6 +8,7 @@ import { SubmissionList } from "@/components/problem/submission-list";
 import { SubmissionView } from "@/components/problem/submission-view";
 import { ProblemFigures } from "@/components/prose/problem-figures";
 import { Prose } from "@/components/prose/prose";
+import { ReviewHidden } from "@/components/review/review-hidden";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Framework, ProblemDetail, ProblemSummary, Track } from "@/lib/api";
@@ -29,7 +30,9 @@ function PageScroll({ children }: { children: React.ReactNode }) {
 
 /**
  * The left half of the workspace: the statement and its companions (hints,
- * editorial, submissions) as tabs over one reading surface.
+ * editorial, submissions) as tabs over one reading surface. During a review
+ * (`reviewing`) the hints, the editorial and reference, and the code of earlier
+ * submissions are replaced by a line saying they are hidden.
  */
 export function StatementPane({
   problem,
@@ -43,7 +46,10 @@ export function StatementPane({
   previous,
   next,
   onNavigate,
+  reviewing = false,
 }: {
+  /** A review of this problem is in progress. */
+  reviewing?: boolean;
   problem: ProblemDetail;
   track?: Track;
   prerequisites: ProblemSummary[];
@@ -62,7 +68,11 @@ export function StatementPane({
   const submissions = useSubmissions(problem.id);
   const submission = useSubmission(submissionId);
   const unlock = useUnlockEditorial(problem.id);
-  const reference = useReference(problem.id, framework, problem.editorialUnlocked && tab === "editorial");
+  const reference = useReference(
+    problem.id,
+    framework,
+    problem.editorialUnlocked && tab === "editorial" && !reviewing,
+  );
 
   // Figures in the statement, hints, and editorial all resolve against this problem's assets.
   return (
@@ -107,28 +117,38 @@ export function StatementPane({
 
         <TabsContent value="hints">
           <PageScroll>
-            <HintList
-              hints={problem.hints}
-              revealed={hintsRevealed}
-              onReveal={(count) => revealHint(problem.id, count)}
-            />
+            {reviewing ? (
+              <ReviewHidden what="The hints are" />
+            ) : (
+              <HintList
+                hints={problem.hints}
+                revealed={hintsRevealed}
+                onReveal={(count) => revealHint(problem.id, count)}
+              />
+            )}
           </PageScroll>
         </TabsContent>
 
         <TabsContent value="editorial">
           <PageScroll>
-            {unlock.error ? (
-              <ErrorState title="The editorial could not be revealed" error={unlock.error} />
-            ) : null}
-            <EditorialPanel
-              unlocked={problem.editorialUnlocked}
-              editorial={problem.editorial}
-              reference={reference.data}
-              referenceError={reference.error}
-              framework={framework}
-              revealing={unlock.isPending}
-              onReveal={() => unlock.mutate()}
-            />
+            {reviewing ? (
+              <ReviewHidden what="The editorial and the reference solution are" />
+            ) : (
+              <>
+                {unlock.error ? (
+                  <ErrorState title="The editorial could not be revealed" error={unlock.error} />
+                ) : null}
+                <EditorialPanel
+                  unlocked={problem.editorialUnlocked}
+                  editorial={problem.editorial}
+                  reference={reference.data}
+                  referenceError={reference.error}
+                  framework={framework}
+                  revealing={unlock.isPending}
+                  onReveal={() => unlock.mutate()}
+                />
+              </>
+            )}
           </PageScroll>
         </TabsContent>
 
@@ -145,6 +165,7 @@ export function StatementPane({
                 }
                 onBack={() => onOpenSubmission(null)}
                 onRetry={() => void submission.refetch()}
+                codeHidden={reviewing}
               />
             ) : submissions.error ? (
               <ErrorState error={submissions.error} onRetry={() => void submissions.refetch()} />

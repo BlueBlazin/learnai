@@ -1,5 +1,5 @@
 import type { Backend, StartRunArgs } from "./backend";
-import type { AssetEvent, Framework, InstallEvent, RunEvent, TargetCheckEvent } from "./types";
+import type { AssetEvent, Framework, InstallEvent, ReviewAction, RunEvent, TargetCheckEvent } from "./types";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:1421";
 /** How long the first load waits for the bridge before reporting it unreachable. */
@@ -233,4 +233,19 @@ export class HttpBackend implements Backend {
     );
     return jobId;
   }
+
+  listReviews = () => this.call<Awaited<ReturnType<Backend["listReviews"]>>>("list_reviews");
+  startReview = (id: string, framework: Framework) =>
+    this.call<Awaited<ReturnType<Backend["startReview"]>>>("start_review", { id, framework });
+  readReviewSolution = (id: string, framework: Framework) =>
+    this.call<Awaited<ReturnType<Backend["readReviewSolution"]>>>("read_review_solution", { id, framework });
+  writeReviewSolution = async (id: string, framework: Framework, code: string) => {
+    await this.call<null>("write_review_solution", { id, framework, code });
+  };
+  resolveReview = (id: string, action: ReviewAction) =>
+    this.call<Awaited<ReturnType<Backend["resolveReview"]>>>("resolve_review", { id, action });
+
+  getSettings = () => this.call<Awaited<ReturnType<Backend["getSettings"]>>>("get_settings");
+  setReviewsEnabled = (enabled: boolean) =>
+    this.call<Awaited<ReturnType<Backend["setReviewsEnabled"]>>>("set_reviews_enabled", { enabled });
 }

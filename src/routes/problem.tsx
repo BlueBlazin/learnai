@@ -1,11 +1,14 @@
 import { createLazyRoute, getRouteApi } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { AppLink } from "@/components/app/app-link";
 import { ScreenMessage } from "@/components/app/page";
 import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
 import { AssetNoticeList, type NoticeAsset } from "@/components/models/asset-notice";
 import { ResultsPanel } from "@/components/results/results-panel";
+import { ReviewDueNotice } from "@/components/review/review-due-notice";
+import { ReviewOutcomeNote } from "@/components/review/review-outcome";
+import { ReviewStrip } from "@/components/review/review-strip";
 import { TargetPicker } from "@/components/targets/target-picker";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
@@ -14,12 +17,14 @@ import { HardwareNotice } from "@/components/workbench/hardware-notice";
 import { StatementPane } from "@/components/workbench/statement-pane";
 import { useGo } from "@/hooks/use-go";
 import { useRunShortcuts } from "@/hooks/use-run-shortcuts";
-import type { RunMode } from "@/lib/api";
+import type { Review, ReviewAction, RunMode } from "@/lib/api";
 import {
   useAssets,
   useEnvStatus,
   useProblem,
   useProblems,
+  useResolveReview,
+  useReviews,
   useSubmissions,
   useTargets,
   useTracks,
@@ -31,6 +36,7 @@ import { useSolutionEditor } from "@/lib/api/use-solution-editor";
 import { neighbors } from "@/lib/continue";
 import { missingHardware } from "@/lib/hardware";
 import { IS_MAC } from "@/lib/platform";
+import { reviewOutcome } from "@/lib/reviews";
 import { type ProblemSearch, routes, type StatementTab } from "@/lib/routes";
 import { hostOf, knownHardware, LOCAL, resolveTarget, targetsWith } from "@/lib/targets";
 import { preferredFramework, usePreferences } from "@/stores/preferences";
@@ -55,7 +61,17 @@ function ProblemScreen({ problemId }: { problemId: string }) {
     ? preferredFramework(problem.data.frameworks, savedFramework, lastFramework)
     : null;
 
-  const editor = useSolutionEditor(problemId, framework);
+  // Review mode lives in the address, so it survives a reload. It holds only while
+  // the problem has an active review; until the list arrives the address is trusted.
+  const reviews = useReviews();
+  const review = reviews.data?.find((candidate) => candidate.problemId === problemId) ?? null;
+  const reviewKnown = reviews.data !== undefined || reviews.isError;
+  const reviewing = search.review === true && (reviewKnown ? review !== null : true);
+  const resolveReview = useResolveReview(problemId);
+  /** The schedule as it was when the review submit in the results panel started. */
+  const [reviewed, setReviewed] = useState<Review | null>(null);
+
+  const editor = useSolutionEditor(problemId, framework, reviewing);
   const run = useRun(problemId);
 
   // Where runs execute: the remembered choice, while that target still exists.
@@ -87,11 +103,12 @@ function ProblemScreen({ problemId }: { problemId: string }) {
     async (mode: RunMode) => {
       if (!framework || active) return;
       markFrameworkUsed(problemId, framework);
+      setReviewed(reviewing && mode === "submit" ? review : null);
       // The judge reads the file on disk: save before running.
       await flush();
-      await startRun(framework, mode, target);
+      await startRun(framework, mode, target, reviewing);
     },
-    [active, flush, framework, markFrameworkUsed, problemId, startRun, target],
+    [active, flush, framework, markFrameworkUsed, problemId, review, reviewing, startRun, target],
   );
   const onRun = useCallback(() => void start("run"), [start]);
   const onSubmit = useCallback(() => void start("submit"), [start]);
@@ -107,7 +124,59 @@ function ProblemScreen({ problemId }: { problemId: string }) {
   }, [title, onRun, onSubmit, active, setActions]);
 
   const tab: StatementTab = search.tab ?? "statement";
-  const setSearch = (next: ProblemSearch) => go(routes.problem(problemId, next), { replace: true });
+  /** Moves within the workspace (tab, open submission) without leaving review mode. */
+  const setSearch = (next: ProblemSearch) =>
+    go(routes.problem(problemId, reviewing ? { ...next, review: true } : next), { replace: true });
+  const { tab: searchTab, submission: searchSubmission, review: searchReview } = search;
+  const setReviewMode = useCallback(
+    (on: boolean) => {
+      const rest: ProblemSearch = {
+        ...(searchTab ? { tab: searchTab } : {}),
+        ...(searchSubmission ? { submission: searchSubmission } : {}),
+      };
+      go(routes.problem(problemId, on ? { ...rest, review: true } : rest), { replace: true });
+    },
+    [go, problemId, searchSubmission, searchTab],
+  );
+
+  // An address that asks for a review the problem does not have (none scheduled,
+  // already resolved, reviews turned off) falls back to the normal workspace.
+  useEffect(() => {
+    if (searchReview && reviewKnown && !review) setReviewMode(false);
+  }, [searchReview, reviewKnown, review, setReviewMode]);
+
+  // An accepted review submit completes the review: the attempt is gone from disk,
+  // so drop any unsaved edit to it and return to the normal workspace.
+  const reviewAccepted =
+    run.state.phase === "done" &&
+    run.state.review &&
+    run.state.mode === "submit" &&
+    run.state.verdict === "accepted";
+  const { discard } = editor;
+  const acceptedRun = reviewAccepted ? run.state.runId : null;
+  /** The accepted review run that review mode was already left for: once per run. */
+  const leftFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (acceptedRun === null || leftFor.current === acceptedRun) return;
+    leftFor.current = acceptedRun;
+    discard();
+    setReviewMode(false);
+  }, [acceptedRun, discard, setReviewMode]);
+  const outcome = reviewAccepted && reviewed ? reviewOutcome(reviewed, reviews.data) : null;
+
+  const endReview = async (action: ReviewAction) => {
+    // A snoozed attempt is kept for tomorrow; the other two discard it.
+    if (action === "snooze") await flush();
+    else discard();
+    try {
+      await resolveReview.mutateAsync(action);
+    } catch {
+      // The strip shows the reason; the review goes on.
+      return;
+    }
+    discard();
+    setReviewMode(false);
+  };
 
   const around = useMemo(
     () => neighbors(problems.data ?? [], tracks.data ?? [], problemId),
@@ -197,6 +266,7 @@ function ProblemScreen({ problemId }: { problemId: string }) {
           previous={around.previous}
           next={around.next}
           onNavigate={(target) => go(routes.problem(target.id))}
+          reviewing={reviewing}
         />
       </ResizablePanel>
       <ResizableHandle />
@@ -220,6 +290,7 @@ function ProblemScreen({ problemId }: { problemId: string }) {
               onRun={onRun}
               onSubmit={onSubmit}
               remote={host !== null}
+              review={reviewing}
               targetPicker={
                 <TargetPicker
                   targets={targets.data ?? []}
@@ -230,6 +301,20 @@ function ProblemScreen({ problemId }: { problemId: string }) {
               }
               notices={
                 <>
+                  {reviewing && review ? (
+                    <ReviewStrip
+                      review={review}
+                      busy={active || resolveReview.isPending}
+                      error={resolveReview.error ? resolveReview.error.message : null}
+                      onForgot={() => void endReview("forgot")}
+                      onSnooze={() => void endReview("snooze")}
+                      onRetire={() => void endReview("retire")}
+                      onStartOver={() => void editor.reset()}
+                      onLeave={() => setReviewMode(false)}
+                    />
+                  ) : review?.due && !reviewing && !reviewAccepted ? (
+                    <ReviewDueNotice review={review} disabled={active} onStart={() => setReviewMode(true)} />
+                  ) : null}
                   {/* The listing describes this computer's disk, so it speaks for local runs only. */}
                   {host === null ? <AssetNoticeList assets={models} fetch={fetch} /> : null}
                   {lacking ? (
@@ -249,6 +334,12 @@ function ProblemScreen({ problemId }: { problemId: string }) {
             <ResultsPanel
               run={run.state}
               onCancel={run.cancel}
+              idleHint={
+                reviewing
+                  ? "Run checks your review attempt against the public cases. Submit runs every case; an accepted submit completes this review."
+                  : undefined
+              }
+              note={outcome ? <ReviewOutcomeNote outcome={outcome} /> : null}
               resolution={
                 <AssetNoticeList
                   assets={sameTarget && host ? remoteSkippedFor : skippedFor}

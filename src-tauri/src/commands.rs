@@ -8,8 +8,8 @@ use tauri::State;
 use tauri::ipc::Channel;
 use whetstone_core::{
     AssetEvent, AssetList, CatalogIssue, Core, EnvStatus, Framework, InstallEvent, ProblemDetail,
-    ProblemSummary, RunEvent, RunMode, SolutionFile, SshHost, Stats, StudyPath, Submission,
-    SubmissionDetail, TargetCheckEvent, TargetInfo, Track,
+    ProblemSummary, Review, ReviewAction, RunEvent, RunMode, Settings, SolutionFile, SshHost,
+    Stats, StudyPath, Submission, SubmissionDetail, TargetCheckEvent, TargetInfo, Track,
 };
 
 /// Shared application state: the core, or the reason it could not be opened.
@@ -95,6 +95,7 @@ pub async fn reset_solution(
     .await
 }
 
+/// `review: true` judges the review attempt instead of the saved solution (section 4.2).
 #[tauri::command]
 pub async fn start_run(
     state: State<'_, AppState>,
@@ -102,19 +103,19 @@ pub async fn start_run(
     framework: Framework,
     mode: RunMode,
     target: String,
+    review: Option<bool>,
     on_event: Channel<RunEvent>,
 ) -> CommandResult<String> {
     with_core(state, "start_run", move |core| {
-        core.start_run(
-            &problem_id,
-            framework,
-            mode,
-            &target,
-            move |event: RunEvent| {
-                // The webview may be gone (window closed mid-run); there is no one to tell.
-                let _ = on_event.send(event);
-            },
-        )
+        let sink = move |event: RunEvent| {
+            // The webview may be gone (window closed mid-run); there is no one to tell.
+            let _ = on_event.send(event);
+        };
+        if review.unwrap_or(false) {
+            core.start_review_run(&problem_id, framework, mode, &target, sink)
+        } else {
+            core.start_run(&problem_id, framework, mode, &target, sink)
+        }
     })
     .await
 }
@@ -309,6 +310,76 @@ pub async fn check_target(
             // The webview may be gone (window closed mid-check); there is no one to tell.
             let _ = on_event.send(event);
         })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_reviews(state: State<'_, AppState>) -> CommandResult<Vec<Review>> {
+    with_core(state, "list_reviews", |core| core.list_reviews()).await
+}
+
+#[tauri::command]
+pub async fn start_review(
+    state: State<'_, AppState>,
+    id: String,
+    framework: Framework,
+) -> CommandResult<SolutionFile> {
+    with_core(state, "start_review", move |core| {
+        core.start_review(&id, framework)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn read_review_solution(
+    state: State<'_, AppState>,
+    id: String,
+    framework: Framework,
+) -> CommandResult<SolutionFile> {
+    with_core(state, "read_review_solution", move |core| {
+        core.read_review_solution(&id, framework)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn write_review_solution(
+    state: State<'_, AppState>,
+    id: String,
+    framework: Framework,
+    code: String,
+) -> CommandResult<()> {
+    with_core(state, "write_review_solution", move |core| {
+        core.write_review_solution(&id, framework, &code)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn resolve_review(
+    state: State<'_, AppState>,
+    id: String,
+    action: ReviewAction,
+) -> CommandResult<Vec<Review>> {
+    with_core(state, "resolve_review", move |core| {
+        core.resolve_review(&id, action)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_settings(state: State<'_, AppState>) -> CommandResult<Settings> {
+    with_core(state, "get_settings", |core| core.get_settings()).await
+}
+
+#[tauri::command]
+pub async fn set_reviews_enabled(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> CommandResult<Settings> {
+    with_core(state, "set_reviews_enabled", move |core| {
+        core.set_reviews_enabled(enabled)
     })
     .await
 }

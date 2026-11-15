@@ -66,6 +66,14 @@ pub enum CoreError {
     #[error("{0}")]
     Assets(String),
 
+    /// A review was requested for a problem that has no active review schedule.
+    #[error("no review is scheduled for `{0}`")]
+    NoActiveReview(String),
+
+    /// A review was requested while reviews are turned off.
+    #[error("reviews are turned off in Settings")]
+    ReviewsDisabled,
+
     /// A caller-supplied argument is invalid.
     #[error("{0}")]
     InvalidArgument(String),
@@ -127,6 +135,8 @@ impl CoreError {
                 | CoreError::InstallInProgress
                 | CoreError::FetchInProgress
                 | CoreError::InvalidArgument(_)
+                | CoreError::NoActiveReview(_)
+                | CoreError::ReviewsDisabled
                 | CoreError::AssetTooLarge { .. }
         )
     }

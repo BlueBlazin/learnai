@@ -20,6 +20,8 @@ export interface FixtureCase {
    * hardware the problem requires. Absent: it runs everywhere.
    */
   needs?: "asset" | "hardware";
+  /** The stage the case belongs to; only capstones have stages. */
+  stage?: string;
 }
 
 export type ProblemMeta = Omit<ProblemSummary, "status" | "solvedFrameworks">;
@@ -419,6 +421,21 @@ function fillerStatement(title: string, track: FixtureTrack, entry: string): str
   ].join("\n");
 }
 
+/**
+ * A capstone's cases, in stages. Stages gate nothing: every case runs. The
+ * second label already begins with "Stage", so it is shown as written.
+ */
+const CAPSTONE_CASES: FixtureCase[] = [
+  { name: "round-trips ASCII", public: true, stage: "1: Tokenizer" },
+  { name: "round-trips multi-byte text", public: true, stage: "1: Tokenizer" },
+  { name: "Hidden case 1", public: false, stage: "1: Tokenizer" },
+  { name: "greedy decode matches the reference", public: true, stage: "Stage 2: Decode loop" },
+  { name: "Hidden case 2", public: false, stage: "Stage 2: Decode loop" },
+  { name: "Hidden case 3", public: false, stage: "Stage 2: Decode loop" },
+  { name: "Hidden case 4", public: false, stage: "3: Serving" },
+  { name: "Hidden case 5", public: false, stage: "3: Serving" },
+];
+
 function fillerProblems(track: FixtureTrack, startOrder: number): FixtureProblem[] {
   const python = PYTHON_TRACKS.has(track.id) || track.id === "capstones";
   const frameworks: Framework[] = track.id === "mlx-gpu" ? ["mlx"] : python ? ["python"] : TENSOR_FRAMEWORKS;
@@ -436,8 +453,16 @@ function fillerProblems(track: FixtureTrack, startOrder: number): FixtureProblem
     const second = judgePool[Math.floor(hash(`${id}:2`) * judgePool.length)] ?? first;
     const judges = second !== first && hash(`${id}:j`) < 0.35 ? [first, second] : [first];
     const roll = hash(`${id}:status`);
+    // The first capstone is under way, so the fixtures hold a stored submission with stages.
     const seedStatus: ProblemStatus =
-      roll < solvedShare ? "solved" : roll < solvedShare + 0.07 ? "attempted" : "todo";
+      track.id === "capstones" && index === 0
+        ? "attempted"
+        : roll < solvedShare
+          ? "solved"
+          : roll < solvedShare + 0.07
+            ? "attempted"
+            : "todo";
+    const staged = track.id === "capstones";
     const entry = id.replace(/-/g, "_").slice(0, 28);
     const lead = frameworks[0] ?? "torch";
 
@@ -464,12 +489,14 @@ function fillerProblems(track: FixtureTrack, startOrder: number): FixtureProblem
       entry: [entry],
       timeLimitS: 10,
       assets: {},
-      cases: [
-        { name: "small input", public: true },
-        { name: "typical input", public: true },
-        { name: "edge case", public: true },
-        ...Array.from({ length: 4 }, (_, i) => ({ name: `Hidden case ${i + 1}`, public: false })),
-      ],
+      cases: staged
+        ? CAPSTONE_CASES
+        : [
+            { name: "small input", public: true },
+            { name: "typical input", public: true },
+            { name: "edge case", public: true },
+            ...Array.from({ length: 4 }, (_, i) => ({ name: `Hidden case ${i + 1}`, public: false })),
+          ],
       starterTemplate: `{{import}}\n\n\ndef ${entry}(x):\n    """Return the result described in the statement."""\n    raise NotImplementedError\n`,
       referenceTemplate: `{{import}}\n\n\ndef ${entry}(x):\n    return x\n`,
       savedTemplate: seedStatus === "todo" ? null : `{{import}}\n\n\ndef ${entry}(x):\n    return x\n`,

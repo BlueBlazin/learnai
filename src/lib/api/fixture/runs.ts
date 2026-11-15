@@ -180,6 +180,7 @@ export function buildPlan(
     name: c.name,
     public: c.public,
     ...(c.needs === "hardware" && requires !== "cpu" ? { requires } : {}),
+    ...(c.stage ? { stage: c.stage } : {}),
   }));
   /** Why a case cannot run on this machine right now, if it cannot. */
   const skipOf = (index: number): Pick<CaseResult, "skip" | "message"> | null => {

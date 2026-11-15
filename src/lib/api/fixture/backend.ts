@@ -13,7 +13,10 @@ import type {
   ProblemDetail,
   ProblemStatus,
   ProblemSummary,
+  Review,
+  ReviewAction,
   RunEvent,
+  Settings,
   SolutionFile,
   SshHost,
   Stats,
@@ -41,6 +44,27 @@ const MODELS_DIR = `${ROOT}/.whetstone/models`;
 const FETCH_STEPS = 48;
 const FETCH_STEP_MS = 180;
 const DAY_MS = 86_400_000;
+/** The review intervals of the core (section 4.2). */
+const REVIEW_INTERVALS_DAYS = [3, 7, 21, 60, 180] as const;
+
+interface ReviewState {
+  stage: number;
+  /** Milliseconds since the epoch. */
+  dueAt: number;
+  lastReviewedAt: number | null;
+  retired: boolean;
+}
+
+/**
+ * Reviews seeded as due, so Home has a list to show: the stage, and how many
+ * days ago each fell due. The last one is on its final review.
+ */
+const SEEDED_DUE: Record<string, { stage: number; overdueDays: number }> = {
+  "stable-softmax": { stage: 1, overdueDays: 3 },
+  "causal-mask": { stage: 2, overdueDays: 1 },
+  "log-sum-exp": { stage: 0, overdueDays: 0 },
+  "bpe-merge": { stage: 4, overdueDays: 0 },
+};
 
 interface ProblemState {
   status: ProblemStatus;
@@ -63,6 +87,10 @@ export class FixtureBackend implements Backend {
   private readonly problems = new Map<string, FixtureProblem>();
   private readonly state = new Map<string, ProblemState>();
   private readonly solutions = new Map<string, string>();
+  /** Review attempts, by problem and framework; absent means the starter. */
+  private readonly reviewSolutions = new Map<string, string>();
+  private readonly reviews = new Map<string, ReviewState>();
+  private reviewsEnabled = true;
   private readonly submissions: SubmissionDetail[] = [];
   private readonly canceled = new Set<string>();
   private readonly installed = new Map<Framework, string | null>([
@@ -106,6 +134,89 @@ export class FixtureBackend implements Backend {
       }
     }
     this.seedSubmissions();
+    this.seedReviews();
+  }
+
+  /**
+   * A schedule for every seeded solve. A few are due (see `SEEDED_DUE`); the
+   * rest look like reviews that were kept up with, due over the coming weeks.
+   */
+  private seedReviews(): void {
+    const today = this.now().getTime();
+    for (const problem of this.catalog.problems) {
+      const id = problem.meta.id;
+      if (this.stateOf(id).status !== "solved") continue;
+      const due = SEEDED_DUE[id];
+      const stage = due?.stage ?? Math.floor(hash(`${id}:review-stage`) * 3);
+      const dueAt = due
+        ? today - due.overdueDays * DAY_MS - 3_600_000
+        : today + (1 + Math.floor(hash(`${id}:review-due`) * 30)) * DAY_MS;
+      this.reviews.set(id, {
+        stage,
+        dueAt,
+        lastReviewedAt: stage === 0 ? null : dueAt - (REVIEW_INTERVALS_DAYS[stage] ?? 3) * DAY_MS,
+        retired: false,
+      });
+    }
+  }
+
+  private reviewOf(id: string, state: ReviewState): Review {
+    return {
+      problemId: id,
+      stage: state.stage,
+      intervalDays: REVIEW_INTERVALS_DAYS[state.stage] ?? 180,
+      dueAt: new Date(state.dueAt).toISOString(),
+      lastReviewedAt: state.lastReviewedAt === null ? null : new Date(state.lastReviewedAt).toISOString(),
+      due: state.dueAt <= this.now().getTime(),
+    };
+  }
+
+  private activeReviews(): Review[] {
+    if (!this.reviewsEnabled) return [];
+    return [...this.reviews]
+      .filter(([, state]) => !state.retired)
+      .sort(([a, x], [b, y]) => x.dueAt - y.dueAt || a.localeCompare(b))
+      .map(([id, state]) => this.reviewOf(id, state));
+  }
+
+  /** The active schedule of a problem, with the core's errors when there is none. */
+  private activeReview(id: string): ReviewState {
+    this.problem(id);
+    if (!this.reviewsEnabled) throw new Error("reviews are turned off in Settings");
+    const state = this.reviews.get(id);
+    if (!state || state.retired) throw new Error(`no review is scheduled for \`${id}\``);
+    return state;
+  }
+
+  /** Applies a stored accepted submit to the schedule, by the core's rules. */
+  private recordAccepted(id: string, review: boolean): void {
+    const now = this.now().getTime();
+    const state = this.reviews.get(id);
+    if (review) {
+      if (!state || state.retired) return;
+      state.lastReviewedAt = now;
+      if (state.stage + 1 >= REVIEW_INTERVALS_DAYS.length) {
+        state.retired = true;
+      } else {
+        state.stage += 1;
+        state.dueAt = now + (REVIEW_INTERVALS_DAYS[state.stage] ?? 180) * DAY_MS;
+      }
+      // The review is resolved: its next attempt starts from the starter.
+      this.clearReviewSolutions(id);
+    } else if (!state && this.reviewsEnabled) {
+      this.reviews.set(id, {
+        stage: 0,
+        dueAt: now + REVIEW_INTERVALS_DAYS[0] * DAY_MS,
+        lastReviewedAt: null,
+        retired: false,
+      });
+    }
+  }
+
+  private clearReviewSolutions(id: string): void {
+    for (const stored of [...this.reviewSolutions.keys()]) {
+      if (stored.startsWith(`${id}/`)) this.reviewSolutions.delete(stored);
+    }
   }
 
   private sleep = (ms: number): Promise<void> =>
@@ -232,7 +343,12 @@ export class FixtureBackend implements Backend {
         code,
         this.runContext(problem, this.target("local")),
       );
-      const cases = plan.cases.map((c) => ({ ...c.result, name: c.info.name, public: c.info.public }));
+      const cases = plan.cases.map((c) => ({
+        ...c.result,
+        name: c.info.name,
+        public: c.info.public,
+        ...(c.info.stage ? { stage: c.info.stage } : {}),
+      }));
       const verdict = plan.abort ?? verdictOf(cases, plan.requiresMet);
       this.submissions.push({
         id: this.nextSubmissionId++,
@@ -246,6 +362,7 @@ export class FixtureBackend implements Backend {
         durationMs: Math.round(cases.reduce((sum, c) => sum + c.durationMs, 0) * 10) / 10,
         target: "local",
         createdAt: new Date(at).toISOString(),
+        review: false,
         code,
         cases,
         metrics: verdict === "accepted" ? plan.metrics : [],
@@ -309,14 +426,76 @@ export class FixtureBackend implements Backend {
       return this.solutionFile(id, framework);
     });
 
+  // Reviews -----------------------------------------------------------------
+
+  private reviewFile(id: string, framework: Framework): SolutionFile {
+    const problem = this.problem(id);
+    this.assertFramework(problem, framework);
+    const starter = renderTemplate(problem.starterTemplate, framework);
+    const saved = this.reviewSolutions.get(key(id, framework));
+    return {
+      code: saved ?? starter,
+      isStarter: saved === undefined || saved === starter,
+      path: `${ROOT}/workspace/${id}/review/${framework}.py`,
+    };
+  }
+
+  listReviews = (): Promise<Review[]> => this.respond(() => this.activeReviews());
+
+  startReview = (id: string, framework: Framework): Promise<SolutionFile> =>
+    this.respond(() => {
+      this.activeReview(id);
+      this.reviewSolutions.delete(key(id, framework));
+      return this.reviewFile(id, framework);
+    });
+
+  readReviewSolution = (id: string, framework: Framework): Promise<SolutionFile> =>
+    this.respond(() => this.reviewFile(id, framework));
+
+  writeReviewSolution = (id: string, framework: Framework, code: string): Promise<void> =>
+    this.respond(() => {
+      this.assertFramework(this.problem(id), framework);
+      this.activeReview(id);
+      this.reviewSolutions.set(key(id, framework), code);
+    });
+
+  resolveReview = (id: string, action: ReviewAction): Promise<Review[]> =>
+    this.respond(() => {
+      const state = this.activeReview(id);
+      const now = this.now().getTime();
+      if (action === "forgot") {
+        state.stage = 0;
+        state.dueAt = now + DAY_MS;
+      } else if (action === "snooze") {
+        state.dueAt = Math.max(state.dueAt, now) + DAY_MS;
+      } else {
+        state.retired = true;
+      }
+      // A snoozed attempt is kept for the next day.
+      if (action !== "snooze") this.clearReviewSolutions(id);
+      return this.activeReviews();
+    });
+
+  getSettings = (): Promise<Settings> => this.respond(() => ({ reviewsEnabled: this.reviewsEnabled }));
+
+  setReviewsEnabled = (enabled: boolean): Promise<Settings> =>
+    this.respond(() => {
+      this.reviewsEnabled = enabled;
+      return { reviewsEnabled: enabled };
+    });
+
   // Runs --------------------------------------------------------------------
 
   async startRun(args: StartRunArgs, onEvent: (event: RunEvent) => void): Promise<string> {
     const problem = this.problem(args.problemId);
     this.assertFramework(problem, args.framework);
     await this.sleep(30);
+    const review = args.review === true;
+    if (review) this.activeReview(args.problemId);
     const runId = `fixture-run-${this.nextRunId++}`;
-    const code = this.solutionFile(args.problemId, args.framework).code;
+    const code = review
+      ? this.reviewFile(args.problemId, args.framework).code
+      : this.solutionFile(args.problemId, args.framework).code;
     const target = this.target(args.target);
     const plan = buildPlan(problem, args.framework, args.mode, code, this.runContext(problem, target));
 
@@ -365,6 +544,7 @@ export class FixtureBackend implements Backend {
             ...event.result,
             name: info?.name ?? event.result.id,
             public: info?.public ?? true,
+            ...(info?.stage ? { stage: info.stage } : {}),
           });
         }
         if (event.type === "end" && args.mode === "submit" && event.verdict !== "canceled") {
@@ -381,6 +561,7 @@ export class FixtureBackend implements Backend {
             durationMs: event.durationMs,
             target: args.target,
             createdAt: this.now().toISOString(),
+            review,
             code,
             cases: results,
             metrics: event.metrics,
@@ -389,6 +570,7 @@ export class FixtureBackend implements Backend {
           if (event.verdict === "accepted") {
             state.status = "solved";
             state.solved.add(args.framework);
+            this.recordAccepted(args.problemId, review);
           } else if (state.status === "todo") {
             state.status = "attempted";
           }
@@ -507,6 +689,7 @@ export class FixtureBackend implements Backend {
         total: this.catalog.problems.length,
         byDifficulty,
         streakDays: this.streak(),
+        reviewsDue: this.activeReviews().filter((review) => review.due).length,
       };
     });
 
