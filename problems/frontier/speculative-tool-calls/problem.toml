@@ -1,0 +1,12 @@
+id = "speculative-tool-calls"
+title = "Speculative Tool Calls"
+track = "frontier"
+order = 70
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["agents", "tool-calling", "speculation", "streaming", "asyncio", "latency", "side-effects"]
+prerequisites = ["tool-call-loop", "tool-call-stream-parser"]
+requires = "cpu"
+entry = ["run_agent"]
+time_limit_s = 5

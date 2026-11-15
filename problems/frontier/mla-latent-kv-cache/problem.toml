@@ -1,0 +1,12 @@
+id = "mla-latent-kv-cache"
+title = "Caching Latents with Multi-Head Latent Attention"
+track = "frontier"
+order = 60
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["kv-cache", "attention", "mla", "low-rank", "rope", "deepseek", "memory"]
+prerequisites = ["kv-cache-append", "rope"]
+requires = "cpu"
+entry = ["absorb", "mla_step"]
+time_limit_s = 10

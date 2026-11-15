@@ -1,0 +1,12 @@
+id = "hybrid-state-checkpoints"
+title = "Prefix Reuse for Recurrent-State Models"
+track = "frontier"
+order = 50
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["prefix-caching", "state-space", "mamba", "hybrid-models", "checkpoints", "lru"]
+prerequisites = ["prefix-cache-reuse"]
+requires = "cpu"
+entry = ["generate_with_checkpoints"]
+time_limit_s = 10

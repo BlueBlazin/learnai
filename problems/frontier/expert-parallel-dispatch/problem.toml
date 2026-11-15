@@ -1,0 +1,12 @@
+id = "expert-parallel-dispatch"
+title = "Expert Parallelism for MoE"
+track = "frontier"
+order = 80
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["mixture-of-experts", "expert-parallelism", "dispatch", "all-to-all", "multi-gpu", "deepep"]
+prerequisites = ["moe-sparse-dispatch", "tensor-parallel-linear"]
+requires = "cpu"
+entry = ["ep_forward"]
+time_limit_s = 10
