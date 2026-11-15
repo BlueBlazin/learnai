@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 132">
+  <title>A static cache of eight slots after a write of two tokens at position 3</title>
+  <desc>Three rows of eight cells, one column per slot of the buffer, numbered 0 to 7. In the top row, the buffer, slots 0 to 2 hold tokens written earlier, slots 3 and 4 hold the two tokens just written, and slots 5 to 7 are unused and hold arbitrary values, shown as question marks. The second row is the mask for the first new token, in slot 3: ones in columns 0 to 3 and zeros after. The third row is the mask for the second new token, in slot 4: ones in columns 0 to 4 and zeros after.</desc>
+
+  <!-- Geometry: eight cells of width 44 from x = 104; rows at y = 24, 64, 96. -->
+
+  <!-- Row names -->
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="8" y="43">buffer</text>
+    <text x="8" y="81">mask row 0</text>
+    <text x="8" y="113">mask row 1</text>
+  </g>
+
+  <!-- Slot numbers -->
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="126" y="16">0</text>
+    <text x="170" y="16">1</text>
+    <text x="214" y="16">2</text>
+    <text x="258" y="16">3</text>
+    <text x="302" y="16">4</text>
+    <text x="346" y="16">5</text>
+    <text x="390" y="16">6</text>
+    <text x="434" y="16">7</text>
+  </g>
+
+  <!-- The buffer: written earlier, written by this update, unused -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="106" y="24" width="40" height="28"/>
+    <rect x="150" y="24" width="40" height="28"/>
+    <rect x="194" y="24" width="40" height="28"/>
+  </g>
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-straw)">
+    <rect x="238" y="24" width="40" height="28"/>
+    <rect x="282" y="24" width="40" height="28"/>
+  </g>
+  <g fill="none" stroke-width="1" stroke-dasharray="3 3" style="stroke: var(--figure-faint)">
+    <rect x="326" y="24" width="40" height="28"/>
+    <rect x="370" y="24" width="40" height="28"/>
+    <rect x="414" y="24" width="40" height="28"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="126" y="43">old</text>
+    <text x="170" y="43">old</text>
+    <text x="214" y="43">old</text>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-straw)">
+    <text x="258" y="43">new</text>
+    <text x="302" y="43">new</text>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="346" y="43">?</text>
+    <text x="390" y="43">?</text>
+    <text x="434" y="43">?</text>
+  </g>
+
+  <!-- Mask row 0: the query in slot 3 sees slots 0 to 3 -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <rect x="106" y="64" width="40" height="24"/>
+    <rect x="150" y="64" width="40" height="24"/>
+    <rect x="194" y="64" width="40" height="24"/>
+    <rect x="238" y="64" width="40" height="24"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-accent); font-family: var(--figure-mono)">
+    <text x="126" y="81">1</text>
+    <text x="170" y="81">1</text>
+    <text x="214" y="81">1</text>
+    <text x="258" y="81">1</text>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted); font-family: var(--figure-mono)">
+    <text x="302" y="81">0</text>
+    <text x="346" y="81">0</text>
+    <text x="390" y="81">0</text>
+    <text x="434" y="81">0</text>
+  </g>
+  <!-- Mask row 1: the query in slot 4 sees slots 0 to 4 -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <rect x="106" y="96" width="40" height="24"/>
+    <rect x="150" y="96" width="40" height="24"/>
+    <rect x="194" y="96" width="40" height="24"/>
+    <rect x="238" y="96" width="40" height="24"/>
+    <rect x="282" y="96" width="40" height="24"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-accent); font-family: var(--figure-mono)">
+    <text x="126" y="113">1</text>
+    <text x="170" y="113">1</text>
+    <text x="214" y="113">1</text>
+    <text x="258" y="113">1</text>
+    <text x="302" y="113">1</text>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted); font-family: var(--figure-mono)">
+    <text x="346" y="113">0</text>
+    <text x="390" y="113">0</text>
+    <text x="434" y="113">0</text>
+  </g>
+</svg>

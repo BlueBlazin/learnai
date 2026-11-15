@@ -1,0 +1,12 @@
+id = "cuda-pinned-transfer"
+title = "Pinned Memory and Non-Blocking Transfers"
+track = "cuda"
+order = 70
+difficulty = "medium"
+frameworks = ["torch"]
+judges = ["numeric", "cost"]
+tags = ["cuda", "pinned-memory", "non-blocking", "prefetch", "data-loading", "synchronize"]
+prerequisites = ["cuda-device-placement"]
+requires = "cuda"
+entry = ["Prefetcher", "fetch_results"]
+time_limit_s = 10

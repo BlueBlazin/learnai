@@ -1,0 +1,12 @@
+id = "cuda-oom-backoff"
+title = "Recovering from Out-of-Memory"
+track = "cuda"
+order = 90
+difficulty = "medium"
+frameworks = ["torch"]
+judges = ["numeric", "cost"]
+tags = ["cuda", "out-of-memory", "batching", "retry", "backoff", "empty-cache"]
+prerequisites = []
+requires = "cuda"
+entry = ["run_batched"]
+time_limit_s = 10

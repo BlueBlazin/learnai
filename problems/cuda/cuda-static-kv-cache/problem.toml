@@ -1,0 +1,12 @@
+id = "cuda-static-kv-cache"
+title = "A Static KV Cache"
+track = "cuda"
+order = 100
+difficulty = "medium"
+frameworks = ["torch"]
+judges = ["numeric", "property"]
+tags = ["cuda", "kv-cache", "static-shapes", "in-place", "index-copy", "attention-mask"]
+prerequisites = ["preallocated-kv-cache"]
+requires = "cuda"
+entry = ["StaticCache"]
+time_limit_s = 10

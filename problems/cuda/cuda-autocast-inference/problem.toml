@@ -1,0 +1,12 @@
+id = "cuda-autocast-inference"
+title = "Mixed-Precision Inference"
+track = "cuda"
+order = 60
+difficulty = "medium"
+frameworks = ["torch"]
+judges = ["numeric", "property"]
+tags = ["cuda", "autocast", "mixed-precision", "float16", "bfloat16", "softmax"]
+prerequisites = ["stable-softmax"]
+requires = "cuda"
+entry = ["forward_amp"]
+time_limit_s = 10

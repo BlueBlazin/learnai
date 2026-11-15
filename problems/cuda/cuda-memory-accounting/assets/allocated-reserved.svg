@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 172">
+  <title>Device memory as the caching allocator sees it</title>
+  <desc>A horizontal bar stands for the memory of the device. From the left: a long part occupied by tensors; a short part that is free but lies inside a segment that also holds a tensor, labeled split; a part that is a whole free segment, labeled free; and the rest, which the allocator has not reserved. A bracket under the first part is labeled allocated. A longer bracket under the first three parts is labeled reserved. Above the bar, the split part is marked non-releasable and the free segment is marked as what empty_cache() returns.</desc>
+
+  <!-- Geometry: the bar runs from x = 16 to x = 464 at y = 64..96.
+       tensors 16..232, inactive split 232..276, free segment 276..356, not reserved 356..464. -->
+
+  <!-- Not reserved: the part of the device the allocator has not asked for -->
+  <rect x="356" y="64" width="108" height="32" fill="none" stroke-width="1" style="stroke: var(--figure-faint)"/>
+  <text x="410" y="85" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">not reserved</text>
+
+  <!-- Reserved and free: a whole segment, and a split remainder of a segment in use -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4">
+    <rect x="276" y="64" width="80" height="32"/>
+  </g>
+  <text x="316" y="85" font-size="13" text-anchor="middle">free</text>
+  <rect x="232" y="64" width="44" height="32" fill="none" stroke-width="1.5" stroke-dasharray="2 3" style="stroke: var(--figure-straw)"/>
+  <text x="254" y="85" font-size="13" text-anchor="middle" style="fill: var(--figure-straw)">split</text>
+
+  <!-- Occupied by tensors -->
+  <rect x="16" y="64" width="216" height="32" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+  <text x="124" y="85" font-size="13" text-anchor="middle" style="fill: var(--figure-accent)">tensors</text>
+
+  <!-- Above: what can and cannot go back to the device -->
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-straw)">
+    <line x1="234" y1="54" x2="274" y2="54"/>
+    <line x1="254" y1="54" x2="254" y2="28"/>
+  </g>
+  <text x="250" y="20" font-size="13" text-anchor="end" style="fill: var(--figure-straw)">non-releasable</text>
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <line x1="278" y1="54" x2="354" y2="54"/>
+    <line x1="316" y1="54" x2="316" y2="46"/>
+  </g>
+  <text x="280" y="40" font-size="13">empty_cache() returns this</text>
+
+  <!-- Below: the two numbers torch.cuda reports -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <line x1="16" y1="110" x2="232" y2="110"/>
+    <line x1="16" y1="105" x2="16" y2="115"/>
+    <line x1="232" y1="105" x2="232" y2="115"/>
+  </g>
+  <text x="124" y="128" font-size="13" text-anchor="middle" style="fill: var(--figure-accent)">memory_allocated()</text>
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <line x1="16" y1="142" x2="356" y2="142"/>
+    <line x1="16" y1="137" x2="16" y2="147"/>
+    <line x1="356" y1="137" x2="356" y2="147"/>
+  </g>
+  <text x="186" y="162" font-size="13" text-anchor="middle">memory_reserved()</text>
+</svg>

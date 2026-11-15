@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150">
+  <title>Each copy overlaps with the model's work on the previous batch</title>
+  <desc>Two horizontal tracks over a common time axis. On the upper track, three short boxes are the host-to-device copies of batches 0, 1, and 2. On the lower track, three long boxes are the model running on batches 0, 1, and 2. The copy of batch 0 comes first, started by the constructor. Each later copy starts at the same instant as the model's work on the previous batch, the instant at which next() returns that batch, and is finished well before the model is.</desc>
+
+  <!-- Geometry: next() returns batch 0, 1, 2 at x = 136, 256, 376. -->
+
+  <!-- Track names and base lines -->
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="8" y="69">copies</text>
+    <text x="8" y="113">model</text>
+  </g>
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="64" y1="64" x2="472" y2="64"/>
+    <line x1="64" y1="108" x2="472" y2="108"/>
+    <!-- the instants at which next() returns -->
+    <line x1="136" y1="30" x2="136" y2="134" stroke-dasharray="2 4"/>
+    <line x1="256" y1="30" x2="256" y2="134" stroke-dasharray="2 4"/>
+    <line x1="376" y1="30" x2="376" y2="134" stroke-dasharray="2 4"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="136" y="22">next() gives 0</text>
+    <text x="256" y="22">next() gives 1</text>
+    <text x="376" y="22">next() gives 2</text>
+  </g>
+
+  <!-- Copies: batch 0 by the constructor, batch i + 1 when batch i is handed out -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <rect x="72" y="52" width="64" height="24"/>
+    <rect x="136" y="52" width="64" height="24"/>
+    <rect x="256" y="52" width="64" height="24"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-accent)">
+    <text x="104" y="69">copy 0</text>
+    <text x="168" y="69">copy 1</text>
+    <text x="288" y="69">copy 2</text>
+  </g>
+
+  <!-- The model's work on each batch -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="136" y="96" width="120" height="24"/>
+    <rect x="256" y="96" width="120" height="24"/>
+    <rect x="376" y="96" width="96" height="24"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="196" y="113">batch 0</text>
+    <text x="316" y="113">batch 1</text>
+    <text x="424" y="113">batch 2</text>
+  </g>
+
+  <text x="72" y="146" font-size="13" style="fill: var(--figure-muted)">time</text>
+  <line x1="104" y1="142" x2="464" y2="142" fill="none" stroke-width="1" style="stroke: var(--figure-faint)"/>
+  <polygon points="472,142 463,138 463,146" style="fill: var(--figure-faint)"/>
+</svg>

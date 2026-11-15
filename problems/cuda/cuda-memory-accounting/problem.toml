@@ -1,0 +1,12 @@
+id = "cuda-memory-accounting"
+title = "Reading the CUDA Allocator"
+track = "cuda"
+order = 80
+difficulty = "easy"
+frameworks = ["torch"]
+judges = ["numeric"]
+tags = ["cuda", "memory", "allocator", "fragmentation", "kv-cache", "sizing"]
+prerequisites = ["kv-cache-bytes"]
+requires = "cuda"
+entry = ["predicted_allocated", "fragmentation", "kv_budget", "measure_peak"]
+time_limit_s = 10
