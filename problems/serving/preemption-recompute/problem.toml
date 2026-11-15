@@ -1,0 +1,12 @@
+id = "preemption-recompute"
+title = "Preemption by Recompute"
+track = "serving"
+order = 210
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["scheduling", "preemption", "kv-cache", "memory", "continuous-batching", "watermark"]
+prerequisites = ["continuous-batching-scheduler", "paged-kv-allocator"]
+requires = "cpu"
+entry = ["run"]
+time_limit_s = 10

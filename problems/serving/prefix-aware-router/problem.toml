@@ -1,0 +1,12 @@
+id = "prefix-aware-router"
+title = "Prefix-Cache-Aware Routing"
+track = "serving"
+order = 190
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["routing", "prefix-cache", "kv-cache", "load-balancing", "affinity", "replicas"]
+prerequisites = ["prefix-cache-reuse", "least-loaded-balancer"]
+requires = "cpu"
+entry = ["Router"]
+time_limit_s = 10

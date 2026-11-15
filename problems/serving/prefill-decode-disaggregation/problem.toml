@@ -1,0 +1,12 @@
+id = "prefill-decode-disaggregation"
+title = "Disaggregated Prefill and Decode"
+track = "serving"
+order = 220
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["disaggregation", "prefill", "decode", "kv-transfer", "ttft", "tpot", "routing"]
+prerequisites = ["chunked-prefill-scheduling"]
+requires = "cpu"
+entry = ["Coordinator"]
+time_limit_s = 10

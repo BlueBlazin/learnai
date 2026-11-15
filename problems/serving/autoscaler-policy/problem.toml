@@ -1,0 +1,12 @@
+id = "autoscaler-policy"
+title = "An Autoscaling Policy"
+track = "serving"
+order = 200
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["autoscaling", "hpa", "stabilization", "queue-depth", "replicas", "capacity"]
+prerequisites = ["capacity-planner"]
+requires = "cpu"
+entry = ["desired_replicas"]
+time_limit_s = 10
