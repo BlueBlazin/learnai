@@ -1,0 +1,12 @@
+id = "typical-acceptance"
+title = "Lossy Verification by Typical Acceptance"
+track = "speculative"
+order = 80
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["speculative-decoding", "typical-acceptance", "medusa", "entropy", "verification"]
+prerequisites = ["greedy-speculative-verify"]
+requires = "cpu"
+entry = ["typical_accept"]
+time_limit_s = 10

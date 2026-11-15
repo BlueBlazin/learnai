@@ -1,0 +1,12 @@
+id = "gptq-column-update"
+title = "GPTQ Error Propagation"
+track = "quantization"
+order = 160
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["quantization", "gptq", "calibration", "hessian", "cholesky", "error-propagation"]
+prerequisites = ["symmetric-per-channel"]
+requires = "cpu"
+entry = ["inverse_hessian_factor", "gptq_quantize"]
+time_limit_s = 10

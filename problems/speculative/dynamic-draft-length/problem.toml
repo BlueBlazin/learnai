@@ -1,0 +1,12 @@
+id = "dynamic-draft-length"
+title = "Adapting the Draft Length"
+track = "speculative"
+order = 70
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric", "cost"]
+tags = ["speculative-decoding", "draft-length", "assisted-generation", "confidence", "simulation"]
+prerequisites = ["speculative-decode-loop"]
+requires = "cpu"
+entry = ["should_stop_drafting", "next_k", "simulate"]
+time_limit_s = 10

@@ -1,0 +1,12 @@
+id = "k-quant-superblock"
+title = "GGUF K-Quant Superblocks"
+track = "quantization"
+order = 150
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["quantization", "gguf", "llama.cpp", "k-quants", "4-bit", "float16", "superblock"]
+prerequisites = ["groupwise-4bit", "bit-packing"]
+requires = "cpu"
+entry = ["q4k_encode", "q4k_decode"]
+time_limit_s = 10

@@ -1,0 +1,12 @@
+id = "awq-scale-search"
+title = "Activation-Aware Scaling"
+track = "quantization"
+order = 140
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["quantization", "awq", "calibration", "4-bit", "activation-aware", "grid-search"]
+prerequisites = ["groupwise-4bit", "quant-error-metrics"]
+requires = "cpu"
+entry = ["awq_scales"]
+time_limit_s = 10
