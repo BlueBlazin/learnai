@@ -1,0 +1,12 @@
+id = "tool-call-stream-parser"
+title = "Parsing Tool Calls from a Stream"
+track = "constrained"
+order = 110
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["tool-calling", "streaming", "parsing", "openai-api", "incremental"]
+prerequisites = ["json-pushdown-validator"]
+requires = "cpu"
+entry = ["parse_start", "parse_step", "parse_end"]
+time_limit_s = 5

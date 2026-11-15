@@ -1,0 +1,12 @@
+id = "token-healing"
+title = "Token Healing"
+track = "constrained"
+order = 100
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["tokenization", "prompt-boundary", "constrained-decoding", "token-healing", "bpe"]
+prerequisites = ["bpe-encode"]
+requires = "cpu"
+entry = ["heal", "healing_allowed"]
+time_limit_s = 5

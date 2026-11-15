@@ -1,0 +1,18 @@
+id = "grammar-token-mask"
+title = "Token Masks for a Context-Free Grammar"
+track = "constrained"
+order = 120
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["constrained-decoding", "grammar", "gbnf", "earley", "pushdown-automaton", "token-mask"]
+prerequisites = ["dfa-token-mask", "json-pushdown-validator"]
+requires = "cpu"
+entry = ["GrammarMatcher"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: the grammar's test oracle is off limits.
+forbidden = [
+    "whetstone.kit.grammar.Grammar.accepts",
+    "whetstone.kit.grammar.Grammar.accepts_prefix",
+    "whetstone.kit.grammar.Grammar._run",
+]
