@@ -58,4 +58,4 @@ problems = ["dynamic-batcher", "sse-token-stream", "token-bucket-limiter", "admi
 [[stages]]
 title = "On the GPU"
 description = "Lazy evaluation, compilation, and static caches on MLX and CUDA."
-problems = ["mlx-lazy-eval-placement", "mlx-compile-step", "mlx-streaming-generate"]
+problems = ["mlx-lazy-eval-placement", "mlx-compile-step", "mlx-streaming-generate", "cuda-sync-free-decode-loop", "cuda-static-kv-cache"]
