@@ -1,0 +1,12 @@
+id = "block-hash-prefix-cache"
+title = "Automatic Prefix Caching by Block Hash"
+track = "kv-cache"
+order = 110
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["kv-cache", "prefix-caching", "hashing", "lru", "reference-counting", "vllm"]
+prerequisites = ["paged-kv-allocator", "prefix-cache-reuse"]
+requires = "cpu"
+entry = ["PrefixBlockCache"]
+time_limit_s = 10

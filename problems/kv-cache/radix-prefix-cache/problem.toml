@@ -1,0 +1,12 @@
+id = "radix-prefix-cache"
+title = "A Radix-Tree Prefix Cache"
+track = "kv-cache"
+order = 120
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["kv-cache", "prefix-caching", "radix-tree", "lru", "sglang"]
+prerequisites = ["prefix-cache-reuse"]
+requires = "cpu"
+entry = ["RadixCache"]
+time_limit_s = 10

@@ -1,0 +1,12 @@
+id = "dry-penalty"
+title = "DRY Repetition Penalty"
+track = "sampling"
+order = 160
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["numeric", "speed"]
+tags = ["sampling", "dry", "repetition", "z-algorithm", "llama.cpp"]
+prerequisites = ["repetition-penalty"]
+requires = "cpu"
+entry = ["dry_penalties"]
+time_limit_s = 10

@@ -1,0 +1,12 @@
+id = "paged-kv-copy-on-write"
+title = "Forking Sequences with Copy-on-Write"
+track = "kv-cache"
+order = 100
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["kv-cache", "paged-attention", "copy-on-write", "reference-counting", "vllm"]
+prerequisites = ["paged-kv-allocator"]
+requires = "cpu"
+entry = ["CowAllocator", "OutOfBlocks"]
+time_limit_s = 10

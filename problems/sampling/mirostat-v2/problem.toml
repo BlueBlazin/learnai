@@ -1,0 +1,29 @@
+id = "mirostat-v2"
+title = "Mirostat v2"
+track = "sampling"
+order = 150
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["sampling", "mirostat", "perplexity", "feedback-control", "llama.cpp"]
+prerequisites = ["categorical-sample"]
+requires = "cpu"
+entry = ["mirostat_step"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: randomness is an input, never drawn here.
+forbidden = [
+    "torch.rand",
+    "torch.rand_like",
+    "torch.multinomial",
+    "torch.Tensor.multinomial",
+    "torch.Tensor.uniform_",
+    "jax.random.uniform",
+    "jax.random.categorical",
+    "jax.random.choice",
+    "mlx.core.random.uniform",
+    "mlx.core.random.categorical",
+    "random.random",
+    "numpy.random.default_rng",
+    "numpy.random.rand",
+    "numpy.random.random",
+]
