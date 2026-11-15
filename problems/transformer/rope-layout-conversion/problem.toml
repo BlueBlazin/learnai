@@ -1,0 +1,17 @@
+id = "rope-layout-conversion"
+title = "Interleaved versus Half-Split RoPE"
+track = "transformer"
+order = 140
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["rope", "positional-encoding", "checkpoint", "conversion", "llama"]
+prerequisites = ["rope"]
+requires = "cpu"
+entry = ["rope_interleaved", "rope_half", "permute_qk"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: no built-in RoPE.
+forbidden = [
+    "mlx.nn.RoPE",
+    "mlx.core.fast.rope",
+]

@@ -1,0 +1,21 @@
+id = "attention-sinks-softmax"
+title = "Attention with Learned Sinks"
+track = "transformer"
+order = 150
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["attention", "softmax", "sinks", "gpt-oss"]
+prerequisites = ["causal-self-attention"]
+requires = "cpu"
+entry = ["attention_with_sinks"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: no built-in attention function or layer.
+forbidden = [
+    "torch.nn.functional.scaled_dot_product_attention",
+    "torch.nn.functional.multi_head_attention_forward",
+    "torch.nn.MultiheadAttention",
+    "jax.nn.dot_product_attention",
+    "mlx.core.fast.scaled_dot_product_attention",
+    "mlx.nn.MultiHeadAttention",
+]

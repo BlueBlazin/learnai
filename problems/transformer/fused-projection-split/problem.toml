@@ -1,0 +1,12 @@
+id = "fused-projection-split"
+title = "Splitting Fused Projections"
+track = "transformer"
+order = 130
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["weights", "checkpoint", "swiglu", "qkv", "granite"]
+prerequisites = ["swiglu-mlp"]
+requires = "cpu"
+entry = ["split_fused", "fuse", "swiglu_fused"]
+time_limit_s = 10

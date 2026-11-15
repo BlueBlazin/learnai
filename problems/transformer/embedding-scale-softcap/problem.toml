@@ -1,0 +1,12 @@
+id = "embedding-scale-softcap"
+title = "Embedding Scaling and Logit Soft-Capping"
+track = "transformer"
+order = 120
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["embedding", "logits", "softcap", "gemma", "granite"]
+prerequisites = []
+requires = "cpu"
+entry = ["embed", "finalize_logits"]
+time_limit_s = 10

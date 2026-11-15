@@ -1,0 +1,12 @@
+id = "unigram-viterbi"
+title = "Unigram Tokenization with Viterbi"
+track = "tokenization"
+order = 110
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["tokenizer", "unigram", "viterbi", "dynamic-programming", "sentencepiece"]
+prerequisites = []
+requires = "cpu"
+entry = ["unigram_encode"]
+time_limit_s = 10
