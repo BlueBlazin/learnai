@@ -1,0 +1,12 @@
+id = "ternary-bitnet"
+title = "Ternary Weights"
+track = "quantization"
+order = 90
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["quantization", "ternary", "bitnet", "1.58-bit", "weights"]
+prerequisites = []
+requires = "cpu"
+entry = ["ternary_quantize", "ternary_matmul"]
+time_limit_s = 10

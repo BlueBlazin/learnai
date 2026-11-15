@@ -1,0 +1,12 @@
+id = "int8-linear-w8a8"
+title = "An Integer-Only Linear Layer"
+track = "quantization"
+order = 100
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["quantization", "int8", "w8a8", "activations", "zero-point", "integer-arithmetic"]
+prerequisites = ["symmetric-per-channel"]
+requires = "cpu"
+entry = ["int8_linear"]
+time_limit_s = 10

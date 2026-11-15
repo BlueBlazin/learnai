@@ -1,0 +1,12 @@
+id = "bit-allocation"
+title = "Mixed-Precision Bit Allocation"
+track = "quantization"
+order = 130
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["quantization", "mixed-precision", "knapsack", "dynamic-programming", "bits-per-weight"]
+prerequisites = ["quant-error-metrics"]
+requires = "cpu"
+entry = ["allocate_bits"]
+time_limit_s = 10

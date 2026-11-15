@@ -1,0 +1,12 @@
+id = "mxfp4-block-encode"
+title = "Microscaling FP4 Blocks"
+track = "quantization"
+order = 120
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["quantization", "4-bit", "mxfp4", "microscaling", "floating-point", "rounding"]
+prerequisites = ["groupwise-4bit"]
+requires = "cpu"
+entry = ["mxfp4_encode", "mxfp4_decode"]
+time_limit_s = 10

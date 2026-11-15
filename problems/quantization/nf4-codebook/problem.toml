@@ -1,0 +1,12 @@
+id = "nf4-codebook"
+title = "NormalFloat 4-bit"
+track = "quantization"
+order = 110
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["quantization", "4-bit", "nf4", "qlora", "codebook", "bitsandbytes"]
+prerequisites = ["groupwise-4bit"]
+requires = "cpu"
+entry = ["nf4_levels", "nf4_quantize", "nf4_dequantize"]
+time_limit_s = 10
