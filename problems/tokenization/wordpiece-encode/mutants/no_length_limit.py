@@ -1,0 +1,14 @@
+# BUG: ignores max_chars and splits words of any length.
+def wordpiece(word: str, vocab: dict[str, int], unk: str, max_chars: int) -> list[int]:
+    ids = []
+    start = 0
+    while start < len(word):
+        for end in range(len(word), start, -1):
+            piece = word[start:end] if start == 0 else "##" + word[start:end]
+            if piece in vocab:
+                ids.append(vocab[piece])
+                start = end
+                break
+        else:
+            return [vocab[unk]]
+    return ids

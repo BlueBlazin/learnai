@@ -1,0 +1,23 @@
+id = "layernorm"
+title = "LayerNorm"
+track = "foundations"
+order = 90
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["normalization", "numerics", "bert", "encoder"]
+prerequisites = ["rmsnorm"]
+requires = "cpu"
+entry = ["layer_norm"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: no built-in layer normalization.
+forbidden = [
+    "torch.nn.LayerNorm",
+    "torch.nn.functional.layer_norm",
+    "torch.layer_norm",
+    "torch.nn.GroupNorm",
+    "torch.nn.functional.group_norm",
+    "jax.nn.standardize",
+    "mlx.nn.LayerNorm",
+    "mlx.core.fast.layer_norm",
+]

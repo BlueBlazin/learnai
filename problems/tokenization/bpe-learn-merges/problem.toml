@@ -1,0 +1,12 @@
+id = "bpe-learn-merges"
+title = "Learning a BPE Merge Table"
+track = "tokenization"
+order = 90
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["tokenizer", "bpe", "vocabulary", "merges"]
+prerequisites = ["bpe-encode"]
+requires = "cpu"
+entry = ["learn_merges"]
+time_limit_s = 10

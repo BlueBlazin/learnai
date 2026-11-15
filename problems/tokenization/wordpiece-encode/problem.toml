@@ -1,0 +1,12 @@
+id = "wordpiece-encode"
+title = "WordPiece Encoding"
+track = "tokenization"
+order = 70
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["tokenizer", "wordpiece", "bert", "embeddings"]
+prerequisites = []
+requires = "cpu"
+entry = ["wordpiece"]
+time_limit_s = 10

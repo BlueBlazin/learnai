@@ -1,0 +1,12 @@
+id = "context-window-trim"
+title = "Fitting a Conversation into the Context Window"
+track = "tokenization"
+order = 80
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["chat", "context-window", "truncation", "prompt", "serving"]
+prerequisites = ["chat-template-render"]
+requires = "cpu"
+entry = ["trim_messages"]
+time_limit_s = 10

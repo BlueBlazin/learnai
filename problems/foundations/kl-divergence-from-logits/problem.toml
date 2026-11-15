@@ -1,0 +1,23 @@
+id = "kl-divergence-from-logits"
+title = "KL Divergence Between Logit Sets"
+track = "foundations"
+order = 100
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["kl-divergence", "logits", "numerics", "evaluation", "quantization"]
+prerequisites = ["stable-softmax"]
+requires = "cpu"
+entry = ["kl_from_logits"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: no built-in KL divergence or relative
+# entropy. Built-in log_softmax and logsumexp are allowed here.
+forbidden = [
+    "torch.kl_div",
+    "torch.nn.functional.kl_div",
+    "torch.nn.KLDivLoss",
+    "torch.distributions.kl_divergence",
+    "jax.scipy.special.rel_entr",
+    "jax.scipy.special.kl_div",
+    "mlx.nn.losses.kl_div_loss",
+]

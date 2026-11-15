@@ -1,0 +1,21 @@
+id = "half-precision-rmsnorm"
+title = "RMSNorm That Survives float16"
+track = "foundations"
+order = 110
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["normalization", "float16", "half-precision", "numerics", "overflow"]
+prerequisites = ["rmsnorm"]
+requires = "cpu"
+entry = ["rms_norm_f16"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: no built-in RMS normalization. (The
+# other rule, float16 throughout, is checked by the tests: see `run` in tests.py.)
+forbidden = [
+    "torch.nn.RMSNorm",
+    "torch.nn.functional.rms_norm",
+    "torch.rms_norm",
+    "mlx.nn.RMSNorm",
+    "mlx.core.fast.rms_norm",
+]
