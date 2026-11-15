@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 196">
+  <title>A CUDA call returns before its work is done</title>
+  <desc>Two horizontal tracks over a common time axis. On the host track, fn() occupies a short interval and is followed by a long interval in which sync() waits. On the device track, the work queued by fn() starts shortly after fn() begins and ends where the wait ends. A short bracket above the host track spans only fn(): the time measured when the timer is stopped without a sync. A long bracket below the device track spans from the start of fn() to the end of the work: the time measured when the timer is stopped after a sync.</desc>
+
+  <!-- Geometry: the timer starts at x = 100, fn() returns at x = 150, the work ends at x = 370. -->
+
+  <!-- Track names and base lines -->
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="8" y="81">host</text>
+    <text x="8" y="131">device</text>
+  </g>
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="64" y1="76" x2="468" y2="76"/>
+    <line x1="64" y1="126" x2="468" y2="126"/>
+    <!-- the three instants -->
+    <line x1="100" y1="46" x2="100" y2="160" stroke-dasharray="2 4"/>
+    <line x1="150" y1="46" x2="150" y2="64" stroke-dasharray="2 4"/>
+    <line x1="370" y1="88" x2="370" y2="160" stroke-dasharray="2 4"/>
+  </g>
+
+  <!-- Host: the call, then the wait -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="100" y="64" width="50" height="24"/>
+    <rect x="150" y="64" width="220" height="24" stroke-dasharray="5 4"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="125" y="81">fn()</text>
+    <text x="260" y="81">sync() waits</text>
+  </g>
+
+  <!-- Device: the queued work -->
+  <rect x="112" y="114" width="258" height="24" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+  <text x="241" y="131" font-size="13" text-anchor="middle" style="fill: var(--figure-accent)">the work queued by fn() runs</text>
+
+  <!-- Stopping without a sync: only the launch -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-straw)">
+    <line x1="100" y1="40" x2="150" y2="40"/>
+    <line x1="100" y1="35" x2="100" y2="45"/>
+    <line x1="150" y1="35" x2="150" y2="45"/>
+  </g>
+  <text x="100" y="26" font-size="13" style="fill: var(--figure-straw)">stop without sync: the launch only</text>
+
+  <!-- Stopping after a sync: the work is included -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <line x1="100" y1="166" x2="370" y2="166"/>
+    <line x1="100" y1="161" x2="100" y2="171"/>
+    <line x1="370" y1="161" x2="370" y2="171"/>
+  </g>
+  <text x="235" y="188" font-size="13" text-anchor="middle" style="fill: var(--figure-accent)">sync, then stop: the work is measured</text>
+</svg>

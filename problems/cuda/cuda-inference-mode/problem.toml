@@ -1,0 +1,12 @@
+id = "cuda-inference-mode"
+title = "Inference Mode"
+track = "cuda"
+order = 10
+difficulty = "easy"
+frameworks = ["torch"]
+judges = ["numeric", "property"]
+tags = ["cuda", "inference-mode", "autograd", "eval-mode", "memory"]
+prerequisites = []
+requires = "cuda"
+entry = ["predict", "as_inference"]
+time_limit_s = 10

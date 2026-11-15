@@ -1,0 +1,12 @@
+id = "cuda-timing-sync"
+title = "Timing Asynchronous Work"
+track = "cuda"
+order = 30
+difficulty = "easy"
+frameworks = ["torch"]
+judges = ["numeric", "cost"]
+tags = ["cuda", "benchmarking", "latency", "synchronize", "warm-up"]
+prerequisites = ["latency-metrics"]
+requires = "cuda"
+entry = ["time_region"]
+time_limit_s = 10

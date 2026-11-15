@@ -1,0 +1,12 @@
+id = "cuda-sync-free-decode-loop"
+title = "A Decode Loop Without Host Syncs"
+track = "cuda"
+order = 50
+difficulty = "medium"
+frameworks = ["torch"]
+judges = ["numeric", "cost"]
+tags = ["cuda", "decoding", "sampling", "host-sync", "kv-cache", "eos"]
+prerequisites = ["cached-greedy-decode", "categorical-sample"]
+requires = "cuda"
+entry = ["decode"]
+time_limit_s = 10

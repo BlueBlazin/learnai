@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150">
+  <title>is_causal aligns query i with slot i; with a cache the new tokens need an offset</title>
+  <desc>Two grids with two rows, the new tokens, and five columns, the slots: three cached tokens and the two new ones. In the left grid, labeled is_causal=True, the first row has only slot 0 filled and the second row slots 0 and 1. In the right grid, labeled the mask that is needed, the first row has slots 0 to 3 filled and the second row all five slots.</desc>
+
+  <!-- Geometry: cells of 26 units; the left grid starts at x = 84, the right one at x = 318. -->
+
+  <!-- Left: what is_causal=True means for a 2 x 5 layout -->
+  <g>
+    <text x="149" y="15" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">is_causal=True</text>
+    <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+      <rect x="110" y="64" width="26" height="26"/>
+      <rect x="136" y="64" width="26" height="26"/>
+      <rect x="162" y="64" width="26" height="26"/>
+      <rect x="188" y="64" width="26" height="26"/>
+      <rect x="136" y="90" width="26" height="26"/>
+      <rect x="162" y="90" width="26" height="26"/>
+      <rect x="188" y="90" width="26" height="26"/>
+    </g>
+    <g stroke-width="1" stroke="currentColor" style="fill: var(--figure-accent)">
+      <rect x="84" y="64" width="26" height="26"/>
+      <rect x="84" y="90" width="26" height="26"/>
+      <rect x="110" y="90" width="26" height="26"/>
+    </g>
+    <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+      <text x="97" y="57">0</text>
+      <text x="123" y="57">1</text>
+      <text x="149" y="57">2</text>
+      <text x="175" y="57">3</text>
+      <text x="201" y="57">4</text>
+    </g>
+    <g font-size="13" text-anchor="middle">
+      <text x="123" y="38">cached</text>
+      <text x="188" y="38">new</text>
+    </g>
+    <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+      <line x1="86" y1="43" x2="160" y2="43"/>
+      <line x1="164" y1="43" x2="212" y2="43"/>
+    </g>
+    <g font-size="13" text-anchor="end">
+      <text x="78" y="82">new 0</text>
+      <text x="78" y="108">new 1</text>
+    </g>
+    <text x="149" y="140" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">new token i sees slots 0 to i</text>
+  </g>
+
+  <!-- Right: the mask a cache of three tokens needs -->
+  <g>
+    <text x="383" y="15" font-size="13" text-anchor="middle">the mask that is needed</text>
+    <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+      <rect x="422" y="64" width="26" height="26"/>
+    </g>
+    <g stroke-width="1" stroke="currentColor" style="fill: var(--figure-accent)">
+      <rect x="318" y="64" width="26" height="26"/>
+      <rect x="344" y="64" width="26" height="26"/>
+      <rect x="370" y="64" width="26" height="26"/>
+      <rect x="396" y="64" width="26" height="26"/>
+      <rect x="318" y="90" width="26" height="26"/>
+      <rect x="344" y="90" width="26" height="26"/>
+      <rect x="370" y="90" width="26" height="26"/>
+      <rect x="396" y="90" width="26" height="26"/>
+      <rect x="422" y="90" width="26" height="26"/>
+    </g>
+    <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+      <text x="331" y="57">0</text>
+      <text x="357" y="57">1</text>
+      <text x="383" y="57">2</text>
+      <text x="409" y="57">3</text>
+      <text x="435" y="57">4</text>
+    </g>
+    <g font-size="13" text-anchor="middle">
+      <text x="357" y="38">cached</text>
+      <text x="422" y="38">new</text>
+    </g>
+    <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+      <line x1="320" y1="43" x2="394" y2="43"/>
+      <line x1="398" y1="43" x2="446" y2="43"/>
+    </g>
+    <g font-size="13" text-anchor="end">
+      <text x="312" y="82">new 0</text>
+      <text x="312" y="108">new 1</text>
+    </g>
+    <text x="383" y="140" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">new token i sees slots 0 to 3 + i</text>
+  </g>
+</svg>

@@ -1,0 +1,12 @@
+id = "cuda-device-placement"
+title = "Keeping Tensors on One Device"
+track = "cuda"
+order = 20
+difficulty = "easy"
+frameworks = ["torch"]
+judges = ["numeric", "property"]
+tags = ["cuda", "device", "dtype", "host-sync", "batching"]
+prerequisites = []
+requires = "cuda"
+entry = ["to_device", "run"]
+time_limit_s = 10

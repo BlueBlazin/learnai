@@ -1,0 +1,4 @@
+id = "cuda"
+title = "CUDA GPU Programming"
+description = "Using PyTorch on NVIDIA GPUs correctly for inference: inference mode, device placement, timing asynchronous work, the fused attention kernel, and decode loops that never wait on the host, with the logic judged on the CPU and the device behavior on a CUDA machine."
+order = 110
