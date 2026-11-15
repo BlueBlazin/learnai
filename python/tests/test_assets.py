@@ -62,7 +62,9 @@ def test_parse_reports_what_is_wrong(change, problem):
 
 
 def test_parse_rejects_other_shapes_and_duplicates():
-    assert assets.parse_assets(["tiny"])[1] == ["`assets` must be an array of tables (`[[assets]]`)"]
+    assert assets.parse_assets(["tiny"])[1] == [
+        "`assets` must be an array of tables (`[[assets]]`)"
+    ]
     specs, errors = assets.parse_assets([GOOD, GOOD])
     assert len(specs) == 1 and errors == ["asset `tiny`: is declared twice"]
 
@@ -387,7 +389,9 @@ def test_validate_checks_asset_declarations(tmp_path, monkeypatch):
     # A house model's name must mean the house model's repository and revision.
     toml.write_text(original.replace('"tiny-test-model"', '"granite-4.0-350m"'))
     report, _ = gate.check_metadata(problem, {"asset-vocab": [problem]})
-    assert any("is a house model and must be ibm-granite/granite-4.0-350m" in e for e in report.errors)
+    assert any(
+        "is a house model and must be ibm-granite/granite-4.0-350m" in e for e in report.errors
+    )
 
     # Two problems, one asset name, two revisions.
     toml.write_text(original)

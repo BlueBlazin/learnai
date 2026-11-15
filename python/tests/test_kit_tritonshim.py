@@ -379,3 +379,116 @@ def test_cuda_tensors_without_triton_say_what_is_missing(monkeypatch):
 def test_host_helpers():
     assert tl.cdiv(100, 32) == 4 and tl.cdiv(96, 32) == 3
     assert [tl.next_power_of_2(n) for n in (1, 2, 3, 17, 64)] == [1, 2, 4, 32, 64]
+
+
+# -- what was re-read from the documentation for milestone 5 ---------------------------------
+
+
+@tl.jit
+def layer_norm_mean(X, Mean, stride, N, BLOCK_SIZE: tl.constexpr):
+    # The first loop of the layer-norm tutorial's forward kernel, as written there: the
+    # shape of tl.zeros is a list and dtype is passed by keyword.
+    row = tl.program_id(0)
+    X += row * stride
+    _mean = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
+    for off in range(0, N, BLOCK_SIZE):
+        cols = off + tl.arange(0, BLOCK_SIZE)
+        a = tl.load(X + cols, mask=cols < N, other=0.0).to(tl.float32)
+        _mean += a
+    mean = tl.sum(_mean, axis=0) / N
+    tl.store(Mean + row, mean)
+
+
+def test_the_layer_norm_tutorial_spelling_of_zeros_is_accepted():
+    x = np.arange(1, 49, dtype=np.float32).reshape(2, 24)
+    mean = np.zeros(2, dtype=np.float32)
+    tl.launch(layer_norm_mean, (2,), x, mean, 24, 24, BLOCK_SIZE=16)
+    np.testing.assert_allclose(mean, x.mean(axis=1), rtol=1e-6)
+
+    # A list is a shape and nothing else: any other list is still refused.
+    def list_elsewhere(x_ptr, n):
+        offsets = [0, 1, 2, 3]  # noqa: F841
+
+    def list_as_value(x_ptr, n):
+        return tl.full((4,), [1.0], tl.float32)
+
+    for fn in (list_elsewhere, list_as_value):
+        with pytest.raises(tl.TritonShimError, match="`List` syntax"):
+            tl.jit(fn)
+
+    @tl.jit
+    def keyword_shape(out_ptr, BLOCK: tl.constexpr):
+        tl.store(out_ptr + tl.arange(0, BLOCK), tl.full(shape=[BLOCK], value=2.0, dtype=tl.float32))
+
+    out = np.zeros(4, dtype=np.float32)
+    tl.launch(keyword_shape, (1,), out, BLOCK=4)
+    assert out.tolist() == [2.0] * 4
+
+
+def test_arange_accepts_what_the_documented_wording_and_a_power_of_two_length_both_allow(
+    monkeypatch,
+):
+    monkeypatch.setattr(tl, "_check_source", lambda fn: None)
+
+    def run(start, end):
+        seen = []
+
+        @tl.jit
+        def kernel(x_ptr):
+            seen.append(tl.arange(start, end))
+
+        tl.launch(kernel, (1,), np.zeros(4, np.float32))
+        return seen[0].value.tolist()
+
+    assert run(0, 4) == [0, 1, 2, 3]  # every tutorial: tl.arange(0, BLOCK)
+    assert run(0, 1) == [0]
+    assert run(4, 8) == [4, 5, 6, 7]  # start and end powers of two, and so is the length
+    assert run(1, 2) == [1]
+    # "start: Must be a power of two" (0 is what the tutorials use).
+    with pytest.raises(tl.TritonShimError, match="start must be 0 or a power of two, got 3"):
+        run(3, 7)
+    # "end: Must be a power of two greater than start".
+    with pytest.raises(tl.TritonShimError, match="end must be a power of two, got 12"):
+        run(4, 12)
+    with pytest.raises(tl.TritonShimError, match="greater than start"):
+        run(4, 4)
+    # Powers of two at both ends, but six elements: refused as a block shape.
+    with pytest.raises(tl.TritonShimError, match="number of elements must be a power of two"):
+        run(2, 8)
+
+
+def test_shifts_the_documentation_does_not_define_are_refused(monkeypatch):
+    monkeypatch.setattr(tl, "_check_source", lambda fn: None)
+
+    def run(body, values, dtype):
+        out = []
+
+        @tl.jit
+        def kernel(x_ptr):
+            out.append(body(tl.load(x_ptr + tl.arange(0, 4))))
+
+        tl.launch(kernel, (1,), np.asarray(values, dtype=dtype))
+        return out[0]
+
+    # Unsigned: zeros come in. Non-negative signed values shift the same way.
+    got = run(lambda x: x >> 28, [0xF0000000, 0x80000000, 0x7FFFFFFF, 1], np.uint32)
+    assert got.dtype is tl.uint32 and got.value.tolist() == [15, 8, 7, 0]
+    assert run(lambda x: x >> 1, [8, 6, 1, 0], np.int32).value.tolist() == [4, 3, 0, 0]
+    # A left shift may move a one into the sign bit (two's complement, as everywhere).
+    got = run(lambda x: x << 28, [15, 8, 7, 0], np.int32)
+    assert got.value.tolist() == [-(1 << 28), -(1 << 31), 7 << 28, 0]
+    # Signed and negative: arithmetic or logical? Not documented, so not answered.
+    with pytest.raises(tl.TritonShimError, match="does not say whether"):
+        run(lambda x: x >> 28, [-(1 << 28), 0, 0, 0], np.int32)
+    with pytest.raises(tl.TritonShimError, match="does not say whether"):
+        run(lambda x: (x << 28) >> 28, [15, 8, 7, 0], np.int32)  # the bit-field idiom
+    # Same width, mixed signedness: the result is unsigned (documented), so it shifts.
+    got = run(lambda x: x.to(tl.uint32) >> x.to(tl.int32), [4, 2, 1, 0], np.int32)
+    assert got.dtype is tl.uint32
+    # A negative value on the left stays refused when the count is unsigned.
+    with pytest.raises(tl.TritonShimError, match="does not say whether"):
+        run(lambda x: x >> tl.full((4,), 1, tl.uint32), [-4, 2, 1, 0], np.int32)
+    # A count outside [0, bits).
+    for body in (lambda x: x >> 32, lambda x: x << 40, lambda x: x >> -1, lambda x: 1 << x):
+        with pytest.raises(tl.TritonShimError, match="shift count outside"):
+            run(body, [1, 2, 3, 33], np.uint32)

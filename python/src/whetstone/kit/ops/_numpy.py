@@ -65,9 +65,7 @@ def _expand_kv_heads(q: np.ndarray, k: np.ndarray, v: np.ndarray) -> tuple[np.nd
     return np.repeat(k, groups, axis=-3), np.repeat(v, groups, axis=-3)
 
 
-def swiglu(
-    x: np.ndarray, w_gate: np.ndarray, w_up: np.ndarray, w_down: np.ndarray
-) -> np.ndarray:
+def swiglu(x: np.ndarray, w_gate: np.ndarray, w_up: np.ndarray, w_down: np.ndarray) -> np.ndarray:
     gate = x @ w_gate.T
     with np.errstate(over="ignore"):  # exp(-z) may overflow to inf, and z / inf is 0
         silu = gate / (1.0 + np.exp(-gate))  # silu(z) = z * sigmoid(z)

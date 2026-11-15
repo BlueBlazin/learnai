@@ -90,7 +90,7 @@ class DFAConstraint:
         moves = self._moves(state)
         try:
             return moves[int(token)]
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             raise ValueError(f"token {token!r} is not allowed in state {state!r}") from None
 
     def is_accepting(self, state: int) -> bool:

@@ -217,7 +217,9 @@ def test_step_violations(sim):
     violation(sim, engine, lambda: engine.step(), "empty_step")
     violation(sim, engine, lambda: engine.step(prefill=[], decode=[]), "empty_step")
     violation(sim, engine, lambda: engine.step(prefill=[("a", 2), ("a", 2)]), "duplicate_sequence")
-    violation(sim, engine, lambda: engine.step(prefill=[("a", 2)], decode=["a"]), "duplicate_sequence")
+    violation(
+        sim, engine, lambda: engine.step(prefill=[("a", 2)], decode=["a"]), "duplicate_sequence"
+    )
     violation(sim, engine, lambda: engine.step(prefill=[("nope", 2)]), "unknown_sequence")
     violation(sim, engine, lambda: engine.step(decode=["nope"]), "unknown_sequence")
     violation(sim, engine, lambda: engine.step(decode=[["unhashable"]]), "unknown_sequence")
@@ -228,13 +230,19 @@ def test_step_violations(sim):
     sim.run_until_complete(engine.step(prefill=[("a", 5)]))
     violation(sim, engine, lambda: engine.step(decode=["a"]), "prefill_incomplete")
     # In the same step as the chunk that completes it: still too early.
-    violation(sim, engine, lambda: engine.step(prefill=[("a", 1)], decode=["a"]), "duplicate_sequence")
+    violation(
+        sim, engine, lambda: engine.step(prefill=[("a", 1)], decode=["a"]), "duplicate_sequence"
+    )
     sim.run_until_complete(engine.step(prefill=[("a", 1)]))
-    violation(sim, engine, lambda: engine.step(prefill=[("a", 1)]), "bad_prefill")  # nothing remains
+    violation(
+        sim, engine, lambda: engine.step(prefill=[("a", 1)]), "bad_prefill"
+    )  # nothing remains
     # The budget counts prompt tokens plus decoded sequences: 6 + 2 fits 8, 7 + 2 does not.
     engine.admit(req("c", 7, 3))
     sim.run_until_complete(engine.step(prefill=[("b", 6)], decode=["a"]))
-    violation(sim, engine, lambda: engine.step(prefill=[("c", 7)], decode=["a", "b"]), "budget_exceeded")
+    violation(
+        sim, engine, lambda: engine.step(prefill=[("c", 7)], decode=["a", "b"]), "budget_exceeded"
+    )
     sim.run_until_complete(engine.step(prefill=[("c", 6)], decode=["a", "b"]))
     # A finished sequence is no longer live.
     assert sim.trace.values("finish", "id") == ["a"]
@@ -340,9 +348,13 @@ def test_out_of_blocks_is_raised_before_anything_happens(sim):
     engine.admit(req("b", 5, 9))
     sim.run_until_complete(engine.step(prefill=[("a", 8)]))
     assert engine.free_blocks == 1
-    error = violation(sim, engine, lambda: engine.step(prefill=[("b", 5)]), "out_of_blocks", OutOfBlocks)
+    error = violation(
+        sim, engine, lambda: engine.step(prefill=[("b", 5)]), "out_of_blocks", OutOfBlocks
+    )
     assert isinstance(error, ProtocolViolation) and "4 KV blocks" in str(error)
-    assert engine.kv_tokens("b") == 0 and engine.remaining_prefill("b") == 5  # no partial allocation
+    assert (
+        engine.kv_tokens("b") == 0 and engine.remaining_prefill("b") == 5
+    )  # no partial allocation
     sim.run_until_complete(engine.step(prefill=[("b", 4)]))  # exactly one block: fits
     assert engine.free_blocks == 0
     # "a" sits on a block boundary (8 tokens): its next decode needs a new block.
@@ -492,7 +504,10 @@ def test_poisson_workload():
     assert 0.015 < np.mean(np.diff(arrivals)) < 0.025  # mean gap 1 / rate = 0.02
     assert {r.prompt_tokens for r in requests} == set(range(8, 33))  # both ends included
     assert {r.output_tokens for r in requests} == {4}
-    assert {r.priority for r in requests} == {0, 1, 2} and {r.tenant for r in requests} == {"a", "b"}
+    assert {r.priority for r in requests} == {0, 1, 2} and {r.tenant for r in requests} == {
+        "a",
+        "b",
+    }
     assert all(r.deadline_s == r.arrival_s + 2.0 for r in requests)
     assert all(type(r.prompt_tokens) is int and type(r.arrival_s) is float for r in requests)
     again = workloads.poisson(np.random.default_rng(5), rate=50.0, n=400,
@@ -550,7 +565,12 @@ def test_replay_workload():
     assert requests[1] == SimRequest(3, 0.0, 7, 7, priority=2, tenant="u", deadline_s=9.0)
     assert requests[0].tenant == "t"
     assert workloads.replay([]) == []
-    assert workloads.replay([{"id": "a", "arrival_s": 1, "prompt_tokens": 1, "output_tokens": 1}])[0].id == "a"
+    assert (
+        workloads.replay([{"id": "a", "arrival_s": 1, "prompt_tokens": 1, "output_tokens": 1}])[
+            0
+        ].id
+        == "a"
+    )
     with pytest.raises(ValueError, match="unique"):
         workloads.replay([(0.0, 1, 1), SimRequest(0, 1.0, 1, 1)])
     with pytest.raises(ValueError):
@@ -569,7 +589,11 @@ def test_drive_delivers_requests_on_time_in_order(sim):
     workloads.drive(sim, requests, lambda r: got.append(("sync", r.id, sim.now())))
     workloads.drive(sim, requests, handler)
     sim.run()
-    assert [g for g in got if g[0] == "sync"] == [("sync", 1, 0.25), ("sync", 0, 1.0), ("sync", 2, 1.0)]
+    assert [g for g in got if g[0] == "sync"] == [
+        ("sync", 1, 0.25),
+        ("sync", 0, 1.0),
+        ("sync", 2, 1.0),
+    ]
     assert [g for g in got if g[0] != "sync"] == [
         ("start", 1, 0.25), ("end", 1, 0.75), ("start", 0, 1.0), ("start", 2, 1.0),
         ("end", 0, 1.5), ("end", 2, 1.5),

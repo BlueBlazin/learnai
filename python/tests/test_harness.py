@@ -106,7 +106,9 @@ def test_a_real_case_id_cannot_look_like_an_opaque_one(sum_list, tmp_path):
     problem = tmp_path / "sum-list"
     shutil.copytree(sum_list, problem)
     tests = (problem / "tests.py").read_text()
-    (problem / "tests.py").write_text(tests.replace("public=True)", 'public=True, id="hidden-1")', 1))
+    (problem / "tests.py").write_text(
+        tests.replace("public=True)", 'public=True, id="hidden-1")', 1)
+    )
     run = run_harness(problem, SOLUTIONS / "good.py")
     assert run.end["status"] == "harness_error"
     assert "'hidden-1' is reserved for hidden cases" in run.end["message"]

@@ -31,7 +31,8 @@ brings in zeros. The shift amount is converted to `tl.uint32` as well; mixing a
 signed and an unsigned integer of the same width promotes to unsigned in Triton, so
 this is for the reader more than for the compiler. A mask after the shift (`& 0xF`)
 is robust to either kind of shift; the two-shift idiom of signed bit-field code,
-`(word << a) >> b`, is not.
+`(word << a) >> b`, is not, and the shim refuses it as soon as the shifted value is
+negative.
 
 **float32 arithmetic.** The code becomes a float32, the scale and bias are converted
 on load, and the weight, the product, and the partial sums are float32 whatever the
@@ -112,7 +113,8 @@ traffic, at the price of tying `BLOCK` to the format:
   wrong as soon as someone tunes the block size.
 - **Scales indexed without the row offset.** Every output row uses row 0's scales:
   right for a one-row test.
-- **A signed shift.** Codes of 8 and above come out as $-8$ to $-1$.
+- **A signed shift.** With an arithmetic shift, codes of 8 and above come out as
+  $-8$ to $-1$; the shim stops at the shift itself.
 - **The bias outside the product** (`x * code * scale + bias`). The bias is part of
   the weight and must be multiplied by the activation; this adds each column's bias
   itself, $\text{group\_size} \cdot b$ per group where $b \sum x$ belongs.
@@ -150,7 +152,7 @@ judge checks. The shim follows Triton's documented type rules (the unsigned type
 wins between a signed and an unsigned integer of one width; a Python integer next
 to a block takes the block's type; integer `//` and `%` round toward zero), and
 assumes, without a documented statement, that `>>` is a logical shift for unsigned
-and an arithmetic shift for signed integers, and that a torch `uint32` tensor is
-accepted as a `uint32` pointer. The reference kernel never shifts a signed value, so
-it depends only on the second half of the first assumption. The GPU cases, which
+integers (a negative signed value it refuses to shift at all), and that a torch
+`uint32` tensor is accepted as a `uint32` pointer. The reference kernel never shifts
+a signed value, so it depends only on the first assumption. The GPU cases, which
 hand this kernel to the real compiler, have never been run.

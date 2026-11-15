@@ -365,6 +365,8 @@ def _judge(
     verdict = result.verdict
     end = result.end or {}
     explanation = f": {end['message']}" if end.get("message") else ""
+    if job.kind == "reference":
+        _check_stages(report, (result.start or {}).get("cases", []))
     incomplete = verdict in INCOMPLETE_VERDICTS
     passed, skipped = int(end.get("passed", 0)), int(end.get("skipped", 0))
     #: Every case ran and passed; the run is not `accepted` only because the machine
@@ -455,6 +457,21 @@ def _judge(
             )
         else:
             report.checks.append(f"{job.label} rejected ({verdict})")
+
+
+def _check_stages(report: Report, cases: list[dict[str, Any]]) -> None:
+    """A problem gives every case a stage or none: half-staged cases would be shown
+    outside every group, and their stage's progress would be wrong."""
+    without = [str(c.get("id")) for c in cases if not c.get("stage")]
+    if not without or len(without) == len(cases):
+        return
+    shown = ", ".join(without[:6]) + (", ..." if len(without) > 6 else "")
+    message = (
+        f"tests.py: {len(without)} of {len(cases)} cases have no stage ({shown}); "
+        "give every @case a stage= or none"
+    )
+    if message not in report.errors:
+        report.errors.append(message)
 
 
 def is_timing_sensitive(problem: Problem) -> bool:

@@ -126,7 +126,9 @@ def layer_params(params: dict[str, Any], layer: int) -> dict[str, Any]:
     ``KeyError`` if the layer does not exist.
     """
     prefix = f"model.layers.{layer}."
-    found = {name[len(prefix) :]: value for name, value in params.items() if name.startswith(prefix)}
+    found = {
+        name[len(prefix) :]: value for name, value in params.items() if name.startswith(prefix)
+    }
     if not found:
         raise KeyError(f"no parameters for layer {layer}")
     return found

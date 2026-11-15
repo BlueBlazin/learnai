@@ -92,6 +92,10 @@ Trace events (in ``sim.trace``)
     release      id, generated
     violation    code, message
 
+An ``admit`` event also has ``cached`` or ``resumed`` when the sequence was admitted
+with ``cached_tokens=`` or ``resume_from=`` (see ``admit``), and every event has
+``engine`` when the engine was given a ``name``.
+
 ``prefill`` is a tuple of ``(id, n)`` pairs and ``decode`` a tuple of ids, as given.
 At the end of a step, sequences are reported in the order of the ``prefill`` list,
 then the ``decode`` list.
@@ -192,6 +196,8 @@ class SimEngine:
         max_seqs: limit on live sequences; None for no limit.
         kv_blocks: size of the KV block pool; None for unlimited memory.
         block_tokens: tokens per KV block.
+        name: for simulations with several engines on one clock: when given, every
+            trace event of this engine carries ``engine=name``.
 
     Attributes:
         busy: whether a step is running.
@@ -213,10 +219,12 @@ class SimEngine:
         max_seqs: int | None = None,
         kv_blocks: int | None = None,
         block_tokens: int = 16,
+        name: Hashable | None = None,
     ) -> None:
         if block_tokens < 1:
             raise ValueError("block_tokens must be at least 1")
         self.sim = sim
+        self.name = name
         self.cost = cost
         self.max_batch_tokens = max_batch_tokens
         self.max_seqs = max_seqs
@@ -262,23 +270,63 @@ class SimEngine:
 
     # -- admitting and removing sequences ------------------------------------------------
 
-    def admit(self, request: Any) -> None:
+    def admit(self, request: Any, *, cached_tokens: int = 0, resume_from: int = 0) -> None:
         """Make ``request`` (anything with ``id``, ``prompt_tokens``, ``output_tokens``)
-        a live sequence. Takes no virtual time and may be called while a step runs."""
+        a live sequence. Takes no virtual time and may be called while a step runs.
+
+        Two options describe a sequence that does not start from nothing:
+
+        ``cached_tokens=c`` (``0 <= c < prompt_tokens``): the first ``c`` prompt tokens
+        are already in the KV cache (a prefix-cache hit). The sequence holds their
+        blocks at once and only ``prompt_tokens - c`` tokens remain to prefill. At
+        least one token is always prefilled: its forward pass produces the first
+        output token.
+
+        ``resume_from=g`` (``1 <= g < output_tokens``): the sequence was prefilled, and
+        produced its first ``g`` tokens, on another engine, and its KV cache was
+        brought here. It holds ``prompt_tokens + g - 1`` tokens of KV, needs no
+        prefill, and its next decode produces token index ``g``.
+
+        Either is refused with ``bad_request`` when out of range (or when both are
+        given), and with ``out_of_blocks`` when the pool cannot hold the blocks.
+        """
         if request.id in self._seqs:
             raise self._violation("duplicate_sequence", f"sequence {request.id!r} is already live")
         for name in ("prompt_tokens", "output_tokens"):
             value = getattr(request, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise self._violation("bad_request", f"{name} must be an int >= 1, got {value!r}")
+        for name, value, limit in (
+            ("cached_tokens", cached_tokens, request.prompt_tokens),
+            ("resume_from", resume_from, request.output_tokens),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < limit:
+                raise self._violation(
+                    "bad_request", f"{name} must be an int in [0, {limit}), got {value!r}"
+                )
+        if cached_tokens and resume_from:
+            raise self._violation("bad_request", "cached_tokens and resume_from exclude each other")
         if self.max_seqs is not None and len(self._seqs) >= self.max_seqs:
             raise self._violation(
                 "too_many_sequences", f"the engine holds at most {self.max_seqs} live sequences"
             )
-        self._seqs[request.id] = _Sequence(
-            request.id, request.prompt_tokens, request.output_tokens, request.prompt_tokens
-        )
-        self.sim.trace.record("admit", id=request.id)
+        held = request.prompt_tokens + resume_from - 1 if resume_from else cached_tokens
+        if self.kv_blocks is not None and self._blocks(held) > self.free_blocks:
+            raise self._violation(
+                "out_of_blocks",
+                f"sequence {request.id!r} arrives with {held} tokens of KV "
+                f"({self._blocks(held)} blocks); {self.free_blocks} blocks are free",
+            )
+        seq = _Sequence(
+            request.id, request.prompt_tokens, request.output_tokens,
+            to_prefill=0 if resume_from else request.prompt_tokens - cached_tokens,
+            generated=resume_from, kv_tokens=held,
+        )  # fmt: skip
+        self._seqs[request.id] = seq
+        extra = {"cached": cached_tokens} if cached_tokens else {}
+        if resume_from:
+            extra["resumed"] = resume_from
+        self._record("admit", id=request.id, **extra)
 
     def preempt(self, seq_id: Hashable) -> None:
         """Free the sequence's KV blocks; it stays live and keeps its produced tokens.
@@ -292,14 +340,14 @@ class SimEngine:
         seq.preempted = True
         self._in_flight.discard(seq_id)
         self.counters.add("preemptions")
-        self.sim.trace.record("preempt", id=seq_id, generated=seq.generated)
+        self._record("preempt", id=seq_id, generated=seq.generated)
 
     def release(self, seq_id: Hashable) -> None:
         """Drop a live sequence (a canceled request) and free its KV blocks."""
         seq = self._get(seq_id)
         del self._seqs[seq_id]
         self._in_flight.discard(seq_id)
-        self.sim.trace.record("release", id=seq_id, generated=seq.generated)
+        self._record("release", id=seq_id, generated=seq.generated)
 
     # -- the forward pass ------------------------------------------------------------------
 
@@ -333,7 +381,7 @@ class SimEngine:
         self.busy = True
         self.busy_s += duration
         self._in_flight = {seq_id for seq_id, _ in prefill} | set(decode)
-        self.sim.trace.record(
+        self._record(
             "step", index=index, prefill=prefill, decode=decode,
             tokens=prefill_tokens + len(decode), duration=duration,
         )  # fmt: skip
@@ -415,20 +463,20 @@ class SimEngine:
                 self._emit(self._seqs[seq_id], index, tokens, finished)
         self._in_flight = set()
         self.busy = False
-        self.sim.trace.record("step_done", index=index)
+        self._record("step_done", index=index)
         return StepResult(index, duration, tuple(tokens), tuple(finished))
 
     def _emit(self, seq: _Sequence, step: int, tokens: list, finished: list) -> None:
         if seq.generated == 0:
-            self.sim.trace.record("first_token", id=seq.id, step=step)
-        self.sim.trace.record("token", id=seq.id, index=seq.generated, step=step)
+            self._record("first_token", id=seq.id, step=step)
+        self._record("token", id=seq.id, index=seq.generated, step=step)
         seq.generated += 1
         self.counters.add("output_tokens")
         tokens.append(seq.id)
         if seq.generated == seq.output_tokens:
             del self._seqs[seq.id]
             finished.append(seq.id)
-            self.sim.trace.record("finish", id=seq.id, tokens=seq.generated, step=step)
+            self._record("finish", id=seq.id, tokens=seq.generated, step=step)
 
     # -- helpers ---------------------------------------------------------------------------
 
@@ -437,11 +485,16 @@ class SimEngine:
         failure is raised but not recorded as a violation."""
         try:
             return self._seqs[seq_id]
-        except (KeyError, TypeError):
+        except KeyError, TypeError:
             message = f"sequence {seq_id!r} is not live"
             if asking:
                 raise ProtocolViolation("unknown_sequence", message) from None
             raise self._violation("unknown_sequence", message) from None
+
+    def _record(self, kind: str, **fields: Any) -> None:
+        if self.name is not None:
+            fields["engine"] = self.name
+        self.sim.trace.record(kind, **fields)
 
     def _blocks(self, kv_tokens: int) -> int:
         return -(-kv_tokens // self.block_tokens)
@@ -449,7 +502,7 @@ class SimEngine:
     def _violation(self, code: str, message: str) -> ProtocolViolation:
         error = (OutOfBlocks if code == "out_of_blocks" else ProtocolViolation)(code, message)
         self.violations.append(error)
-        self.sim.trace.record("violation", code=code, message=message)
+        self._record("violation", code=code, message=message)
         return error
 
     def __repr__(self) -> str:

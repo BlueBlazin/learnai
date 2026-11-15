@@ -40,11 +40,14 @@ src/whetstone/
   problem.py      problem.toml / track.toml loading, catalog discovery
   assets.py       [[assets]]: declarations, what is on disk, ws assets list | fetch
   hardware.py     which `requires` this machine meets (mlx-gpu, cuda), and its devices
-  judge/          the test authoring API: @case, Context, check, adapters,
-                  speed, simclock, service
+  judge/          the test authoring API: @case (with stages), Context, check, adapters,
+                  speed, simclock, service; warmup.py keeps one-time library costs
+                  off a case's clock
   kit/            objects problems hand to solutions: TinyLM, SimModel, Counters,
                   MLXTinyLM and the MLX instruments, RealModel and the real-model loaders,
-                  the CUDA-on-CPU tools (cudatools.py) and tritonshim.py
+                  the CUDA-on-CPU tools (cudatools.py) and tritonshim.py, and the
+                  milestone 5 set: LayeredLM, TinyMoE, RecurrentLM, TinyEncoder,
+                  Grammar, ScriptedChatModel, SimDevices, SimCluster, vectors
   cli.py          ws list | run | submit | validate | new | assets | doctor
   validate.py     the quality gate
   scaffold.py     ws new

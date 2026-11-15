@@ -41,9 +41,8 @@ def _time(fn: Callable[[], Any], repeats: int) -> float:
     return (time.perf_counter() - start) / repeats
 
 
-def _repeats_for(fn: Callable[[], Any]) -> int:
-    once = max(_time(fn, 1), 1e-9)
-    return max(1, min(MAX_REPEATS, math.ceil(MIN_MEASURE_S / once)))
+def _repeats_for(once: float) -> int:
+    return max(1, min(MAX_REPEATS, math.ceil(MIN_MEASURE_S / max(once, 1e-9))))
 
 
 def compare(
@@ -60,18 +59,30 @@ def compare(
     ``warmup`` untimed calls each (allocator, caches, lazy initialization), then
     ``rounds`` rounds; every round measures both, in alternating order so that neither
     always runs second; the result is the median over rounds for each.
+
+    Before the rounds, each callable is timed once to decide how often a measurement
+    repeats it. When neither needs repeating (one call already lasts ``MIN_MEASURE_S``),
+    that pair of timings *is* a round measured exactly like the others (after
+    warm-up, garbage collection off, reference first as in every even round), so it
+    counts as the first one instead of being thrown away: slow callables are not run
+    once more than the statistics need.
     """
     for _ in range(warmup):
         run_reference()
         run_solution()
-    reference_repeats = _repeats_for(run_reference)
-    solution_repeats = _repeats_for(run_solution)
     solution_times: list[float] = []
     reference_times: list[float] = []
     gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        for round_index in range(rounds):
+        reference_once = _time(run_reference, 1)
+        solution_once = _time(run_solution, 1)
+        reference_repeats = _repeats_for(reference_once)
+        solution_repeats = _repeats_for(solution_once)
+        if reference_repeats == 1 and solution_repeats == 1 and rounds >= 1:
+            reference_times.append(reference_once)
+            solution_times.append(solution_once)
+        for round_index in range(len(solution_times), rounds):
             if round_index % 2 == 0:
                 reference_times.append(_time(run_reference, reference_repeats))
                 solution_times.append(_time(run_solution, solution_repeats))

@@ -47,15 +47,15 @@ def test_lazy_frameworks_are_forced_before_the_clock_stops():
     except frameworks.FrameworkUnavailable as exc:
         pytest.skip(str(exc))
     mx = fw.xp
-    x = fw.tensor(np.ones((256, 256)))
+    x = fw.tensor(np.ones((768, 768)))
 
     def work(n):
         y = x
         for _ in range(n):
-            y = mx.tanh(y @ x / 256.0)
+            y = mx.tanh(y @ x / 768.0)
         return y
 
     # Without sync, MLX only builds a graph and both variants look alike. With sync
-    # the 16x larger computation is measurably slower.
-    result = speed.compare(lambda: fw.sync(work(32)), lambda: fw.sync(work(2)), rounds=5)
+    # the 32x larger computation is measurably slower.
+    result = speed.compare(lambda: fw.sync(work(64)), lambda: fw.sync(work(2)), rounds=5)
     assert result.ratio > 3.0

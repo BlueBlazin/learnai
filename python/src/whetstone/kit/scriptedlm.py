@@ -66,7 +66,9 @@ class StreamRecord:
     @property
     def limit(self) -> int:
         """How many pieces the stream produces if it runs to its end."""
-        return len(self.script) if self.max_tokens is None else min(len(self.script), self.max_tokens)
+        return (
+            len(self.script) if self.max_tokens is None else min(len(self.script), self.max_tokens)
+        )
 
     @property
     def finish_reason(self) -> str | None:

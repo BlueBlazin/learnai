@@ -106,14 +106,14 @@ def test_cuda_problem_without_cuda_runs_cpu_cases_and_skips_the_rest():
     assert end["status"] == "hardware_missing"
     assert (end["passed"], end["total"], end["skipped"]) == (2, 3, 1)
     assert end["missing_hardware"] == "cuda"
-    assert end["message"].startswith("2 of 2 cases that could run passed; 1 of 3 cases were skipped")
+    assert end["message"].startswith(
+        "2 of 2 cases that could run passed; 1 of 3 cases were skipped"
+    )
 
 
 def test_a_failure_outranks_missing_hardware():
     env = {"WHETSTONE_HARDWARE": "cpu"}
-    run = run_harness(
-        CUDA_SCALE, CUDA_SCALE / "mutants" / "ignores_factor.py", "torch", env=env
-    )
+    run = run_harness(CUDA_SCALE, CUDA_SCALE / "mutants" / "ignores_factor.py", "torch", env=env)
     assert run.end["status"] == "wrong_answer"
     assert run.statuses["hidden-2"] == "skipped"
 
@@ -177,7 +177,10 @@ def test_mlx_only_problem_runs_with_memory_and_throughput_metrics():
     assert 1.9 <= memory["value"] <= 3.0
     metrics = {m["name"]: m for m in run.case("hidden-3")["metrics"]}
     assert metrics["slowdown"]["limit"] == 20
-    assert metrics["tokens_per_s"]["higher_is_better"] is True and "limit" not in metrics["tokens_per_s"]
+    assert (
+        metrics["tokens_per_s"]["higher_is_better"] is True
+        and "limit" not in metrics["tokens_per_s"]
+    )
     assert {m["name"] for m in run.end["metrics"]} == {"peak_memory", "slowdown", "tokens_per_s"}
 
 
@@ -274,8 +277,10 @@ def test_validate_fails_a_starter_that_only_missing_hardware_holds_back(tmp_path
     )
     (report,) = gate.validate(root, [problem])
     assert report.errors == [
-        ("starter (torch): passes every case that can run on this machine; the cases that run "
-        "everywhere must reject the starter")
+        (
+            "starter (torch): passes every case that can run on this machine; the cases that run "
+            "everywhere must reject the starter"
+        )
     ]
 
 
@@ -385,9 +390,11 @@ def test_validate_reports_a_problem_of_which_nothing_could_run_as_skipped(
     (report,) = gate.validate(root, [problem])
     assert report.status == "skipped" and report.errors == [] and not report.ran
     assert report.skips == [
-        ("reference (python): not validated here: model asset `tiny-test-model` "
-        "(whetstone-tests/tiny-test-model, about 10 kB) is not downloaded; fetch it with "
-        "`ws assets fetch tiny-test-model`")
+        (
+            "reference (python): not validated here: model asset `tiny-test-model` "
+            "(whetstone-tests/tiny-test-model, about 10 kB) is not downloaded; fetch it with "
+            "`ws assets fetch tiny-test-model`"
+        )
     ]
     assert cli.main(["validate", "asset-vocab"]) == 0
     out = capsys.readouterr().out

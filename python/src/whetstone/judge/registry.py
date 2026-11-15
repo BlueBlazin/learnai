@@ -17,6 +17,9 @@ _ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 #: must not look like one.
 _OPAQUE_PATTERN = re.compile(r"^hidden-\d+$")
 
+#: A stage label is a heading in the app and in the terminal: keep it short.
+MAX_STAGE_LENGTH = 60
+
 # The list that @case appends to while a tests.py file is being loaded.
 _collecting: list[Case] | None = None
 
@@ -33,6 +36,8 @@ class Case:
     requires: str = "cpu"
     #: Names of the problem's assets the case needs; None means all of them.
     assets: tuple[str, ...] | None = None
+    #: The stage of a multi-part problem the case belongs to; None for no stage.
+    stage: str | None = None
 
     def applies_to(self, framework: str) -> bool:
         return self.frameworks is None or framework in self.frameworks
@@ -47,6 +52,7 @@ def case(
     frameworks: Sequence[str] | None = None,
     requires: str = "cpu",
     assets: Sequence[str] | None = None,
+    stage: str | None = None,
 ) -> Callable[[Callable[[Any], None]], Callable[[Any], None]]:
     """Register a test case.
 
@@ -68,6 +74,12 @@ def case(
     assets        names of the problem's ``[[assets]]`` this case needs. Default: all
                   of them. ``assets=[]`` marks a case that needs no download (a
                   synthetic input). A case whose asset is not on disk is ``skipped``.
+    stage         the stage of a multi-part problem (a capstone) this case grades, for
+                  example ``"2: paged KV cache"``. Cases with the same label form a
+                  stage; stages are ordered by the first case that names them. The
+                  label is shown to the learner even for a hidden case, so it must
+                  not give a hidden check away. A problem gives every case a stage or
+                  none (``ws validate`` enforces it).
 
     Cases run in the order they are defined. The function takes one argument, the
     ``Context``; it passes by returning and fails by raising ``CheckFailure`` (which is
@@ -81,6 +93,12 @@ def case(
         isinstance(assets, str) or not all(isinstance(item, str) for item in assets)
     ):
         raise ValueError("@case assets= must be a list of asset names")
+    if stage is not None:
+        if not isinstance(stage, str) or not stage.strip() or "\n" in stage:
+            raise ValueError("@case stage= must be a non-empty one-line label")
+        if len(stage.strip()) > MAX_STAGE_LENGTH:
+            raise ValueError(f"@case stage= is longer than {MAX_STAGE_LENGTH} characters")
+        stage = stage.strip()
 
     def register(fn: Callable[[Any], None]) -> Callable[[Any], None]:
         case_id = id if id is not None else fn.__name__
@@ -101,6 +119,7 @@ def case(
                     frameworks=tuple(frameworks) if frameworks is not None else None,
                     requires=requires,
                     assets=tuple(assets) if assets is not None else None,
+                    stage=stage,
                 )
             )
         return fn
@@ -128,6 +147,19 @@ def wire_identity(cases: Sequence[Case], *, reveal: bool = False) -> dict[str, t
             if not reveal:
                 identity[item.id] = (f"hidden-{hidden}", f"Hidden case {hidden}")
     return identity
+
+
+def stages_of(cases: Sequence[Any]) -> list[str]:
+    """The stage labels of ``cases`` in order of first appearance.
+
+    ``cases`` are ``Case`` objects or the case objects of a ``start`` event.
+    """
+    labels: dict[str, None] = {}
+    for item in cases:
+        label = item.get("stage") if isinstance(item, dict) else item.stage
+        if label is not None:
+            labels.setdefault(label)
+    return list(labels)
 
 
 def load_cases(tests_path: Path) -> list[Case]:

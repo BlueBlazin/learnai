@@ -140,9 +140,9 @@ that sign-extends it reads $-1$ and returns $-0.3$.
   arguments are errors. Two cases run only on a machine with an NVIDIA GPU, where
   `qlinear` receives CUDA tensors and the same kernel source is compiled by the real
   Triton. That path could not be tested when the problem was authored. In
-  particular, the documentation of Triton does not spell out that `>>` shifts in
-  zeros for unsigned integers and copies the sign bit for signed ones; the shim
-  assumes it, as C and LLVM do.
+  particular, the documentation of Triton does not spell out what `>>` does. The
+  shim shifts zeros into an unsigned value, and refuses to shift a negative signed
+  value, because it cannot know whether the sign bit would be copied.
 
 ## Why this matters
 

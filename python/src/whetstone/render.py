@@ -39,6 +39,11 @@ class Renderer:
         self.color = color
         self.names: dict[str, str] = {}
         self.width = 8
+        #: Case id -> stage label, for problems whose cases are grouped into stages.
+        self.stage_of: dict[str, str] = {}
+        self.stage_shown: str | None = None
+        #: Stage label -> [passed, total, skipped], in order of first appearance.
+        self.stage_counts: dict[str, list[int]] = {}
 
     def paint(self, text: str, style: str) -> str:
         code = _COLORS.get(style)
@@ -56,8 +61,14 @@ class Renderer:
     def handle(self, event: dict[str, Any]) -> None:
         kind = event.get("event")
         if kind == "start":
-            self.names = {c["id"]: c["name"] for c in event.get("cases", [])}
+            cases = event.get("cases", [])
+            self.names = {c["id"]: c["name"] for c in cases}
             self.width = max([8, *(len(case_id) for case_id in self.names)])
+            self.stage_of = {c["id"]: str(c["stage"]) for c in cases if c.get("stage")}
+            self.stage_shown = None
+            self.stage_counts = {}
+            for stage in self.stage_of.values():
+                self.stage_counts.setdefault(stage, [0, 0, 0])[1] += 1
             env = event.get("env", {})
             versions = ", ".join(f"{k} {v}" for k, v in env.items() if k not in ("platform",))
             head = f"{event.get('problem')} / {event.get('framework')} / {event.get('mode')}"
@@ -72,6 +83,14 @@ class Renderer:
     def case(self, event: dict[str, Any]) -> None:
         status = str(event.get("status"))
         case_id = str(event.get("id"))
+        stage = self.stage_of.get(case_id)
+        if stage is not None:
+            if stage != self.stage_shown:  # a heading whenever the stage changes
+                self.line(f"  {self.paint(stage_title(stage), 'bold')}")
+                self.stage_shown = stage
+            counts = self.stage_counts[stage]
+            counts[0] += status == "pass"
+            counts[2] += status == "skipped"
         tag = self.paint(f"{STATUS_TEXT.get(status, status.upper()):5}", status)
         timing = "" if status == "skipped" else f"{event.get('duration_ms', 0):.1f} ms"
         name = self.names.get(case_id, "")
@@ -103,12 +122,24 @@ class Renderer:
             f"{event.get('passed', 0)}/{event.get('total', 0)} passed{skipped} in {seconds:.2f} s"
         )
         self.line(f"{self.paint(verdict, style)}  {summary}")
+        for stage, (passed, total, skipped_in_stage) in self.stage_counts.items():
+            mark = "fail"
+            if passed + skipped_in_stage == total:
+                mark = "skipped" if skipped_in_stage else "pass"
+            note = f", {skipped_in_stage} skipped" if skipped_in_stage else ""
+            score = self.paint(f"{passed}/{total}", mark)
+            self.line(f"  {score} passed{note}  {stage_title(stage)}")
         if event.get("message"):
             self.line(f"  {event['message']}")
         if event.get("detail"):
             self.block("detail", event["detail"])
         for metric in event.get("metrics") or []:
             self.line(f"  {self.paint(format_metric(metric), 'dim')}")
+
+
+def stage_title(label: str) -> str:
+    """``"2: paged KV cache"`` reads as ``Stage 2: paged KV cache``."""
+    return label if label.lower().startswith("stage") else f"Stage {label}"
 
 
 def format_metric(metric: dict[str, Any]) -> str:

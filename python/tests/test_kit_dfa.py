@@ -19,7 +19,12 @@ def hand():
 
 def test_step_walk_and_acceptance():
     dfa = hand()
-    assert (dfa.start, dfa.accepting, dfa.states, dfa.n_states) == (0, frozenset({2}), (0, 1, 2, 3), 4)
+    assert (dfa.start, dfa.accepting, dfa.states, dfa.n_states) == (
+        0,
+        frozenset({2}),
+        (0, 1, 2, 3),
+        4,
+    )
     assert DEAD == CharDFA.DEAD == -1
     assert dfa.step(0, ord("a")) == 1
     assert dfa.step(1, ord("a")) == DEAD
@@ -72,7 +77,14 @@ def test_trap_states_and_trim():
 def test_construction_is_validated():
     assert CharDFA({}, 0, [0]).accepts("") and CharDFA({}, 0, [0]).states == (0,)
     assert CharDFA({0: {"a": 5}}, 0, [5]).states == (0, 5)  # states mentioned anywhere exist
-    for bad in ({0: {"ab": 1}}, {0: {256: 1}}, {0: {"é": 1}}, {0: {"a": -1}}, {-1: {}}, {0: {b"": 1}}):
+    for bad in (
+        {0: {"ab": 1}},
+        {0: {256: 1}},
+        {0: {"é": 1}},
+        {0: {"a": -1}},
+        {-1: {}},
+        {0: {b"": 1}},
+    ):
         with pytest.raises(ValueError):
             CharDFA(bad, 0, [0])
     with pytest.raises(ValueError):
@@ -150,7 +162,9 @@ def test_multi_byte_characters_are_matched_whole():
     assert state != DEAD and not dfa.is_accepting(state)  # alive in the middle of a character
     assert dfa.step(state, ord('"')) == DEAD  # but the character must be completed
     assert dfa.accepts('"€é😀"') and dfa.accepts_prefix(b'"\xf0\x9f')
-    assert not dfa.accepts(b'"\xac"') and not dfa.accepts_prefix(b'"\xac')  # a stray continuation byte
+    assert not dfa.accepts(b'"\xac"') and not dfa.accepts_prefix(
+        b'"\xac'
+    )  # a stray continuation byte
     assert not dfa.accepts(b'"\xe2\x82"')
     dot = CharDFA.from_regex(r".")
     assert dot.accepts("é") and dot.accepts("😀") and dot.accepts("a")
@@ -240,7 +254,11 @@ def test_dfa_constraint_counts_calls_but_not_dfa_steps(fw):
 def test_any_allowed_sequence_is_a_prefix_of_the_language_and_can_finish():
     vocab = ToyVocab(seed=1)
     rnd = random.Random(7)
-    for pattern in (r'\{"[a-z]+": (true|false|null|-?\d+(\.\d+)?)\}', r'"[^"]*"', r"\[\d+(, \d+)*\]"):
+    for pattern in (
+        r'\{"[a-z]+": (true|false|null|-?\d+(\.\d+)?)\}',
+        r'"[^"]*"',
+        r"\[\d+(, \d+)*\]",
+    ):
         dfa = CharDFA.from_regex(pattern)
         constraint = DFAConstraint(dfa, vocab)
         for _ in range(40):

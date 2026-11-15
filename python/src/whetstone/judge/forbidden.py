@@ -89,8 +89,7 @@ class Violation:
         if self.function is None:
             return f"`{self.name}` is not allowed in this problem (used at {where})"
         return (
-            f"`{self.name}` is not allowed in this problem "
-            f"(called at {where}, in {self.function})"
+            f"`{self.name}` is not allowed in this problem (called at {where}, in {self.function})"
         )
 
 
@@ -219,7 +218,7 @@ class Guard:
         raise Unresolved(
             "is a type implemented in C that takes its arguments in `__new__`; a guard on "
             "it would break it for every caller. Rule out its identifier with "
-            f"`forbidden_source = [\"{name.rsplit('.', 1)[-1]}\"]` instead"
+            f'`forbidden_source = ["{name.rsplit(".", 1)[-1]}"]` instead'
         )
 
     def _guard_class_attribute(self, name: str, cls: type, attr: str) -> None:

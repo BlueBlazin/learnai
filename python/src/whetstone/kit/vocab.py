@@ -104,7 +104,9 @@ class ToyVocab:
         self.merges = _MERGES
 
         singles = [*_CORE_BYTES, *_extra_bytes()[: size - MIN_SIZE]]
-        ordinary = [builtins.bytes([b]) for b in singles] + [left + right for left, right in _MERGES]
+        ordinary = [builtins.bytes([b]) for b in singles] + [
+            left + right for left, right in _MERGES
+        ]
         order = np.random.default_rng(seed).permutation(len(ordinary))
         self.pieces: tuple[builtins.bytes, ...] = (
             *(b"" for _ in SPECIALS),

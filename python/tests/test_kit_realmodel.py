@@ -199,7 +199,14 @@ def test_bpe_merges_by_rank_and_round_trips():
     assert tok.vocab_size == 256 + 5 + 3
     ids = tok.encode("hello world")
     assert [tok.token_bytes(i) for i in ids] == [b"hello", b" w", b"o", b"r", b"l", b"d"]
-    for text in ["hello world", "", "  spaces  ", "héllo ✓ 東京 🗡️", "tabs\tand\nlines\r\n", "it's 12345"]:
+    for text in [
+        "hello world",
+        "",
+        "  spaces  ",
+        "héllo ✓ 東京 🗡️",
+        "tabs\tand\nlines\r\n",
+        "it's 12345",
+    ]:
         assert tok.decode(tok.encode(text)) == text
     # A multi-byte character is several single-byte tokens here; decode joins the bytes.
     snowman = tok.encode("☃")
@@ -235,9 +242,12 @@ def test_the_two_pre_tokenizers_cut_digits_and_spaces_differently():
     # U+001C is whitespace to Python's \s but not Unicode White_Space, which is what
     # the reference uses: there it is an ordinary non-letter and may lead a word.
     assert re.findall(cl100k, "a\x1cb") == ["a", "\x1cb"]
-    assert ByteLevelBPE.from_json(toy_tokenizer_json(GPT2)).decode(
-        ByteLevelBPE.from_json(toy_tokenizer_json(GPT2)).encode("hello 42")
-    ) == "hello 42"
+    assert (
+        ByteLevelBPE.from_json(toy_tokenizer_json(GPT2)).decode(
+            ByteLevelBPE.from_json(toy_tokenizer_json(GPT2)).encode("hello 42")
+        )
+        == "hello 42"
+    )
 
 
 @pytest.mark.parametrize(
@@ -245,11 +255,18 @@ def test_the_two_pre_tokenizers_cut_digits_and_spaces_differently():
     [
         (lambda spec: spec["model"].update(type="WordPiece"), "unsupported tokenizer model"),
         (lambda spec: spec.update(normalizer={"type": "Lowercase"}), "unsupported normalizer"),
-        (lambda spec: spec.update(pre_tokenizer={"type": "Whitespace"}), "unsupported pre_tokenizer"),
+        (
+            lambda spec: spec.update(pre_tokenizer={"type": "Whitespace"}),
+            "unsupported pre_tokenizer",
+        ),
         (lambda spec: spec["added_tokens"][0].update(lstrip=True), "lstrip/rstrip/single_word"),
         (
             lambda spec: spec.update(
-                post_processor={"type": "TemplateProcessing", "single": [], "special_tokens": {"x": 1}}
+                post_processor={
+                    "type": "TemplateProcessing",
+                    "single": [],
+                    "special_tokens": {"x": 1},
+                }
             ),
             "inserts special tokens",
         ),
@@ -329,10 +346,20 @@ def test_config_normalization_rejects_what_the_kit_cannot_run():
 
 def test_small_model_config_tokenizer_and_weights(small):
     cfg = small.config
-    assert (cfg.n_layers, cfg.d_model, cfg.n_heads, cfg.n_kv_heads, cfg.head_dim) == (28, 1024, 16, 4, 64)
+    assert (cfg.n_layers, cfg.d_model, cfg.n_heads, cfg.n_kv_heads, cfg.head_dim) == (
+        28,
+        1024,
+        16,
+        4,
+        64,
+    )
     assert (cfg.d_ff, cfg.vocab_size, cfg.norm_eps, cfg.rope_theta) == (2048, 100352, 1e-5, 1e7)
     assert cfg.attention_scale == 1 / 64  # 1 / head_dim, not 1 / sqrt(head_dim)
-    assert (cfg.embedding_multiplier, cfg.residual_multiplier, cfg.logits_scaling) == (12.0, 0.263, 4.0)
+    assert (cfg.embedding_multiplier, cfg.residual_multiplier, cfg.logits_scaling) == (
+        12.0,
+        0.263,
+        4.0,
+    )
     assert cfg.tied_embeddings and cfg.fused_mlp and cfg.quantization is None
     assert small.config_json["model_type"] == "granitemoehybrid"
 
@@ -453,7 +480,11 @@ def test_large_model_layout_is_mlx_8_bit(large):
         "granite", 40, 2560, 40, 8,
     )  # fmt: skip
     assert cfg.quantization == (8, 64) and not cfg.tied_embeddings and not cfg.fused_mlp
-    assert (cfg.embedding_multiplier, cfg.residual_multiplier, cfg.logits_scaling) == (1.0, 1.0, 1.0)
+    assert (cfg.embedding_multiplier, cfg.residual_multiplier, cfg.logits_scaling) == (
+        1.0,
+        1.0,
+        1.0,
+    )
     assert cfg.attention_scale == 1 / 64 and cfg.rope_theta == 1e7
 
     checkpoint = large.checkpoint

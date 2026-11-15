@@ -191,10 +191,14 @@ def test_the_pair_is_deterministic_and_the_target_is_the_plain_model():
 
 def test_the_models_start_with_zero_counters_and_count_separately():
     draft, target = draft_target_pair(PY, 1, 0.8)
-    assert draft.counters.snapshot() == target.counters.snapshot() == {
-        "forward_calls": 0,
-        "tokens_processed": 0,
-    }
+    assert (
+        draft.counters.snapshot()
+        == target.counters.snapshot()
+        == {
+            "forward_calls": 0,
+            "tokens_processed": 0,
+        }
+    )
     draft(PROMPT)
     assert draft.counters.tokens_processed == len(PROMPT)
     assert target.counters.tokens_processed == 0

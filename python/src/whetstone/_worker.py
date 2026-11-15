@@ -31,6 +31,9 @@ from whetstone.tracebacks import (
 )
 
 MIN_IMPORT_LIMIT_S = 10.0
+#: How long a block that runs off the clock may take before the supervisor gives up on
+#: the process. Generous: such a block is library code, never the solution's.
+OFF_THE_CLOCK_ALLOWANCE_S = 120.0
 
 
 class CaseTimeout(BaseException):
@@ -91,6 +94,11 @@ class Worker:
         #: Real case id -> (skip object, message) for cases this machine cannot run.
         self.skips: dict[str, tuple[dict[str, str], str]] = {}
         self.hardware_met = True
+        #: What the supervisor was last told this process is doing (import or case).
+        self.current: dict[str, Any] | None = None
+        #: Seconds of the current phase spent with the clock stopped (judge/warmup.py).
+        self.paused_s = 0.0
+        self._pause_depth = 0
 
     # -- emitting --------------------------------------------------------------
 
@@ -98,7 +106,39 @@ class Worker:
         self.capture.write_protocol(protocol.encode(event))
 
     def activity(self, **info: Any) -> None:
+        self.current = info if info.get("phase") in ("import", "case") else None
+        self.paused_s = 0.0
         self.capture.write_protocol(protocol.encode_internal(info))
+
+    @contextmanager
+    def off_the_clock(self):
+        """Stop the clock of the running phase for the length of the block.
+
+        Used for one-time library costs that are not the solution's doing (see
+        ``whetstone.judge.warmup``). The soft time limit is suspended and restored
+        with what was left of it; the supervisor is told to wait (``deadline_s``: how
+        long from now until the soft limit would fire), and again when the block ends;
+        the time is added to ``paused_s``, which ``run_case`` subtracts.
+        """
+        if self._pause_depth or not hasattr(signal, "setitimer"):
+            yield
+            return
+        self._pause_depth += 1
+        remaining, _ = signal.setitimer(signal.ITIMER_REAL, 0)
+        if self.current is not None:
+            waiting = {**self.current, "deadline_s": remaining + OFF_THE_CLOCK_ALLOWANCE_S}
+            self.capture.write_protocol(protocol.encode_internal(waiting))
+        started = time.perf_counter()
+        try:
+            yield
+        finally:
+            self.paused_s += time.perf_counter() - started
+            self._pause_depth -= 1
+            if self.current is not None:
+                resumed = {**self.current, "deadline_s": remaining}
+                self.capture.write_protocol(protocol.encode_internal(resumed))
+            if remaining > 0:
+                signal.setitimer(signal.ITIMER_REAL, remaining)
 
     def end(
         self, status: str, statuses: list[str], total: int, metrics: list, **extra: Any
@@ -128,10 +168,12 @@ class Worker:
     def run(self) -> int:
         # Imported here, after capture is in place, so that anything a framework
         # prints while loading cannot reach the protocol stream.
-        from whetstone.judge import frameworks
+        from whetstone.judge import frameworks, warmup
         from whetstone.judge.context import ModuleStore
         from whetstone.judge.registry import load_cases, wire_identity
 
+        warmup.install(self.off_the_clock)
+        warmup.watch_imports()
         args = self.args
         try:
             problem = load_problem(args.problem)
@@ -316,6 +358,8 @@ class Worker:
         }
         if case.requires != "cpu":
             info["requires"] = case.requires
+        if case.stage is not None:
+            info["stage"] = case.stage  # public also for a hidden case
         return info
 
     def skipped(self, case: Any) -> dict[str, Any]:
@@ -325,9 +369,7 @@ class Worker:
     def finish(self, problem: Problem, cases: list, statuses: list[str], metrics: list) -> None:
         """Emit ``end`` with the verdict, explaining an incomplete run in words."""
         kinds = [self.skips[c.id][0]["kind"] for c in cases if c.id in self.skips]
-        verdict = protocol.verdict_for(
-            statuses, skip_kinds=kinds, hardware_met=self.hardware_met
-        )
+        verdict = protocol.verdict_for(statuses, skip_kinds=kinds, hardware_met=self.hardware_met)
         extra: dict[str, Any] = {}
         passed = sum(1 for s in statuses if s == "pass")
         ran = len(statuses) - len(kinds)
@@ -498,7 +540,7 @@ class Worker:
         except BaseException as exc:  # noqa: BLE001 - includes SystemExit from the solution
             also_show = (str(problem.tests_path),)
             status, message, detail = self.describe_error(exc, user_file, also_show, shown)
-        duration_ms = (time.perf_counter() - started) * 1000
+        duration_ms = max(0.0, time.perf_counter() - started - self.paused_s) * 1000
         self.activity(phase="idle")
         data, total = self.capture.take()
         violations = self.guard.take() if self.guard is not None else []

@@ -102,6 +102,7 @@ Metadata must be complete and consistent:
   framework, and for no other; a starter is not identical to its reference.
 - At least one mutant exists, and line 1 of every mutant is `# BUG: <what is wrong>`.
 - The tests define at least one public and at least one hidden case.
+- Either every case has a `stage=` or none has (section 4, "Stages").
 - Every name in `forbidden` (section 4.1) resolves to a real attribute that the harness
   can guard safely, in every framework the names mention. A typo, a function that a
   framework release renamed, a dtype or constant (not callable), or a C type that
@@ -277,7 +278,7 @@ def very_negative(ctx):
         ctx.check(fn, x, axis=-1)
 ```
 
-### `@case(name, *, public=False, id=None, time_limit_s=None, frameworks=None, requires="cpu", assets=None)`
+### `@case(name, *, public=False, id=None, time_limit_s=None, frameworks=None, requires="cpu", assets=None, stage=None)`
 
 - `name`: what the learner reads. State what is checked: "large logits: a row spanning
   -1e4 to 1e4", not "test 3".
@@ -303,6 +304,7 @@ functions for yourself and for reviewers, as descriptively as public ones.
 - `assets`: the names of the problem's `[[assets]]` the case needs. The default is all
   of them; `assets=[]` marks a case that needs no download. A case whose asset is not
   on disk is `skipped` with the fetch command. Section 15.
+- `stage`: the stage of a multi-part problem this case grades. See "Stages" below.
 
 Cases run in definition order. Put the worked example from the statement first, then
 progressively harder public cases, then hidden ones.
@@ -311,6 +313,37 @@ progressively harder public cases, then hidden ones.
 and the main edge-case families, so a learner can debug with Run. Hidden cases make
 sure the solution is general: more edge cases, random sweeps, and whatever each mutant
 needs. A good split is 3 to 5 public and 4 to 8 hidden.
+
+**Stages.** A capstone is one problem built in parts: stage 1 is an allocator, stage 2
+a batching loop on top of it, and so on. Give each case the stage it grades:
+
+```python
+@case("fork shares every block by reference", public=True, stage="1: block allocator")
+def fork_shares(ctx): ...
+
+@case("FCFS: the trace equals the oracle's", public=True, stage="2: continuous batching")
+def fcfs_trace(ctx): ...
+
+@case("a preempted sequence resumes with the right token index", stage="4: preemption")
+def resumes(ctx): ...
+```
+
+- A stage is its label. Cases with the same label are one stage, and stages are
+  ordered by the first case that names them, so write the number into the label
+  (`"2: continuous batching"`; the app and the terminal show it as "Stage 2:
+  continuous batching") and keep a stage's cases together.
+- **The label is public, also for a hidden case.** The learner sees "Stage 4:
+  preemption, 2 of 5 passed" with three of those five being "Hidden case N". So a
+  label names the part of the build, never what a hidden test probes. At most 60
+  characters, one line.
+- Either every case of a problem has a stage or none has; `ws validate` rejects a
+  mix. Nothing else about a case changes: ids, hidden numbering (`hidden-N` counts
+  across stages), time limits, and the verdict are as before. A stage is not a gate:
+  every case runs whatever happened in earlier stages, so make each stage's cases
+  fail cleanly (not crash the file) when a later entry point is still a stub.
+- `ws run` and `ws submit` print a heading whenever the stage changes and, under the
+  verdict, one line per stage with its pass count. The curriculum's convention for
+  capstones still holds: early stages public-heavy, the last one hidden-heavy.
 
 ### The context
 
@@ -864,6 +897,13 @@ def compiled_speed(ctx):
     ctx.compare_speed(loop(ctx.solution.make_step), loop(ctx.reference.make_step),
                       max_ratio=2.0, label="32 compiled steps", tokens=32)
 ```
+
+How many calls that is: `warmup` calls of each side, one *sizing* call of each (to
+decide how often a measurement repeats the callable), then `rounds` measurements. When
+one call already lasts 5 ms on both sides, the sizing pair is itself a valid
+measurement (after warm-up, garbage collection off, reference first) and counts as
+the first round, so a slow callable runs `warmup + rounds` times, not one more. Size
+slow speed cases with that number.
 
 The first `warmup` calls absorb tracing, kernel compilation, and allocator growth for
 both sides; keep `warmup` at 2 or more for anything compiled. A function compiled with
@@ -1451,7 +1491,8 @@ result.tokens, result.finished                            # ids, in report order
 ```
 
 `SimEngine(sim, cost, *, max_batch_tokens=None, max_seqs=None, kv_blocks=None,
-block_tokens=16)`.
+block_tokens=16, name=None)`. With a `name`, every trace event of the engine carries
+`engine=name` (several engines on one clock: `SimCluster`).
 
 **The life of a sequence.**
 
@@ -1464,6 +1505,17 @@ block_tokens=16)`.
    be decoded in the step that completes its prefill.
 5. After `output_tokens` tokens it finishes at the end of that step: it is no longer
    live and its memory is free, without a call. Its id may be admitted again.
+
+**Sequences that do not start from nothing** (milestone 5). `engine.admit(request,
+cached_tokens=c)` with `0 <= c < prompt_tokens`: the first `c` prompt tokens are a
+prefix-cache hit; the sequence holds their blocks at once and `prompt_tokens - c`
+tokens remain to prefill (at least one always is: its forward pass produces the first
+token). `engine.admit(request, resume_from=g)` with `1 <= g < output_tokens`: the
+sequence was prefilled and produced `g` tokens elsewhere; it arrives holding
+`prompt_tokens + g - 1` tokens of KV, needs no prefill, emits no `first_token`, and
+its next decode produces token index `g`. Out of range (or both at once) is
+`bad_request`; blocks the pool cannot hold are `out_of_blocks`, at `admit`. The
+`admit` event then has `cached` or `resumed`.
 
 **Time.** A step takes `cost.step_s(prefill_tokens, decode_seqs)` =
 `base_s + prefill_s_per_token * prefill_tokens + decode_s_per_seq * len(decode)`
@@ -1555,11 +1607,16 @@ requests = workloads.poisson(ctx.rng, rate=12.0, n=150, prompt_tokens=(16, 128),
                              output_tokens=(2, 40), priorities=(0, 1), tenants=("a", "b"))
 requests = workloads.bursty(ctx.rng, bursts=5, burst_size=8, period_s=1.0)   # exact ties
 requests = workloads.replay([(0.0, 4, 3), (0.5, 2, 2)])   # (arrival_s, prompt, output)
+requests = workloads.phases(ctx.rng, [(2.0, 5.0), (4.0, 40.0), (2.0, 5.0)])   # a load step
+requests = workloads.shared_prefixes(ctx.rng, rate=20.0, n=200, groups=4)     # prompts with token ids
 workloads.drive(sim, requests, scheduler.submit)
 ```
 
 - `SimRequest(id, arrival_s, prompt_tokens, output_tokens, priority=0, tenant=None,
-  deadline_s=None)`: frozen. Token counts are ints >= 1. `priority`: smaller is more
+  deadline_s=None, tokens=None)`: frozen. `tokens` is the prompt's token ids (a
+  tuple; `prompt_tokens` must equal its length), for problems that look at what a
+  prompt contains: prefix caches and cache-aware routers. `None` when only the
+  length matters. Token counts are ints >= 1. `priority`: smaller is more
   urgent. `deadline_s` is an absolute virtual time, like `arrival_s`. `output_tokens`
   is what the engine will generate; say in the statement whether the scheduler may
   read it (a real server cannot).
@@ -1577,6 +1634,16 @@ workloads.drive(sim, requests, scheduler.submit)
   `SimRequest`s, dicts of fields, or tuples `(arrival_s, prompt_tokens, output_tokens[,
   priority[, tenant[, deadline_s]]])`; ids default to the row's position; equal
   arrival times keep their order; duplicate ids raise `ValueError`.
+- `phases(rng, [(duration_s, rate), ...], ...)`: a load that changes in steps: a
+  Poisson process of each phase's rate (0 for silence) for that phase's duration, one
+  phase after another from `start_s`. The number of requests is what the draw gives.
+  This is the "step-load fixture" of the autoscaling and overload problems.
+- `shared_prefixes(rng, *, rate, n, groups=4, prefix_tokens=(32, 96),
+  suffix_tokens=(4, 24), vocab_size=64, skew=0.0, ...)`: Poisson traffic in which
+  every request has `tokens`: one of `groups` shared prefixes followed by a suffix
+  of its own. `skew > 0` makes a few prefixes hot (group `g` has weight `(g + 1) **
+  -skew`). `token_sequences(rng, n, ...)` returns just the token tuples, for cache
+  problems without a clock (`block-hash-prefix-cache`, `radix-prefix-cache`).
 - `workloads.drive(sim, requests, on_arrival, *, priority=0)`: at each `arrival_s`,
   records an `arrive` event (`id`, `request`) and calls `on_arrival(request)`; if that
   returns a coroutine it is started with `sim.spawn`. Same-instant arrivals are
@@ -1665,6 +1732,465 @@ async for piece in lm.stream(prompt, max_tokens):      # stream.aclose() to stop
   before each piece in the event loop's time (virtual under `ctx.simclock()`). Neither
   uses `asyncio.sleep`, so a `forbidden` list may contain it.
 
+### LayeredLM
+
+A `TinyLM` with the stack opened, for techniques that live between layers: early exit
+and layer skipping, KV shared across layers.
+
+```python
+from whetstone.kit import LayeredLM
+
+lm = LayeredLM(ctx.fw, seed=3)                    # 4 layers; also TinyLM's size arguments
+h = lm.embed(tokens, offset=cache.length)         # (T, d_model); positions offset, offset + 1, ...
+h, cache = lm.layers(h, 0, 2, cache)              # layers 0 and 1
+h, cache = lm.layers(h, 2, lm.n_layers, cache)    # layers 2 and 3
+logits = lm.head(lm.norm(h))                      # exactly lm(tokens, cache)
+check.cost(lm.counters, "layer_tokens", at_most=...)
+```
+
+- For equal seeds and sizes the weights are `TinyLM`'s, and `lm(tokens, cache)` gives
+  the same logits. Hidden states are float32 tensors of the framework, `(T, d_model)`
+  or `(B, T, d_model)`; nothing is modified in place.
+- `lm.embed(tokens, offset=0)`: the model has learned position embeddings, so tokens
+  that continue a prefix need `offset=` the number of tokens before them.
+- `lm.layers(h, start, stop, cache=None, *, kv_from=None)` runs layers `start` to
+  `stop - 1` and returns `(h_out, new_cache)`. The rows of `h` continue what those
+  layers have cached, so the layers of one call must have equal cached lengths.
+- The cache is a `LayerCache`: keys and values per layer, `cache.lengths` (tokens
+  cached by each layer; they may differ, the early layers of a self-speculating model
+  run ahead), `cache.length` (their maximum), `cache.truncate(n)` (every layer back
+  to at most `n` tokens), `cache.select(rows)`, `lm.empty_cache()`.
+- `lm.norm(h)` is the final RMSNorm and `lm.head(h)` the projection of *normalized*
+  states. They are separate so that an exit after any layer can be scored (and so
+  that forgetting the norm there is a mistake a solution can make).
+- `kv_from=j` runs the layers as readers of layer `j`: each computes queries from its
+  own input, attends over the keys and values layer `j` has cached, and stores none
+  of its own. The `T` rows of `h` are the last `T` positions layer `j` has cached, so
+  run layer `j` on them first. `lm(tokens, cache, share_from=s)` is the whole forward
+  pass of the model in which every layer from `s` up reads layer `s - 1`: the oracle
+  for `cross-layer-kv-sharing`, whose prefill then costs `s * P + (L - s)`.
+- Counters: `layer_calls` (layers run), `layer_tokens` (layers run times the tokens
+  they ran on, batch included), and `forward_calls`, `tokens_processed` for whole
+  passes through `lm(...)` (which add to the first two as well). `embed`, `norm`, and
+  `head` are free.
+- `residual_scale=` (a number, or one per layer) multiplies what each layer adds to
+  the hidden state. With the default 1.0 an exit after two of four layers predicts
+  the full model's token about 40 percent of the time; with `(1, 1, 0.25, 0.25)`
+  about 80 percent, with `(1, 1, 0.1, 0.1)` above 90. Pick the agreement a
+  self-speculation case needs, and derive cost limits from the reference's measured
+  counters, as with `draft_target_pair`.
+- Misuse raises `ValueError` (a range outside `0 <= start < stop <= n_layers`, hidden
+  states of the wrong shape, a batch that does not match the cache, layers with
+  different cached lengths, `kv_from` not below `start` or behind `h`) or `TypeError`
+  (a layer index that is not an int).
+
+**Interface change from the curriculum** (`lm.embed(tokens)`, `lm.layers(h, start,
+stop, cache)`, `lm.head(h)`): `embed` takes `offset=`, because positions are learned
+and a decode step embeds one token at position `P`; the final norm is `lm.norm`,
+apart from `head`, because the "exit state unnormalized" mutant of
+`early-exit-self-speculation` needs it to be the solution's call; `kv_from=`,
+`share_from=`, and per-layer cache lengths were added for `cross-layer-kv-sharing`,
+where sharing is the solution's job and the cost formula counts the layers it skips;
+`residual_scale=` because random layers give an early exit nothing to agree with.
+
+### CountingExperts and TinyMoE
+
+```python
+from whetstone.kit import CountingExperts, TinyMoE, moe_dense_ref, moe_route_ref
+
+moe = TinyMoE(ctx.fw, seed=2, n_experts=8, top_k=2)       # a LayeredLM with MoE MLPs
+x = moe.mlp_inputs(ctx.randint(0, 64, (2, 10)), layer=1)  # (20, d_model): real routing inputs
+experts, w_router = moe.experts(1), moe.router(1)         # CountingExperts, (8, d_model)
+y = ctx.call("moe_sparse", x, w_router, experts, moe.top_k)
+check.allclose(y, moe_dense_ref(x, w_router, experts, moe.top_k), rtol=1e-4, atol=1e-5)
+check.cost(experts.counters, "expert_rows", exactly=moe.top_k * len(x))
+```
+
+- `experts(i, rows)` runs expert `i` (a SwiGLU MLP with its own seeded weights) on
+  rows `(n, d_model)` and returns `(n, d_model)`; one `expert_calls`, `n`
+  `expert_rows`. `experts.calls` is the log of `(expert, n_rows)`. A call with no
+  rows is allowed and counted, so "at most one call per expert that has a token" is
+  a check on `expert_calls`. `CountingExperts(fw, seed, n_experts=8, d_model=32,
+  d_hidden=48)` stands alone when no model is needed.
+- Not counted, for tests: `experts.reference(i, rows)` (numpy), `experts.weights`
+  (`(w_gate, w_up, w_down)`, shaped as the `experts_w` of `moe-router-forward`).
+- `moe_route_ref(x, w_router, k)` returns `(experts, weights)`, both `(n_tokens, k)`:
+  the routing rule of `moe-router-forward` (softmax over the router logits, the `k`
+  largest logits per token with ties to the lowest index, listed from the largest,
+  weights renormalized over the kept ones). `moe_dense_ref(x, w_router, experts, k)`
+  is the layer evaluated densely. Neither touches the counters.
+- A row's output depends on that row only, but not bit for bit on what it was batched
+  with: compare with `check.allclose`, not exactly.
+- `TinyMoE` exists to give dispatch problems inputs whose routing is uneven, as a
+  model's is: `moe.mlp_inputs(tokens, layer)` are the rows the MoE of that layer
+  receives. `moe.experts(layer)` is the same object on every call; the model's own
+  forward pass uses the dense oracle and counts nothing on it.
+
+### SimDevices
+
+Several devices with memory budgets and a metered network: a ledger, for problems
+about models that do not fit on one device.
+
+```python
+from whetstone.kit import SimDevices
+
+devs = SimDevices(ctx.fw, memory_bytes=[shard_bytes, shard_bytes])     # or n_devices=3
+for i, (up, down) in enumerate(shards):
+    devs.put(i, "up", up)                         # charged to device i; over budget raises
+    devs.put(i, "down", down)
+y = ctx.call("tp_mlp", x, devs)                   # the solution: devs.get(i, "up"), ...
+check.cost(devs.counters, "all_reduces", exactly=1)
+check.cost(devs.counters, "comm_bytes", exactly=devs.n_devices * y.nbytes)
+```
+
+- Nothing moves: every tensor lives in this process. The object records what the
+  solution says it stores and sends, and gives each operation a cost.
+- Memory: `put(device, name, array)` stores and charges elements times item size;
+  the put that would exceed the device's budget raises `OutOfDeviceMemory` and stores
+  nothing; putting an existing name replaces it. `get`, `names(device)`, `free`.
+  `devs.used` (bytes per device now), `devs.peak`, `counters.bytes_placed`.
+- `send(src, dst, array)` is one message: it returns `array` and adds its size to
+  `comm_bytes`. `devs.messages` is the log of `(src, dst, nbytes)`; `devs.sent(src,
+  dst)` counts a pair. Sending to oneself is a `ValueError`.
+- Collectives over all devices, one tensor per device in device order:
+  `all_reduce(parts)` is their sum and costs `n_devices * nbytes(part)`;
+  `all_gather(parts, axis=-1)` is their concatenation and costs `(n_devices - 1) *
+  nbytes(result)`. So two shards of a hidden layer four times as wide as the output
+  cost four times as much to gather as the output costs to reduce, which is the
+  point of `tensor-parallel-linear`.
+- `ctx.expected` gets a twin with the same stored tensors and a clean ledger.
+- What it does **not** do: check that a computation used only what its device holds.
+  Tensors are ordinary tensors, and a solution could add a shard of device 0 to one
+  of device 1 without a `send`. The cost checks are what judge: assert the message
+  log (`devs.sent(0, d) == 1` for every device with tokens) and `comm_bytes`
+  exactly, so that work done without communication shows as bytes that are missing.
+
+**Interface change from the curriculum** (`put`, `send`, counts, budgets):
+`all_reduce` and `all_gather` were added because `tensor-parallel-linear` judges
+"exactly one all-reduce of output size" against an all-gather mutant, and `get`,
+`free`, `messages`, `sent`, `used`, `peak` so tests can state their checks.
+
+### Grammar
+
+A context-free grammar in a subset of GBNF (the notation of llama.cpp), parsed, with
+an oracle.
+
+```python
+from whetstone.kit import Grammar, ToyVocab
+
+g = Grammar.parse('''
+    root  ::= "[" ws (value ("," ws value)*)? "]"
+    value ::= [0-9]+ | "true" | "false" | root      # nested lists
+    ws    ::= " "?
+''')
+g.accepts("[1, [true]]")                 # True
+g.accepts_prefix(b"[1, [tr")             # True: can still become a member
+matcher = ctx.solution.GrammarMatcher(g, vocab)
+for token in matcher.allowed(state):
+    check.that(g.accepts_prefix(text_so_far + vocab.pieces[token]), ...)
+```
+
+The subset, checked against `grammars/README.md` in the llama.cpp repository:
+
+| supported | notation |
+|---|---|
+| rules; the language is what `root` matches | `name ::= ...`; names are dashed lowercase words (digits allowed after the first letter) |
+| string literals and character sets, over Unicode code points | `"O-O"`, `[1-9]`, `[NBKQR]`, `[^\n]`, ranges of any code points; a `-` just before `]` is literal |
+| escapes | `\n \t \r \\ \" \[ \]`, `\xXX`, `\uXXXX`, `\UXXXXXXXX` |
+| sequence, alternatives, grouping | `a b`, `a \| b`, `( ... )` |
+| repetition of the preceding symbol or group | `*`, `+`, `?`, `{m}`, `{m,}`, `{m,n}`, counts up to 100; after a literal, the whole literal |
+| comments | `# ...` |
+| rules over several lines | inside parentheses, and directly after `\|` |
+
+Not supported, each a `ValueError` naming the line: token references (`<[1000]>`,
+`<think>`, `!<...>`) and `.` (the README uses it in an example and never defines it;
+write `[^\n]`). Also errors: a rule used but not defined, defined twice, no `root`,
+and a rule that can never finish (`a ::= "x" a`).
+
+- `g.rules` is the grammar in the shape a matcher wants: `{name: (alternative, ...)}`,
+  an alternative a tuple of symbols, a symbol either `Chars(ranges, negated)` (one
+  character; `chars.matches(c)`, `chars.overlaps(low, high)`) or `Ref(name)`. A
+  literal becomes one `Chars` per character; a group becomes a new rule; `x*` becomes
+  `r ::= x r | (empty)`, `x+` is `x` then that, `x?` is `r ::= x | (empty)`, `x{m,n}`
+  is `m` copies and `n - m` nested optional ones (how llama.cpp rewrites them).
+  Generated rules are named `<rule>_<n>`, which the notation cannot produce. An
+  alternative may be empty.
+- Recursion of every kind is accepted, **left recursion included** (llama.cpp's
+  README does not mention it; a stack machine that expands the first symbol loops on
+  it, which is the mutant). `g.left_recursive` names the rules that can begin with
+  themselves and `g.nullable` those that can match nothing.
+- `accepts(text)` and `accepts_prefix(text)` take `str` or `bytes`. Bytes that end
+  inside a character are a prefix when some character starting with those bytes
+  would be accepted there, so a `ToyVocab` token that is half of `€` is judged
+  correctly; bytes that are not UTF-8 are never accepted. Both are an Earley
+  recognizer, exact for ambiguous and left-recursive grammars. Not counted; tell
+  learners not to call them.
+
+### ScriptedChatModel and ScriptedTool
+
+An OpenAI-style chat model whose replies are scripted, and tools with a latency and a
+log, for agent loops, routers, and speculative tool calls.
+
+```python
+from whetstone.kit import ScriptedChatModel, ScriptedTool, reply, tool_call
+
+model = ScriptedChatModel([
+    reply(tool_calls=[tool_call("get_weather", {"city": "Paris"}),
+                      tool_call("get_time", {"zone": "CET"})]),     # two calls at once
+    reply(tool_calls=[tool_call("get_weather", '{"city": ')]),      # malformed arguments
+    "It is 21 degrees in Paris.",
+])
+tools = {"get_weather": ScriptedTool("get_weather", lookup, delay_s=0.5), ...}
+transcript = sim.run_until_complete(ctx.solution.run_agent(model, tools, messages, 8))
+check.cost(model.counters, "calls", exactly=3)
+check.that(not model.violations, "the conversation was not valid", ...)
+```
+
+- Messages are plain dicts in the chat-completions shape. `model.complete(messages)`
+  returns `{"role": "assistant", "content": str | None, "tool_calls": [{"id":
+  "call_0", "type": "function", "function": {"name": ..., "arguments": "<JSON
+  string>"}}]}`; `tool_calls` is absent when there are none. Ids are `call_0`,
+  `call_1`, ... in emission order unless `tool_call(..., id=)` names one. `arguments`
+  given as a dict is encoded with `json.dumps`; given as a string it is passed
+  through, valid or not.
+- The script: a list (one reply per call; when it runs out `ScriptExhausted` is
+  raised, which is how a loop without a step limit ends, unless `repeat_last=True`),
+  a dict keyed on the content of the conversation's last message (`None`: default),
+  or a function `(messages, call_index) -> reply`. A reply is a string, `reply(...)`,
+  or a list of `tool_call(...)`.
+- With `strict=True` (default) every call validates the conversation as an API would
+  and raises `ChatProtocolError` with `.code`: `bad_message`, `missing_tool_result`
+  (an assistant turn's tool calls are not each answered by one tool message directly
+  after it), `unknown_tool_call_id`, `duplicate_tool_result`. Errors are kept in
+  `model.violations`, so a solution that catches them is still caught. The *order*
+  of tool results is not checked by the model: compare the transcript.
+- `model.calls` (a copy of the messages of every call), `model.replies`,
+  `model.counters` (`calls`, `tool_calls`), `model.cost` (price of one call, known
+  before calling: `cascade-router` checks its budget against it) and `model.spent`.
+  `reply(..., logprobs=[...])` puts token log-probabilities on the message.
+- Async: `await model.acomplete(messages)` takes `delay_s` of the loop's time;
+  `model.stream(messages)` yields the same reply in pieces, one every `delay_s`:
+  `{"content": ...}` (`chunk_chars` characters at a time), `{"tool_calls": [{"index":
+  i, "id": ..., "type": "function", "function": {"name": ..., "arguments": ""}}]}`,
+  argument fragments `{"tool_calls": [{"index": i, "function": {"arguments":
+  ...}}]}`, and last `{"finish_reason": "tool_calls" | "stop"}`. `assemble(deltas)`
+  rebuilds the message. Timers, not `asyncio.sleep`, as in `ScriptedLM`.
+- `ScriptedTool(name, fn, *, delay_s=0.0, side_effects=False, parameters=None,
+  description="")`: `await tool(**arguments)` records a `ToolRun`, waits `delay_s`,
+  then returns `fn(**arguments)` (an exception propagates, after the delay). If the
+  awaiting task is canceled first, the run is `"canceled"` and `fn` never runs.
+  `tool.runs` (`arguments`, `started_s`, `finished_s`, `status`, `result`),
+  `tool.counters` (`started`, `done`, `failed`, `canceled`), `tool.schema` (the
+  `tools` entry), `tool.side_effects`, and `tool.run(**arguments)` for synchronous
+  code. "No canceled result is ever used" and "a side-effecting tool was never
+  started early" are assertions on `tool.runs`.
+
+**Interface change from the curriculum** (`model.complete(messages)`, call counts):
+`stream` and `acomplete` for `speculative-tool-calls`, whose input is a model
+stream; `cost`, `spent`, and `logprobs` for `cascade-router`; protocol validation,
+because "ids mismatched" and "only the first of parallel calls executed" are
+otherwise visible only by reading transcripts; and `ScriptedTool`, which both
+tool-calling problems would otherwise write twice.
+
+### TinyEncoder and CountingScorer
+
+```python
+from whetstone.kit import CountingScorer, TinyEncoder
+
+enc = TinyEncoder(ctx.fw, seed=1)                  # bidirectional; vocab 64, width 32, 2 layers
+states = enc(tokens, mask)                         # (B, T, d_model); mask: nonzero = real token
+emb = ctx.call("pool", states, mask, "mean")
+
+scorer = CountingScorer(seed=1, max_length=48, max_batch=8)
+ranked = ctx.call("rerank", query, docs, scorer, 8, 5)        # scorer([(query, doc), ...])
+check.cost(scorer.counters, "padded_tokens", at_most=...)
+```
+
+- `TinyEncoder`: a real token attends to real tokens only, and its position is
+  counted among the real tokens of its row. So the states of the real tokens do not
+  depend on where the padding is (to about `1e-6`), which is what lets
+  `embedding-pooling` state "padding never changes the embedding" for left and right
+  padding alike. States at padded positions are arbitrary: a pooling mutant that
+  reads them is wrong by a visible amount. `enc.reference(tokens, mask)` is the same
+  as numpy, uncounted. Counters: `forward_calls`, `tokens_processed` (padding
+  included), `real_tokens`. `enc.pad_id` is 0 and `enc.cls_id` 1 by convention only.
+- `CountingScorer` is framework-free (the problem that uses it is `python`). A pair
+  is `(query_tokens, doc_tokens)`, two non-empty sequences of ints; `scorer(pairs)`
+  returns a list of floats. It charges for the rectangle a cross-encoder batch is:
+  `padded_tokens += len(batch) * max(len(q) + len(d))`; `real_tokens` is what the
+  pairs hold; `calls`, `pairs`; `scorer.batches` logs the pair lengths of each call.
+- A pair's score is a function of that pair alone, **exactly**: the scorer encodes
+  each pair by itself, so equal pairs get equal floats in any batch, and "stable
+  ties" in a top-n is testable with duplicate documents.
+- A pair longer than `max_length` is a `ValueError` ("truncate the document first"),
+  as are an empty batch, a batch over `max_batch`, and an empty query or document.
+  `scorer.score(query, doc)` is the uncounted oracle.
+
+### RecurrentLM
+
+A language model whose memory of a prefix is a fixed-size state, for
+`hybrid-state-checkpoints`.
+
+```python
+from whetstone.kit import RecurrentLM
+
+lm = RecurrentLM(ctx.fw, seed=3)                   # vocab 64, 2 layers, state 48 per layer
+logits, state = lm(tokens)                         # the TinyLM call convention
+logits, state = lm(more_tokens, state)
+store = {}                                         # the checkpoint store is the problem's own
+tokens = ctx.call("generate_with_checkpoints", lm, store, prompt, 8)
+check.cost(lm.counters, "tokens_processed", at_most=P - (lcp // 8) * 8 + g - 1)
+```
+
+- A `RecurrentState` is opaque, immutable, and the same size at every length
+  (`state.nbytes`, `state.length`). `state.truncate(n)` exists only to raise a
+  `TypeError` that says why: there is nothing to cut. `state.select(rows)` and
+  `lm.initial_state(batch_size=None)` complete the picture.
+- Continuing from a saved state is **bit-identical** to reading the whole prefix in
+  one call (every token is folded in by the same arithmetic, one at a time). Tests
+  may compare logits with `check.equal`, unlike with `TinyLM`.
+- A state from the wrong prefix gives visibly wrong logits (the mutant that resumes
+  from the end of a longer cached prompt), but the influence of a token fades over a
+  few dozen steps: do not build a case on a difference 100 tokens back.
+- Counters: `forward_calls`, `tokens_processed`. The checkpoint store is left to the
+  problem (a dict from prefix to state works) because what it holds is what the
+  solution is graded on.
+
+### SimCluster
+
+Replicas of `SimEngine`, each with a fixed scheduler and a prefix cache, behind a
+`route` hook: for load balancing, cache-aware routing, autoscaling, draining, and
+prefill-decode disaggregation.
+
+```python
+from whetstone.kit import CostModel, SimCluster, workloads
+
+def simulate(ctx, route, requests):
+    sim = ctx.simclock()
+    cluster = SimCluster(sim, CostModel(2**-6, 2**-12, 2**-9), replicas=3, max_seqs=8,
+                         cache_tokens=4096, block_tokens=16, route=route)
+    workloads.drive(sim, requests, cluster.submit)
+    sim.run()
+    check.that(not cluster.violations, "the router misused the cluster", ...)
+    return sim, cluster
+
+sim, cluster = simulate(ctx, lambda request, replicas: router.route(request.tokens, replicas),
+                        workloads.shared_prefixes(ctx.rng, rate=20.0, n=200, groups=4))
+check.cost(cluster.counters, "cache_hit_tokens", at_least=1.5 * round_robin_hits)
+ttft = sim.trace.latencies("arrive", "first_token")
+```
+
+`SimCluster(sim, cost, *, replicas=1, max_seqs=8, max_batch_tokens=None,
+kv_blocks=None, block_tokens=16, cache_tokens=0, startup_s=0.0, route=None,
+transfer_s_per_token=0.0)`.
+
+**A replica** is `starting` for `startup_s` after it is added (the initial ones are
+ready at once), then `ready`, perhaps `draining`, finally `stopped`. A router may
+read `replica.id` (0, 1, ... in order added, never reused), `.state`, `.queue_len`
+(waiting plus running), `.waiting_len`, `.running_len`, `.outstanding_tokens` (prompt
+tokens still to prefill plus output tokens still to produce), and `.kv_usage` (0.0
+without a pool). `replica.cache` is the real prefix cache and is for tests: say in
+the statement that a router keeps its own index.
+
+**Its scheduler** is fixed, so that the routing decision is the only variable:
+continuous batching, first come first served. When its engine is free it admits
+waiting requests in arrival order while fewer than `max_seqs` run (with a KV pool,
+while the pool can hold the head request's whole context: nobody overtakes the head;
+a request that could never fit fails with `too_large`); then one step in which every
+ready sequence decodes and the rest of `max_batch_tokens` goes to prefill in
+admission order. State this in the statement in one paragraph; a problem whose
+answer depends on a different replica policy should use `SimEngine` directly.
+
+**The prefix cache** (with `cache_tokens > 0`, for requests that have `tokens`): the
+longest common prefix with a prompt the replica has prefilled, rounded down to a
+multiple of `block_tokens` and to at most `prompt_tokens - 1`, is not prefilled
+again. A prompt enters the cache when its prefill completes (two same-prefix
+requests arriving together both miss), and least recently used prompts are evicted
+beyond `cache_tokens`. `cache_lookup` events and `Outcome.cached_tokens` record the
+hits. A cache big enough for every prefix on every replica makes routing irrelevant:
+size it so that a replica holds a few prefixes, and measure the round-robin baseline.
+
+**Requests.** `cluster.submit(request)` calls `route(request, replicas)` with the
+ready replicas (the starting ones when none is ready) and expects a replica or its
+id; without `route`, the least `queue_len`, lowest id on ties. `replica.submit(
+request)` sends directly. Both return a future of an `Outcome` (`id`, `replica`,
+`phase`, `status` `"finished"` or `"failed"`, `submitted_s`, `first_token_s`,
+`finish_s`, `cached_tokens`, `reason`) that never raises; `cluster.outcomes` maps ids
+to them. `workloads.drive(sim, requests, cluster.submit)` records the `arrive`
+events, so `sim.trace.latencies("arrive", "first_token")` is TTFT as usual.
+
+**Scaling.** `cluster.add_replica()`; `cluster.drain(replica)` (no new work, stops
+when what it holds has finished); `cluster.stop(replica)` (now: its unfinished
+requests **fail** with `replica_stopped`, which is how the "scale-down kills
+in-flight requests" mutant shows); `cluster.scale_to(n)` (adds, or drains the newest,
+until `n` are starting or ready). Sending to a draining or stopped replica raises
+`ClusterError` (`replica_unavailable`), kept in `cluster.violations`.
+`cluster.metrics()` returns `ClusterMetrics(now, ready, starting, draining,
+queue_depth, running, outstanding_tokens, kv_usage)`, the input of an autoscaler
+policy (`starting` is the pending capacity it must count); `cluster.replica_seconds()`
+is the cost so far. The loop that calls a policy every period is three lines of test
+code (`sim.spawn` a task that sleeps, reads `metrics()`, calls `scale_to`); run such a
+simulation with `sim.run(until=...)`, since a periodic task never goes idle.
+
+**Two phases.** `replica.submit(request, phase="prefill")` runs the prompt only (the
+outcome arrives with the first token and the replica drops the sequence); `await
+cluster.transfer(request, src, dst)` takes `transfer_s_per_token *
+request.prompt_tokens`; `replica.submit(request, phase="decode")` produces the other
+`output_tokens - 1` tokens without a prefill. Every engine event carries
+`engine=<replica id>`, so "no decode step delayed by a prefill" is a filter on the
+decode replicas' `step` events.
+
+**Trace events added:** `route` (`id`, `replica`), `cache_lookup` (`id`, `replica`,
+`hit`), `fail` (`id`, `replica`, `reason`: `replica_stopped`, `no_replica`,
+`too_large`), `transfer` (`id`, `src`, `dst`, `tokens`, `duration`), `transfer_done`,
+`replica_start`, `replica_ready`, `replica_drain`, `replica_stop` (`replica`).
+**Counters:** `routed`, `finished`, `failed`, `cache_lookups`, `cache_hit_tokens`,
+`scale_ups`, `scale_downs`, `transfers`, `transferred_tokens`.
+
+**Interface change from the curriculum** ("replicas of `SimEngine` with per-replica
+prefix caches, startup delay, and a `route` hook"): the replica scheduler is built in
+and fixed; `drain`, `stop`, `scale_to`, `metrics`, and `replica_seconds` serve
+`autoscaler-policy` and stage 5 of `capstone-inference-gateway`; the `prefill` and
+`decode` phases and `transfer` serve `prefill-decode-disaggregation`; requests carry
+token ids (`SimRequest.tokens`) because a prefix cannot be matched on a length.
+`SimEngine` gained what this needed: `name=` (events tagged `engine=`), and
+`admit(request, cached_tokens=c)` and `admit(request, resume_from=g)` for a sequence
+that starts with a cached prefix or with a KV cache brought from another engine.
+
+### vectors
+
+Seeded vector sets with known neighbors, an exact top-k oracle, and a distance
+function that counts, for the vector-search problems.
+
+```python
+from whetstone.kit import vectors
+
+data = vectors.clustered(ctx.rng, n=2000, dim=32, clusters=16)      # .vectors .centroids .labels
+queries = vectors.queries_near(ctx.rng, data.vectors, [3, 17, 256], noise=0.05)
+truth, scores = vectors.exact_topk(queries, data.vectors, k=10)     # float64 scan, ties to the lower index
+check.that(vectors.recall(found, truth) >= 0.9, "recall@10 is below 0.9")
+
+distance = vectors.CountingDistance(ctx.fw, metric="l2")
+index = ctx.call("build_ivf", data.vectors, data.centroids)
+found = ctx.call("search", queries[0], index, 10, 4, distance)
+check.cost(distance.counters, "distances", exactly=16 + probed_sizes)
+```
+
+- `clustered(rng, n, dim, *, clusters=8, spread=0.25, normalize=True)`: unit
+  centroids plus Gaussian noise of relative length `spread`; float32; with
+  `normalize` every vector has unit length, so cosine, dot, and L2 rank alike.
+- `queries_near(rng, vectors, indices, *, noise=0.05)`: one query per index, that
+  vector slightly moved. For small `noise` it is the query's nearest neighbor; when a
+  case depends on it, assert it with `exact_topk` in the test.
+- `exact_topk(queries, corpus, k, *, metric="cosine")` returns `(indices, scores)`,
+  both `(Q, min(k, N))`, best first; metrics `cosine`, `dot`, `l2` (score: negated
+  squared distance). `recall(found, truth)` averages the fraction of true neighbors
+  found.
+- `CountingDistance(fw, metric)`: `distance(queries, candidates)` returns `(N,)` or
+  `(Q, N)` as a tensor of the framework (`l2`: squared distances, smaller is closer;
+  `dot`, `cosine`: larger is closer) and counts `calls` and `distances` (`Q * N`). An
+  empty candidate list is allowed and counts nothing.
+
 ### SimModel and Counters
 
 `SimModel` is described in section 5.6. `Counters("a", "b")` is the counter object for
@@ -1680,6 +2206,19 @@ The kit objects added for milestone 3 are documented where they are used:
 `LazyClock` (section 13), `logit_kl` (section 15), and the CUDA-on-CPU tools
 `SyncSpy`, `DeviceSpy`, `FakeDevice`, `RealDevice`, `OOMModel`, `FakeCudaGraph`,
 `CompileCounter`, `TransferSpy`, and `tritonshim` (section 18).
+
+**What milestone 5 left to problem-local test code**, after reading the specifications
+of its 90 problems for needs that two or more share: LRU and TTL bookkeeping (it is
+what `semantic-cache`, `block-hash-prefix-cache`, `radix-prefix-cache`, and
+`kv-tiered-offload` ask the learner to write, and each oracle is that problem's own
+reference); brute-force oracles for small inputs (`unigram-viterbi`,
+`bit-allocation`, `radix-prefix-cache`); the checkpoint store of
+`hybrid-state-checkpoints`; pipeline stages with service times
+(`pipeline-parallel-schedule`, one user); attention-weight and Hessian fixtures of
+the KV-compression and quantization problems (each has its own shapes); and JSON
+Schema fixtures. Shared helpers that were added instead: `SimRequest.tokens`,
+`workloads.phases`, `workloads.shared_prefixes`, `workloads.token_sequences`, the
+`vectors` module, and `ScriptedTool`.
 
 ### Adding a kit object
 
@@ -1916,9 +2455,28 @@ spent in cases, and warns when the cases take more than 3 s.
   checkout see. What the cache cannot remove is JAX's cost per operation once
   compiled: an un-jitted 28-layer forward pass is about a thousand dispatches, 0.1 s
   per decode step and 1 s per 768-token prefill on the small real model, which is
-  where the rest of `real-model-cached-generate` goes. `WHETSTONE_JAX_CACHE=0` turns
-  the cache off (to measure a first run again); `ws validate` times are also inflated
-  by its four parallel runs, so time a single problem with `ws submit`.
+  where the rest of `real-model-cached-generate` goes (12 s since milestone 5, when
+  its speed case stopped reading the 768-token prompt a second time). The remedy is
+  not to make that reference faster than a learner's natural code: its decode step
+  is the baseline of a 3x speed limit, and one written to avoid JAX's copies of
+  transposed weights (0.074 s instead of 0.119 s per step, measured) or jitted
+  (0.072 s) would push an honest eager solution toward the limit. A JAX real-model
+  problem that must be quick has to do less: fewer steps, a shorter prompt.
+  `WHETSTONE_JAX_CACHE=0` turns the cache off (to measure a first run again);
+  `ws validate` times are also inflated by its four parallel runs, so time a single
+  problem with `ws submit`.
+- **One-time library costs are not charged to a case.** The first operation on a
+  `torch.device("meta")` tensor, the first operation under `FakeCudaGraph` capture,
+  and the first `torch.compile` each make torch import `torch._dynamo` (about 2.5 s,
+  half of it sympy), and the first compilation costs 0.7 s more. The harness stops
+  the case's clock for exactly that: the import runs with the soft time limit
+  suspended, the supervisor's deadline is moved, and the time is subtracted from the
+  case's `duration_ms`. The run still takes those seconds of wall time, once, and
+  only in a run that reaches the code that needs them. A kit object with a one-time
+  cost of its own wraps it in `whetstone.judge.warmup.once(name, fn)` (as
+  `CompileCounter` does for the first compilation); a module whose first import is
+  slow is added to `warmup.SLOW_IMPORTS`. Do not use this for anything the solution
+  controls.
 - Keep tensors small: tests check correctness, not scale. A few thousand elements is
   plenty except in speed cases.
 - `time_limit_s` is per case; 10 is right for almost everything. A correct solution
@@ -2987,17 +3545,33 @@ from the solution file** (or `file=`): `spy.events` is the ordered list of
 and `spy.shape_syncs` the counts by kind, `spy.describe()` one line per event.
 
 - `"read"`: `x.item()`, `x.tolist()`, `bool(x)` (so also `if x:`, `while x:`, `not
-  x`, `x and y`, `max(a, b)`), `int(x)`, `float(x)`, `x` used as an index or in
-  `range(x)`, `print(x)`, `str(x)`, `repr(x)`, an f-string, `y in x`, `x.equal(y)`,
-  `x.allclose(y)`, `torch.equal`, `torch.allclose`.
-- `"transfer"`: `x.cpu()`, `x.numpy()`, `np.asarray(x)`.
+  x`, `x and y`, `max(a, b)`), `int(x)`, `float(x)`, `x` used as a list index, in
+  `range(x)`, or as a **slice bound of a tensor** (`row[:x]`, read or written: the
+  size of the result depends on the value, so the host must wait for it; `what` is
+  `"slice bound"` for a read and `"index"` for a write), `print(x)`, `str(x)`,
+  `repr(x)`, an f-string, `y in x`, `x.equal(y)`, `x.allclose(y)`, `torch.equal`,
+  `torch.allclose`.
+- `"transfer"`: `x.cpu()`, `x.numpy()`, `np.asarray(x)`, and `x.to(...)` **when the
+  call names the CPU in the source**: `x.to("cpu")`, `x.to(device="cpu")`,
+  `x.to(torch.device("cpu"))`, or a name the solution file only ever assigns such a
+  literal to (`HOST = torch.device("cpu")` ... `x.to(HOST)`). `what` is `"to(cpu)"`.
+  The spy reads the calling line's source, not the argument's value, because the
+  value cannot tell: the `device` a CPU case passes in is the CPU as well.
 - `"shape"`: operations whose output size depends on the data, which make the host
   wait to learn it: `nonzero`, `argwhere`, `masked_select`, `unique`,
   `unique_consecutive`, `torch.where(cond)` with one argument, `x[mask]` with a
   boolean mask.
-- **Not counted: `x.to(device)`.** With a CPU `device` it is a no-op, and whether it
-  would synchronize on a GPU depends on where `x` lives. Specify `.cpu()` for the
-  final transfer in the statement, and count it in the limit.
+- **Not counted:** `x.to(device)` with the device the test passed in (as a
+  `torch.device` or as the string `"cpu"`), `x.to(other.device)`, `x.to(other)`,
+  `x.to(dtype)`, and `x.to(where)` for a name that is also bound in any other way (a
+  parameter, a second assignment). Here they are no-ops, and whether they would
+  synchronize on a GPU depends on where `x` lives. In a GPU case nothing is guessed:
+  from a tensor that really is on another device, any `.to` whose target is the CPU
+  counts. Two limits to know: a 0-d tensor used as a plain index (`row[n]`) is not
+  counted, because the result's size does not depend on it and torch need not read
+  it on the host; and `.to("cpu")` on a tensor the solution created on the host is
+  counted although it would cost nothing on a GPU. Count the final transfer in the
+  limit whichever way the statement spells it.
 - Unlike `EvalSpy` (section 13), which watches calls, this spy patches methods, so
   the implicit forms (`if x:`) *are* seen. One call counts once: `print(x)` is one
   event although torch reads many values to format it. The kit's, the test's, and
@@ -3175,8 +3749,9 @@ check.that(cc.graph_breaks == 0, "the step has a graph break", cc.describe())
 ```
 
 `cc.compilations` is the number of frames Dynamo compiled (a function compiled once
-with no break is 1; a graph break makes each piece a frame), `cc.graph_breaks` the
-number of graph breaks with `cc.break_reasons`, `cc.graphs` the distinct graphs.
+with no break is 1; a graph break makes each piece a frame), the same with and
+without `fullgraph=True`; `cc.graph_breaks` the number of graph breaks with
+`cc.break_reasons`, `cc.graphs` the distinct graphs.
 `cc.snapshot()` updates the numbers inside the block. Entering and leaving call
 `torch._dynamo.reset()`. Have the solution accept `backend` and pass `"eager"` on the
 CPU: Dynamo traces and guards exactly as for any backend and no C++ compiler is
@@ -3201,9 +3776,17 @@ block), or specify `dynamic=False` in the statement, under which the int mutant
 reaches 8. `fullgraph=True` turns a graph break into an exception
 (`torch._dynamo.exc.Unsupported`), which is another way to test for one.
 
-The counts come from `torch._dynamo.utils.counters` (`["frames"]["ok"]`,
-`["stats"]["unique_graphs"]`, `["unimplemented"]`), which is internal API read by
-torch's own tests; `CompileCounter` is the one place that touches it.
+The counts come from `torch._dynamo.utils`, internal API that torch's own tests read:
+`get_compilation_metrics()` (one record per frame Dynamo tried to compile; those
+without a `fail_type` are the compilations) and `counters` (`["stats"]
+["unique_graphs"]`, `["unimplemented"]`). Until milestone 5 `compilations` was
+`counters["frames"]["ok"]`, which torch 2.15 does not increment under
+`fullgraph=True`: it read 0 there, and tests worked around it with
+`max(cc.compilations, cc.graphs)`. That is no longer needed (it is harmless where it
+is still written): measured in both modes, a tensor position compiles once, a
+changing Python `int` with `dynamic=False` once per value, and a refused graph break
+under `fullgraph=True` is 0 compilations and 1 graph break. `CompileCounter` is the
+one place that touches these internals.
 
 ### TransferSpy: pinning and non-blocking transfers
 
@@ -3268,8 +3851,10 @@ What is modeled, from the Triton documentation:
   offsets` (in elements) is a block of pointers; `load(pointer, mask=None,
   other=None, *, cache_modifier="", eviction_policy="", volatile=False)` and
   `store(pointer, value, mask=None, *, cache_modifier="", eviction_policy="")`.
-- `arange(start, end)`, `zeros(shape, dtype)`, `zeros_like`, `full(shape, value,
-  dtype)`, `where(condition, x, y)`, `cast(input, dtype, fp_downcast_rounding=None,
+- `arange(start, end)` (see below for which bounds), `zeros(shape, dtype)`,
+  `zeros_like`, `full(shape, value, dtype)` with `shape` a tuple (as the pages for
+  `zeros` and `full` document) or a list (as the layer-norm tutorial writes:
+  `tl.zeros([BLOCK_SIZE], dtype=tl.float32)`), `where(condition, x, y)`, `cast(input, dtype, fp_downcast_rounding=None,
   bitcast=False)` and `x.to(dtype)`, `sum(input, axis=None, keep_dims=False,
   dtype=None)`, `max` and `min` (`axis`, `keep_dims`), `maximum`, `minimum`, `clamp`,
   `abs`, `sqrt`, `rsqrt`, `exp`, `log`, `sigmoid`, `static_range`; the operators `+ -
@@ -3283,13 +3868,29 @@ What is modeled, from the Triton documentation:
   float16 operand is promoted); integer `//` and `%` round toward zero as in C, while
   arithmetic on `constexpr` values is Python's; `sum` widens integers narrower than
   32 bits to int32 or uint32.
-- Three rules come from the author's knowledge of Triton's implementation rather
-  than from its documentation, and are the first things to check on a GPU: `/` on
-  two integers gives float32; scalar launch arguments arrive as int32 (int64 when
-  they do not fit), float32, or int1; and every block shape, not only `arange`'s
-  length, must be a power of two. `tl.constexpr` parameters stay Python numbers and
-  are the only values allowed as shapes and `arange` bounds. The shim also refuses
-  `//` on floats (use `/`).
+- `tl.constexpr` parameters stay Python numbers and are the only values allowed as
+  shapes and `arange` bounds. The shim also refuses `//` on floats (use `/`).
+
+**Where the documentation stops, and what the shim does there.** Re-read for
+milestone 5 on triton-lang.org: the pages `triton.language`, `tensor`, `arange`,
+`zeros`, `full`, "Triton Semantics", and the layer-norm tutorial. Each item below is
+a guess or a refusal, not a documented fact, and is the first thing to check on a
+GPU:
+
+| question | what the documentation says | what the shim does |
+|---|---|---|
+| bounds of `tl.arange(start, end)` | "start: Must be a power of two", "end: Must be a power of two greater than start"; yet every tutorial writes `tl.arange(0, BLOCK)`, and 0 is not a power of two | accepts only what passes both the wording (with 0 allowed as a start) and a power-of-two *length*: `(0, 2**m)` and `(2**k, 2**(k + 1))`. So `tl.arange(3, 7)` (length 4, refused by the wording) and `tl.arange(2, 8)` (allowed by the wording, length 6) are both errors. Write `start + tl.arange(0, BLOCK)`. |
+| shapes of `zeros` and `full` | "tuple of ints"; the tutorial passes a list | accepts both; a list anywhere else in a kernel is still refused |
+| must every block shape be a power of two? | not stated (only `arange`'s bounds are constrained) | yes: a guess, the strict reading |
+| `>>` on signed integers | the `tensor` page says only that the operators exist ("`x+y`, `x << 2`, etc.") | zeros come in for unsigned values and for non-negative signed ones, where there is nothing to decide; `>>` on a **negative signed value raises**, because arithmetic and logical shifts differ there and nothing says which it is. A shift count outside `[0, bits)` raises too. |
+| `/` on two integers | not stated | float32: a guess |
+| dtype of scalar launch arguments | not stated | int32 (int64 when it does not fit), float32, int1: a guess |
+
+The shift rule is why the `signed_shift` mutant of `cuda-triton-dequant-linear` is
+rejected whatever real Triton does: a kernel that isolates a field with
+`(word.to(tl.int32) << a) >> b` stops at the shift. A kernel that needs sign
+extension has to do it with arithmetic the documentation defines (`tl.where(code >=
+8, code - 16, code)`).
 
 Where the shim is strict because a GPU would not tell you:
 
@@ -3312,8 +3913,9 @@ group index are numeric; a float16 accumulator loses precision (numeric).
 
 **What is and is not verified.** The signatures and semantics above were read from
 triton-lang.org (`triton.language`, the pages for `load`, `store`, `sum`, `max`,
-`cast`, `arange`, `where`, `full`, `program_id`, "Triton Semantics", and the
-vector-add tutorial, whose kernel is the first unit test). **The shim has not been
+`cast`, `arange`, `zeros`, `where`, `full`, `tensor`, `program_id`, "Triton
+Semantics", and the vector-add and layer-norm tutorials; the vector-add kernel is the
+first unit test, and the first loop of the layer-norm kernel is another). **The shim has not been
 run against real Triton**, which does not install on macOS; torch's Linux wheels
 depend on it (`triton` 3.9.0 in `uv.lock`), so it is present on a CUDA host. On such
 a host `tl.launch` with CUDA tensors hands the same kernel function to real Triton
@@ -3321,10 +3923,9 @@ a host `tl.launch` with CUDA tensors hands the same kernel function to real Trit
 by `triton.language`, and `triton.jit` is applied); that path is exercised only with
 a stand-in `triton` module in the unit tests. Known gaps, where a kernel accepted
 here might still be refused or behave differently there: Triton's rule that a
-variable used after an `if` or `for` must be assigned on every path; the documented
-arange constraint, which the page words as a power-of-two *interval* and the shim
-enforces as a power-of-two *length*; float results of GPU math functions, which need
-not round like numpy's; float-to-int casts out of range (undefined in Triton);
+variable used after an `if` or `for` must be assigned on every path (documented, not
+checked by the shim); the guesses in the table above; float results of GPU math
+functions, which need not round like numpy's; float-to-int casts out of range (undefined in Triton);
 bfloat16 (numpy has none). Treat the first GPU run of each Triton problem as a test
 of the shim, and tell the judge's owner what differs.
 
@@ -3485,3 +4086,49 @@ imported only by the MLX adapter, the MLX kit tools, and hardware detection, eac
 guarded. A remote host needs Python 3.15, `uv`, the `python/` directory, and the
 problem directory at `<root>/problems/<track>/<id>` (or `WHETSTONE_ROOT`); assets are
 looked up under that root.
+
+## 20. Contract additions of milestone 5 (to mirror in ARCHITECTURE.md)
+
+Everything is additive. A run of a problem that uses no stage produces exactly the
+events it produced before.
+
+**3.3 Problem directory.** `tests.py` may group its cases into stages:
+`@case("...", stage="2: paged KV cache")`. A stage is identified by its label (one
+line, at most 60 characters); stages are ordered by the first case that names them.
+A problem gives every case a stage or none.
+
+**3.6 Event protocol.** Each entry of `start.cases` may carry `"stage": "<label>"`;
+the key is absent for a case without a stage. Nothing else changes: `case_start`,
+`case_end`, and `end` do not mention stages, and a consumer derives per-stage
+progress from `start.cases` and the `case_end` statuses.
+
+```jsonc
+{"event":"start", ..., "cases":[
+   {"id":"alloc_fork","name":"fork shares every block","public":true,"stage":"1: block allocator"},
+   {"id":"hidden-1","name":"Hidden case 1","public":false,"stage":"1: block allocator"},
+   {"id":"fcfs_trace","name":"FCFS: the trace equals the oracle's","public":true,"stage":"2: continuous batching"}]}
+```
+
+- A stage label is public information, also for a hidden case: it is sent as written
+  while the case's id and name are `hidden-N` and "Hidden case N". Hidden numbering
+  is unchanged (it counts the hidden cases of the whole file, across stages).
+- Stage order is the order of first appearance in `start.cases`. With `--case` or in
+  `run` mode, `start.cases` lists only the selected cases, each with its stage.
+- Stages do not gate anything: every selected case runs, and the final `status` is
+  computed from all cases as before.
+- Presentation: when any case has a stage, show the label as "Stage <label>" (as
+  written if it already begins with "Stage"), group cases under it in
+  first-appearance order, and show a pass count per stage ("3/5 passed").
+- `case_end.duration_ms` does not include time the judge spent, inside the case, on
+  one-time library initialization that is not the solution's doing (the first import
+  of `torch._dynamo`, about 2.5 s, and the first `torch.compile`); the case's time
+  limit is suspended for that time as well. `end.duration_ms` is wall time and
+  includes it.
+
+**3.7 CLI.** `ws run` and `ws submit` (text output) print a heading line `Stage
+<label>` whenever the stage of the next case differs from the previous one's, and,
+after the verdict line, one line per stage in first-appearance order: `<passed>/<total>
+passed[, <k> skipped]  Stage <label>`. `--events` output is the protocol, unchanged
+but for the `stage` key. `ws validate` fails a problem in which some cases have a
+stage and others do not (`tests.py: N of M cases have no stage (<ids>); give every
+@case a stage= or none`).

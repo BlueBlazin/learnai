@@ -148,7 +148,12 @@ class Supervisor:
     def _set_activity(self, info: dict[str, Any]) -> None:
         if info.get("phase") in ("import", "case"):
             self.activity = info
-            self.deadline = time.monotonic() + float(info.get("limit_s", 10.0)) + self.hard_grace_s
+            # `deadline_s`, when present, replaces the limit as the time left: the
+            # worker sends it when it stops and restarts a case's clock for work that
+            # is not the solution's (whetstone.judge.warmup). `limit_s` stays the
+            # limit that messages quote.
+            left = float(info.get("deadline_s", info.get("limit_s", 10.0)))
+            self.deadline = time.monotonic() + left + self.hard_grace_s
         else:
             self.activity = None
             self.deadline = None

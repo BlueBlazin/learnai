@@ -222,9 +222,11 @@ def test_validate_checks_that_forbidden_names_resolve(scratch_root):
     errors = errors_for(scratch_root)
     assert errors == [
         "problem.toml: forbidden name `math.fsun`: `fsun` does not exist",
-        ("problem.toml: forbidden name `math.pi`: is not callable, so there is no call to "
-        "guard (a dtype or a constant is only mentioned); list its identifier in "
-        "`forbidden_source` instead"),
+        (
+            "problem.toml: forbidden name `math.pi`: is not callable, so there is no call to "
+            "guard (a dtype or a constant is only mentioned); list its identifier in "
+            "`forbidden_source` instead"
+        ),
         "problem.toml: forbidden name `statistics.NoSuch.mean`: `NoSuch` does not exist",
     ]
 
@@ -296,7 +298,9 @@ def test_timing_sensitive_problems_validate_alone_after_the_parallel_batch(monke
 def test_which_judges_count_as_timing_sensitive():
     from whetstone.problem import load_problem
 
-    verdicts = {d.name: gate.is_timing_sensitive(load_problem(d)) for d in gate.problem_dirs(CATALOG)}
+    verdicts = {
+        d.name: gate.is_timing_sensitive(load_problem(d)) for d in gate.problem_dirs(CATALOG)
+    }
     assert verdicts == {
         "sum-list": False, "dynamic-batcher": False, "greedy-decode": False,
         "pairwise-distances": True, "sample-categorical": False, "sse-tokens": True,

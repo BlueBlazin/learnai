@@ -85,8 +85,8 @@ class SyncEvent:
     """One host synchronization the spy saw.
 
     ``kind`` is ``"read"`` (a value was pulled to Python: ``.item()``, ``bool(x)``,
-    ``print(x)``), ``"transfer"`` (``.cpu()``, ``.numpy()``: the whole tensor was
-    copied to the host), or ``"shape"`` (an operation whose output size depends on the
+    ``print(x)``), ``"transfer"`` (``.cpu()``, ``.numpy()``, ``.to("cpu")``: the whole
+    tensor was copied to the host), or ``"shape"`` (an operation whose output size depends on the
     data, such as ``nonzero`` or a boolean-mask index, which makes the host wait for
     the result to learn the size). ``what`` names the call; ``line`` is the line of
     the watched file that made it.
@@ -143,21 +143,37 @@ class SyncSpy:
 
     Counted: ``x.item()``, ``x.tolist()``, ``bool(x)`` (also ``if``, ``while``,
     ``and``, ``or``, ``not``, ``max(a, b)``), ``int(x)``, ``float(x)``, using ``x`` as
-    an index or in ``range``, ``print(x)``, ``str(x)``, ``repr(x)``, f-strings,
-    ``y in x``, ``x.equal(y)``, ``x.allclose(y)`` and the ``torch.`` forms; ``x.cpu()``,
-    ``x.numpy()``, ``np.asarray(x)``; ``nonzero``, ``argwhere``, ``masked_select``,
-    ``unique``, ``torch.where(cond)`` with one argument, and ``x[mask]`` with a
-    boolean mask.
+    a list index, in ``range``, or as a slice bound of a tensor (``row[:x]``, read or
+    written: the size of the result depends on its value), ``print(x)``, ``str(x)``,
+    ``repr(x)``, f-strings, ``y in x``, ``x.equal(y)``, ``x.allclose(y)`` and the
+    ``torch.`` forms; ``x.cpu()``, ``x.numpy()``, ``np.asarray(x)``; ``nonzero``,
+    ``argwhere``, ``masked_select``, ``unique``, ``torch.where(cond)`` with one
+    argument, and ``x[mask]`` with a boolean mask.
 
-    Not counted: ``x.to(device)``. With ``device`` a CPU device it is a no-op here,
-    and whether it would synchronize on a GPU depends on where ``x`` lives, which a
-    CPU run cannot know. Specify ``.cpu()`` for the final transfer in the statement.
+    ``x.to(...)`` is counted as a transfer in two cases, and only in these:
+
+    - ``x`` is really on another device and the target is the CPU (a GPU case);
+    - the call *names* the CPU in the source: ``x.to("cpu")``, ``x.to(device="cpu")``,
+      ``x.to(torch.device("cpu"))``, or a name the file only ever assigns such a
+      literal to (``HOST = torch.device("cpu")`` ... ``x.to(HOST)``). On a CPU run
+      every tensor stands in for a device tensor, and a line that says "cpu" means
+      the host.
+
+    ``x.to(device)`` with the device the test passed in, ``x.to(other.device)``,
+    ``x.to(other)``, and ``x.to(dtype)`` are not counted: here they are no-ops, and
+    whether they would synchronize on a GPU depends on where ``x`` lives, which a CPU
+    run cannot know. The literal is read from the source of the calling line, so the
+    test may pass ``torch.device("cpu")`` or the string ``"cpu"`` as the device
+    without being counted. (A tensor that is created on the host and then sent
+    ``.to("cpu")`` is counted although it would cost nothing on a GPU; nobody
+    writes that.)
     """
 
     def __init__(self, file: str | None = None) -> None:
         self.file = _solution_file(file, "SyncSpy")
         self.events: list[SyncEvent] = []
         self._patches = _Patches()
+        self._calls: _CallSites | None = None  # the watched file's source, parsed on demand
 
     # -- results ---------------------------------------------------------------------
 
@@ -220,7 +236,22 @@ class SyncSpy:
             parts = index if isinstance(index, tuple) else (index,)
             if any(isinstance(p, tensor) and p.dtype == torch.bool for p in parts):
                 self._record("shape", "boolean-mask index")
+            # `row[:n]` with a tensor `n`: torch reads the bound in C++ (no `__index__`
+            # call to see), and it must, because the result's size depends on it. A
+            # slice *write* does go through `__index__`, which is already watched.
+            if any(isinstance(p, slice) and _has_tensor_bound(p, tensor) for p in parts):
+                self._record("read", "slice bound")
             return getitem(self_tensor, index)
+
+        to = tensor.to
+
+        def spied_to(self_tensor: Any, *args: Any, **kwargs: Any) -> Any:
+            frame = sys._getframe(1)
+            if frame.f_code.co_filename == self.file and self._to_is_host_transfer(
+                self_tensor, args, kwargs, frame, torch
+            ):
+                self.events.append(SyncEvent("transfer", "to(cpu)", frame.f_lineno))
+            return to(self_tensor, *args, **kwargs)
 
         def spied_where(*args: Any, **kwargs: Any) -> Any:
             if len(args) + len(kwargs) == 1:
@@ -228,11 +259,113 @@ class SyncSpy:
             return where(*args, **kwargs)
 
         self._patches.set(tensor, "__getitem__", spied_getitem)
+        self._patches.set(tensor, "to", spied_to)
         self._patches.set(torch, "where", spied_where)
         return self
 
     def __exit__(self, *exc: object) -> None:
         self._patches.restore()
+
+    def _to_is_host_transfer(
+        self, source: Any, args: tuple, kwargs: dict, frame: Any, torch: Any
+    ) -> bool:
+        """Whether this ``x.to(...)`` copies to the host (see the class docstring)."""
+        if source.device.type != "cpu":
+            # A real device tensor: the arguments say where it goes.
+            target = kwargs.get("device", args[0] if args else None)
+            if isinstance(target, torch.Tensor):
+                target = target.device
+            if isinstance(target, str):
+                target = torch.device(target)
+            return isinstance(target, torch.device) and target.type == "cpu"
+        if self._calls is None:
+            self._calls = _CallSites(self.file)
+        return self._calls.names_cpu(frame)
+
+
+def _has_tensor_bound(part: slice, tensor: type) -> bool:
+    return any(isinstance(bound, tensor) for bound in (part.start, part.stop, part.step))
+
+
+class _CallSites:
+    """Reads, from the source of a file, what the argument of a running call looks like.
+
+    Used for one question: does the ``.to(...)`` call a frame is executing right now
+    name the CPU literally? A value cannot answer that (the device a test passes in
+    is ``torch.device("cpu")`` too); the source can.
+    """
+
+    def __init__(self, file: str) -> None:
+        import ast
+
+        self._ast = ast
+        self._calls: dict[tuple[int, int, int, int], Any] = {}
+        self._cpu_names: set[str] = set()
+        try:
+            with open(file, encoding="utf-8") as handle:
+                tree = ast.parse(handle.read())
+        except OSError, SyntaxError, ValueError:
+            return
+        assigned: dict[str, list[Any]] = {}  # plain `name = value` bindings
+        bound: dict[str, int] = {}  # every binding of a name, of any form
+        parameters: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                where = (node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)
+                self._calls[where] = node
+            elif isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+                bound[node.id] = bound.get(node.id, 0) + 1
+            elif isinstance(node, ast.arg):
+                parameters.add(node.arg)
+            elif isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        assigned.setdefault(target.id, []).append(node.value)
+            elif (
+                isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and node.value is not None
+            ):
+                assigned.setdefault(node.target.id, []).append(node.value)
+        # A name stands for the CPU when the file binds it only by plain assignment
+        # and only ever to a CPU literal.
+        self._cpu_names = {
+            name
+            for name, values in assigned.items()
+            if name not in parameters
+            and bound.get(name) == len(values)
+            and all(self._literal_cpu(value) for value in values)
+        }
+
+    def _literal_cpu(self, node: Any) -> bool:
+        """``"cpu"``, ``"cpu:0"``, or ``torch.device("cpu")`` / ``device("cpu")``."""
+        ast = self._ast
+        if isinstance(node, ast.Constant):
+            return isinstance(node.value, str) and node.value.split(":")[0] == "cpu"
+        if isinstance(node, ast.Call) and node.args and not node.keywords:
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+            return name == "device" and self._literal_cpu(node.args[0]) and len(node.args) == 1
+        return False
+
+    def names_cpu(self, frame: Any) -> bool:
+        positions = list(frame.f_code.co_positions())
+        index = frame.f_lasti // 2
+        if not 0 <= index < len(positions) or None in positions[index]:
+            return False
+        line, end_line, col, end_col = positions[index]
+        call = self._calls.get((line, col, end_line, end_col))
+        if call is None:
+            return False
+        target = call.args[0] if call.args else None
+        for keyword in call.keywords:
+            if keyword.arg == "device":
+                target = keyword.value
+        if target is None:
+            return False
+        if isinstance(target, self._ast.Name):
+            return target.id in self._cpu_names
+        return self._literal_cpu(target)
 
 
 # --------------------------------------------------------------------------------------
@@ -736,7 +869,8 @@ class CompileCounter:
     several separately compiled pieces. Both cost far more than the step they wrap.
 
     - ``cc.compilations``: frames Dynamo compiled (each piece of a broken function is
-      one). A function compiled once, with no break, is 1.
+      one). A function compiled once, with no break, is 1. The same number with and
+      without ``fullgraph=True``.
     - ``cc.graph_breaks``: number of graph breaks; ``cc.break_reasons`` their first
       lines.
     - ``cc.graphs``: distinct graphs handed to the backend.
@@ -747,9 +881,13 @@ class CompileCounter:
     ``backend="eager"`` on the CPU: Dynamo traces and guards exactly as it would for
     any backend, and no C++ compiler is needed.
 
-    The numbers come from ``torch._dynamo.utils.counters``, which is not public API;
-    they are what torch's own tests read. Checked on torch 2.15 (see
-    PROBLEM_AUTHORING, "CUDA problems"); re-check when the pin moves.
+    The numbers come from ``torch._dynamo.utils``, which is not public API:
+    ``get_compilation_metrics()`` (one record per frame Dynamo tried to compile; the
+    ones without a ``fail_type`` are the compilations) and ``counters`` (graphs and
+    graph breaks; its ``frames.ok`` entry counts compilations too, but stays at zero
+    under ``fullgraph=True``, which is why it is not the source). They are what
+    torch's own tests read. Checked on torch 2.15 (see PROBLEM_AUTHORING, "CUDA
+    problems"); re-check when the pin moves.
     """
 
     def __init__(self) -> None:
@@ -760,16 +898,29 @@ class CompileCounter:
 
     def __enter__(self) -> Self:
         import torch._dynamo
-        from torch._dynamo.utils import counters
+        from torch._dynamo import utils
 
+        from whetstone.judge import warmup
+
+        # The first torch.compile of a process spends about 0.7 s setting itself up,
+        # whatever it compiles: paid here, once, with the case's clock stopped.
+        warmup.once("torch.compile", warmup.first_torch_compile)
         torch._dynamo.reset()
-        counters.clear()
-        self._counters = counters
+        utils.counters.clear()
+        utils.clear_compilation_metrics()
+        # The metrics list is bounded (64 records by default); a block that compiles
+        # more than that would be undercounted.
+        self._metrics_limit = utils.DEFAULT_COMPILATION_METRICS_LIMIT
+        utils.set_compilation_metrics_limit(100_000)
+        self._utils = utils
+        self._counters = utils.counters
         return self
 
     def _read(self) -> None:
         counters = self._counters
-        self.compilations = int(counters["frames"]["ok"])
+        compiled = sum(1 for m in self._utils.get_compilation_metrics() if m.fail_type is None)
+        # `frames.ok` is the older source; it can only be equal or (fullgraph) smaller.
+        self.compilations = max(compiled, int(counters["frames"]["ok"]))
         self.graphs = int(counters["stats"]["unique_graphs"])
         reasons = counters["unimplemented"]
         self.graph_breaks = int(sum(reasons.values()))
@@ -784,6 +935,7 @@ class CompileCounter:
         import torch._dynamo
 
         self._read()
+        self._utils.set_compilation_metrics_limit(self._metrics_limit)
         # Compiled code holds guards on objects of this case; drop it before the next.
         torch._dynamo.reset()
 

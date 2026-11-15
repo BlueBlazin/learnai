@@ -171,7 +171,7 @@ def create(
     if "python" not in frameworks and "torch" not in frameworks and frameworks != ["mlx"]:
         raise ScaffoldError(
             'tensor problems must include "torch" (the oracle); the one exception is an '
-            'MLX-only problem, `--frameworks mlx`, whose MLX reference is the oracle'
+            "MLX-only problem, `--frameworks mlx`, whose MLX reference is the oracle"
         )
     if difficulty not in DIFFICULTIES:
         raise ScaffoldError(f"difficulty must be one of {', '.join(DIFFICULTIES)}")

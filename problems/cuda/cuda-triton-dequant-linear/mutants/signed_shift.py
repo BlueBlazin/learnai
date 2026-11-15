@@ -1,4 +1,4 @@
-# BUG: isolates the code with a left shift followed by a right shift on a signed int32; the right shift copies the sign bit, so every code of 8 or more comes out negative.
+# BUG: isolates the code with a left shift followed by a right shift on a signed int32; a code of 8 or more is negative after the left shift, and what `>>` does to a negative signed value is not documented by Triton (an arithmetic shift would give -8 to -1), so the shim refuses it.
 import torch
 
 from whetstone.kit import tritonshim as tl

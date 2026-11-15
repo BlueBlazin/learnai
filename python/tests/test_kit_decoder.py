@@ -148,9 +148,11 @@ def test_forward_matches_a_from_scratch_implementation():
         x = x + out.reshape(seq, cfg.d_model) @ w["self_attn.o_proj.weight"].T
         h = norm(x, w["post_attention_layernorm.weight"])
         gate = h @ w["mlp.gate_proj.weight"].T
-        x = x + (gate / (1 + np.exp(-gate)) * (h @ w["mlp.up_proj.weight"].T)) @ w[
-            "mlp.down_proj.weight"
-        ].T
+        x = (
+            x
+            + (gate / (1 + np.exp(-gate)) * (h @ w["mlp.up_proj.weight"].T))
+            @ w["mlp.down_proj.weight"].T
+        )
     want = norm(x, p["model.norm.weight"]) @ p["model.embed_tokens.weight"].T.astype(np.float64)
     np.testing.assert_allclose(decoder_forward_ref(cfg, p, tokens), want, rtol=1e-4, atol=1e-4)
 

@@ -280,9 +280,7 @@ class Context:
         is better" unless ``higher_is_better`` says otherwise (a throughput); that
         decides which case's value the run reports as its worst.
         """
-        metric = protocol.clean_metric(
-            name, value, unit, limit, higher_is_better=higher_is_better
-        )
+        metric = protocol.clean_metric(name, value, unit, limit, higher_is_better=higher_is_better)
         if metric is None:
             return
         self.metrics[:] = [m for m in self.metrics if m["name"] != metric["name"]]

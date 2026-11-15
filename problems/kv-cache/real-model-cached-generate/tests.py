@@ -112,6 +112,7 @@ class Model:
     def stepwise(self, steps=None):
         """prefill, then decode_step fed with the fixture's tokens: logits at every step."""
         got, cache = self.prefill()
+        self.after_prefill = cache  # the cache is a value: the steps below leave it alone
         chosen = [int(got.argmax())]
         for i, token in enumerate(self.tokens[: (steps or len(self.tokens)) - 1]):
             got, cache = self.step(token, cache, self.logits[i + 1], f"decode_step {i + 1}")
@@ -248,7 +249,11 @@ def real_branch(ctx):
 
 @case("Granite 4.0 350M: a prompt of 768 tokens, then five decode steps", time_limit_s=60)
 def real_long_prompt(ctx):
-    real(ctx, 2).stepwise()
+    model = real(ctx, 2)
+    model.stepwise()
+    # Kept for the speed case, which starts from the same cache: reading the 768
+    # tokens a second time costs a second or more and checks nothing new.
+    _cache[f"long_prompt_{ctx.framework}"] = (ctx.solution, model.after_prefill)
 
 
 # Rejects no_cache: a decode_step that reads the 768 prompt tokens again is about eight
@@ -261,8 +266,12 @@ def real_decode_speed(ctx):
     tokens = model.tokens[:4]
 
     def decode_from_prompt(module):
-        logits, cache = module.prefill(model.weights, model.cfg, prompt)
-        ctx.fw.sync(logits, cache)  # the prompt is read before the clock starts
+        kept = _cache.get(f"long_prompt_{ctx.framework}")
+        if kept is not None and kept[0] is module:
+            cache = kept[1]  # the cache `prefill` returned in real_long_prompt
+        else:
+            _, cache = module.prefill(model.weights, model.cfg, prompt)
+        ctx.fw.sync(cache)  # the prompt is read before the clock starts
 
         def run():
             state, out = cache, None

@@ -125,7 +125,7 @@ than on a documented statement: that Python scalars passed at launch arrive as
 int32 and float32, that an integer divided by an integer with `/` gives float32,
 and that every block shape must be a power of two. The reference kernel does not
 depend on the second, and the tutorial depends on the first and third in the same
-way the reference does. One known difference: the tutorial writes
-`tl.zeros([BLOCK_SIZE], dtype=tl.float32)` with a list, which the shim refuses; a
-tuple, as documented for `tl.zeros`, works in both. The GPU cases, which hand this
+way the reference does. The tutorial writes `tl.zeros([BLOCK_SIZE],
+dtype=tl.float32)` with a list where the page for `tl.zeros` documents a tuple; the
+shim accepts both. The GPU cases, which hand this
 kernel to the real compiler, have never been run.

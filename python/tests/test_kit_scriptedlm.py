@@ -180,7 +180,9 @@ def make_app(lm):
     async def status(request):
         return JSONResponse({"active": lm.active})
 
-    return Starlette(routes=[Route("/generate", generate, methods=["POST"]), Route("/status", status)])
+    return Starlette(
+        routes=[Route("/generate", generate, methods=["POST"]), Route("/status", status)]
+    )
 
 
 def test_a_real_server_streams_piece_by_piece_under_the_gate():

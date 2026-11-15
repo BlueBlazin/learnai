@@ -86,6 +86,40 @@ SOLUTION = textwrap.dedent(
         return y[1:] + z[:-1], len(x), x.shape[0], x[torch.tensor([0, 1])]
 
 
+    HOST = torch.device("cpu")
+
+
+    def slices(row, n):
+        a = row[:n]
+        b = row[None, 1:n]
+        row[:n] = 0.0
+        return a, b, row[1:3], row[n]
+
+
+    def names_the_cpu(x):
+        a = x.to("cpu")
+        b = x.to(device="cpu")
+        c = x.to(torch.device("cpu"))
+        d = x.to(HOST)
+        e = x.float().to(
+            device="cpu:0",
+            non_blocking=True,
+        )
+        return a, b, c, d, e
+
+
+    def moves_without_naming_the_cpu(x, device, other):
+        where = "cpu"
+        if x.ndim > 5:
+            where = other.device
+        return (x.to(device), x.to(other.device), x.to(other), x.to(torch.float16),
+                x.to(device=device, dtype=torch.float32), x.to(where))
+
+
+    def to_device(x, device):
+        return x.to(device)
+
+
     def makes_tensors(x, device):
         a = torch.arange(x.shape[0])
         b = torch.arange(x.shape[0], device=device)
@@ -217,6 +251,52 @@ def test_syncspy_ignores_device_side_work_and_other_files(solution):
     assert spy.syncs == 0
 
 
+def test_syncspy_sees_a_tensor_used_as_a_slice_bound(solution):
+    row, n = torch.arange(10.0), torch.tensor(3)
+    with SyncSpy(file=solution.__file__) as spy:
+        a, b, _, _ = solution.slices(row, n)
+    assert a.shape == (3,) and b.shape == (1, 2)
+    # Two slice reads, one slice write (seen through __index__); a slice with plain
+    # ints and a 0-d tensor used as an index are not host reads the spy can prove.
+    assert [(e.kind, e.what) for e in spy.events] == [
+        ("read", "slice bound"), ("read", "slice bound"), ("read", "index"),
+    ]  # fmt: skip
+    assert len({e.line for e in spy.events}) == 3
+
+
+def test_syncspy_counts_to_cpu_only_where_the_source_names_the_cpu(solution):
+    x = torch.tensor([1.5, -2.0, 3.0])
+    with SyncSpy(file=solution.__file__) as spy:
+        solution.names_the_cpu(x)
+    assert [(e.kind, e.what) for e in spy.events] == [("transfer", "to(cpu)")] * 5
+    assert len({e.line for e in spy.events}) == 5
+    # The device a test passes in is the CPU too, as an object or as a string: moving
+    # to it, to another tensor's device, or to a dtype is not a host transfer.
+    for device in (torch.device("cpu"), "cpu"):
+        with SyncSpy(file=solution.__file__) as spy:
+            solution.moves_without_naming_the_cpu(x, device, torch.zeros(2))
+        assert spy.syncs == 0, spy.describe()
+    # The test's own .to("cpu") is not the solution's.
+    with SyncSpy(file=solution.__file__) as spy:
+        x.to("cpu")
+    assert spy.syncs == 0
+
+
+def test_syncspy_counts_to_cpu_from_a_tensor_that_is_really_elsewhere(solution):
+    meta = torch.empty(3, device="meta")
+    with SyncSpy(file=solution.__file__) as spy:
+        solution.to_device(meta, torch.device("meta"))
+        solution.to_device(meta, meta)
+        solution.to_device(meta, torch.float16)
+    assert spy.syncs == 0
+    # From a real non-CPU tensor the target decides, however it is spelled. (The meta
+    # device has no data, so the copy itself then fails, as it should.)
+    for target in (torch.device("cpu"), "cpu", torch.zeros(1)):
+        with SyncSpy(file=solution.__file__) as spy, pytest.raises(NotImplementedError):
+            solution.to_device(meta, target)
+        assert [(e.kind, e.what) for e in spy.events] == [("transfer", "to(cpu)")]
+
+
 def test_syncspy_restores_torch_exactly(solution):
     before = {name: torch.Tensor.__dict__.get(name) for name in ("__bool__", "item", "__repr__")}
     functions = (torch.where, torch.nonzero, torch.equal)
@@ -224,6 +304,7 @@ def test_syncspy_restores_torch_exactly(solution):
         1 / 0  # noqa: B018
     after = {name: torch.Tensor.__dict__.get(name) for name in before}
     assert after == before
+    assert torch.Tensor.to is torch._C.TensorBase.to
     assert (torch.where, torch.nonzero, torch.equal) == functions
     assert torch.tensor(3).item() == 3 and bool(torch.tensor(True))
 
@@ -555,6 +636,40 @@ def test_compile_counter_counts_compilations_and_graph_breaks():
     with CompileCounter() as cc:
         pass
     assert (cc.compilations, cc.graphs, cc.graph_breaks) == (0, 0, 0)
+
+
+def test_compile_counter_counts_the_same_under_fullgraph():
+    def step(x, pos):
+        return x * 2 + pos
+
+    def branchy(x):
+        if x.sum() > 0:
+            return x + 1
+        return x - 1
+
+    for fullgraph in (False, True):
+        with CompileCounter() as cc:
+            compiled = torch.compile(step, backend="eager", fullgraph=fullgraph)
+            for pos in range(6):
+                compiled(torch.ones(3), torch.tensor(pos))
+        assert (cc.compilations, cc.graphs) == (1, 1), fullgraph
+        with CompileCounter() as cc:
+            compiled = torch.compile(step, backend="eager", fullgraph=fullgraph, dynamic=False)
+            for pos in range(5):
+                compiled(torch.ones(3), pos)
+            assert cc.snapshot().compilations == 5
+        assert (cc.compilations, cc.graphs) == (5, 5), fullgraph
+
+    # Under fullgraph=True a graph break is an exception, and nothing was compiled.
+    with CompileCounter() as cc:
+        compiled = torch.compile(branchy, backend="eager", fullgraph=True)
+        with pytest.raises(torch._dynamo.exc.Unsupported):
+            compiled(torch.ones(3))
+    assert cc.compilations == 0 and cc.graph_breaks == 1
+    # The metrics limit torch ships with is back in place.
+    from torch._dynamo import utils
+
+    assert utils._compilation_metrics.maxlen == utils.DEFAULT_COMPILATION_METRICS_LIMIT
 
 
 # -- TransferSpy --------------------------------------------------------------------------

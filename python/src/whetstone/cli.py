@@ -106,9 +106,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
         print(f"ws validate: no problems under {root / 'problems'}", file=sys.stderr)
         return 2
 
-    reports = gate.validate(
-        root, directories, jobs=args.jobs, require_assets=args.require_assets
-    )
+    reports = gate.validate(root, directories, jobs=args.jobs, require_assets=args.require_assets)
     paint = render.Renderer().paint
     tags = {
         "ok": paint("ok  ", "pass"),
@@ -204,7 +202,9 @@ def _assets_list(root: Path, *, as_json: bool) -> int:
     if len(rows) > 1:
         widths = [max(len(row[i]) for row in rows) for i in range(4)]
         for row in rows:
-            print("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row[:4])) + "  " + row[4])
+            print(
+                "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row[:4])) + "  " + row[4]
+            )
     for item in listing["assets"]:
         if not item["present"]:
             why = f" ({item['reason']})" if item["reason"] else ""
@@ -258,7 +258,9 @@ def _assets_fetch(root: Path, args: argparse.Namespace) -> int:
     failed = 0
     for name in names:
         try:
-            assets.fetch(merged[name].spec, assets.models_dir(root), show, verify=not args.no_verify)
+            assets.fetch(
+                merged[name].spec, assets.models_dir(root), show, verify=not args.no_verify
+            )
         except assets.AssetError:
             failed += 1  # reported through the asset_end event
     return 1 if failed else 0
@@ -388,9 +390,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     action.add_argument("names", nargs="*", metavar="name", help="asset names")
     action.add_argument("--all", action="store_true", help="every asset in the catalog")
-    action.add_argument(
-        "--json", action="store_true", help="print progress as @@WS@@ JSON lines"
-    )
+    action.add_argument("--json", action="store_true", help="print progress as @@WS@@ JSON lines")
     action.add_argument(
         "--no-verify", action="store_true", help="skip the SHA-256 check after downloading"
     )

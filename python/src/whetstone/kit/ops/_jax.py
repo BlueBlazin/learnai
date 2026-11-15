@@ -43,9 +43,7 @@ def rope(x: jax.Array, positions: jax.Array, base: float = 10000.0) -> jax.Array
     return jnp.stack((x1 * cos - x2 * sin, x1 * sin + x2 * cos), axis=-1).reshape(x.shape)
 
 
-def attention(
-    q: jax.Array, k: jax.Array, v: jax.Array, mask: jax.Array | None = None
-) -> jax.Array:
+def attention(q: jax.Array, k: jax.Array, v: jax.Array, mask: jax.Array | None = None) -> jax.Array:
     k, v = _expand_kv_heads(q, k, v)
     scores = q @ jnp.swapaxes(k, -1, -2) / math.sqrt(q.shape[-1])
     if mask is not None:

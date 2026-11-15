@@ -79,7 +79,10 @@ def test_allclose_states_only_the_order_of_magnitude_of_the_error():
     assert "max abs error: 0.00" in failure.detail
     got = expected.copy()
     got[1] = np.inf
-    assert "got infinity where a finite number is expected" in fails(check.allclose, got, expected).message
+    assert (
+        "got infinity where a finite number is expected"
+        in fails(check.allclose, got, expected).message
+    )
 
 
 def test_a_hidden_case_reports_a_wrong_length_without_the_expected_count(tmp_path):
@@ -195,10 +198,15 @@ def test_classes_that_construct_in_a_python_new_or_take_no_arguments_are_guarded
 
 def test_python_classes_are_still_guarded_through_init(tmp_path):
     module = types.ModuleType("ws_fake_classes")
-    exec("class Layer:\n    def __init__(self, scale):\n        self.scale = scale\n", module.__dict__)  # noqa: S102
+    exec(  # noqa: S102
+        "class Layer:\n    def __init__(self, scale):\n        self.scale = scale\n",
+        module.__dict__,
+    )
     sys.modules["ws_fake_classes"] = module
     solution = tmp_path / "solution.py"
-    solution.write_text("import ws_fake_classes\n\n\ndef make():\n    return ws_fake_classes.Layer(2)\n")
+    solution.write_text(
+        "import ws_fake_classes\n\n\ndef make():\n    return ws_fake_classes.Layer(2)\n"
+    )
     namespace: dict = {}
     exec(compile(solution.read_text(), str(solution), "exec"), namespace)  # noqa: S102
     guard = Guard(["ws_fake_classes.Layer"], solution)
@@ -230,7 +238,9 @@ def test_forbidden_source_finds_an_identifier_in_every_spelling(source, line):
 
 
 def test_forbidden_source_ignores_comments_docstrings_and_other_names():
-    source = '"""Decode bfloat16 by hand."""\n# bfloat16 is not used\nx = "a bfloat16 value"\ny = 16\n'
+    source = (
+        '"""Decode bfloat16 by hand."""\n# bfloat16 is not used\nx = "a bfloat16 value"\ny = 16\n'
+    )
     assert forbidden.find_identifiers(ast.parse(source), ["bfloat16"]) == []
     assert forbidden.find_identifiers(ast.parse("import safetensors.torch\n"), ["safetensors"])
 

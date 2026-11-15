@@ -40,7 +40,16 @@ What it models, following the Triton documentation:
   C; ``sum`` widens small integers to 32 bits; scalar arguments arrive as int32
   (int64 when they do not fit), float32, or int1.
 - ``BLOCK: tl.constexpr`` parameters stay Python numbers and can be used as shapes;
-  shapes must be powers of two.
+  a shape is a tuple or, as the layer-norm tutorial writes it, a list
+  (``tl.zeros([BLOCK], dtype=tl.float32)``); shapes must be powers of two.
+- ``tl.arange(start, end)``: the page says ``start`` and ``end`` must be powers of
+  two, and every tutorial writes ``tl.arange(0, BLOCK)``. The shim accepts what
+  satisfies both that wording (with 0 allowed) and a power-of-two length:
+  ``(0, 2**m)`` and ``(2**k, 2**(k + 1))``.
+- ``<<`` and ``>>``: the documentation only says the operators exist. A shift count
+  outside ``[0, bits)`` raises, and so does ``>>`` on a signed block that holds a
+  negative value, because whether the sign bit is copied is not documented; shift
+  unsigned values (zeros come in) or mask the bits you need.
 
 Where it is deliberately strict, because a GPU would not tell you:
 
@@ -60,9 +69,9 @@ float semantics on the GPU beyond IEEE float16/32/64, and bfloat16 (numpy has no
 
 **This shim has not been run against real Triton**: the machine it was written on
 cannot install Triton. Signatures and semantics were taken from the documentation at
-triton-lang.org (``triton.language``, ``load``, ``store``, ``sum``, ``max``, ``cast``,
-``arange``, ``where``, ``full``, ``program_id``, "Triton Semantics", and the vector-add
-tutorial). ``launch`` hands a kernel to real Triton when its tensors are CUDA tensors
+triton-lang.org (``triton.language``, ``tensor``, ``load``, ``store``, ``sum``,
+``max``, ``cast``, ``arange``, ``zeros``, ``where``, ``full``, ``program_id``, "Triton
+Semantics", and the vector-add and layer-norm tutorials). ``launch`` hands a kernel to real Triton when its tensors are CUDA tensors
 (``compile_with_triton``); that path is untested until someone runs it on a CUDA
 machine.
 """
@@ -348,9 +357,7 @@ def _operands(a: Any, b: Any) -> tuple[np.ndarray, np.ndarray, dtype]:
         if isinstance(operand, pointer):
             raise TritonShimError("pointers support only `pointer + offsets`")
         if not isinstance(operand, (tensor, *_SCALARS)):
-            raise TritonShimError(
-                f"a {type(operand).__name__} cannot be used in kernel arithmetic"
-            )
+            raise TritonShimError(f"a {type(operand).__name__} cannot be used in kernel arithmetic")
     if isinstance(a, tensor) and isinstance(b, tensor):
         ty = _promote(a.dtype, b.dtype)
     else:
@@ -383,6 +390,8 @@ def _binary(op: str, a: Any, b: Any) -> tensor:
         if op in _BITS:
             if ty.is_floating():
                 raise TritonShimError(f"`{op}` needs integer or boolean operands, got {ty}")
+            if op in ("lshift", "rshift"):
+                _check_shift(op, a, y, ty)
             return tensor(_BITS[op](x, y), ty)
         if op in ("truediv", "mod") and (ty.is_floating() or op == "truediv"):
             # Division and modulo do not exist for floats narrower than float32, so a
@@ -405,6 +414,32 @@ def _binary(op: str, a: Any, b: Any) -> tensor:
             _no_zero_divisor(y)
             return tensor(np.fmod(x, y), ty)  # the sign of the dividend, as in C
     raise AssertionError(op)
+
+
+def _check_shift(op: str, left: Any, y: np.ndarray, ty: dtype) -> None:
+    """Refuse the shifts whose result Triton's documentation does not define.
+
+    The documentation says that ``<<`` and ``>>`` exist and nothing more. Two things
+    are therefore not relied on: a count outside ``[0, bits)`` (undefined in C and in
+    LLVM, which Triton compiles to), and ``>>`` on a negative signed value, where an
+    arithmetic shift copies the sign bit and a logical shift brings in zeros.
+    """
+    symbol = "<<" if op == "lshift" else ">>"
+    if ty.is_bool():
+        raise TritonShimError(f"`{symbol}` is not defined for boolean blocks")
+    if np.any(y < 0) or np.any(y.astype(np.uint64) >= ty.bits):
+        raise TritonShimError(
+            f"`{symbol}`: a shift count outside [0, {ty.bits}) is undefined for {ty}"
+        )
+    # Negative in its own type, whatever the count's type promotes the pair to.
+    shifted = left.value if isinstance(left, tensor) else np.asarray(left)
+    if op == "rshift" and shifted.dtype.kind == "i" and np.any(shifted < 0):
+        raise TritonShimError(
+            "`>>` on a negative signed value: Triton's documentation does not say whether "
+            "a signed right shift copies the sign bit or brings in zeros, so the shim "
+            "refuses it. Keep the value unsigned (tl.uint32: zeros come in), or mask "
+            "the bits you need after shifting a non-negative value."
+        )
 
 
 def _no_zero_divisor(y: np.ndarray) -> None:
@@ -635,11 +670,25 @@ def _shape(shape: Any, what: str) -> tuple[int, ...]:
 
 
 def arange(start: int, end: int) -> tensor:
-    """``[start, end)`` as an int32 block. Both are constants; the length ``end - start``
-    must be a power of two."""
+    """``[start, end)`` as an int32 block; both bounds are constants.
+
+    Triton documents: "start: Must be a power of two", "end: Must be a power of two
+    greater than start", and its tutorials all write ``tl.arange(0, BLOCK)``. So 0 is
+    accepted as a start. The shim also requires the *length* to be a power of two,
+    which is the rule for every other block shape; ``(0, 2**m)`` and ``(2**k,
+    2**(k + 1))`` are the ranges that pass under both readings. Offsets that start
+    elsewhere are written ``start + tl.arange(0, BLOCK)``.
+    """
     lo, hi = _const_int(start, "tl.arange: start"), _const_int(end, "tl.arange: end")
     if hi <= lo:
         raise TritonShimError("tl.arange: end must be greater than start")
+    if lo != 0 and not _is_power_of_two(lo):
+        raise TritonShimError(
+            f"tl.arange: start must be 0 or a power of two, got {lo} "
+            "(add the offset to the block instead: `start + tl.arange(0, BLOCK)`)"
+        )
+    if not _is_power_of_two(hi):
+        raise TritonShimError(f"tl.arange: end must be a power of two, got {hi}")
     if not _is_power_of_two(hi - lo):
         raise TritonShimError(
             f"tl.arange: the number of elements must be a power of two, got {hi - lo}"
@@ -656,7 +705,11 @@ def _need_dtype(ty: Any, what: str) -> dtype:
 
 
 def full(shape: Any, value: Any, dtype: dtype) -> tensor:
-    """A block of ``shape`` (constant powers of two) filled with ``value``."""
+    """A block of ``shape`` filled with ``value``.
+
+    ``shape`` is a tuple of constants (as documented) or a list of them (as the
+    layer-norm tutorial writes), each a power of two.
+    """
     ty = _need_dtype(dtype, "tl.full")
     if isinstance(value, tensor) and value.shape != ():
         raise TritonShimError("tl.full: value must be a scalar")
@@ -664,6 +717,7 @@ def full(shape: Any, value: Any, dtype: dtype) -> tensor:
 
 
 def zeros(shape: Any, dtype: dtype) -> tensor:
+    """A block of zeros: ``tl.zeros((BLOCK,), tl.float32)``; see ``full`` for ``shape``."""
     return full(shape, 0, dtype)
 
 
@@ -841,7 +895,7 @@ def _check_source(fn: Callable[..., Any]) -> None:
     """
     try:
         tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
-    except (OSError, TypeError, SyntaxError):
+    except OSError, TypeError, SyntaxError:
         return  # no source (defined in a REPL): nothing to check
     function = tree.body[0]
     scope = fn.__globals__
@@ -860,8 +914,21 @@ def _check_source(fn: Callable[..., Any]) -> None:
         if argument.annotation is not None
         for n in ast.walk(argument.annotation)
     }
+    # A list is allowed in one place: as the shape of `tl.zeros` or `tl.full`, the way
+    # Triton's layer-norm tutorial writes it (`tl.zeros([BLOCK_SIZE], dtype=...)`).
+    shapes = set()
     for node in ast.walk(function):
-        if id(node) in decorators or id(node) in annotations:
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("zeros", "full")
+            and isinstance(node.func.value, ast.Name)
+            and scope.get(node.func.value.id) is this
+        ):
+            given = node.args[:1] + [k.value for k in node.keywords if k.arg == "shape"]
+            shapes.update(id(n) for n in given if isinstance(n, ast.List))
+    for node in ast.walk(function):
+        if id(node) in decorators or id(node) in annotations or id(node) in shapes:
             continue
         if node is not function and isinstance(node, ast.FunctionDef):
             fail(node, "a nested function")

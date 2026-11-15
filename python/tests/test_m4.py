@@ -152,8 +152,10 @@ def test_validate_wording_for_runs_that_lack_only_the_required_hardware():
     report = _judge("reference", end, passed, problem)
     assert report.errors == [] and report.ran
     assert report.warnings == [
-        ("reference (torch): all 3 cases ran and passed, but not on the hardware the problem "
-        "requires (an NVIDIA GPU (CUDA)), which this machine does not have")
+        (
+            "reference (torch): all 3 cases ran and passed, but not on the hardware the problem "
+            "requires (an NVIDIA GPU (CUDA)), which this machine does not have"
+        )
     ]
     # A mutant or a starter that passes every case is caught: nothing was skipped.
     assert _judge("mutant", end, passed, problem).errors == [
@@ -172,12 +174,18 @@ def test_validate_wording_for_runs_that_lack_only_the_required_hardware():
     end = {**end, "passed": 2, "skipped": 1}
     report = _judge("reference", end, [*passed[:2], skipped], problem)
     assert report.warnings == [
-        ("reference (torch): only 2 of 3 cases could run on this machine (all passed); 1 was NOT "
-        "validated: needs an NVIDIA GPU (CUDA), which this machine does not have "
-        "(GPU cases not validated: gpu_speed)")
+        (
+            "reference (torch): only 2 of 3 cases could run on this machine (all passed); 1 was NOT "
+            "validated: needs an NVIDIA GPU (CUDA), which this machine does not have "
+            "(GPU cases not validated: gpu_speed)"
+        )
     ]
-    assert _judge("mutant", end, [*passed[:2], skipped], problem).warnings[0].startswith(
-        "mutant x: NOT validated: no case that can run on this machine catches it, and 1"
+    assert (
+        _judge("mutant", end, [*passed[:2], skipped], problem)
+        .warnings[0]
+        .startswith(
+            "mutant x: NOT validated: no case that can run on this machine catches it, and 1"
+        )
     )
 
 
@@ -325,7 +333,7 @@ def test_cuda_problem_ends_hardware_missing_when_every_cpu_case_passes():
     assert run.end["status"] == "wrong_answer"
 
 
-CUDA_KIT_TESTS = '''
+CUDA_KIT_TESTS = """
 import numpy as np
 import torch
 
@@ -366,7 +374,7 @@ def kit(ctx):
 def on_cuda(ctx):
     out = ctx.solution.scale(torch.ones(3), 2.0, torch.device("cuda"))
     check.that(out.device.type == "cuda", f"scale: the result is on {out.device.type}")
-'''
+"""
 
 
 def test_the_cuda_kit_works_inside_the_harness(tmp_path):

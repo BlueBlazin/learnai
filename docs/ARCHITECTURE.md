@@ -520,7 +520,66 @@ Rules:
 - Devbridge: the four plain commands as `POST /api/<command>`; `POST /api/check_target`
   returns `{"jobId"}` with events at `GET /api/jobs/<jobId>/events`.
 
-### 4.2 Transports
+### 4.2 Spaced re-solve
+
+Solving a problem once is not mastery. After a problem is first solved, the app asks the
+learner to solve it again **from the blank starter** at growing intervals.
+
+```ts
+interface Review { problemId: string; stage: number;        // 0-based index into the intervals
+                   intervalDays: number; dueAt: string;     // ISO 8601
+                   lastReviewedAt: string | null; due: boolean; }
+type ReviewAction = "forgot" | "snooze" | "retire";
+```
+
+| command | arguments | returns |
+|---|---|---|
+| `list_reviews` | | `Review[]`, active reviews only, soonest due first |
+| `start_review` | `id, framework` | `SolutionFile`: the review file, reset to the starter |
+| `read_review_solution` | `id, framework` | `SolutionFile` (the starter if none saved) |
+| `write_review_solution` | `id, framework, code` | |
+| `resolve_review` | `id, action` | `Review[]` |
+| `get_settings` | | `Settings` (`{ reviewsEnabled: boolean }`) |
+| `set_reviews_enabled` | `enabled` | `Settings` |
+
+Rules:
+
+- Intervals are 3, 7, 21, 60, and 180 days. The first accepted submit of a problem (any
+  framework) creates its review at stage 0, due 3 days later. Problems solved before the
+  feature existed get a review dated from their first accepted submit.
+- A review attempt is written to `workspace/<id>/review/<framework>.py`; the learner's
+  saved solution is never touched. `start_run` takes `review?: boolean`; a review run
+  judges the review file. `Submission` gains `review: boolean`.
+- An accepted review **submit** advances the stage and sets the next due date from the
+  time of the submit; after the last interval the review is retired (the problem is
+  mastered). A non-accepted review submit changes nothing. `forgot` (the learner gave up
+  and looked at their solution or the editorial) resets to stage 0, due the next day;
+  `snooze` moves the due date to one day after the later of now and the current due date,
+  without changing the stage; `retire` ends reviews for the problem.
+- The review file is removed when a review is resolved (accepted review submit, `forgot`,
+  `retire`); `snooze` keeps it, and `start_review` is the explicit reset. A review run or
+  `start_review` fails when the problem has no active review or reviews are off. A review
+  need not be due to be run. A normal accepted submit does not advance a review.
+- While a review is in progress the workspace hides hints, the editorial, the reference,
+  and the learner's earlier submissions' code until the learner chooses `forgot`.
+- `Stats` gains `reviewsDue: number`. Review submits count toward the streak. Reviews can
+  be turned off in Settings (stored setting `reviews_enabled`, default on); when off,
+  nothing is scheduled or shown, and existing schedules are kept. Turning reviews on
+  schedules problems solved while they were off, dated from their first accepted submit.
+- Hiding during a review is done by the UI; core still serves the editorial and reference.
+
+**Case stages (capstones).** `CaseInfo` and `StoredCase` gain `stage?: string`, taken
+from `start.cases[].stage`. When any case has a stage, results group cases by stage in
+first-appearance order and show per-stage pass counts ("3/5 passed"); a stage label is
+public even for hidden cases. The heading reads "Stage <label>" (the label as written if
+it already begins with "Stage"); in a staged problem, cases without a stage are grouped
+last under "Other cases". Stages gate nothing: every selected case runs and the
+verdict is computed from all cases. `case_end`, `end`, and the verdict do not mention
+stages; consumers derive per-stage progress from `start.cases` and case statuses.
+`case_end.duration_ms` excludes one-time library initialization the judge pays inside a
+case with the clock stopped; `end.duration_ms` is wall time and includes it.
+
+### 4.3 Transports
 
 **Tauri.** One `#[tauri::command]` per row above. JavaScript passes camelCase argument
 names (Tauri maps them to snake_case Rust parameters). Streaming commands take an extra

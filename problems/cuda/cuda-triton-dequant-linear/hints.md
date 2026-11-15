@@ -27,6 +27,7 @@ bias = tl.load(biases_row + group, mask=mask, other=0.0).to(tl.float32)
 acc += x * (code.to(tl.float32) * scale + bias)
 ```
 
-Keep the word unsigned: on a signed integer `>>` copies the sign bit. The bias is
+Keep the word unsigned: on a signed integer `>>` may copy the sign bit (C does; Triton's
+documentation does not say, so the shim refuses a negative value there). The bias is
 inside the parentheses (it is part of the weight), and `x` was loaded with
 `other=0.0`, so the masked columns contribute exactly nothing.
