@@ -1,0 +1,35 @@
+id = "gumbel-max-sample"
+title = "Gumbel-Max Sampling"
+track = "sampling"
+order = 120
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "statistical"]
+tags = ["sampling", "gumbel-max", "categorical", "logits", "numerics"]
+prerequisites = ["categorical-sample"]
+requires = "cpu"
+entry = ["gumbel_sample"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: randomness is an input, never drawn here.
+forbidden = [
+    "torch.rand",
+    "torch.rand_like",
+    "torch.randn",
+    "torch.randn_like",
+    "torch.multinomial",
+    "torch.Tensor.multinomial",
+    "torch.Tensor.uniform_",
+    "torch.Tensor.exponential_",
+    "torch.nn.functional.gumbel_softmax",
+    "jax.random.uniform",
+    "jax.random.gumbel",
+    "jax.random.categorical",
+    "jax.random.choice",
+    "mlx.core.random.uniform",
+    "mlx.core.random.gumbel",
+    "mlx.core.random.categorical",
+    "random.random",
+    "numpy.random.default_rng",
+    "numpy.random.rand",
+    "numpy.random.random",
+]

@@ -1,0 +1,12 @@
+id = "logit-bias-bad-words"
+title = "Logit Bias and Banned Sequences"
+track = "sampling"
+order = 130
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["sampling", "logit-bias", "bad-words", "allowed-tokens", "masking"]
+prerequisites = []
+requires = "cpu"
+entry = ["apply_bias"]
+time_limit_s = 10

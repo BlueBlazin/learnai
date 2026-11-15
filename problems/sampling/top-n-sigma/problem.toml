@@ -1,0 +1,12 @@
+id = "top-n-sigma"
+title = "Top-n-sigma Filtering"
+track = "sampling"
+order = 110
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["sampling", "top-n-sigma", "truncation", "logits", "standard-deviation"]
+prerequisites = []
+requires = "cpu"
+entry = ["top_n_sigma_filter"]
+time_limit_s = 10

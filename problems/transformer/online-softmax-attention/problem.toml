@@ -1,0 +1,12 @@
+id = "online-softmax-attention"
+title = "Blockwise Attention with Online Softmax"
+track = "transformer"
+order = 170
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property", "cost"]
+tags = ["attention", "online-softmax", "flash-attention", "numerics", "streaming"]
+prerequisites = ["causal-self-attention", "stable-softmax"]
+requires = "cpu"
+entry = ["blockwise_attention"]
+time_limit_s = 10

@@ -1,0 +1,12 @@
+id = "moe-sparse-dispatch"
+title = "Sparse Expert Dispatch"
+track = "transformer"
+order = 160
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["mixture-of-experts", "routing", "gather", "scatter", "dispatch"]
+prerequisites = ["moe-router-forward"]
+requires = "cpu"
+entry = ["moe_sparse"]
+time_limit_s = 10

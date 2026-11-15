@@ -1,0 +1,12 @@
+id = "xtc-sampler"
+title = "XTC: Exclude Top Choices"
+track = "sampling"
+order = 140
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "statistical"]
+tags = ["sampling", "xtc", "truncation", "creativity", "llama.cpp"]
+prerequisites = ["min-p-filtering"]
+requires = "cpu"
+entry = ["xtc_filter"]
+time_limit_s = 10
