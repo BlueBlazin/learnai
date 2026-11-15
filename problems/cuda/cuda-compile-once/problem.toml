@@ -1,0 +1,12 @@
+id = "cuda-compile-once"
+title = "Compiling a Decode Step Once"
+track = "cuda"
+order = 110
+difficulty = "hard"
+frameworks = ["torch"]
+judges = ["numeric", "cost"]
+tags = ["cuda", "torch-compile", "recompilation", "guards", "static-shapes", "padding", "decode-loop"]
+prerequisites = ["cuda-static-kv-cache"]
+requires = "cuda"
+entry = ["make_step", "generate"]
+time_limit_s = 20

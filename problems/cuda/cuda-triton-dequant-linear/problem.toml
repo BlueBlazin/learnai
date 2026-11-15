@@ -1,0 +1,12 @@
+id = "cuda-triton-dequant-linear"
+title = "A Fused Dequantize-and-Multiply Kernel"
+track = "cuda"
+order = 140
+difficulty = "hard"
+frameworks = ["torch"]
+judges = ["numeric", "property"]
+tags = ["cuda", "triton", "custom-kernel", "quantization", "bit-packing", "quantized-matmul", "dequantize"]
+prerequisites = ["cuda-triton-rmsnorm", "quantized-matmul"]
+requires = "cuda"
+entry = ["qlinear_kernel", "qlinear"]
+time_limit_s = 10

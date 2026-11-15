@@ -1,0 +1,12 @@
+id = "cuda-triton-rmsnorm"
+title = "A Triton Kernel for RMSNorm"
+track = "cuda"
+order = 130
+difficulty = "medium"
+frameworks = ["torch"]
+judges = ["numeric", "property"]
+tags = ["cuda", "triton", "custom-kernel", "rmsnorm", "masked-load", "half-precision"]
+prerequisites = ["rmsnorm"]
+requires = "cuda"
+entry = ["rmsnorm_kernel", "rms_norm"]
+time_limit_s = 10

@@ -1,0 +1,12 @@
+id = "cuda-graph-replay"
+title = "Capturing a CUDA Graph"
+track = "cuda"
+order = 120
+difficulty = "hard"
+frameworks = ["torch"]
+judges = ["numeric", "cost"]
+tags = ["cuda", "cuda-graphs", "capture", "replay", "static-memory", "warm-up", "decode-loop"]
+prerequisites = ["cuda-static-kv-cache"]
+requires = "cuda"
+entry = ["GraphedStep"]
+time_limit_s = 10

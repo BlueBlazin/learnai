@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 224">
+  <title>The last block of each row in the worked example hangs over the end of the row</title>
+  <desc>A strip of thirteen cells numbered 0 to 12: the memory behind the pointer x. Cells 0 to 4 are row 0, cells 5 to 9 are row 1, and cells 10 to 12, drawn dashed, lie beyond the tensor. Below the strip, the second block of program 0 covers cells 4 to 7 with mask values 1, 0, 0, 0: only cell 4 belongs to row 0, and cells 5 to 7 are the start of row 1. Below that, the second block of program 1 covers cells 9 to 12 with mask values 1, 0, 0, 0: only cell 9 exists, and cells 10 to 12 are outside the tensor.</desc>
+
+  <!-- Flat element numbers, inside the cells -->
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="36" y="64">0</text>
+    <text x="70" y="64">1</text>
+    <text x="104" y="64">2</text>
+    <text x="138" y="64">3</text>
+    <text x="172" y="64">4</text>
+    <text x="206" y="64">5</text>
+    <text x="240" y="64">6</text>
+    <text x="274" y="64">7</text>
+    <text x="308" y="64">8</text>
+    <text x="342" y="64">9</text>
+    <text x="376" y="64">10</text>
+    <text x="410" y="64">11</text>
+    <text x="444" y="64">12</text>
+  </g>
+  <text x="19" y="16" font-size="13">memory behind <tspan style="font-family: var(--figure-mono)">x_ptr</tspan>, by element</text>
+
+  <!-- The ten elements of the tensor, and three that are not there -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="19" y="46" width="34" height="26"/>
+    <rect x="53" y="46" width="34" height="26"/>
+    <rect x="87" y="46" width="34" height="26"/>
+    <rect x="121" y="46" width="34" height="26"/>
+    <rect x="155" y="46" width="34" height="26"/>
+    <rect x="189" y="46" width="34" height="26"/>
+    <rect x="223" y="46" width="34" height="26"/>
+    <rect x="257" y="46" width="34" height="26"/>
+    <rect x="291" y="46" width="34" height="26"/>
+    <rect x="325" y="46" width="34" height="26"/>
+  </g>
+  <g fill="none" stroke-width="1" stroke-dasharray="3 3" style="stroke: var(--figure-faint)">
+    <rect x="359" y="46" width="34" height="26"/>
+    <rect x="393" y="46" width="34" height="26"/>
+    <rect x="427" y="46" width="34" height="26"/>
+  </g>
+  <line x1="189" y1="26" x2="189" y2="78" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <line x1="359" y1="26" x2="359" y2="78" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <!-- Which row each element belongs to -->
+  <g font-size="13" text-anchor="middle">
+    <text x="104" y="38">row 0</text>
+    <text x="274" y="38">row 1</text>
+    <text x="410" y="38" style="fill: var(--figure-muted)">outside</text>
+  </g>
+
+  <!-- Program 0, second block: columns 4 to 7 -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <path d="M 157 84 V 92 H 289 V 84"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-accent); font-family: var(--figure-mono)">
+    <text x="172" y="110">1</text>
+    <text x="206" y="110">0</text>
+    <text x="240" y="110">0</text>
+    <text x="274" y="110">0</text>
+  </g>
+  <text x="19" y="132" font-size="13" style="fill: var(--figure-accent)">program 0, block 2: columns 4 to 7, mask 1 0 0 0</text>
+  <text x="19" y="149" font-size="13" style="fill: var(--figure-muted)">unmasked, it would read and overwrite the start of row 1</text>
+
+  <!-- Program 1, second block: columns 4 to 7 of row 1 -->
+  <g fill="none" stroke-width="1.5" stroke-dasharray="5 3" style="stroke: var(--figure-straw)">
+    <path d="M 327 84 V 92 H 459 V 84"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-straw); font-family: var(--figure-mono)">
+    <text x="342" y="110">1</text>
+    <text x="376" y="110">0</text>
+    <text x="410" y="110">0</text>
+    <text x="444" y="110">0</text>
+  </g>
+  <text x="19" y="172" font-size="13" style="fill: var(--figure-straw)">program 1, block 2 (dashed): columns 4 to 7 of row 1, mask 1 0 0 0</text>
+  <text x="19" y="189" font-size="13" style="fill: var(--figure-muted)">unmasked, it would read and write past the end of the tensor</text>
+  <text x="19" y="214" font-size="13" style="fill: var(--figure-muted)">mask = columns &lt; n_cols; BLOCK = 4, n_cols = 5</text>
+</svg>
