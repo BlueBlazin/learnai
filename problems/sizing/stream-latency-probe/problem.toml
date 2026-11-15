@@ -1,0 +1,19 @@
+id = "stream-latency-probe"
+title = "Measuring a Token Stream"
+track = "sizing"
+order = 90
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["benchmarking", "latency", "streaming", "ttft", "asyncio", "load-generator"]
+prerequisites = ["latency-metrics"]
+requires = "cpu"
+entry = ["probe", "summarize", "run_closed_loop"]
+time_limit_s = 5
+# The statement's rule, enforced by the harness: virtual time only.
+forbidden = [
+    "time.sleep",
+    "time.time",
+    "time.monotonic",
+    "time.perf_counter",
+]

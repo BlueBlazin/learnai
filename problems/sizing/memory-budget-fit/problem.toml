@@ -1,0 +1,12 @@
+id = "memory-budget-fit"
+title = "How Many Sequences Fit"
+track = "sizing"
+order = 70
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["sizing", "memory", "kv-cache", "capacity", "paged-attention"]
+prerequisites = ["kv-cache-bytes"]
+requires = "cpu"
+entry = ["max_sequences", "max_context"]
+time_limit_s = 10

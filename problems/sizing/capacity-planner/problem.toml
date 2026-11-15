@@ -1,0 +1,12 @@
+id = "capacity-planner"
+title = "Capacity Planning from a Cost Model"
+track = "sizing"
+order = 100
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["capacity", "slo", "replicas", "cost-model", "headroom", "continuous-batching"]
+prerequisites = ["goodput-slo"]
+requires = "cpu"
+entry = ["plan", "plan_from_curve"]
+time_limit_s = 10

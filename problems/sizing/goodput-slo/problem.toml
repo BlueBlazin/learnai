@@ -1,0 +1,12 @@
+id = "goodput-slo"
+title = "Goodput Under an SLO"
+track = "sizing"
+order = 80
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["benchmarking", "goodput", "slo", "latency", "capacity"]
+prerequisites = ["latency-metrics", "latency-percentiles"]
+requires = "cpu"
+entry = ["slo_attainment", "request_goodput", "goodput"]
+time_limit_s = 10

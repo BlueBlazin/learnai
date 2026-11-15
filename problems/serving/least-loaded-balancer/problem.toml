@@ -1,0 +1,12 @@
+id = "least-loaded-balancer"
+title = "Power-of-Two-Choices Load Balancing"
+track = "serving"
+order = 120
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["simclock", "statistical"]
+tags = ["load-balancing", "power-of-two-choices", "routing", "stale-load", "replicas"]
+prerequisites = []
+requires = "cpu"
+entry = ["pick", "Balancer"]
+time_limit_s = 10

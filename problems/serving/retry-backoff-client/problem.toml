@@ -1,0 +1,21 @@
+id = "retry-backoff-client"
+title = "A Client That Backs Off"
+track = "serving"
+order = 130
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["retries", "backoff", "jitter", "retry-after", "retry-budget", "overload", "asyncio"]
+prerequisites = ["admission-control"]
+requires = "cpu"
+entry = ["call_with_retry", "RetryPolicy"]
+time_limit_s = 5
+# The statement's rule, enforced by the harness: virtual time only.
+forbidden = [
+    "time.sleep",
+    "time.time",
+    "time.monotonic",
+    "time.perf_counter",
+    "random.random",
+    "random.uniform",
+]

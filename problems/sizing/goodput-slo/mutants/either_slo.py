@@ -1,0 +1,36 @@
+# BUG: a request counts as good when it meets any one of the objectives instead of all of them.
+METRICS = ("ttft", "tpot", "e2e")
+
+
+def is_good(request: dict, slo: dict) -> bool:
+    """Did this request succeed and meet every objective in `slo`?"""
+    if not request["ok"]:
+        return False  # an error is never good, however quickly it came back
+    met = [
+        request[metric] is None or request[metric] <= slo[metric]
+        for metric in METRICS
+        if metric in slo
+    ]
+    return any(met) or not met
+
+
+def slo_attainment(requests: list[dict], slo: dict) -> float:
+    if not requests:
+        raise ValueError("attainment of no requests is undefined")
+    # Per request, then counted: an SLO is a statement about each request, not the mean.
+    good = sum(is_good(request, slo) for request in requests)
+    return good / len(requests)
+
+
+def request_goodput(requests: list[dict], slo: dict, duration_s: float) -> float:
+    good = sum(is_good(request, slo) for request in requests)
+    return good / duration_s
+
+
+def goodput(runs: dict[float, list[dict]], slo: dict, target: float) -> float | None:
+    best = None
+    for rate in sorted(runs):  # ascending, whatever order the runs were made in
+        if slo_attainment(runs[rate], slo) < target:
+            break  # everything above the first failing rate is out, even if it passes
+        best = rate
+    return best
