@@ -1,0 +1,12 @@
+id = "binary-rescore-search"
+title = "Binary Embeddings with Rescoring"
+track = "systems"
+order = 50
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["vector-search", "binary-quantization", "hamming-distance", "rescoring", "embeddings", "retrieval"]
+prerequisites = ["vector-topk-search"]
+requires = "cpu"
+entry = ["binarize", "hamming_topk", "search"]
+time_limit_s = 10

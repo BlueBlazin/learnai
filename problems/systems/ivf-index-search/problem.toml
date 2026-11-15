@@ -1,0 +1,12 @@
+id = "ivf-index-search"
+title = "An Inverted-File Index"
+track = "systems"
+order = 60
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost", "property"]
+tags = ["vector-search", "ivf", "approximate-nearest-neighbor", "faiss", "recall", "retrieval"]
+prerequisites = ["vector-topk-search"]
+requires = "cpu"
+entry = ["build_ivf", "search"]
+time_limit_s = 10

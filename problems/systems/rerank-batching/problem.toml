@@ -1,0 +1,12 @@
+id = "rerank-batching"
+title = "Batching a Reranker"
+track = "systems"
+order = 70
+difficulty = "easy"
+frameworks = ["python"]
+judges = ["numeric", "cost"]
+tags = ["reranking", "cross-encoder", "batching", "padding", "retrieval", "rag"]
+prerequisites = ["pad-batch-left"]
+requires = "cpu"
+entry = ["rerank"]
+time_limit_s = 10

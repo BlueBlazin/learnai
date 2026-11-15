@@ -1,4 +1,4 @@
 id = "systems"
 title = "Distributed and LLM Application Systems"
-description = "Models that do not fit on one device, and the systems built around a model: placing layers across GPUs, CPU, and disk, and the application loops that drive inference."
+description = "Models that do not fit on one device, and the systems built around a model: placing and splitting layers across devices, embeddings and vector search, reranking, caching, routing, and tool loops."
 order = 130

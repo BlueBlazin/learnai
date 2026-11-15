@@ -1,0 +1,12 @@
+id = "embedding-pooling"
+title = "Pooling and Normalizing Embeddings"
+track = "systems"
+order = 30
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["embeddings", "pooling", "attention-mask", "padding", "matryoshka", "normalization"]
+prerequisites = ["attention-mask-builder"]
+requires = "cpu"
+entry = ["pool", "truncate_matryoshka"]
+time_limit_s = 10
