@@ -426,7 +426,7 @@ Commands (Tauri command names are snake_case; the `Backend` interface uses camel
 | `get_problem_asset` | `id, path` | `string`: a `data:` URL. `path` is relative to the problem's `assets/` directory and may not escape it; only `.svg` and `.png`, at most 1 MiB; an SVG must be UTF-8 and a PNG must have the PNG signature |
 | `list_catalog_issues` | | `{ path: string; message: string }[]` (malformed tracks, problems, and paths, and path entries that were skipped) |
 | `list_assets` | | `AssetList` (runs `ws assets list --json`) |
-| `fetch_assets` | `names: string[]` + event sink | `jobId: string`; stream of `AssetEvent` (runs `ws assets fetch <names> --json` with `--extra models`) |
+| `fetch_assets` | `names: string[], target?` + event sink | `jobId: string`; stream of `AssetEvent` (runs `ws assets fetch <names> --json` with `--extra models`) |
 | `cancel_asset_fetch` | `jobId` | |
 | `remove_asset` | `name` | `AssetList`; deletes `<models dir>/<name>` after checking that `name` is a declared asset |
 
@@ -504,12 +504,19 @@ Rules:
   install command, which the user runs; the app does not install software on a remote
   host unasked); sync `python/`; build the environment; run `ws doctor --json`. The
   result is saved as `lastCheck`. A run on a target never requires a prior check.
-- Cancel and timeouts terminate the remote process tree, not only the local `ssh`.
+  The environment step runs `uv sync --inexact`. `check_target` on `local` runs only
+  the `uv` and `doctor` steps and installs nothing. A check cannot be canceled.
+- Cancel and timeouts terminate the remote process tree, not only the local `ssh`:
+  the harness runs under a small POSIX supervisor in its own process group, and the
+  supervisor kills the group when its stdin (the SSH channel core holds open) closes.
+  On total network loss the remote side cleans up when its sshd notices. A connection
+  dropped mid-run ends the run with `harness_error` and a message saying so.
 - Targets are stored in the settings table. Submissions record the target name.
   `start_run` with an unknown target fails with a clear message.
 - Model assets on a remote target live under `<remoteDir>/root/.whetstone/models/`.
   `fetch_assets` takes an optional `target` (default `local`) and runs the same fetch
-  there; `list_assets` and `remove_asset` are local only.
+  there, syncing the problem directories that declare the assets first; `list_assets`
+  and `remove_asset` are local only.
 - Devbridge: the four plain commands as `POST /api/<command>`; `POST /api/check_target`
   returns `{"jobId"}` with events at `GET /api/jobs/<jobId>/events`.
 
@@ -517,7 +524,7 @@ Rules:
 
 **Tauri.** One `#[tauri::command]` per row above. JavaScript passes camelCase argument
 names (Tauri maps them to snake_case Rust parameters). Streaming commands take an extra
-argument `onEvent: Channel<RunEvent>` (or `Channel<InstallEvent>`, `Channel<AssetEvent>`);
+argument `onEvent: Channel<RunEvent>` (or `Channel<InstallEvent>`, `Channel<AssetEvent>`, `Channel<TargetCheckEvent>`);
 `start_run` returns the `runId` immediately and events flow over the channel until `end`
 (`fetch_assets` likewise returns the `jobId` and streams until `done`). Errors are
 returned as a string message.

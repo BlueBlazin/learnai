@@ -1,13 +1,14 @@
 //! Run targets: where a harness process executes.
 //!
 //! The run pipeline only knows the [`Target`] and [`Process`] traits. `local` spawns the
-//! harness on this machine. A later SSH target implements the same two traits (upload
-//! the problem and solution in `launch`, report progress, return a process whose pipes
-//! carry the remote harness output) without reshaping the pipeline.
+//! harness on this machine. The SSH target ([`crate::remote::SshTarget`]) implements the
+//! same two traits: it uploads the problem and solution in `launch`, reports progress,
+//! and returns a process whose pipes carry the remote harness output.
 
 use std::io::{self, Read};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -22,8 +23,42 @@ pub trait Target: Send + Sync {
     fn name(&self) -> &str;
 
     /// Starts the harness for `job`. `progress` receives human-readable preparation
-    /// steps (shown as `preparing` events).
-    fn launch(&self, job: &HarnessJob, progress: &dyn Fn(String)) -> io::Result<Box<dyn Process>>;
+    /// steps (shown as `preparing` events). A target whose preparation takes time (a
+    /// remote sync) watches `canceled` and gives up early when it becomes true.
+    fn launch(
+        &self,
+        job: &HarnessJob,
+        progress: &dyn Fn(String),
+        canceled: &AtomicBool,
+    ) -> io::Result<Box<dyn Process>>;
+}
+
+/// A launch failure whose text is already written for the user (what went wrong and
+/// what to do). The run reports it verbatim instead of wrapping it.
+#[derive(Debug)]
+pub struct LaunchFailure(pub String);
+
+impl std::fmt::Display for LaunchFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for LaunchFailure {}
+
+impl LaunchFailure {
+    /// Wraps the message in an [`io::Error`], as [`Target::launch`] returns.
+    pub fn into_io(message: impl Into<String>) -> io::Error {
+        io::Error::other(LaunchFailure(message.into()))
+    }
+
+    /// The user-facing message carried by `error`, if it is one of these.
+    pub fn message_of(error: &io::Error) -> Option<&str> {
+        error
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<LaunchFailure>())
+            .map(|failure| failure.0.as_str())
+    }
 }
 
 /// A running harness.
@@ -41,6 +76,13 @@ pub trait Process: Send {
     /// anything it left running is killed too. Returns the exit code, or `None` when the
     /// process was killed by a signal.
     fn finish(&mut self, grace: Duration) -> Option<i32>;
+
+    /// What to tell the user when the process ended with `code` before the harness
+    /// reported a result, when the target knows better than "exited with code N" (a
+    /// dropped connection, say).
+    fn exit_note(&self, _code: Option<i32>) -> Option<String> {
+        None
+    }
 }
 
 /// Runs harness jobs on this machine.
@@ -60,7 +102,12 @@ impl Target for LocalTarget {
         LOCAL_TARGET
     }
 
-    fn launch(&self, job: &HarnessJob, progress: &dyn Fn(String)) -> io::Result<Box<dyn Process>> {
+    fn launch(
+        &self,
+        job: &HarnessJob,
+        progress: &dyn Fn(String),
+        _canceled: &AtomicBool,
+    ) -> io::Result<Box<dyn Process>> {
         let spec = self.harness.command(job);
         progress("Syncing the Python environment and starting the judge".to_owned());
         Ok(Box::new(LocalProcess::spawn(&spec)?))
@@ -70,6 +117,7 @@ impl Target for LocalTarget {
 /// A local child process that leads its own process group.
 pub struct LocalProcess {
     child: Child,
+    stdin: Option<ChildStdin>,
     reaped: bool,
 }
 
@@ -77,13 +125,25 @@ impl LocalProcess {
     /// Spawns `spec` with piped stdout and stderr, no stdin, in a new process group so
     /// the whole tree (uv, Python, anything the solution starts) can be killed at once.
     pub fn spawn(spec: &CommandSpec) -> io::Result<Self> {
+        Self::spawn_io(spec, Stdio::null(), Stdio::piped(), Stdio::piped())
+    }
+
+    /// Like [`LocalProcess::spawn`], with the three standard streams chosen by the
+    /// caller. A piped stdin is kept open until [`LocalProcess::close_stdin`], a kill,
+    /// or drop.
+    pub fn spawn_io(
+        spec: &CommandSpec,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> io::Result<Self> {
         let mut command = Command::new(&spec.program);
         command
             .args(&spec.args)
             .envs(spec.envs.iter().map(|(key, value)| (key, value)))
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stdin(stdin)
+            .stdout(stdout)
+            .stderr(stderr);
         if let Some(cwd) = &spec.cwd {
             command.current_dir(cwd);
         }
@@ -92,16 +152,37 @@ impl LocalProcess {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
-        let child = command.spawn().map_err(|e| {
+        let mut child = command.spawn().map_err(|e| {
             io::Error::new(
                 e.kind(),
                 format!("failed to start `{}`: {e}", spec.program.to_string_lossy()),
             )
         })?;
         Ok(Self {
+            stdin: child.stdin.take(),
             child,
             reaped: false,
         })
+    }
+
+    /// Closes the child's standard input, if it was piped.
+    pub fn close_stdin(&mut self) {
+        self.stdin = None;
+    }
+
+    /// Waits up to `limit` for the child to exit by itself, without reaping it. Returns
+    /// whether it has exited.
+    pub fn wait_exit(&mut self, limit: Duration) -> bool {
+        let deadline = Instant::now() + limit;
+        loop {
+            if self.has_exited() {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
     }
 }
 
@@ -127,13 +208,11 @@ impl Process for LocalProcess {
     }
 
     fn finish(&mut self, grace: Duration) -> Option<i32> {
-        let deadline = Instant::now() + grace;
-        while !self.has_exited() && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(5));
-        }
+        self.wait_exit(grace);
         // Kill the group while the leader is still unreaped, so the group id cannot have
         // been recycled. If the leader already exited this only sweeps what it left behind.
         self.kill();
+        self.stdin = None;
         let status = self.child.wait();
         self.reaped = true;
         status.ok().and_then(|status| status.code())

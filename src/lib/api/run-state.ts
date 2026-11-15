@@ -35,6 +35,8 @@ export interface RunState {
   phase: RunPhase;
   mode: RunMode | null;
   framework: Framework | null;
+  /** Where the run executes: "local" or an SSH target's name. */
+  target: string | null;
   runId: string | null;
   preparingMessage: string | null;
   cases: RunCase[];
@@ -67,7 +69,7 @@ export interface RunState {
 }
 
 export type RunAction =
-  | { type: "begin"; mode: RunMode; framework: Framework }
+  | { type: "begin"; mode: RunMode; framework: Framework; target?: string }
   | { type: "started"; runId: string }
   | { type: "event"; event: RunEvent }
   | { type: "failed"; message: string }
@@ -78,6 +80,7 @@ export const initialRunState: RunState = {
   phase: "idle",
   mode: null,
   framework: null,
+  target: null,
   runId: null,
   preparingMessage: null,
   cases: [],
@@ -182,7 +185,13 @@ function applyEvent(state: RunState, event: RunEvent): RunState {
 export function runReducer(state: RunState, action: RunAction): RunState {
   switch (action.type) {
     case "begin":
-      return { ...initialRunState, phase: "starting", mode: action.mode, framework: action.framework };
+      return {
+        ...initialRunState,
+        phase: "starting",
+        mode: action.mode,
+        framework: action.framework,
+        target: action.target ?? "local",
+      };
     case "started":
       return state.phase === "idle" ? state : { ...state, runId: action.runId };
     case "event":

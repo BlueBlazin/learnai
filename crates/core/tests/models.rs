@@ -23,7 +23,7 @@ fn fetch(core: &Core, names: &[&str]) -> Vec<AssetEvent> {
     let collector = Collector::new();
     let names: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();
     let job_id = core
-        .fetch_assets(&names, collector.sink())
+        .fetch_assets(&names, None, collector.sink())
         .expect("start fetch");
     assert!(!job_id.is_empty());
     let events = collector.wait_for("the done event", |events| events.iter().any(is_done));
@@ -376,7 +376,7 @@ fn bad_requests_start_nothing() {
     ] {
         let collector: Collector<AssetEvent> = Collector::new();
         let error = core
-            .fetch_assets(&names, collector.sink())
+            .fetch_assets(&names, None, collector.sink())
             .expect_err("rejected");
         assert!(
             matches!(error, CoreError::InvalidArgument(_)),
@@ -396,7 +396,7 @@ fn cancel_kills_the_process_group_keeps_files_and_frees_the_job() {
 
     let collector = Collector::new();
     let job_id = core
-        .fetch_assets(&["tiny".to_owned()], collector.sink())
+        .fetch_assets(&["tiny".to_owned()], None, collector.sink())
         .expect("start fetch");
     collector.wait_for("progress", |events| {
         events
@@ -407,7 +407,7 @@ fn cancel_kills_the_process_group_keeps_files_and_frees_the_job() {
     // One job at a time: a second fetch, and a removal, are refused while it runs.
     let second: Collector<AssetEvent> = Collector::new();
     let error = core
-        .fetch_assets(&["other".to_owned()], second.sink())
+        .fetch_assets(&["other".to_owned()], None, second.sink())
         .expect_err("second fetch");
     assert!(matches!(error, CoreError::FetchInProgress), "{error}");
     assert!(error.to_string().contains("already running"));

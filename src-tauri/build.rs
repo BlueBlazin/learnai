@@ -24,6 +24,11 @@ const COMMANDS: &[&str] = &[
     "fetch_assets",
     "cancel_asset_fetch",
     "remove_asset",
+    "list_ssh_hosts",
+    "list_targets",
+    "add_target",
+    "remove_target",
+    "check_target",
 ];
 
 fn main() {

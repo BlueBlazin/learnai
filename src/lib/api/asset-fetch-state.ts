@@ -18,13 +18,15 @@ export type AssetDownload =
 export interface AssetFetchState {
   /** The assets of the fetch in flight, in request order; empty when nothing is running. */
   active: string[];
+  /** Where the fetch in flight, or the last one, puts its files: "local" or an SSH target. */
+  target: string;
   jobId: string | null;
   canceling: boolean;
   downloads: Record<string, AssetDownload>;
 }
 
 export type AssetFetchAction =
-  | { type: "begin"; names: string[] }
+  | { type: "begin"; names: string[]; target?: string }
   | { type: "started"; jobId: string }
   | { type: "event"; event: AssetEvent }
   /** The fetch could not be started at all (transport or core error). */
@@ -36,6 +38,7 @@ export type AssetFetchAction =
 
 export const initialAssetFetchState: AssetFetchState = {
   active: [],
+  target: "local",
   jobId: null,
   canceling: false,
   downloads: {},
@@ -105,7 +108,7 @@ function applyEvent(state: AssetFetchState, event: AssetEvent): AssetFetchState 
         if (event.canceled || event.ok) delete downloads[name];
         else downloads[name] = { phase: "failed", message: event.message ?? FALLBACK_FAILURE };
       }
-      return { active: [], jobId: null, canceling: false, downloads };
+      return { ...state, active: [], jobId: null, canceling: false, downloads };
     }
   }
 }
@@ -115,9 +118,11 @@ export function assetFetchReducer(state: AssetFetchState, action: AssetFetchActi
   switch (action.type) {
     case "begin": {
       if (isFetching(state)) return state;
-      const downloads = { ...state.downloads };
+      const target = action.target ?? "local";
+      // What is known about downloads belongs to one machine; another starts clean.
+      const downloads = target === state.target ? { ...state.downloads } : {};
       for (const name of action.names) downloads[name] = { phase: "preparing", message: null };
-      return { active: action.names, jobId: null, canceling: false, downloads };
+      return { active: action.names, target, jobId: null, canceling: false, downloads };
     }
     case "started":
       return isFetching(state) ? { ...state, jobId: action.jobId } : state;
@@ -128,7 +133,7 @@ export function assetFetchReducer(state: AssetFetchState, action: AssetFetchActi
       if (!isFetching(state)) return state;
       const downloads = { ...state.downloads };
       for (const name of state.active) downloads[name] = { phase: "failed", message: action.message };
-      return { active: [], jobId: null, canceling: false, downloads };
+      return { ...state, active: [], jobId: null, canceling: false, downloads };
     }
     case "canceling":
       return isFetching(state) ? { ...state, canceling: true } : state;

@@ -138,4 +138,26 @@ describe("HttpBackend first load", () => {
       "Unknown problem: nope",
     );
   });
+
+  it("posts the run target commands with the contract's argument names", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ok([]));
+    vi.stubGlobal("fetch", fetchMock);
+    const backend = new HttpBackend("http://bridge");
+
+    await backend.listSshHosts();
+    await backend.listTargets();
+    await backend.addTarget("gpu-box");
+    await backend.addTarget("gpu-box", "/srv/ws");
+    await backend.removeTarget("ssh:gpu-box");
+    const posts = fetchMock.mock.calls
+      .filter(([url]) => url.includes("/api/"))
+      .map(([url, init]) => [url.replace("http://bridge/api/", ""), JSON.parse(String(init?.body))]);
+    expect(posts).toEqual([
+      ["list_ssh_hosts", {}],
+      ["list_targets", {}],
+      ["add_target", { host: "gpu-box" }],
+      ["add_target", { host: "gpu-box", remoteDir: "/srv/ws" }],
+      ["remove_target", { name: "ssh:gpu-box" }],
+    ]);
+  });
 });

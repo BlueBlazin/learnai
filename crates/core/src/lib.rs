@@ -17,6 +17,8 @@
 //! - [`stream`]: reading a subprocess's output as lines (runs, installs, fetches)
 //! - [`uv`], [`env`]: the Python environment
 //! - [`models`]: model assets (list, fetch, cancel, remove)
+//! - [`ssh`], [`remote`], [`targets`]: SSH run targets (configuration, remote processes,
+//!   the target registry and check)
 //! - [`app`]: the [`Core`] facade
 
 pub mod app;
@@ -30,22 +32,27 @@ pub mod models;
 pub mod paths;
 pub mod progress;
 pub mod protocol;
+pub mod remote;
 pub mod root;
 pub mod run;
 pub mod sink;
 pub mod solutions;
+pub mod ssh;
 pub mod store;
 mod stream;
 pub mod target;
+mod targets;
 pub mod uv;
 
 pub use app::{Core, CoreOptions};
 pub use error::{CoreError, Result};
 pub use harness::{CommandSpec, HarnessCommand, HarnessJob, ProgramHarness, UvHarness};
 pub use model::*;
+pub use remote::{SshProcess, SshTarget};
 pub use root::{ResolvedRoot, RootInputs, RootSource, resolve_root};
 pub use run::RunLimits;
 pub use sink::EventSink;
+pub use ssh::{Ssh, SshOptions};
 pub use target::{LOCAL_TARGET, LocalTarget, Process, Target};
 
 /// The current time as ISO 8601 in UTC with millisecond precision.

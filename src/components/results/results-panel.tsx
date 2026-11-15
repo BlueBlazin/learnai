@@ -80,6 +80,7 @@ export function ResultsPanel({
             skipped={run.skipped}
             durationMs={run.durationMs}
             env={run.env}
+            target={run.target}
             actions={actions}
           />
         ) : null}

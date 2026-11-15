@@ -18,6 +18,7 @@ export function AssetDownloadButton({
   onDownload,
   onCancel,
   size = "xs",
+  host,
 }: {
   /** Undefined while the model's state is not known; treated as not downloaded. */
   state: AssetState | undefined;
@@ -28,6 +29,8 @@ export function AssetDownloadButton({
   onDownload: () => void;
   onCancel: () => void;
   size?: "xs" | "sm";
+  /** The remote machine the download is for; the button then says "Download on <host>". */
+  host?: string;
 }) {
   if (isInFlight(download)) {
     return (
@@ -38,7 +41,13 @@ export function AssetDownloadButton({
   }
   if (state === "present" || download?.phase === "finished") return null;
   const label =
-    download?.phase === "failed" ? "Try again" : state === "incomplete" ? "Resume download" : "Download";
+    download?.phase === "failed"
+      ? "Try again"
+      : state === "incomplete"
+        ? "Resume download"
+        : host
+          ? `Download on ${host}`
+          : "Download";
   return (
     <Button
       variant="outline"

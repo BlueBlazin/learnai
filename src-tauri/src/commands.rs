@@ -8,8 +8,8 @@ use tauri::State;
 use tauri::ipc::Channel;
 use whetstone_core::{
     AssetEvent, AssetList, CatalogIssue, Core, EnvStatus, Framework, InstallEvent, ProblemDetail,
-    ProblemSummary, RunEvent, RunMode, SolutionFile, Stats, StudyPath, Submission,
-    SubmissionDetail, Track,
+    ProblemSummary, RunEvent, RunMode, SolutionFile, SshHost, Stats, StudyPath, Submission,
+    SubmissionDetail, TargetCheckEvent, TargetInfo, Track,
 };
 
 /// Shared application state: the core, or the reason it could not be opened.
@@ -238,10 +238,11 @@ pub async fn list_assets(state: State<'_, AppState>) -> CommandResult<AssetList>
 pub async fn fetch_assets(
     state: State<'_, AppState>,
     names: Vec<String>,
+    target: Option<String>,
     on_event: Channel<AssetEvent>,
 ) -> CommandResult<String> {
     with_core(state, "fetch_assets", move |core| {
-        core.fetch_assets(&names, move |event: AssetEvent| {
+        core.fetch_assets(&names, target.as_deref(), move |event: AssetEvent| {
             // The webview may be gone (window closed mid-download); there is no one to tell.
             let _ = on_event.send(event);
         })
@@ -261,4 +262,53 @@ pub async fn cancel_asset_fetch(state: State<'_, AppState>, job_id: String) -> C
 #[tauri::command]
 pub async fn remove_asset(state: State<'_, AppState>, name: String) -> CommandResult<AssetList> {
     with_core(state, "remove_asset", move |core| core.remove_asset(&name)).await
+}
+
+#[tauri::command]
+pub async fn list_ssh_hosts(state: State<'_, AppState>) -> CommandResult<Vec<SshHost>> {
+    with_core(state, "list_ssh_hosts", |core| Ok(core.list_ssh_hosts())).await
+}
+
+#[tauri::command]
+pub async fn list_targets(state: State<'_, AppState>) -> CommandResult<Vec<TargetInfo>> {
+    with_core(state, "list_targets", |core| core.list_targets()).await
+}
+
+#[tauri::command]
+pub async fn add_target(
+    state: State<'_, AppState>,
+    host: String,
+    remote_dir: Option<String>,
+) -> CommandResult<Vec<TargetInfo>> {
+    with_core(state, "add_target", move |core| {
+        core.add_target(&host, remote_dir.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn remove_target(
+    state: State<'_, AppState>,
+    name: String,
+) -> CommandResult<Vec<TargetInfo>> {
+    with_core(state, "remove_target", move |core| {
+        core.remove_target(&name)
+    })
+    .await
+}
+
+/// Returns the job id at once; events flow over the channel until `done` (section 4.1).
+#[tauri::command]
+pub async fn check_target(
+    state: State<'_, AppState>,
+    name: String,
+    on_event: Channel<TargetCheckEvent>,
+) -> CommandResult<String> {
+    with_core(state, "check_target", move |core| {
+        core.check_target(&name, move |event: TargetCheckEvent| {
+            // The webview may be gone (window closed mid-check); there is no one to tell.
+            let _ = on_event.send(event);
+        })
+    })
+    .await
 }

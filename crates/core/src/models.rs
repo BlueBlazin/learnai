@@ -15,6 +15,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
@@ -27,7 +28,9 @@ use crate::error::{CoreError, Result};
 use crate::harness::CommandSpec;
 use crate::model::{AssetEvent, AssetList, AssetState, Extra, ModelAsset};
 use crate::protocol::PREFIX;
+use crate::remote::Session;
 use crate::sink::SharedSink;
+use crate::ssh::Ssh;
 use crate::stream::{Message, spawn_reader};
 use crate::target::{LocalProcess, Process};
 
@@ -245,6 +248,22 @@ fn remove_directory(target: &Path) -> Result<()> {
 struct Job {
     id: String,
     cancel: Sender<Message>,
+    /// Set by a cancel, for the remote preparation steps that run before the event
+    /// loop is listening.
+    canceled: Arc<AtomicBool>,
+}
+
+/// Where a remote fetch runs and what it needs there.
+pub struct RemoteFetch {
+    /// The SSH tooling.
+    pub ssh: Ssh,
+    /// The host alias.
+    pub host: String,
+    /// The remote working directory.
+    pub remote_dir: String,
+    /// The directories of the problems that declare the assets being fetched: the
+    /// remote `ws assets fetch` reads the declarations from them.
+    pub problem_dirs: Vec<PathBuf>,
 }
 
 /// Lists, fetches, and removes model assets for one content root.
@@ -316,19 +335,28 @@ impl ModelAssets {
     /// Events flow to `sink` from a background thread and always finish with exactly
     /// one `done` event. An error returned here (no names, a malformed name, a fetch or
     /// an install already running) means nothing was started and no events follow.
-    pub fn fetch(&self, names: &[String], sink: SharedSink<AssetEvent>) -> Result<String> {
+    ///
+    /// With `remote`, the same fetch runs on that host and the files land under
+    /// `<remoteDir>/root/.whetstone/models/`; the local environment is not touched.
+    pub fn fetch(
+        &self,
+        names: &[String],
+        remote: Option<RemoteFetch>,
+        sink: SharedSink<AssetEvent>,
+    ) -> Result<String> {
         if names.is_empty() {
             return Err(CoreError::InvalidArgument(
                 "name at least one model asset to download".to_owned(),
             ));
         }
         names.iter().try_for_each(|name| check_name(name))?;
-        if self.env.is_installing() {
+        if remote.is_none() && self.env.is_installing() {
             return Err(CoreError::InstallInProgress);
         }
 
         let job_id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = mpsc::channel();
+        let canceled = Arc::new(AtomicBool::new(false));
         {
             let mut job = self.job();
             if job.is_some() {
@@ -337,6 +365,7 @@ impl ModelAssets {
             *job = Some(Job {
                 id: job_id.clone(),
                 cancel: tx.clone(),
+                canceled: Arc::clone(&canceled),
             });
         }
 
@@ -345,7 +374,12 @@ impl ModelAssets {
         let spawned = thread::Builder::new()
             .name(format!("asset-fetch-{job_id}"))
             .spawn(move || {
-                let done = this.run_fetch(&names, &sink, &tx, &rx);
+                let done = match &remote {
+                    None => this.run_fetch(&names, &sink, &tx, &rx),
+                    Some(remote) => {
+                        this.run_remote_fetch(&names, remote, &sink, &tx, &rx, &canceled)
+                    }
+                };
                 // Free the slot first, so a retry started from the `done` handler works.
                 *this.job() = None;
                 sink.emit(done);
@@ -366,6 +400,7 @@ impl ModelAssets {
     /// `done` (`canceled: true`). An unknown or finished job is a no-op.
     pub fn cancel(&self, job_id: &str) {
         if let Some(job) = self.job().as_ref().filter(|job| job.id == job_id) {
+            job.canceled.store(true, Ordering::SeqCst);
             // The receiver is gone only if the fetch just finished.
             let _ = job.cancel.send(Message::Cancel);
         }
@@ -433,91 +468,179 @@ impl ModelAssets {
             Err(error) => return failed(format!("The download could not be started: {error}")),
         };
 
-        let mut open = 0;
-        if let Some(stdout) = process.take_stdout() {
-            open += spawn_reader(stdout, tx.clone(), Message::Stdout);
-        }
-        if let Some(stderr) = process.take_stderr() {
-            open += spawn_reader(stderr, tx.clone(), Message::Stderr);
-        }
-
-        // The CLI reached the point of reporting, which means the environment has the
-        // `models` extra: remember it, so no later command removes it again.
-        let mut reported = false;
-        let mut failures: Vec<String> = Vec::new();
-        let mut last_stderr: Option<String> = None;
-        let mut canceled = false;
-        while open > 0 {
-            match rx.recv() {
-                Ok(Message::Closed) => open -= 1,
-                Ok(Message::Cancel) => {
-                    canceled = true;
-                    break;
-                }
-                Ok(Message::Stderr(text)) => {
-                    if !text.trim().is_empty() {
-                        last_stderr = Some(text.trim().to_owned());
-                    }
-                    sink.emit(AssetEvent::Log { text });
-                }
-                Ok(Message::Stdout(line)) => {
-                    let Some(event) = map_fetch_line(&line) else {
-                        reported = true;
-                        continue;
-                    };
-                    if !matches!(event, AssetEvent::Log { .. }) {
-                        reported = true;
-                    }
-                    if let AssetEvent::AssetEnd {
-                        asset,
-                        ok: false,
-                        message,
-                    } = &event
-                    {
-                        failures.push(match message {
-                            Some(message) => format!("{asset}: {message}"),
-                            None => format!("{asset}: the download failed"),
-                        });
-                    }
-                    sink.emit(event);
-                }
-                Err(_) => break,
-            }
-        }
-
-        let code = process.finish(if canceled {
-            Duration::ZERO
-        } else {
-            Duration::from_secs(5)
-        });
-        if (reported || code == Some(0))
+        let outcome = pump(&mut process, sink, tx, rx);
+        if (outcome.reported || outcome.code == Some(0))
             && !had_models
             && let Err(error) = self.env.enable_extras([Extra::Models])
         {
             tracing::warn!("could not record the models extra: {error}");
         }
-        tracing::info!(assets = ?names, ?code, canceled, "asset fetch finished");
+        tracing::info!(assets = ?names, code = ?outcome.code, canceled = outcome.canceled, "asset fetch finished");
+        outcome.done(None)
+    }
 
-        if canceled {
+    /// Runs the fetch on a remote host to completion and returns its `done` event.
+    fn run_remote_fetch(
+        &self,
+        names: &[String],
+        remote: &RemoteFetch,
+        sink: &SharedSink<AssetEvent>,
+        tx: &Sender<Message>,
+        rx: &mpsc::Receiver<Message>,
+        canceled: &AtomicBool,
+    ) -> AssetEvent {
+        let host = &remote.host;
+        let preparing = |message: String| sink.emit(AssetEvent::Preparing { message });
+        let prepared = (|| {
+            preparing(format!("Connecting to {host}"));
+            let session = Session::connect(&remote.ssh, host, &remote.remote_dir, canceled)?;
+            session.uv()?;
+            preparing(format!("Copying the judge to {host}"));
+            session.sync_python(&self.root)?;
+            for dir in &remote.problem_dirs {
+                session.sync_problem(dir)?;
+            }
+            // `uv run` only adds packages, so asking for `models` removes nothing there.
+            let mut command = session.uv_run(&[Extra::Models.as_str()], false)?;
+            command.extend(["ws", "assets", "fetch"].map(str::to_owned));
+            command.extend(names.iter().cloned());
+            command.push("--json".to_owned());
+            preparing(format!(
+                "Installing the download tools on {host} if they are missing"
+            ));
+            sink.emit(AssetEvent::Log {
+                text: format!("$ ssh {host} {}", command.join(" ")),
+            });
+            session.spawn(&command)
+        })();
+        let mut process = match prepared {
+            Ok(process) => process,
+            Err(failure) => {
+                return AssetEvent::Done {
+                    ok: false,
+                    canceled: failure.canceled,
+                    message: (!failure.canceled).then(|| failure.text()),
+                };
+            }
+        };
+        let outcome = pump(&mut process, sink, tx, rx);
+        tracing::info!(assets = ?names, host = %host, code = ?outcome.code, canceled = outcome.canceled, "remote asset fetch finished");
+        outcome.done(Some(host))
+    }
+}
+
+/// How a fetch process ended.
+struct FetchOutcome {
+    /// The CLI reached the point of reporting, which means its environment has the
+    /// `models` extra.
+    reported: bool,
+    failures: Vec<String>,
+    last_stderr: Option<String>,
+    canceled: bool,
+    code: Option<i32>,
+}
+
+impl FetchOutcome {
+    /// The `done` event. `host` names the remote host the fetch ran on, if any.
+    fn done(self, host: Option<&str>) -> AssetEvent {
+        let failed = |message: String| AssetEvent::Done {
+            ok: false,
+            canceled: false,
+            message: Some(message),
+        };
+        if self.canceled {
             return AssetEvent::Done {
                 ok: false,
                 canceled: true,
                 message: None,
             };
         }
-        match code {
-            Some(0) if failures.is_empty() => AssetEvent::Done {
+        match (self.code, host) {
+            (Some(0), _) if self.failures.is_empty() => AssetEvent::Done {
                 ok: true,
                 canceled: false,
                 message: None,
             },
-            _ if !failures.is_empty() => failed(failures.join("; ")),
-            Some(code) => failed(
-                last_stderr.unwrap_or_else(|| format!("The download exited with code {code}.")),
+            _ if !self.failures.is_empty() => failed(self.failures.join("; ")),
+            // 255 is how ssh reports its own failure.
+            (Some(255), Some(host)) => failed(format!(
+                "The connection to `{host}` dropped. Files that were complete are kept there; \
+                 download again to resume."
+            )),
+            (Some(code), _) => failed(
+                self.last_stderr
+                    .unwrap_or_else(|| format!("The download exited with code {code}.")),
             ),
-            None => failed("The download was killed by a signal.".to_owned()),
+            (None, _) => failed("The download was killed by a signal.".to_owned()),
         }
     }
+}
+
+/// Forwards the fetch's output as events until it ends or is canceled, then stops it.
+fn pump(
+    process: &mut dyn Process,
+    sink: &SharedSink<AssetEvent>,
+    tx: &Sender<Message>,
+    rx: &mpsc::Receiver<Message>,
+) -> FetchOutcome {
+    let mut open = 0;
+    if let Some(stdout) = process.take_stdout() {
+        open += spawn_reader(stdout, tx.clone(), Message::Stdout);
+    }
+    if let Some(stderr) = process.take_stderr() {
+        open += spawn_reader(stderr, tx.clone(), Message::Stderr);
+    }
+
+    let mut outcome = FetchOutcome {
+        reported: false,
+        failures: Vec::new(),
+        last_stderr: None,
+        canceled: false,
+        code: None,
+    };
+    while open > 0 {
+        match rx.recv() {
+            Ok(Message::Closed) => open -= 1,
+            Ok(Message::Cancel) => {
+                outcome.canceled = true;
+                break;
+            }
+            Ok(Message::Stderr(text)) => {
+                if !text.trim().is_empty() {
+                    outcome.last_stderr = Some(text.trim().to_owned());
+                }
+                sink.emit(AssetEvent::Log { text });
+            }
+            Ok(Message::Stdout(line)) => {
+                let Some(event) = map_fetch_line(&line) else {
+                    outcome.reported = true;
+                    continue;
+                };
+                if !matches!(event, AssetEvent::Log { .. }) {
+                    outcome.reported = true;
+                }
+                if let AssetEvent::AssetEnd {
+                    asset,
+                    ok: false,
+                    message,
+                } = &event
+                {
+                    outcome.failures.push(match message {
+                        Some(message) => format!("{asset}: {message}"),
+                        None => format!("{asset}: the download failed"),
+                    });
+                }
+                sink.emit(event);
+            }
+            Err(_) => break,
+        }
+    }
+    outcome.code = process.finish(if outcome.canceled {
+        Duration::ZERO
+    } else {
+        Duration::from_secs(5)
+    });
+    outcome
 }
 
 /// The last non-empty line of `text`.

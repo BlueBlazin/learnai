@@ -11,9 +11,12 @@ import type {
   RunEvent,
   RunMode,
   SolutionFile,
+  SshHost,
   Stats,
   Submission,
   SubmissionDetail,
+  TargetCheckEvent,
+  TargetInfo,
   Track,
 } from "./types";
 
@@ -21,7 +24,7 @@ export interface StartRunArgs {
   problemId: string;
   framework: Framework;
   mode: RunMode;
-  /** Execution target. Only "local" exists until the SSH target lands. */
+  /** Where the judge runs: "local" or the name of an SSH target ("ssh:<alias>"). */
   target: string;
 }
 
@@ -78,12 +81,29 @@ export interface Backend {
    * Starts downloading the named assets and resolves with the job id as soon as
    * the core accepts it. Events are delivered in order until a single `done`
    * event; nothing follows it. One fetch runs at a time: a second call rejects.
+   * `target` is where the files should land: this computer by default, or an SSH
+   * target, where the same fetch runs on the remote machine.
    */
-  fetchAssets(names: string[], onEvent: (event: AssetEvent) => void): Promise<string>;
+  fetchAssets(names: string[], onEvent: (event: AssetEvent) => void, target?: string): Promise<string>;
   /** Stops a fetch; files that were complete are kept. Unknown or finished jobs are ignored. */
   cancelAssetFetch(jobId: string): Promise<void>;
   /** Deletes a declared asset from disk and resolves with the new listing. */
   removeAsset(name: string): Promise<AssetList>;
+
+  /** Host aliases from the user's SSH configuration (no wildcard patterns). */
+  listSshHosts(): Promise<SshHost[]>;
+  /** Run targets: `local` first, then the SSH targets in the order they were added. */
+  listTargets(): Promise<TargetInfo[]>;
+  /** Registers an SSH host from the configuration as a target; `remoteDir` defaults to `~/.whetstone`. */
+  addTarget(host: string, remoteDir?: string): Promise<TargetInfo[]>;
+  /** Forgets an SSH target. Nothing is deleted on the remote machine. */
+  removeTarget(name: string): Promise<TargetInfo[]>;
+  /**
+   * Starts checking a target and resolves with the job id as soon as the core
+   * accepts it. Each step arrives as it ends; a single `done` event is last and
+   * carries the result, which the core also saves as the target's `lastCheck`.
+   */
+  checkTarget(name: string, onEvent: (event: TargetCheckEvent) => void): Promise<string>;
 }
 
 export const LOCAL_TARGET = "local";

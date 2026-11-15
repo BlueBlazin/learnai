@@ -1,6 +1,6 @@
 //! The [`Core`] facade: one method per command in `docs/ARCHITECTURE.md` section 4.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -10,17 +10,19 @@ use crate::error::{CoreError, Result};
 use crate::harness::{HarnessCommand, HarnessJob, UvHarness};
 use crate::model::{
     AssetEvent, AssetList, Difficulty, EnvStatus, Extra, Framework, InstallEvent, PathStage,
-    ProblemDetail, ProblemStatus, ProblemSummary, RunEvent, RunMode, SolutionFile, Stats,
-    StudyPath, Submission, SubmissionDetail, Track,
+    ProblemDetail, ProblemStatus, ProblemSummary, RunEvent, RunMode, SolutionFile, SshHost, Stats,
+    StudyPath, Submission, SubmissionDetail, TargetCheckEvent, TargetInfo, Track,
 };
-use crate::models::ModelAssets;
+use crate::models::{ModelAssets, RemoteFetch};
 use crate::paths::load_paths;
 use crate::progress::{current_streak, derive_status};
 use crate::run::{RunLimits, RunPlan, RunRegistry};
 use crate::sink::EventSink;
 use crate::solutions::Workspace;
+use crate::ssh::{Ssh, SshOptions};
 use crate::store::{Store, SubmissionProgress};
-use crate::target::{LocalTarget, Target};
+use crate::target::{LOCAL_TARGET, LocalTarget, Target};
+use crate::targets::Targets;
 use crate::uv::Uv;
 
 /// How to construct a [`Core`].
@@ -33,6 +35,8 @@ pub struct CoreOptions {
     pub uv_program: Option<PathBuf>,
     /// Wall-clock limits for runs.
     pub limits: RunLimits,
+    /// Overrides for the SSH tooling used by remote targets.
+    pub ssh: SshOptions,
 }
 
 impl CoreOptions {
@@ -43,6 +47,7 @@ impl CoreOptions {
             harness: None,
             uv_program: None,
             limits: RunLimits::default(),
+            ssh: SshOptions::default(),
         }
     }
 }
@@ -54,7 +59,7 @@ struct Inner {
     store: Arc<Store>,
     env: Environment,
     models: ModelAssets,
-    targets: HashMap<String, Arc<dyn Target>>,
+    targets: Targets,
     runs: Arc<RunRegistry>,
     limits: RunLimits,
 }
@@ -78,9 +83,15 @@ impl Core {
             .harness
             .unwrap_or_else(|| Arc::new(UvHarness::new(uv.clone())) as Arc<dyn HarnessCommand>);
         let local: Arc<dyn Target> = Arc::new(LocalTarget::new(harness));
-        let targets = HashMap::from([(local.name().to_owned(), local)]);
 
         let env = Environment::new(uv, Arc::clone(&store));
+        let targets = Targets::new(
+            &root,
+            Arc::clone(&store),
+            env.clone(),
+            Ssh::new(options.ssh),
+            local,
+        );
         Ok(Self {
             inner: Arc::new(Inner {
                 catalog: Mutex::new(CatalogLoader::new(&root)),
@@ -312,12 +323,7 @@ impl Core {
         let catalog = self.catalog();
         let problem = catalog.problem(problem_id)?;
         let solution = self.inner.workspace.read(problem, framework)?;
-        let target = self
-            .inner
-            .targets
-            .get(target)
-            .cloned()
-            .ok_or_else(|| CoreError::UnknownTarget(target.to_owned()))?;
+        let target = self.inner.targets.resolve(target)?;
 
         // Judge the saved file when there is one, else the starter in place.
         let saved = self.inner.workspace.path(&problem.id, framework);
@@ -426,12 +432,66 @@ impl Core {
     /// `fetch_assets`: starts downloading the named assets and returns the job id at
     /// once. Events flow to `sink` and always finish with exactly one `done` event.
     /// One fetch runs at a time; nothing is ever downloaded without this call.
+    ///
+    /// `target` is where the files should land: `None` or `local` is this machine; an
+    /// SSH target runs the same fetch on that host.
     pub fn fetch_assets(
         &self,
         names: &[String],
+        target: Option<&str>,
         sink: impl EventSink<AssetEvent>,
     ) -> Result<String> {
-        self.inner.models.fetch(names, Arc::new(sink))
+        let remote = match target.filter(|name| *name != LOCAL_TARGET) {
+            None => None,
+            Some(name) => {
+                let (host, remote_dir) = self.inner.targets.remote(name)?;
+                let catalog = self.catalog();
+                let problem_dirs = catalog
+                    .problems()
+                    .iter()
+                    .filter(|problem| problem.assets.iter().any(|asset| names.contains(asset)))
+                    .map(|problem| problem.dir.clone())
+                    .collect();
+                Some(RemoteFetch {
+                    ssh: self.inner.targets.ssh().clone(),
+                    host,
+                    remote_dir,
+                    problem_dirs,
+                })
+            }
+        };
+        self.inner.models.fetch(names, remote, Arc::new(sink))
+    }
+
+    /// `list_ssh_hosts`: the host aliases in the user's SSH configuration.
+    pub fn list_ssh_hosts(&self) -> Vec<SshHost> {
+        self.inner.targets.hosts()
+    }
+
+    /// `list_targets`: `local` first, then the SSH targets.
+    pub fn list_targets(&self) -> Result<Vec<TargetInfo>> {
+        self.inner.targets.list()
+    }
+
+    /// `add_target`: registers an SSH host from the user's configuration as a target.
+    pub fn add_target(&self, host: &str, remote_dir: Option<&str>) -> Result<Vec<TargetInfo>> {
+        self.inner.targets.add(host, remote_dir)
+    }
+
+    /// `remove_target`: forgets an SSH target; nothing is deleted on the remote host.
+    pub fn remove_target(&self, name: &str) -> Result<Vec<TargetInfo>> {
+        self.inner.targets.remove(name)
+    }
+
+    /// `check_target`: starts checking a target and returns the job id at once. Events
+    /// flow to `sink` and always finish with exactly one `done` event; the result is
+    /// saved as the target's `lastCheck`.
+    pub fn check_target(
+        &self,
+        name: &str,
+        sink: impl EventSink<TargetCheckEvent>,
+    ) -> Result<String> {
+        self.inner.targets.check(name, Arc::new(sink))
     }
 
     /// `cancel_asset_fetch`: kills the fetch's process group. Completed files are

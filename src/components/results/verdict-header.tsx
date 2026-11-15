@@ -2,11 +2,13 @@ import { cn } from "cn";
 import type { ReactNode } from "react";
 import type { RunMode, Verdict } from "@/lib/api";
 import { describeEnv, summarizeRun } from "@/lib/run-summary";
+import { hostOf } from "@/lib/targets";
 import { VerdictMark } from "./verdict-mark";
 
 /**
  * The outcome of a finished run: the verdict in display type, one sentence
- * saying what happened, and the environment it ran in.
+ * saying what happened, and the environment it ran in (and on which machine,
+ * when that was not this computer).
  */
 export function VerdictHeader({
   verdict,
@@ -16,6 +18,7 @@ export function VerdictHeader({
   skipped = 0,
   durationMs,
   env = {},
+  target,
   actions,
   className,
 }: {
@@ -27,10 +30,13 @@ export function VerdictHeader({
   skipped?: number;
   durationMs: number;
   env?: Record<string, string>;
+  /** The target the run executed on; named in the environment line when it is remote. */
+  target?: string | null;
   actions?: ReactNode;
   className?: string;
 }) {
-  const environment = describeEnv(env);
+  const host = target ? hostOf(target) : null;
+  const environment = [host ? `Ran on ${host}` : "", describeEnv(env)].filter(Boolean).join(": ");
   return (
     <div className={cn("flex items-start justify-between gap-4", className)} role="status">
       <div className="min-w-0">

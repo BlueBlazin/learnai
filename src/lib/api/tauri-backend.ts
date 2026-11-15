@@ -1,6 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { Backend, StartRunArgs } from "./backend";
-import type { AssetEvent, Framework, InstallEvent, RunEvent } from "./types";
+import type { AssetEvent, Framework, InstallEvent, RunEvent, TargetCheckEvent } from "./types";
 
 /** Tauri rejects with the command's error string; normalize to Error. */
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -59,11 +59,23 @@ export class TauriBackend implements Backend {
   getProblemAsset = (id: string, path: string) => call<string>("get_problem_asset", { id, path });
 
   listAssets = () => call<Awaited<ReturnType<Backend["listAssets"]>>>("list_assets");
-  fetchAssets(names: string[], onEvent: (event: AssetEvent) => void): Promise<string> {
+  fetchAssets(names: string[], onEvent: (event: AssetEvent) => void, target?: string): Promise<string> {
     const channel = new Channel<AssetEvent>();
     channel.onmessage = onEvent;
-    return call<string>("fetch_assets", { names, onEvent: channel });
+    return call<string>("fetch_assets", { names, target: target ?? null, onEvent: channel });
   }
   cancelAssetFetch = (jobId: string) => call<void>("cancel_asset_fetch", { jobId });
   removeAsset = (name: string) => call<Awaited<ReturnType<Backend["removeAsset"]>>>("remove_asset", { name });
+
+  listSshHosts = () => call<Awaited<ReturnType<Backend["listSshHosts"]>>>("list_ssh_hosts");
+  listTargets = () => call<Awaited<ReturnType<Backend["listTargets"]>>>("list_targets");
+  addTarget = (host: string, remoteDir?: string) =>
+    call<Awaited<ReturnType<Backend["addTarget"]>>>("add_target", { host, remoteDir: remoteDir ?? null });
+  removeTarget = (name: string) =>
+    call<Awaited<ReturnType<Backend["removeTarget"]>>>("remove_target", { name });
+  checkTarget(name: string, onEvent: (event: TargetCheckEvent) => void): Promise<string> {
+    const channel = new Channel<TargetCheckEvent>();
+    channel.onmessage = onEvent;
+    return call<string>("check_target", { name, onEvent: channel });
+  }
 }

@@ -1,6 +1,6 @@
 //! Dev-only HTTP bridge exposing whetstone-core to a plain browser.
 //!
-//! Implements the devbridge transport in `docs/ARCHITECTURE.md` section 4.1:
+//! Implements the devbridge transport in `docs/ARCHITECTURE.md` section 4.2:
 //! `POST /api/<command>` with a JSON object body, and server-sent event streams for run
 //! and install events with buffering and replay. Never bundled with the app.
 
@@ -21,7 +21,9 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
-use whetstone_core::{AssetEvent, Core, CoreError, Framework, InstallEvent, RunEvent, RunMode};
+use whetstone_core::{
+    AssetEvent, Core, CoreError, Framework, InstallEvent, RunEvent, RunMode, TargetCheckEvent,
+};
 
 use crate::events::{EventLog, LogRegistry};
 
@@ -140,6 +142,16 @@ struct FrameworkArgs {
 #[serde(rename_all = "camelCase")]
 struct FetchAssetsArgs {
     names: Vec<String>,
+    #[serde(default)]
+    target: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AddTargetArgs {
+    host: String,
+    #[serde(default)]
+    remote_dir: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -257,9 +269,10 @@ fn dispatch(bridge: &Bridge, command: &str, body: &[u8]) -> Result<Value, ApiErr
             let a: FetchAssetsArgs = args(body)?;
             let log = EventLog::new();
             let sink = Arc::clone(&log);
-            let job_id = core.fetch_assets(&a.names, move |event: AssetEvent| {
-                sink.push(&event, matches!(event, AssetEvent::Done { .. }));
-            })?;
+            let job_id =
+                core.fetch_assets(&a.names, a.target.as_deref(), move |event: AssetEvent| {
+                    sink.push(&event, matches!(event, AssetEvent::Done { .. }));
+                })?;
             bridge.jobs.insert(job_id.clone(), log);
             Ok(json!({ "jobId": job_id }))
         }
@@ -268,6 +281,23 @@ fn dispatch(bridge: &Bridge, command: &str, body: &[u8]) -> Result<Value, ApiErr
             Ok(Value::Null)
         }
         "remove_asset" => reply(core.remove_asset(&args::<NameArgs>(body)?.name)?),
+        "list_ssh_hosts" => reply(core.list_ssh_hosts()),
+        "list_targets" => reply(core.list_targets()?),
+        "add_target" => {
+            let a: AddTargetArgs = args(body)?;
+            reply(core.add_target(&a.host, a.remote_dir.as_deref())?)
+        }
+        "remove_target" => reply(core.remove_target(&args::<NameArgs>(body)?.name)?),
+        "check_target" => {
+            let a: NameArgs = args(body)?;
+            let log = EventLog::new();
+            let sink = Arc::clone(&log);
+            let job_id = core.check_target(&a.name, move |event: TargetCheckEvent| {
+                sink.push(&event, matches!(event, TargetCheckEvent::Done { .. }));
+            })?;
+            bridge.jobs.insert(job_id.clone(), log);
+            Ok(json!({ "jobId": job_id }))
+        }
         other => Err(ApiError::new(
             StatusCode::NOT_FOUND,
             format!("unknown command `{other}`"),

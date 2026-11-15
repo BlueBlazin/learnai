@@ -236,7 +236,9 @@ Composed components, by area (all shown in their states at
 | `problem/` | `DifficultyMark`, `StatusMark`, `JudgeList`, `FrameworkList`, `FrameworkSwitcher`, `ProgressRule`, `ProblemTable`, `ProblemHeader`, `PrerequisiteList`, `PrerequisiteNote`, `HintList`, `EditorialPanel`, `SubmissionList`, `SubmissionView` |
 | `results/` | `ResultsPanel`, `VerdictHeader`, `VerdictMark`, `CaseMark`, `CaseList`, `MetricList`, `OutputBlock`, `RunProgress` |
 | `library/` | `LibraryFilterBar`, `FilterSelect`, `TrackList`, `TrackSection` |
-| `workbench/` | `StatementPane`, `EditorPane`, `PaneToolbar`, `EnvironmentNotice`, `SaveIndicator` |
+| `workbench/` | `StatementPane`, `EditorPane`, `PaneToolbar`, `EnvironmentNotice`, `HardwareNotice`, `SaveIndicator` |
+| `models/` | `ModelsPanel`, `AssetRow`, `AssetStateMark`, `AssetProgress`, `AssetNotice` / `AssetNoticeList`, `AssetDownloadButton`, `RemoveAssetButton` |
+| `targets/` | `TargetsPanel`, `TargetRow`, `TargetSummary`, `CheckStepList`, `CheckStepMark`, `FixText`, `AddTargetForm`, `TargetPicker` |
 | `path/` | `PathSummary`, `PathStage`, `PathEntryList` |
 | `home/` | `ContinueEntry`, `GettingStarted`, `ProgressSummary`, `PathProgress`, `TrackProgress` |
 | `settings/` | `EnvironmentPanel`, `InstallButton`, `UvGuideButton`, `ThemePicker`, `ContentPanel`, `PathField`, `CatalogIssueList` |

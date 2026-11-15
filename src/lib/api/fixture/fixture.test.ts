@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AssetEvent, RunEvent, RunMode } from "../types";
+import type { AssetEvent, RunEvent, RunMode, TargetCheckEvent } from "../types";
 import { FixtureBackend } from "./backend";
 import { buildCatalog, renderTemplate } from "./catalog";
 import { buildPlan, resolveScenario, simulateRun } from "./runs";
@@ -552,5 +552,124 @@ describe("FixtureBackend", () => {
     expect(asset?.state === "missing" || asset?.state === "incomplete").toBe(true);
     // The slot is free again.
     await expect(backend.fetchAssets([name], () => {})).resolves.toMatch(/^fixture-fetch-/);
+  });
+});
+
+describe("FixtureBackend run targets", () => {
+  const checkToEnd = (backend: FixtureBackend, name: string): Promise<TargetCheckEvent[]> =>
+    new Promise((resolve, reject) => {
+      const events: TargetCheckEvent[] = [];
+      backend
+        .checkTarget(name, (event) => {
+          events.push(event);
+          if (event.type === "done") resolve(events);
+        })
+        .catch(reject);
+    });
+
+  it("lists this computer first, a healthy GPU machine, and one failing at uv with a fix", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const targets = await backend.listTargets();
+    expect(targets.map((target) => target.name)).toEqual(["local", "ssh:gpu-box", "ssh:studio"]);
+    expect(targets[0]).toMatchObject({ kind: "local", host: null, remoteDir: null });
+    expect(targets[1]?.lastCheck).toMatchObject({ ok: true, doctor: { hardware: ["cpu", "cuda"] } });
+    expect(targets[1]?.lastCheck?.doctor?.gpuName).toContain("RTX 4090");
+    const failing = targets[2]?.lastCheck;
+    expect(failing?.ok).toBe(false);
+    expect(failing?.steps.at(-1)).toMatchObject({ id: "uv", ok: false });
+    expect(failing?.steps.at(-1)?.fix).toContain("astral.sh/uv/install.sh");
+    expect(failing?.doctor).toBeNull();
+  });
+
+  it("adds a host from the configuration, checks it, and removes it", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const hosts = await backend.listSshHosts();
+    expect(hosts.map((host) => host.alias)).toEqual(["gpu-box", "studio", "lab-a100"]);
+    await expect(backend.addTarget("stranger")).rejects.toThrow("not a host in your SSH configuration");
+    await expect(backend.addTarget("gpu-box")).rejects.toThrow("already a run target");
+
+    const added = await backend.addTarget("lab-a100");
+    expect(added.at(-1)).toMatchObject({ name: "ssh:lab-a100", remoteDir: "~/.whetstone", lastCheck: null });
+
+    const events = await checkToEnd(backend, "ssh:lab-a100");
+    expect(events.filter((event) => event.type === "step")).toHaveLength(5);
+    const done = events.at(-1);
+    expect(done).toMatchObject({ type: "done", check: { ok: true } });
+    expect((await backend.listTargets()).at(-1)?.lastCheck?.doctor?.gpuName).toContain("A100");
+
+    await expect(backend.removeTarget("local")).rejects.toThrow("cannot be removed");
+    await expect(backend.removeTarget("ssh:stranger")).rejects.toThrow("unknown target");
+    expect((await backend.removeTarget("ssh:lab-a100")).map((target) => target.name)).toEqual([
+      "local",
+      "ssh:gpu-box",
+      "ssh:studio",
+    ]);
+  });
+
+  it("streams a check that stops at its failing step", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const events = await checkToEnd(backend, "ssh:studio");
+    expect(events.map((event) => event.type)).toEqual(["step", "step", "done"]);
+    expect(events.at(-1)).toMatchObject({ check: { ok: false, doctor: null } });
+  });
+
+  it("runs on a remote target with its own steps, hardware, and models", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const run = (target: string): Promise<RunEvent[]> =>
+      new Promise((resolve, reject) => {
+        const events: RunEvent[] = [];
+        backend
+          .startRun({ problemId: "stable-softmax", framework: "torch", mode: "submit", target }, (event) => {
+            events.push(event);
+            if (event.type === "end") resolve(events);
+          })
+          .catch(reject);
+      });
+
+    const events = await run("ssh:gpu-box");
+    const preparing = events.flatMap((event) => (event.type === "preparing" ? [event.message] : []));
+    expect(preparing).toContain("Connecting to gpu-box");
+    expect(preparing).toContain("Copying the problem and your solution to gpu-box");
+    const end = events.at(-1);
+    if (end?.type !== "end" || end.submissionId === null) throw new Error("expected a stored submit");
+    expect((await backend.getSubmission(end.submissionId)).target).toBe("ssh:gpu-box");
+
+    // A machine whose check fails cannot run: the reason and the fix come back.
+    const refused = (await run("ssh:studio")).at(-1);
+    expect(refused).toMatchObject({ type: "end", verdict: "harness_error", submissionId: null });
+    expect(refused?.type === "end" ? refused.message : "").toContain("astral.sh/uv/install.sh");
+
+    await expect(
+      backend.startRun(
+        { problemId: "stable-softmax", framework: "torch", mode: "run", target: "ssh:stranger" },
+        () => {},
+      ),
+    ).rejects.toThrow("unknown target");
+  });
+
+  it("downloads a model on a remote target without touching this computer's", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const before = (await backend.listAssets()).assets.find(
+      (asset) => asset.name === "granite-4.2-3b-mlx-8bit",
+    );
+    const events = await new Promise<AssetEvent[]>((resolve, reject) => {
+      const seen: AssetEvent[] = [];
+      backend
+        .fetchAssets(
+          ["granite-4.2-3b-mlx-8bit"],
+          (event) => {
+            seen.push(event);
+            if (event.type === "done") resolve(seen);
+          },
+          "ssh:gpu-box",
+        )
+        .catch(reject);
+    });
+    expect(events[0]).toEqual({ type: "preparing", message: "Connecting to gpu-box" });
+    expect(events.at(-1)).toEqual({ type: "done", ok: true, canceled: false, message: null });
+    const after = (await backend.listAssets()).assets.find(
+      (asset) => asset.name === "granite-4.2-3b-mlx-8bit",
+    );
+    expect(after).toEqual(before);
   });
 });

@@ -9,7 +9,7 @@ use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::net::TcpListener;
-use whetstone_core::{Core, CoreOptions, ProgramHarness};
+use whetstone_core::{Core, CoreOptions, ProgramHarness, SshOptions};
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/tests/fixtures")
@@ -45,9 +45,22 @@ impl Bridge {
                 ProgramHarness::new("sh").arg(fixtures().join("fake_harness.sh")),
             )),
             uv_program: Some(fixtures().join("fake_uv.sh")),
+            // A private SSH configuration, and an ssh that does not exist: the registry
+            // is exercised without ever reaching a host.
+            ssh: SshOptions {
+                ssh_program: Some(root.path().join("no-ssh")),
+                rsync_program: Some(root.path().join("no-rsync")),
+                config: Some(root.path().join("ssh_config")),
+                control_dir: Some(root.path().join("ctl")),
+            },
             ..CoreOptions::new(root.path())
         })
         .expect("open core");
+        std::fs::write(
+            root.path().join("ssh_config"),
+            "Host gpu-box\n  HostName 10.0.0.5\n  User ada\nHost *\n  User nobody\n",
+        )
+        .expect("write ssh config");
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let base = format!("http://{}", listener.local_addr().expect("address"));
@@ -749,4 +762,98 @@ async fn a_not_judged_submit_over_http() {
     let problem = bridge.call("get_problem", json!({"id": "add-two"})).await;
     assert_eq!(problem["status"], "attempted");
     assert_eq!(bridge.call("get_stats", json!({})).await["solved"], 0);
+}
+
+#[tokio::test]
+async fn run_targets_over_http() {
+    let bridge = Bridge::start().await;
+
+    let hosts = bridge.call("list_ssh_hosts", json!({})).await;
+    assert_eq!(
+        hosts,
+        json!([{"alias": "gpu-box", "hostName": "10.0.0.5", "user": "ada", "port": null}])
+    );
+
+    let targets = bridge.call("list_targets", json!({})).await;
+    assert_eq!(targets.as_array().expect("array").len(), 1);
+    assert_eq!(targets[0]["name"], "local");
+    assert_eq!(targets[0]["kind"], "local");
+    assert_eq!(targets[0]["lastCheck"], Value::Null);
+
+    let targets = bridge.call("add_target", json!({"host": "gpu-box"})).await;
+    assert_eq!(
+        targets[1],
+        json!({"name": "ssh:gpu-box", "kind": "ssh", "label": "gpu-box", "host": "gpu-box",
+               "remoteDir": "~/.whetstone", "lastCheck": null})
+    );
+
+    // The local check streams steps and ends with `done`, like any other job.
+    let started = bridge.call("check_target", json!({"name": "local"})).await;
+    let job = started["jobId"].as_str().expect("jobId");
+    let events = bridge.events(&format!("/api/jobs/{job}/events")).await;
+    assert_eq!(types(&events), ["step", "log", "step", "done"]);
+    assert_eq!(events[0]["step"]["id"], "uv");
+    let done = events.last().expect("done");
+    assert_eq!(done["check"]["ok"], true);
+    assert_eq!(done["check"]["doctor"]["hardware"], json!(["cpu"]));
+    let targets = bridge.call("list_targets", json!({})).await;
+    assert_eq!(targets[0]["lastCheck"]["ok"], true);
+
+    // A remote check with no ssh fails at the first step, with the reason.
+    let started = bridge
+        .call("check_target", json!({"name": "ssh:gpu-box"}))
+        .await;
+    let job = started["jobId"].as_str().expect("jobId");
+    let events = bridge.events(&format!("/api/jobs/{job}/events")).await;
+    assert_eq!(types(&events), ["step", "done"]);
+    assert_eq!(events[0]["step"]["id"], "connect");
+    assert_eq!(events[0]["step"]["ok"], false);
+
+    for (command, body, status) in [
+        (
+            "add_target",
+            json!({"host": "stranger"}),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "add_target",
+            json!({"host": "gpu-box"}),
+            StatusCode::BAD_REQUEST,
+        ),
+        ("add_target", json!({}), StatusCode::BAD_REQUEST),
+        (
+            "remove_target",
+            json!({"name": "local"}),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "remove_target",
+            json!({"name": "ssh:stranger"}),
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "check_target",
+            json!({"name": "ssh:stranger"}),
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "fetch_assets",
+            json!({"names": ["tiny"], "target": "ssh:stranger"}),
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "start_run",
+            json!({"problemId": "add-two", "framework": "torch", "mode": "run", "target": "ssh:stranger"}),
+            StatusCode::NOT_FOUND,
+        ),
+    ] {
+        let (got, reply) = bridge.post(command, body.clone()).await;
+        assert_eq!(got, status, "{command} {body}: {reply}");
+        assert!(reply["error"].is_string(), "{command} {body}: {reply}");
+    }
+
+    let targets = bridge
+        .call("remove_target", json!({"name": "ssh:gpu-box"}))
+        .await;
+    assert_eq!(targets.as_array().expect("array").len(), 1);
 }

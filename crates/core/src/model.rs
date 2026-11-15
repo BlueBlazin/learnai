@@ -790,6 +790,137 @@ pub enum AssetEvent {
     },
 }
 
+/// A host alias from the user's SSH configuration (no wildcard patterns).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshHost {
+    /// The alias, as written after `Host`.
+    pub alias: String,
+    /// `HostName`, if the block sets it.
+    pub host_name: Option<String>,
+    /// `User`, if the block sets it.
+    pub user: Option<String>,
+    /// `Port`, if the block sets it.
+    pub port: Option<u16>,
+}
+
+wire_enum! {
+    /// A step of a target check, in the order the steps run.
+    CheckStepId {
+        /// Reach the host over SSH without a prompt.
+        Connect => "connect",
+        /// Find uv.
+        Uv => "uv",
+        /// Copy the `python/` project.
+        Sync => "sync",
+        /// Build the Python environment.
+        Environment => "environment",
+        /// Run `ws doctor --json`.
+        Doctor => "doctor",
+    }
+}
+
+/// The outcome of one step of a target check.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckStep {
+    /// Which step.
+    pub id: CheckStepId,
+    /// Whether it succeeded.
+    pub ok: bool,
+    /// One line: what was found, or what went wrong.
+    pub message: String,
+    /// A command or instruction for the user when the step failed.
+    pub fix: Option<String>,
+}
+
+/// What `ws doctor --json` reported on a target, reduced to what the app shows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteDoctor {
+    /// Python version.
+    pub python: String,
+    /// `platform.system()`: `Linux`, `Darwin`.
+    pub system: String,
+    /// `platform.machine()`: `x86_64`, `arm64`.
+    pub machine: String,
+    /// Installed version of each tensor framework, or `None` when it is not installed.
+    pub frameworks: BTreeMap<Framework, Option<String>>,
+    /// The hardware that is present; always includes `cpu`.
+    pub hardware: Vec<Requires>,
+    /// Name of the GPU (CUDA device 0, else the Apple GPU).
+    pub gpu_name: Option<String>,
+    /// Its memory in bytes.
+    pub gpu_memory_bytes: Option<u64>,
+}
+
+/// The result of checking a target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetCheck {
+    /// Whether every step succeeded.
+    pub ok: bool,
+    /// When the check finished (ISO 8601).
+    pub checked_at: String,
+    /// The steps that ran, in order; the last one is the failing one when `ok` is false.
+    pub steps: Vec<CheckStep>,
+    /// The doctor report, when the check got that far.
+    pub doctor: Option<RemoteDoctor>,
+}
+
+wire_enum! {
+    /// What kind of place a target is.
+    TargetKind {
+        /// This machine.
+        Local => "local",
+        /// A remote host reached over SSH.
+        Ssh => "ssh",
+    }
+}
+
+/// A place the harness can run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetInfo {
+    /// `local` or `ssh:<alias>`.
+    pub name: String,
+    /// Local or SSH.
+    pub kind: TargetKind,
+    /// Display name.
+    pub label: String,
+    /// The SSH host alias; `None` for the local target.
+    pub host: Option<String>,
+    /// The directory on the remote host the app works in; `None` for the local target.
+    pub remote_dir: Option<String>,
+    /// The latest check, if one has run.
+    pub last_check: Option<TargetCheck>,
+}
+
+/// An event in the stream produced by `check_target`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum TargetCheckEvent {
+    /// A step finished.
+    Step {
+        /// Its outcome.
+        step: CheckStep,
+    },
+    /// Diagnostic output.
+    Log {
+        /// One line of text, without the trailing newline.
+        text: String,
+    },
+    /// The check finished. Always the last event, emitted exactly once.
+    Done {
+        /// The whole result, as saved in `lastCheck`.
+        check: TargetCheck,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1078,6 +1209,79 @@ mod tests {
                 message: None
             }),
             json!({"type": "done", "ok": false, "message": null})
+        );
+    }
+
+    #[test]
+    fn targets_match_the_contract() {
+        let check = TargetCheck {
+            ok: false,
+            checked_at: "2026-11-15T10:00:00.000Z".into(),
+            steps: vec![CheckStep {
+                id: CheckStepId::Uv,
+                ok: false,
+                message: "uv was not found".into(),
+                fix: Some("curl -LsSf https://astral.sh/uv/install.sh | sh".into()),
+            }],
+            doctor: Some(RemoteDoctor {
+                python: "3.15.2".into(),
+                system: "Linux".into(),
+                machine: "x86_64".into(),
+                frameworks: BTreeMap::from([
+                    (Framework::Torch, Some("2.15.0".into())),
+                    (Framework::Mlx, None),
+                ]),
+                hardware: vec![Requires::Cpu, Requires::Cuda],
+                gpu_name: Some("NVIDIA GeForce RTX 4090".into()),
+                gpu_memory_bytes: Some(25_757_220_864),
+            }),
+        };
+        let info = TargetInfo {
+            name: "ssh:gpu-box".into(),
+            kind: TargetKind::Ssh,
+            label: "gpu-box".into(),
+            host: Some("gpu-box".into()),
+            remote_dir: Some("~/.whetstone".into()),
+            last_check: Some(check.clone()),
+        };
+        assert_eq!(
+            json!(info),
+            json!({
+                "name": "ssh:gpu-box", "kind": "ssh", "label": "gpu-box", "host": "gpu-box",
+                "remoteDir": "~/.whetstone",
+                "lastCheck": {
+                    "ok": false, "checkedAt": "2026-11-15T10:00:00.000Z",
+                    "steps": [{"id": "uv", "ok": false, "message": "uv was not found",
+                               "fix": "curl -LsSf https://astral.sh/uv/install.sh | sh"}],
+                    "doctor": {"python": "3.15.2", "system": "Linux", "machine": "x86_64",
+                               "frameworks": {"torch": "2.15.0", "mlx": null},
+                               "hardware": ["cpu", "cuda"],
+                               "gpuName": "NVIDIA GeForce RTX 4090",
+                               "gpuMemoryBytes": 25_757_220_864u64}
+                }
+            })
+        );
+        assert_eq!(
+            json!(TargetCheckEvent::Done {
+                check: check.clone()
+            })["type"],
+            json!("done")
+        );
+        assert_eq!(
+            json!(TargetCheckEvent::Step {
+                step: check.steps[0].clone()
+            }),
+            json!({"type": "step", "step": {"id": "uv", "ok": false, "message": "uv was not found",
+                   "fix": "curl -LsSf https://astral.sh/uv/install.sh | sh"}})
+        );
+        assert_eq!(
+            json!(SshHost {
+                alias: "gpu-box".into(),
+                host_name: Some("10.0.0.5".into()),
+                user: None,
+                port: Some(2222)
+            }),
+            json!({"alias": "gpu-box", "hostName": "10.0.0.5", "user": null, "port": 2222})
         );
     }
 }

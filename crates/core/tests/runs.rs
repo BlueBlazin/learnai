@@ -577,6 +577,25 @@ fn a_harness_that_lingers_after_end_is_killed_without_changing_the_verdict() {
         began.elapsed() < Duration::from_secs(5),
         "end must not wait for the process to exit"
     );
+    // The lingering process is killed shortly after; wait for that, so the test proves
+    // it and leaves nothing running.
+    let marker = root.path().display().to_string();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let listing = std::process::Command::new("ps")
+            .args(["-A", "-o", "command="])
+            .output()
+            .expect("ps");
+        let listing = String::from_utf8_lossy(&listing.stdout).into_owned();
+        if !listing.lines().any(|line| line.contains(&marker)) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the lingering harness was not killed"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[test]

@@ -1,15 +1,27 @@
 import { createLazyRoute } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Page, PageHeader, Section } from "@/components/app/page";
 import { ErrorState, LoadingLines } from "@/components/app/states";
 import { ModelsPanel } from "@/components/models/models-panel";
 import { ContentPanel } from "@/components/settings/content-panel";
 import { EnvironmentPanel } from "@/components/settings/environment-panel";
 import { ThemePicker } from "@/components/settings/theme-picker";
+import { TargetsPanel } from "@/components/targets/targets-panel";
 import { backend } from "@/lib/api";
-import { useAssets, useCatalogIssues, useEnvStatus, useProblems, useRemoveAsset } from "@/lib/api/queries";
+import {
+  useAddTarget,
+  useAssets,
+  useCatalogIssues,
+  useEnvStatus,
+  useProblems,
+  useRemoveAsset,
+  useRemoveTarget,
+  useSshHosts,
+  useTargets,
+} from "@/lib/api/queries";
 import { useAssetFetch } from "@/lib/api/use-asset-fetch";
 import { useEnvInstall } from "@/lib/api/use-env-install";
+import { useTargetCheck } from "@/lib/api/use-target-check";
 import { useThemeStore } from "@/stores/theme";
 
 const BACKEND_NOTE = {
@@ -27,6 +39,18 @@ function SettingsScreen() {
   const problems = useProblems();
   const fetch = useAssetFetch();
   const remove = useRemoveAsset();
+  const targets = useTargets();
+  const hosts = useSshHosts();
+  const addTarget = useAddTarget();
+  const removeTarget = useRemoveTarget();
+  const { checks, check } = useTargetCheck();
+  // What this computer is comes from a check. The local check installs nothing, so
+  // it runs by itself the first time, once the environment exists to ask.
+  const localUnchecked = targets.data?.[0]?.kind === "local" && targets.data[0].lastCheck === null;
+  const environmentReady = env.data?.python != null;
+  useEffect(() => {
+    if (localUnchecked && environmentReady) check("local");
+  }, [localUnchecked, environmentReady, check]);
   const titles = useMemo(
     () => new Map((problems.data ?? []).map((problem) => [problem.id, problem.title])),
     [problems.data],
@@ -74,6 +98,44 @@ function SettingsScreen() {
               titles={titles}
               removing={remove.isPending ? remove.variables : null}
               onRemove={(name) => remove.mutate(name)}
+            />
+          </div>
+        )}
+      </Section>
+
+      <Section
+        title="Run targets"
+        aside="Where the judge runs: this computer, or a machine of yours reached over SSH."
+      >
+        {targets.error ? (
+          <ErrorState
+            title="The run targets could not be listed"
+            error={targets.error}
+            onRetry={() => void targets.refetch()}
+          />
+        ) : !targets.data ? (
+          <LoadingLines lines={3} />
+        ) : (
+          <div className="flex flex-col gap-3">
+            {addTarget.error ? (
+              <ErrorState title="The machine could not be added" error={addTarget.error} className="py-0" />
+            ) : null}
+            {removeTarget.error ? (
+              <ErrorState
+                title="The target could not be removed"
+                error={removeTarget.error}
+                className="py-0"
+              />
+            ) : null}
+            <TargetsPanel
+              targets={targets.data}
+              hosts={hosts.data ?? []}
+              checks={checks}
+              adding={addTarget.isPending}
+              removing={removeTarget.isPending ? removeTarget.variables : null}
+              onCheck={check}
+              onAdd={(host) => addTarget.mutate({ host })}
+              onRemove={(name) => removeTarget.mutate(name)}
             />
           </div>
         )}

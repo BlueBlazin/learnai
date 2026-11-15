@@ -28,6 +28,7 @@ export function AssetNotice({
   canceling = false,
   layout = "strip",
   whenPresent,
+  host,
   onDownload,
   onCancel,
 }: {
@@ -40,6 +41,8 @@ export function AssetNotice({
   layout?: "strip" | "inline";
   /** What to say once the model is downloaded; without it the notice disappears. */
   whenPresent?: string;
+  /** The remote machine the model is needed on; absent for this computer. */
+  host?: string;
   onDownload: () => void;
   onCancel: () => void;
 }) {
@@ -48,7 +51,7 @@ export function AssetNotice({
   if (present) {
     return whenPresent ? (
       <Notice tone="pass" layout={layout}>
-        {name} is downloaded. {whenPresent}
+        {name} is downloaded{host ? ` on ${host}` : null}. {whenPresent}
       </Notice>
     ) : null;
   }
@@ -59,6 +62,7 @@ export function AssetNotice({
       download={download}
       busy={busy}
       canceling={canceling}
+      host={host}
       onDownload={onDownload}
       onCancel={onCancel}
     />
@@ -73,6 +77,7 @@ export function AssetNotice({
         footer={<AssetProgress name={asset.name} download={download} canceling={canceling} variant="rule" />}
       >
         Downloading {name}
+        {host ? ` on ${host}` : null}
         <span className="tabular text-muted-foreground">
           {" "}
           {text}
@@ -84,7 +89,7 @@ export function AssetNotice({
   if (download?.phase === "failed") {
     return (
       <Notice tone="fail" layout={layout} action={action}>
-        {name} could not be downloaded: {download.message}
+        {name} could not be downloaded{host ? ` on ${host}` : null}: {download.message}
       </Notice>
     );
   }
@@ -94,8 +99,8 @@ export function AssetNotice({
       {whenPresent ? (
         // After a run that skipped cases for it: the run above has already said why.
         <>
-          {asset.state === "incomplete" ? "Finish downloading" : "Download"} {name} ({size}) to run the
-          skipped cases.
+          {asset.state === "incomplete" ? "Finish downloading" : "Download"} {name} ({size})
+          {host ? ` on ${host}` : null} to run the skipped cases.
         </>
       ) : asset.state === "incomplete" ? (
         <>
@@ -117,11 +122,14 @@ export function AssetNoticeList({
   fetch,
   layout,
   whenPresent,
+  host,
 }: {
   assets: NoticeAsset[];
   fetch: AssetFetchController;
   layout?: "strip" | "inline";
   whenPresent?: string;
+  /** The remote machine the models are needed on; absent for this computer. */
+  host?: string;
 }) {
   return assets.map((asset) => (
     <AssetNotice
@@ -132,6 +140,7 @@ export function AssetNoticeList({
       canceling={fetch.canceling}
       layout={layout}
       whenPresent={whenPresent}
+      host={host}
       onDownload={() => fetch.download([asset.name])}
       onCancel={fetch.cancel}
     />

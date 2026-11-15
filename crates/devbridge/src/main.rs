@@ -6,13 +6,14 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
-use whetstone_core::{Core, CoreOptions, ProgramHarness, RootInputs, resolve_root};
+use whetstone_core::{Core, CoreOptions, ProgramHarness, RootInputs, SshOptions, resolve_root};
 use whetstone_devbridge::{DEFAULT_ORIGINS, DEFAULT_PORT, serve};
 
 const USAGE: &str = "\
 whetstone-devbridge: expose whetstone-core over HTTP for browser development
 
 Usage: whetstone-devbridge [--root <dir>] [--port <port>] [--origin <url>]... [--harness <program>]
+                          [--ssh <program>] [--rsync <program>] [--ssh-config <file>]
 
 Options:
   --root <dir>         Content root holding python/, problems/, workspace/
@@ -21,6 +22,9 @@ Options:
   --origin <url>       Extra origin allowed by CORS (default: the Vite dev server on 1420)
   --harness <program>  Run <program> with the harness arguments instead of
                        `uv run ... python -m whetstone.harness` (for fake harnesses)
+  --ssh <program>      Use <program> instead of `ssh` for remote targets (for fake hosts)
+  --rsync <program>    Use <program> instead of `rsync` for remote targets
+  --ssh-config <file>  Read host aliases from <file> instead of ~/.ssh/config
   -h, --help           Show this help
 ";
 
@@ -29,6 +33,7 @@ struct Args {
     port: u16,
     origins: Vec<String>,
     harness: Option<PathBuf>,
+    ssh: SshOptions,
 }
 
 fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Option<Args>, String> {
@@ -40,6 +45,7 @@ fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Option<Args>, St
             .map(|origin| (*origin).to_owned())
             .collect(),
         harness: None,
+        ssh: SshOptions::default(),
     };
     while let Some(flag) = argv.next() {
         let mut value = || argv.next().ok_or_else(|| format!("{flag} needs a value"));
@@ -51,6 +57,9 @@ fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Option<Args>, St
             }
             "--origin" => args.origins.push(value()?),
             "--harness" => args.harness = Some(PathBuf::from(value()?)),
+            "--ssh" => args.ssh.ssh_program = Some(PathBuf::from(value()?)),
+            "--rsync" => args.ssh.rsync_program = Some(PathBuf::from(value()?)),
+            "--ssh-config" => args.ssh.config = Some(PathBuf::from(value()?)),
             "-h" | "--help" => return Ok(None),
             other => return Err(format!("unknown argument `{other}`")),
         }
@@ -65,6 +74,7 @@ async fn run(args: Args) -> Result<(), String> {
     })
     .map_err(|e| e.to_string())?;
     let mut options = CoreOptions::new(&root.path);
+    options.ssh = args.ssh;
     if let Some(program) = args.harness {
         options.harness = Some(Arc::new(ProgramHarness::new(program)));
     }

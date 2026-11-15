@@ -28,6 +28,11 @@
     "allow-list-assets",
     "allow-fetch-assets",
     "allow-cancel-asset-fetch",
-    "allow-remove-asset"
+    "allow-remove-asset",
+    "allow-list-ssh-hosts",
+    "allow-list-targets",
+    "allow-add-target",
+    "allow-remove-target",
+    "allow-check-target"
   ]
 }

@@ -64,6 +64,14 @@ import { EnvironmentPanel } from "@/components/settings/environment-panel";
 import { InstallButton, UvGuideButton } from "@/components/settings/install-actions";
 import { PathField } from "@/components/settings/path-field";
 import { ThemePicker } from "@/components/settings/theme-picker";
+import { AddTargetForm } from "@/components/targets/add-target-form";
+import { CheckStepList } from "@/components/targets/check-step-list";
+import { CheckStepMark } from "@/components/targets/check-step-mark";
+import { FixText } from "@/components/targets/fix-text";
+import { TargetPicker } from "@/components/targets/target-picker";
+import { TargetRow } from "@/components/targets/target-row";
+import { TargetSummary } from "@/components/targets/target-summary";
+import { TargetsPanel } from "@/components/targets/targets-panel";
 import { Button } from "@/components/ui/button";
 import { EnvironmentNotice } from "@/components/workbench/environment-notice";
 import { HardwareNotice } from "@/components/workbench/hardware-notice";
@@ -81,11 +89,14 @@ import {
   STATUSES,
   type Submission,
   type SubmissionDetail,
+  type TargetInfo,
   type Track,
   type Verdict,
 } from "@/lib/api";
 import type { ActiveDownload, AssetDownload } from "@/lib/api/asset-fetch-state";
+import { FIXTURE_SSH_HOSTS, fixtureTargets } from "@/lib/api/fixture/targets";
 import { initialRunState, type RunState } from "@/lib/api/run-state";
+import { stepProgress, type TargetCheckState } from "@/lib/api/target-check-state";
 import type { AssetFetchController } from "@/lib/api/use-asset-fetch";
 import type { InstallState } from "@/lib/api/use-env-install";
 import { EMPTY_FILTERS, type LibraryFilters } from "@/lib/filters";
@@ -665,6 +676,27 @@ const SUBMISSION_DETAIL: SubmissionDetail = {
 
 const IDLE_INSTALL: InstallState = { framework: null, status: "idle", log: [], message: null };
 
+const TARGETS = fixtureTargets(new Date());
+const [TARGET_LOCAL, TARGET_HEALTHY, TARGET_FAILING] = TARGETS as [TargetInfo, TargetInfo, TargetInfo];
+const TARGET_NEW: TargetInfo = {
+  name: "ssh:lab-a100",
+  kind: "ssh",
+  label: "lab-a100",
+  host: "lab-a100",
+  remoteDir: "~/.whetstone",
+  lastCheck: null,
+};
+const CHECK_RUNNING: TargetCheckState = {
+  running: true,
+  steps: (TARGET_HEALTHY.lastCheck?.steps ?? []).slice(0, 3),
+  log: [
+    "$ /home/ada/.local/bin/uv sync --inexact --project /home/ada/.whetstone/root/python",
+    "Resolved 61 packages in 12ms",
+  ],
+  result: null,
+  error: null,
+};
+
 function Specimen({ name, children }: { name: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2 pb-6">
@@ -683,6 +715,7 @@ function DevComponentsScreen() {
   const [theme, setTheme] = useState<ThemePreference>("system");
   const [code, setCode] = useState(SAMPLE_CODE);
   const [judge, setJudge] = useState<JudgeKind | null>(null);
+  const [pickedTarget, setPickedTarget] = useState("local");
 
   return (
     <Page>
@@ -1399,11 +1432,149 @@ function DevComponentsScreen() {
             />
           </div>
         </Specimen>
-        <Specimen name="HardwareNotice: CUDA on a machine without an NVIDIA GPU; MLX without an Apple GPU; inline">
+        <Specimen name="HardwareNotice: no remote machine known; MLX; a remote machine has it; the chosen remote machine lacks it; inline">
           <div className="flex flex-col gap-3">
             <HardwareNotice requires="cuda" />
             <HardwareNotice requires="mlx-gpu" />
-            <HardwareNotice requires="cuda" layout="inline" />
+            <HardwareNotice requires="cuda" remote="gpu-box" onUseRemote={noop} />
+            <HardwareNotice requires="mlx-gpu" machine="gpu-box" />
+            <HardwareNotice requires="cuda" remote="gpu-box" onUseRemote={noop} layout="inline" />
+          </div>
+        </Specimen>
+        <Specimen name="AssetNotice for a remote run: not downloaded there, downloading there, downloaded there">
+          <div className="flex flex-col gap-3">
+            <AssetNotice
+              asset={{ name: MODEL_MISSING.name, sizeMb: MODEL_MISSING.sizeMb }}
+              busy={false}
+              layout="inline"
+              whenPresent="Run again to judge the skipped cases."
+              host="gpu-box"
+              onDownload={noop}
+              onCancel={noop}
+            />
+            <AssetNotice
+              asset={{ name: MODEL_MISSING.name, sizeMb: MODEL_MISSING.sizeMb }}
+              download={DOWNLOADING}
+              busy
+              layout="inline"
+              whenPresent="Run again to judge the skipped cases."
+              host="gpu-box"
+              onDownload={noop}
+              onCancel={noop}
+            />
+            <AssetNotice
+              asset={{ name: MODEL_MISSING.name, sizeMb: MODEL_MISSING.sizeMb }}
+              download={{ phase: "finished" }}
+              busy={false}
+              layout="inline"
+              whenPresent="Run again to judge the skipped cases."
+              host="gpu-box"
+              onDownload={noop}
+              onCancel={noop}
+            />
+          </div>
+        </Specimen>
+      </Section>
+
+      <Section title="Run targets" aside="targets/, results/, problem/">
+        <Specimen name="CheckStepMark: passed, failed, running, waiting, not reached">
+          <div className="flex items-center gap-4">
+            <CheckStepMark state="pass" />
+            <CheckStepMark state="fail" />
+            <CheckStepMark state="running" />
+            <CheckStepMark state="pending" />
+            <CheckStepMark state="skipped" />
+          </div>
+        </Specimen>
+        <Specimen name="FixText: a command; an instruction">
+          <div className="flex max-w-measure flex-col gap-2">
+            <FixText>ssh studio 'curl -LsSf https://astral.sh/uv/install.sh | sh'</FixText>
+            <FixText>
+              Load your key into the SSH agent with `ssh-add`, confirm that `ssh gpu-box true` works in a
+              terminal without a prompt, then check again.
+            </FixText>
+          </div>
+        </Specimen>
+        <Specimen name="CheckStepList: running; stopped at uv with a fix; this computer">
+          <div className="flex flex-col gap-5">
+            <CheckStepList steps={stepProgress("ssh", CHECK_RUNNING.steps, true)} />
+            <CheckStepList steps={stepProgress("ssh", TARGET_FAILING.lastCheck?.steps ?? [], false)} />
+            <CheckStepList steps={stepProgress("local", TARGET_LOCAL.lastCheck?.steps ?? [], false)} />
+          </div>
+        </Specimen>
+        <Specimen name="TargetSummary: an NVIDIA machine; a Mac">
+          <div className="flex flex-col gap-3">
+            {TARGET_HEALTHY.lastCheck?.doctor ? (
+              <TargetSummary doctor={TARGET_HEALTHY.lastCheck.doctor} />
+            ) : null}
+            {TARGET_LOCAL.lastCheck?.doctor ? <TargetSummary doctor={TARGET_LOCAL.lastCheck.doctor} /> : null}
+          </div>
+        </Specimen>
+        <Specimen name="TargetRow: this computer, healthy, failing its check, never checked, checking, a check that could not start">
+          <RuledList>
+            <TargetRow target={TARGET_LOCAL} onCheck={noop} />
+            <TargetRow target={TARGET_HEALTHY} onCheck={noop} onRemove={noop} />
+            <TargetRow target={TARGET_FAILING} onCheck={noop} onRemove={noop} />
+            <TargetRow target={TARGET_NEW} onCheck={noop} onRemove={noop} />
+            <TargetRow target={TARGET_NEW} check={CHECK_RUNNING} onCheck={noop} onRemove={noop} />
+            <TargetRow
+              target={TARGET_NEW}
+              check={{
+                ...CHECK_RUNNING,
+                running: false,
+                steps: [],
+                log: [],
+                error: "unknown target `ssh:lab-a100`",
+              }}
+              onCheck={noop}
+              onRemove={noop}
+            />
+          </RuledList>
+        </Specimen>
+        <Specimen name="AddTargetForm: hosts to choose from; every host already a target; no host in the configuration">
+          <div className="flex flex-col gap-6">
+            <AddTargetForm hosts={FIXTURE_SSH_HOSTS} taken={["gpu-box"]} onAdd={noop} />
+            <AddTargetForm hosts={FIXTURE_SSH_HOSTS.slice(0, 1)} taken={["gpu-box"]} onAdd={noop} />
+            <AddTargetForm hosts={[]} taken={[]} onAdd={noop} />
+          </div>
+        </Specimen>
+        <Specimen name="TargetsPanel">
+          <TargetsPanel
+            targets={TARGETS}
+            hosts={FIXTURE_SSH_HOSTS}
+            checks={{}}
+            onCheck={noop}
+            onAdd={noop}
+            onRemove={noop}
+          />
+        </Specimen>
+        <Specimen name="TargetPicker: in a toolbar; disabled during a run; hidden with only this computer">
+          <div className="flex flex-col gap-2">
+            <PaneToolbar>
+              <TargetPicker targets={TARGETS} value={pickedTarget} onChange={setPickedTarget} />
+              <TargetPicker targets={TARGETS} value="ssh:gpu-box" disabled onChange={noop} />
+              <TargetPicker targets={TARGETS.slice(0, 1)} value="local" onChange={noop} />
+            </PaneToolbar>
+          </div>
+        </Specimen>
+        <Specimen name="VerdictHeader and SubmissionList: a run and submissions judged on a remote machine">
+          <div className="flex max-w-measure flex-col gap-4">
+            <VerdictHeader
+              verdict="accepted"
+              mode="submit"
+              passed={8}
+              total={8}
+              durationMs={2140}
+              env={{ python: "3.15.2", torch: "2.15.0", device: "cuda" }}
+              target="ssh:gpu-box"
+            />
+            <SubmissionList
+              submissions={SUBMISSIONS.slice(0, 3).map((submission, index) => ({
+                ...submission,
+                target: index === 1 ? "local" : "ssh:gpu-box",
+              }))}
+              onOpen={noop}
+            />
           </div>
         </Specimen>
       </Section>

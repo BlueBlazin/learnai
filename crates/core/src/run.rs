@@ -5,6 +5,7 @@
 //! whatever happens (launch failure, harness crash, cancel, timeout).
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
@@ -19,7 +20,7 @@ use crate::protocol::{HarnessEvent, StdoutLine, parse_stdout_line, stringify_env
 use crate::sink::SharedSink;
 use crate::store::{NewSubmission, Store};
 use crate::stream::{Message, spawn_reader};
-use crate::target::Target;
+use crate::target::{LaunchFailure, Target};
 
 /// Wall-clock limits core enforces on a run, as a backstop to the harness's own
 /// per-case limits.
@@ -71,7 +72,14 @@ pub(crate) struct RunPlan {
 /// Active runs, by run id.
 #[derive(Default)]
 pub(crate) struct RunRegistry {
-    runs: Mutex<HashMap<String, Sender<Message>>>,
+    runs: Mutex<HashMap<String, RunHandle>>,
+}
+
+/// How a running run is reached: the event loop's channel, and a flag a slow launch
+/// (a remote sync) polls, because the loop is not listening yet at that point.
+struct RunHandle {
+    tx: Sender<Message>,
+    canceled: Arc<AtomicBool>,
 }
 
 impl RunRegistry {
@@ -79,14 +87,21 @@ impl RunRegistry {
     pub fn start(self: &Arc<Self>, plan: RunPlan) -> std::io::Result<String> {
         let run_id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = mpsc::channel();
-        self.lock().insert(run_id.clone(), tx.clone());
+        let canceled = Arc::new(AtomicBool::new(false));
+        self.lock().insert(
+            run_id.clone(),
+            RunHandle {
+                tx: tx.clone(),
+                canceled: Arc::clone(&canceled),
+            },
+        );
 
         let registry = Arc::clone(self);
         let id = run_id.clone();
         let spawned = thread::Builder::new()
             .name(format!("run-{run_id}"))
             .spawn(move || {
-                Run::new(plan).execute(&tx, &rx);
+                Run::new(plan).execute(&tx, &rx, &canceled);
                 registry.lock().remove(&id);
             });
         if let Err(e) = spawned {
@@ -99,13 +114,14 @@ impl RunRegistry {
     /// Requests cancellation. A run that already finished (or never existed) is a no-op,
     /// so a cancel that races with completion is not an error.
     pub fn cancel(&self, run_id: &str) {
-        if let Some(tx) = self.lock().get(run_id) {
+        if let Some(handle) = self.lock().get(run_id) {
+            handle.canceled.store(true, Ordering::SeqCst);
             // The receiver is gone only if the run just finished.
-            let _ = tx.send(Message::Cancel);
+            let _ = handle.tx.send(Message::Cancel);
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Sender<Message>>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, RunHandle>> {
         self.runs.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
@@ -163,7 +179,9 @@ impl Outcome {
 
 /// What to tell the user when the judge process could not be started.
 fn launch_failure(error: &std::io::Error) -> String {
-    if error.kind() == std::io::ErrorKind::NotFound {
+    if let Some(message) = LaunchFailure::message_of(error) {
+        message.to_owned()
+    } else if error.kind() == std::io::ErrorKind::NotFound {
         "uv was not found, so the judge cannot run. Install uv \
          (https://docs.astral.sh/uv/), then reopen Whetstone."
             .to_owned()
@@ -196,7 +214,12 @@ impl Run {
         });
     }
 
-    fn execute(mut self, tx: &Sender<Message>, rx: &mpsc::Receiver<Message>) {
+    fn execute(
+        mut self,
+        tx: &Sender<Message>,
+        rx: &mpsc::Receiver<Message>,
+        canceled: &AtomicBool,
+    ) {
         let target = Arc::clone(&self.plan.target);
         self.emit(RunEvent::Preparing {
             message: format!(
@@ -208,12 +231,18 @@ impl Run {
 
         let launched = {
             let sink = Arc::clone(&self.plan.sink);
-            target.launch(&self.plan.job, &move |message| {
-                sink.emit(RunEvent::Preparing { message })
-            })
+            target.launch(
+                &self.plan.job,
+                &move |message| sink.emit(RunEvent::Preparing { message }),
+                canceled,
+            )
         };
         let mut process = match launched {
             Ok(process) => process,
+            Err(_) if canceled.load(Ordering::SeqCst) => {
+                self.end(Outcome::from_core(Verdict::Canceled, false, None));
+                return;
+            }
             Err(e) => {
                 self.log(LogStream::Stderr, format!("Could not start the judge: {e}"));
                 self.end(Outcome::from_core(
@@ -258,11 +287,14 @@ impl Run {
                 self.end(Outcome::from_core(Verdict::TimeLimit, true, Some(message)));
             }
             Some(Interruption::Exited) => {
-                let how = match process.finish(grace) {
-                    Some(code) => format!("exited with code {code}"),
-                    None => "was killed by a signal".to_owned(),
-                };
-                let message = format!("The judge {how} without reporting a result.");
+                let code = process.finish(grace);
+                let message = process.exit_note(code).unwrap_or_else(|| {
+                    let how = match code {
+                        Some(code) => format!("exited with code {code}"),
+                        None => "was killed by a signal".to_owned(),
+                    };
+                    format!("The judge {how} without reporting a result.")
+                });
                 self.log(LogStream::Stderr, message.clone());
                 self.end(Outcome::from_core(
                     Verdict::HarnessError,

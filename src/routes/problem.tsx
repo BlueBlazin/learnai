@@ -6,6 +6,7 @@ import { ScreenMessage } from "@/components/app/page";
 import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
 import { AssetNoticeList, type NoticeAsset } from "@/components/models/asset-notice";
 import { ResultsPanel } from "@/components/results/results-panel";
+import { TargetPicker } from "@/components/targets/target-picker";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { EditorPane } from "@/components/workbench/editor-pane";
@@ -20,6 +21,7 @@ import {
   useProblem,
   useProblems,
   useSubmissions,
+  useTargets,
   useTracks,
 } from "@/lib/api/queries";
 import { useAssetFetch } from "@/lib/api/use-asset-fetch";
@@ -30,6 +32,7 @@ import { neighbors } from "@/lib/continue";
 import { missingHardware } from "@/lib/hardware";
 import { IS_MAC } from "@/lib/platform";
 import { type ProblemSearch, routes, type StatementTab } from "@/lib/routes";
+import { hostOf, knownHardware, LOCAL, resolveTarget, targetsWith } from "@/lib/targets";
 import { preferredFramework, usePreferences } from "@/stores/preferences";
 import { useWorkspaceActions } from "@/stores/workspace-actions";
 
@@ -55,10 +58,19 @@ function ProblemScreen({ problemId }: { problemId: string }) {
   const editor = useSolutionEditor(problemId, framework);
   const run = useRun(problemId);
 
+  // Where runs execute: the remembered choice, while that target still exists.
+  const targets = useTargets();
+  const preferredTarget = usePreferences((state) => state.target);
+  const setTarget = usePreferences((state) => state.setTarget);
+  const target = resolveTarget(targets.data, preferredTarget);
+  const host = hostOf(target);
+
   // Models the problem declares: listed only when it declares any.
   const declared = problem.data?.assets ?? [];
   const assets = useAssets(declared.length > 0);
   const fetch = useAssetFetch();
+  // Downloads for the machine the runs go to: a remote run's missing model is fetched there.
+  const targetFetch = useAssetFetch(target);
   const submissions = useSubmissions(problemId);
 
   // Editing or running counts as working in this framework; it becomes the default elsewhere.
@@ -77,9 +89,9 @@ function ProblemScreen({ problemId }: { problemId: string }) {
       markFrameworkUsed(problemId, framework);
       // The judge reads the file on disk: save before running.
       await flush();
-      await startRun(framework, mode);
+      await startRun(framework, mode, target);
     },
-    [active, flush, framework, markFrameworkUsed, problemId, startRun],
+    [active, flush, framework, markFrameworkUsed, problemId, startRun, target],
   );
   const onRun = useCallback(() => void start("run"), [start]);
   const onSubmit = useCallback(() => void start("submit"), [start]);
@@ -145,11 +157,25 @@ function ProblemScreen({ problemId }: { problemId: string }) {
   const skippedFor: NoticeAsset[] = run.state.missingAssets.map(
     (missing) => models.find((model) => model.name === missing.name) ?? missing,
   );
+  // Evidence about hardware belongs to one machine: a run or a submission on
+  // another target says nothing about the one chosen now.
+  const sameTarget = (run.state.target ?? LOCAL) === target;
+  const lastSubmission = submissions.data?.[0];
   const lacking = missingHardware(detail.requires, {
-    run: run.state,
-    lastVerdict: submissions.data?.[0]?.verdict,
-    isMac: IS_MAC,
+    run: sameTarget ? run.state : { requires: null, requiresMet: null },
+    lastVerdict: lastSubmission?.target === target ? lastSubmission.verdict : undefined,
+    isMac: host === null && IS_MAC,
+    known: knownHardware(targets.data?.find((candidate) => candidate.name === target)),
   });
+  // A remote machine whose last check found the hardware, to point to.
+  const capable = lacking
+    ? targetsWith(targets.data ?? [], lacking).find((candidate) => candidate.name !== target)
+    : undefined;
+  // What a remote run skipped for: its machine's models are not in the local listing.
+  const remoteSkippedFor: NoticeAsset[] = run.state.missingAssets.map(({ name, sizeMb }) => ({
+    name,
+    sizeMb,
+  }));
   return (
     <ResizablePanelGroup
       orientation="horizontal"
@@ -193,10 +219,27 @@ function ProblemScreen({ problemId }: { problemId: string }) {
               onFrameworkChange={(next) => setFramework(problemId, next)}
               onRun={onRun}
               onSubmit={onSubmit}
+              remote={host !== null}
+              targetPicker={
+                <TargetPicker
+                  targets={targets.data ?? []}
+                  value={target}
+                  disabled={active}
+                  onChange={setTarget}
+                />
+              }
               notices={
                 <>
-                  <AssetNoticeList assets={models} fetch={fetch} />
-                  {lacking ? <HardwareNotice requires={lacking} /> : null}
+                  {/* The listing describes this computer's disk, so it speaks for local runs only. */}
+                  {host === null ? <AssetNoticeList assets={models} fetch={fetch} /> : null}
+                  {lacking ? (
+                    <HardwareNotice
+                      requires={lacking}
+                      machine={host ?? undefined}
+                      remote={capable?.label}
+                      onUseRemote={capable && !active ? () => setTarget(capable.name) : undefined}
+                    />
+                  ) : null}
                 </>
               }
             />
@@ -208,8 +251,9 @@ function ProblemScreen({ problemId }: { problemId: string }) {
               onCancel={run.cancel}
               resolution={
                 <AssetNoticeList
-                  assets={skippedFor}
-                  fetch={fetch}
+                  assets={sameTarget && host ? remoteSkippedFor : skippedFor}
+                  fetch={sameTarget ? targetFetch : fetch}
+                  host={sameTarget ? (host ?? undefined) : undefined}
                   layout="inline"
                   whenPresent={`${run.state.mode === "run" ? "Run" : "Submit"} again to judge the skipped cases.`}
                 />

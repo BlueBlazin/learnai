@@ -17,8 +17,8 @@ import { PaneToolbar } from "./pane-toolbar";
 import { SaveIndicator } from "./save-indicator";
 
 /**
- * The right-hand top panel: a toolbar (framework, save state, reset, Run,
- * Submit) over the code editor. When the environment cannot run the chosen
+ * The right-hand top panel: a toolbar (framework, save state, reset, where to
+ * run, Run, Submit) over the code editor. When the environment cannot run the chosen
  * framework, a notice under the toolbar says why and offers the fix; `notices`
  * adds what else stands between a run and an accepted verdict.
  */
@@ -35,6 +35,8 @@ export function EditorPane({
   onRun,
   onSubmit,
   notices,
+  targetPicker,
+  remote = false,
 }: {
   frameworks: Framework[];
   framework: Framework;
@@ -51,9 +53,13 @@ export function EditorPane({
   onSubmit: () => void;
   /** More strips under the toolbar: a model that is not downloaded, hardware this machine lacks. */
   notices?: ReactNode;
+  /** The control that chooses where runs execute, when there is a choice. */
+  targetPicker?: ReactNode;
+  /** True when runs go to a remote machine: the local environment then does not matter. */
+  remote?: boolean;
 }) {
   const ready = editor.code !== undefined;
-  const problem = environmentProblem(env, framework);
+  const problem = remote ? null : environmentProblem(env, framework);
   return (
     <div className="flex h-full flex-col">
       <PaneToolbar>
@@ -79,6 +85,7 @@ export function EditorPane({
             destructive
             onConfirm={() => void editor.reset()}
           />
+          {targetPicker}
           <ActionButton
             variant="outline"
             size="sm"

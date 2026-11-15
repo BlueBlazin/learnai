@@ -105,6 +105,11 @@ pub fn run() {
             commands::fetch_assets,
             commands::cancel_asset_fetch,
             commands::remove_asset,
+            commands::list_ssh_hosts,
+            commands::list_targets,
+            commands::add_target,
+            commands::remove_target,
+            commands::check_target,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

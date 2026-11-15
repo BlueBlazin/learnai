@@ -9,7 +9,8 @@ import type { Framework, RunMode } from "./types";
 export interface RunController {
   state: RunState;
   active: boolean;
-  start: (framework: Framework, mode: RunMode) => Promise<void>;
+  /** Starts a run on `target` (this computer when omitted). */
+  start: (framework: Framework, mode: RunMode, target?: string) => Promise<void>;
   cancel: () => void;
 }
 
@@ -41,24 +42,21 @@ export function useRun(problemId: string): RunController {
   }, [problemId, abandon]);
 
   const start = useCallback(
-    async (framework: Framework, mode: RunMode) => {
+    async (framework: Framework, mode: RunMode, target: string = LOCAL_TARGET) => {
       if (live.current) return;
       const token = ++generation.current;
       const run = { runId: null as string | null, cancelRequested: false };
       live.current = run;
-      dispatch({ type: "begin", mode, framework });
+      dispatch({ type: "begin", mode, framework, target });
       try {
-        const runId = await backend.startRun(
-          { problemId, framework, mode, target: LOCAL_TARGET },
-          (event) => {
-            if (generation.current !== token) return;
-            dispatch({ type: "event", event });
-            if (event.type === "end") {
-              live.current = null;
-              if (mode === "submit") void invalidateProgress(client, problemId);
-            }
-          },
-        );
+        const runId = await backend.startRun({ problemId, framework, mode, target }, (event) => {
+          if (generation.current !== token) return;
+          dispatch({ type: "event", event });
+          if (event.type === "end") {
+            live.current = null;
+            if (mode === "submit") void invalidateProgress(client, problemId);
+          }
+        });
         run.runId = runId;
         if (run.cancelRequested) {
           void backend.cancelRun(runId).catch(() => {});

@@ -4,10 +4,12 @@ import { Button } from "@/components/ui/button";
 import type { Submission } from "@/lib/api";
 import { formatDuration, formatRelativeTime } from "@/lib/format";
 import { FRAMEWORK_LABEL } from "@/lib/labels";
+import { hostOf } from "@/lib/targets";
 
 /**
  * Stored submissions, newest first: verdict, cases passed (and skipped, when
- * any were), framework, time taken, and when. With `titles`, each row also names its problem (Home).
+ * any were), framework, time taken, and when; a submission judged on a remote
+ * machine names it. With `titles`, each row also names its problem (Home).
  */
 export function SubmissionList({
   submissions,
@@ -45,6 +47,9 @@ export function SubmissionList({
                   {submission.passed} / {submission.total}
                   {submission.skipped > 0 ? `, ${submission.skipped} skipped` : null}
                 </span>
+                {hostOf(submission.target) ? (
+                  <span className="truncate text-muted-foreground">on {hostOf(submission.target)}</span>
+                ) : null}
                 {titles ? (
                   <span className="text-muted-foreground">{FRAMEWORK_LABEL[submission.framework]}</span>
                 ) : null}

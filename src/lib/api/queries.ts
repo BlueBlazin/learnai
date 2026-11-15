@@ -42,6 +42,8 @@ export const keys = {
   paths: ["paths"] as const,
   asset: (id: string, path: string) => ["asset", id, path] as const,
   assets: ["assets"] as const,
+  targets: ["targets"] as const,
+  sshHosts: ["sshHosts"] as const,
 };
 
 /** Everything a stored submission or a status change can affect. */
@@ -153,5 +155,42 @@ export function useRemoveAsset() {
   return useMutation({
     mutationFn: (name: string) => backend.removeAsset(name),
     onSuccess: (listing) => client.setQueryData(keys.assets, listing),
+  });
+}
+
+/** Run targets: this computer first, then the remote machines that were added. */
+export function useTargets() {
+  return useQuery({ queryKey: keys.targets, queryFn: () => backend.listTargets() });
+}
+
+/**
+ * Host aliases from the SSH configuration. The file is edited outside the app,
+ * so it is read again whenever the window regains focus.
+ */
+export function useSshHosts() {
+  return useQuery({
+    queryKey: keys.sshHosts,
+    queryFn: () => backend.listSshHosts(),
+    refetchOnWindowFocus: "always",
+    staleTime: 0,
+  });
+}
+
+/** Adds a remote machine; the list the core returns replaces the cached one. */
+export function useAddTarget() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ host, remoteDir }: { host: string; remoteDir?: string }) =>
+      backend.addTarget(host, remoteDir),
+    onSuccess: (targets) => client.setQueryData(keys.targets, targets),
+  });
+}
+
+/** Forgets a remote machine; nothing is deleted on it. */
+export function useRemoveTarget() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => backend.removeTarget(name),
+    onSuccess: (targets) => client.setQueryData(keys.targets, targets),
   });
 }

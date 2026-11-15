@@ -8,7 +8,9 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
-use whetstone_core::{Core, CoreOptions, EventSink, ProgramHarness, RunEvent, RunLimits};
+use whetstone_core::{
+    Core, CoreOptions, EventSink, ProgramHarness, RunEvent, RunLimits, SshOptions,
+};
 
 /// The fixtures directory.
 pub fn fixtures() -> PathBuf {
@@ -181,4 +183,195 @@ pub fn logs(events: &[RunEvent]) -> Vec<String> {
             _ => None,
         })
         .collect()
+}
+
+/// A fake remote host: fake `ssh` and `rsync` executables, a "remote" home directory,
+/// and an SSH configuration, all in one temporary directory. See
+/// `fixtures/fake_ssh.sh` for how the pieces behave.
+pub struct FakeRemote {
+    dir: TempDir,
+}
+
+/// The tools the fake remote host has on its `PATH`, besides uv.
+const REMOTE_TOOLS: &[&str] = &[
+    "sh", "awk", "ps", "uname", "sleep", "cat", "mkdir", "sed", "head", "basename", "dirname",
+    "wc", "tr", "rsync", "perl",
+];
+
+fn find_tool(name: &str) -> Option<PathBuf> {
+    ["/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"]
+        .iter()
+        .map(|dir| Path::new(dir).join(name))
+        .find(|path| path.is_file())
+}
+
+fn install_script(from: &Path, to: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::copy(from, to).expect("copy script");
+    fs::set_permissions(to, fs::Permissions::from_mode(0o755)).expect("chmod");
+}
+
+impl FakeRemote {
+    /// A healthy host whose SSH configuration defines `box` (and the aliases the fake
+    /// ssh refuses: `denied`, `newhost`, `changed`, `down`, `nowhere`).
+    pub fn new() -> Self {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path();
+        for sub in ["bin", "home", "remote-bin", "ctl"] {
+            fs::create_dir_all(path.join(sub)).expect("create directory");
+        }
+        install_script(&fixtures().join("fake_ssh.sh"), &path.join("bin/ssh"));
+        install_script(&fixtures().join("fake_rsync.sh"), &path.join("bin/rsync"));
+        install_script(&fixtures().join("fake_uv.sh"), &path.join("remote-bin/uv"));
+        install_script(
+            &fixtures().join("fake_harness.sh"),
+            &path.join("remote-bin/fake_harness.sh"),
+        );
+        for tool in REMOTE_TOOLS {
+            if let Some(real) = find_tool(tool) {
+                std::os::unix::fs::symlink(real, path.join("remote-bin").join(tool))
+                    .expect("link tool");
+            }
+        }
+        fs::write(
+            path.join("ssh_config"),
+            "Host *\n  ServerAliveInterval 30\n\n\
+             Host box\n  HostName 10.0.0.5\n  User ada\n  Port 2222\n\n\
+             Host denied newhost changed down nowhere\n  User ada\n\n\
+             Host *.internal\n  User nobody\n",
+        )
+        .expect("write config");
+        Self { dir }
+    }
+
+    pub fn path(&self) -> &Path {
+        self.dir.path()
+    }
+
+    /// The remote home directory.
+    pub fn home(&self) -> PathBuf {
+        self.path().join("home")
+    }
+
+    /// The remote content root of a target added with the default directory.
+    pub fn root(&self) -> PathBuf {
+        self.home().join(".whetstone/root")
+    }
+
+    pub fn ssh_options(&self) -> SshOptions {
+        SshOptions {
+            ssh_program: Some(self.path().join("bin/ssh")),
+            rsync_program: Some(self.path().join("bin/rsync")),
+            config: Some(self.path().join("ssh_config")),
+            control_dir: Some(self.path().join("ctl")),
+        }
+    }
+
+    /// A core for `root` whose SSH tooling is this fake.
+    pub fn core(&self, root: &TestRoot) -> Core {
+        self.core_with(root, test_limits())
+    }
+
+    pub fn core_with(&self, root: &TestRoot, limits: RunLimits) -> Core {
+        Core::open(CoreOptions {
+            uv_program: Some(fixtures().join("fake_uv.sh")),
+            limits,
+            ssh: self.ssh_options(),
+            ..CoreOptions::new(root.path())
+        })
+        .expect("open core")
+    }
+
+    /// Creates a marker file under the fake's state directory.
+    pub fn mark(&self, name: &str) {
+        fs::write(self.path().join(name), b"").expect("write marker");
+    }
+
+    /// Creates a marker file in the remote content root.
+    pub fn mark_root(&self, name: &str) {
+        fs::create_dir_all(self.root()).expect("create root");
+        fs::write(self.root().join(name), b"").expect("write marker");
+    }
+
+    /// Removes a tool from the remote `PATH`.
+    pub fn remove_tool(&self, name: &str) {
+        fs::remove_file(self.path().join("remote-bin").join(name)).expect("remove tool");
+    }
+
+    /// Makes the remote `sh` dash and gives the host a `setsid`, as on a typical Linux
+    /// machine. Returns false when this machine has no dash or perl to build that from.
+    pub fn use_dash_with_setsid(&self) -> bool {
+        let (Some(dash), Some(_perl)) = (find_tool("dash"), find_tool("perl")) else {
+            return false;
+        };
+        let bin = self.path().join("remote-bin");
+        fs::remove_file(bin.join("sh")).expect("remove sh");
+        std::os::unix::fs::symlink(dash, bin.join("sh")).expect("link dash");
+        let setsid = bin.join("setsid");
+        fs::write(
+            &setsid,
+            "#!/bin/sh\nexec perl -e 'use POSIX; POSIX::setsid(); exec @ARGV or die' -- \"$@\"\n",
+        )
+        .expect("write setsid");
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&setsid, fs::Permissions::from_mode(0o755)).expect("chmod");
+        true
+    }
+
+    fn log(&self, name: &str) -> Vec<String> {
+        fs::read_to_string(self.path().join(name))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// Every fake ssh invocation so far, one line of arguments each.
+    pub fn ssh_log(&self) -> Vec<String> {
+        self.log("ssh.log")
+    }
+
+    /// Every fake rsync invocation so far.
+    pub fn rsync_log(&self) -> Vec<String> {
+        self.log("rsync.log")
+    }
+}
+
+/// Whether a process is still alive.
+pub fn process_alive(pid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", pid.trim()])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+/// Waits (up to ten seconds) for a process to be gone.
+pub fn wait_for_exit(pid: &str) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while process_alive(pid) {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    true
+}
+
+/// Waits (up to ten seconds) for a file to exist and be non-empty, and returns it.
+pub fn wait_for_file(path: &Path) -> String {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(text) = fs::read_to_string(path)
+            && !text.trim().is_empty()
+        {
+            return text.trim().to_owned();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for {}",
+            path.display()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

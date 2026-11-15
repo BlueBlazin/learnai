@@ -11,6 +11,7 @@ import type { SubmissionDetail } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { FRAMEWORK_LABEL, isNotJudged } from "@/lib/labels";
 import { notJudgedReason } from "@/lib/run-summary";
+import { hostOf } from "@/lib/targets";
 
 /** One stored submission: its verdict, case results, and the code as it was submitted. */
 export function SubmissionView({
@@ -44,6 +45,7 @@ export function SubmissionView({
             total={submission.total}
             skipped={submission.skipped}
             durationMs={submission.durationMs}
+            target={submission.target}
           />
           {isNotJudged(submission.verdict) ? (
             <p className="selectable text-sm">{notJudgedReason(submission.verdict)}</p>
@@ -51,7 +53,7 @@ export function SubmissionView({
           <MetaList ruled>
             <MetaItem label="Submitted">{formatDateTime(submission.createdAt)}</MetaItem>
             <MetaItem label="Framework">{FRAMEWORK_LABEL[submission.framework]}</MetaItem>
-            <MetaItem label="Target">{submission.target}</MetaItem>
+            <MetaItem label="Ran on">{hostOf(submission.target) ?? "This computer"}</MetaItem>
           </MetaList>
           <MetricList metrics={submission.metrics} />
           <CaseList

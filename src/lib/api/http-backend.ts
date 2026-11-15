@@ -1,5 +1,5 @@
 import type { Backend, StartRunArgs } from "./backend";
-import type { AssetEvent, Framework, InstallEvent, RunEvent } from "./types";
+import type { AssetEvent, Framework, InstallEvent, RunEvent, TargetCheckEvent } from "./types";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:1421";
 /** How long the first load waits for the bridge before reporting it unreachable. */
@@ -11,7 +11,7 @@ const CONNECT_RETRY_MS = [250, 1_000] as const;
 const POST_EMPTY = { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" } as const;
 
 /**
- * Devbridge transport (docs/ARCHITECTURE.md section 4.1). Commands are
+ * Devbridge transport (docs/ARCHITECTURE.md section 4.2). Commands are
  * `POST /api/<command>` with a JSON body of camelCase arguments; streams are
  * server-sent events that replay from the first event and close after the
  * terminal one.
@@ -178,8 +178,11 @@ export class HttpBackend implements Backend {
   getProblemAsset = (id: string, path: string) => this.call<string>("get_problem_asset", { id, path });
 
   listAssets = () => this.call<Awaited<ReturnType<Backend["listAssets"]>>>("list_assets");
-  async fetchAssets(names: string[], onEvent: (event: AssetEvent) => void): Promise<string> {
-    const { jobId } = await this.call<{ jobId: string }>("fetch_assets", { names });
+  async fetchAssets(names: string[], onEvent: (event: AssetEvent) => void, target?: string): Promise<string> {
+    const { jobId } = await this.call<{ jobId: string }>(
+      "fetch_assets",
+      target === undefined ? { names } : { names, target },
+    );
     this.subscribe<AssetEvent>(
       `/api/jobs/${encodeURIComponent(jobId)}/events`,
       onEvent,
@@ -199,4 +202,35 @@ export class HttpBackend implements Backend {
   };
   removeAsset = (name: string) =>
     this.call<Awaited<ReturnType<Backend["removeAsset"]>>>("remove_asset", { name });
+
+  listSshHosts = () => this.call<Awaited<ReturnType<Backend["listSshHosts"]>>>("list_ssh_hosts");
+  listTargets = () => this.call<Awaited<ReturnType<Backend["listTargets"]>>>("list_targets");
+  addTarget = (host: string, remoteDir?: string) =>
+    this.call<Awaited<ReturnType<Backend["addTarget"]>>>(
+      "add_target",
+      remoteDir === undefined ? { host } : { host, remoteDir },
+    );
+  removeTarget = (name: string) =>
+    this.call<Awaited<ReturnType<Backend["removeTarget"]>>>("remove_target", { name });
+  async checkTarget(name: string, onEvent: (event: TargetCheckEvent) => void): Promise<string> {
+    const { jobId } = await this.call<{ jobId: string }>("check_target", { name });
+    this.subscribe<TargetCheckEvent>(
+      `/api/jobs/${encodeURIComponent(jobId)}/events`,
+      onEvent,
+      (event) => event.type === "done",
+      () =>
+        onEvent({
+          type: "done",
+          check: {
+            ok: false,
+            checkedAt: new Date().toISOString(),
+            steps: [
+              { id: "connect", ok: false, message: "Lost the connection to the devbridge.", fix: null },
+            ],
+            doctor: null,
+          },
+        }),
+    );
+    return jobId;
+  }
 }

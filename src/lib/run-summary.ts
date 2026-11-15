@@ -49,7 +49,7 @@ export function summarizeRun({ verdict, mode, passed, total, skipped = 0, durati
 export function notJudgedReason(verdict: "assets_missing" | "hardware_missing"): string {
   return verdict === "assets_missing"
     ? "Nothing that ran failed. The skipped cases need a model that was not downloaded, so the solution was not judged on them."
-    : "Nothing that ran failed. The skipped cases need hardware this machine does not have; the solution can only be accepted on a machine that runs every case.";
+    : "Nothing that ran failed. The skipped cases need hardware the machine it ran on does not have; the solution can only be accepted on a machine that runs every case.";
 }
 
 /** "Python 3.15.2, torch 2.15.0, mps" from the run's environment record. */

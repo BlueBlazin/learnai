@@ -38,4 +38,10 @@ describe("missingHardware", () => {
     );
     expect(missingHardware("cuda", { run: NO_RUN, lastVerdict: "wrong_answer", isMac: false })).toBeNull();
   });
+
+  it("uses what a check of the machine found when nothing has run", () => {
+    expect(missingHardware("cuda", { run: NO_RUN, isMac: false, known: ["cpu", "cuda"] })).toBeNull();
+    expect(missingHardware("cuda", { run: NO_RUN, isMac: false, known: ["cpu"] })).toBe("cuda");
+    expect(missingHardware("mlx-gpu", { run: NO_RUN, isMac: true, known: null })).toBeNull();
+  });
 });

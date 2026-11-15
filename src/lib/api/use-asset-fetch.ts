@@ -7,6 +7,7 @@ import {
   initialAssetFetchState,
   isFetching,
 } from "./asset-fetch-state";
+import { LOCAL_TARGET } from "./backend";
 import { backend } from "./index";
 import { keys, queryClient } from "./queries";
 
@@ -31,24 +32,30 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function download(names: string[]): Promise<void> {
+async function download(names: string[], target: string): Promise<void> {
   const { dispatch } = useAssetFetchStore.getState();
   if (live || names.length === 0) return;
   const job = { jobId: null as string | null, cancelRequested: false };
   live = job;
-  dispatch({ type: "begin", names });
+  dispatch({ type: "begin", names, target });
   try {
-    const jobId = await backend.fetchAssets(names, (event) => {
+    const onEvent = (event: Parameters<Parameters<typeof backend.fetchAssets>[1]>[0]) => {
       if (live !== job) return;
       dispatch({ type: "event", event });
       if (event.type === "done") {
         live = null;
+        // The listing describes this computer only: a remote download keeps its
+        // "finished" rows, which are all that is known about that machine.
+        if (target !== LOCAL_TARGET) return;
         // Read the listing again, then let the finished rows show what it says.
         void queryClient
           .invalidateQueries({ queryKey: keys.assets })
           .finally(() => dispatch({ type: "settled" }));
       }
-    });
+    };
+    const jobId = await (target === LOCAL_TARGET
+      ? backend.fetchAssets(names, onEvent)
+      : backend.fetchAssets(names, onEvent, target));
     job.jobId = jobId;
     if (live === job) dispatch({ type: "started", jobId });
     if (job.cancelRequested) void backend.cancelAssetFetch(jobId).catch(() => {});
@@ -85,10 +92,28 @@ export interface AssetFetchController {
   dismiss: (name: string) => void;
 }
 
-/** Model downloads: start one, follow its progress, cancel it. Shared by every screen. */
-export function useAssetFetch(): AssetFetchController {
-  const downloads = useAssetFetchStore((state) => state.downloads);
+const NO_DOWNLOADS: Record<string, AssetDownload> = {};
+
+/**
+ * Model downloads: start one, follow its progress, cancel it. Shared by every
+ * screen. `target` is the machine the downloads are for: this computer by
+ * default, or an SSH target. Progress is reported only to the screens asking
+ * about the machine the fetch is running on; `busy` is true for all of them,
+ * because the core runs one fetch at a time.
+ */
+export function useAssetFetch(target: string = LOCAL_TARGET): AssetFetchController {
+  const mine = useAssetFetchStore((state) => state.target === target);
+  const all = useAssetFetchStore((state) => state.downloads);
   const busy = useAssetFetchStore(isFetching);
   const canceling = useAssetFetchStore((state) => state.canceling);
-  return { downloads, busy, canceling, download: (names) => void download(names), cancel, dismiss };
+  return {
+    downloads: mine ? all : NO_DOWNLOADS,
+    busy,
+    canceling: mine && canceling,
+    download: (names) => void download(names, target),
+    cancel: () => {
+      if (mine) cancel();
+    },
+    dismiss,
+  };
 }

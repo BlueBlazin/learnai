@@ -15,15 +15,19 @@ import type {
   ProblemSummary,
   RunEvent,
   SolutionFile,
+  SshHost,
   Stats,
   Submission,
   SubmissionDetail,
+  TargetCheckEvent,
+  TargetInfo,
   Track,
 } from "../types";
 import { FIXTURE_HARDWARE, type FixtureAsset, fixtureAssets } from "./assets";
 import { buildCatalog, type FixtureProblem, hash, renderTemplate } from "./catalog";
 import { FIXTURE_PATHS } from "./paths";
 import { buildPlan, type RunContext, simulateRun, verdictOf } from "./runs";
+import { FIXTURE_SSH_HOSTS, fixtureCheckScript, fixtureTargets } from "./targets";
 
 export interface FixtureOptions {
   /** Multiplier on every simulated delay. 0 makes the backend instantaneous (tests). */
@@ -69,6 +73,10 @@ export class FixtureBackend implements Backend {
   private readonly models = new Map<string, FixtureAsset>(
     fixtureAssets().map((asset) => [asset.name, asset]),
   );
+  /** Models on each remote machine, by target name; nothing is downloaded there at first. */
+  private readonly remoteModels = new Map<string, Map<string, FixtureAsset>>();
+  private targets: TargetInfo[] = [];
+  private readonly checking = new Set<string>();
   /** The fetch in flight; the core runs one at a time. */
   private fetching: { jobId: string; canceled: boolean } | null = null;
   private nextSubmissionId = 1;
@@ -78,6 +86,7 @@ export class FixtureBackend implements Backend {
   constructor(options: FixtureOptions = {}) {
     this.speed = options.speed ?? 1;
     this.now = options.now ?? (() => new Date());
+    this.targets = fixtureTargets(this.now());
     for (const problem of this.catalog.problems) {
       this.problems.set(problem.meta.id, problem);
       this.state.set(problem.meta.id, {
@@ -126,14 +135,39 @@ export class FixtureBackend implements Backend {
   }
 
   /** What a run of `problem` would find on this machine right now. */
-  private runContext(problem: FixtureProblem): RunContext {
+  private runContext(problem: FixtureProblem, target: TargetInfo): RunContext {
+    const models = this.modelsOn(target.name);
     const missingAssets: MissingAsset[] = problem.meta.assets.flatMap((name) => {
-      const asset = this.models.get(name);
+      const asset = models.get(name);
       return asset && asset.state !== "present"
         ? [{ name: asset.name, repo: asset.repo, sizeMb: asset.sizeMb }]
         : [];
     });
-    return { missingAssets, hardware: FIXTURE_HARDWARE };
+    // A remote machine's hardware is what a check of it reports.
+    const hardware = target.kind === "local" ? FIXTURE_HARDWARE : fixtureCheckScript(target).doctor?.hardware;
+    return { missingAssets, hardware: hardware ?? ["cpu"] };
+  }
+
+  private target(name: string): TargetInfo {
+    const target = this.targets.find((candidate) => candidate.name === name);
+    if (!target) throw new Error(`unknown target \`${name}\``);
+    return target;
+  }
+
+  /** The models on a target: the local disk, or a remote machine's (empty until fetched there). */
+  private modelsOn(target: string): Map<string, FixtureAsset> {
+    if (target === "local") return this.models;
+    let models = this.remoteModels.get(target);
+    if (!models) {
+      models = new Map(
+        fixtureAssets().map((asset) => [
+          asset.name,
+          { ...asset, state: "missing" as const, reason: null, bytesOnDisk: 0, failsOnce: false },
+        ]),
+      );
+      this.remoteModels.set(target, models);
+    }
+    return models;
   }
 
   private summary(problem: FixtureProblem): ProblemSummary {
@@ -196,7 +230,7 @@ export class FixtureBackend implements Backend {
         framework,
         "submit",
         code,
-        this.runContext(problem),
+        this.runContext(problem, this.target("local")),
       );
       const cases = plan.cases.map((c) => ({ ...c.result, name: c.info.name, public: c.info.public }));
       const verdict = plan.abort ?? verdictOf(cases, plan.requiresMet);
@@ -283,10 +317,43 @@ export class FixtureBackend implements Backend {
     await this.sleep(30);
     const runId = `fixture-run-${this.nextRunId++}`;
     const code = this.solutionFile(args.problemId, args.framework).code;
-    const plan = buildPlan(problem, args.framework, args.mode, code, this.runContext(problem));
+    const target = this.target(args.target);
+    const plan = buildPlan(problem, args.framework, args.mode, code, this.runContext(problem, target));
 
     void (async () => {
       const results: SubmissionDetail["cases"] = [];
+      if (target.kind === "ssh") {
+        // The remote steps a real run reports before the judge starts.
+        const host = target.host ?? target.label;
+        const script = fixtureCheckScript(target);
+        const failing = script.steps.find((step) => !step.ok);
+        for (const message of [
+          `Preparing \`${args.problemId}\` on the ${target.name} target`,
+          `Connecting to ${host}`,
+          ...(failing
+            ? []
+            : [`Copying the judge to ${host}`, `Copying the problem and your solution to ${host}`]),
+        ]) {
+          if (this.canceled.has(runId)) break;
+          onEvent({ type: "preparing", message });
+          await this.sleep(450);
+        }
+        if (failing && !this.canceled.has(runId)) {
+          onEvent({
+            type: "end",
+            verdict: "harness_error",
+            passed: 0,
+            total: 0,
+            durationMs: 900,
+            metrics: [],
+            submissionId: null,
+            skipped: 0,
+            message: [failing.message, failing.fix].filter(Boolean).join(" "),
+            detail: null,
+          });
+          return;
+        }
+      }
       const events = simulateRun(plan, {
         sleep: this.sleep,
         isCanceled: () => this.canceled.has(runId),
@@ -520,8 +587,14 @@ export class FixtureBackend implements Backend {
    * asset is complete. A fetch resumes from what is on disk, a cancel keeps it,
    * and an asset marked `failsOnce` drops its connection on the first attempt.
    */
-  async fetchAssets(names: string[], onEvent: (event: AssetEvent) => void): Promise<string> {
+  async fetchAssets(
+    names: string[],
+    onEvent: (event: AssetEvent) => void,
+    target = "local",
+  ): Promise<string> {
     await this.sleep(30);
+    const where = this.target(target);
+    const models = this.modelsOn(target);
     if (names.length === 0) throw new Error("name at least one model asset to download");
     if (this.fetching) {
       throw new Error("a model download is already running; wait for it to finish or cancel it");
@@ -535,13 +608,19 @@ export class FixtureBackend implements Backend {
         this.fetching = null;
         onEvent(event);
       };
-      onEvent({ type: "preparing", message: "Checking the Python environment" });
+      if (where.kind === "ssh") {
+        onEvent({ type: "preparing", message: `Connecting to ${where.host}` });
+        await this.sleep(500);
+        onEvent({ type: "preparing", message: `Copying the judge to ${where.host}` });
+      } else {
+        onEvent({ type: "preparing", message: "Checking the Python environment" });
+      }
       await this.sleep(500);
       for (const name of names) {
         if (job.canceled) break;
-        const asset = this.models.get(name);
+        const asset = models.get(name);
         if (!asset) {
-          const known = [...this.models.keys()].sort().join(", ");
+          const known = [...models.keys()].sort().join(", ");
           return finish({
             type: "done",
             ok: false,
@@ -624,6 +703,82 @@ export class FixtureBackend implements Backend {
       cursor.setDate(cursor.getDate() - 1);
     }
     return count;
+  }
+
+  // Run targets -------------------------------------------------------------
+
+  listSshHosts = (): Promise<SshHost[]> => this.respond(() => FIXTURE_SSH_HOSTS.map((host) => ({ ...host })));
+
+  listTargets = (): Promise<TargetInfo[]> =>
+    this.respond(() => this.targets.map((target) => ({ ...target })));
+
+  addTarget = (host: string, remoteDir?: string): Promise<TargetInfo[]> =>
+    this.respond(() => {
+      if (!FIXTURE_SSH_HOSTS.some((known) => known.alias === host)) {
+        throw new Error(
+          `\`${host}\` is not a host in your SSH configuration. Add a \`Host ${host}\` entry to ~/.ssh/config first.`,
+        );
+      }
+      if (this.targets.some((target) => target.host === host)) {
+        throw new Error(`\`${host}\` is already a run target`);
+      }
+      this.targets = [
+        ...this.targets,
+        {
+          name: `ssh:${host}`,
+          kind: "ssh",
+          label: host,
+          host,
+          remoteDir: remoteDir?.trim() || "~/.whetstone",
+          lastCheck: null,
+        },
+      ];
+      return this.targets.map((target) => ({ ...target }));
+    });
+
+  removeTarget = (name: string): Promise<TargetInfo[]> =>
+    this.respond(() => {
+      if (name === "local") throw new Error("the local target cannot be removed");
+      this.target(name);
+      this.targets = this.targets.filter((target) => target.name !== name);
+      this.remoteModels.delete(name);
+      return this.targets.map((target) => ({ ...target }));
+    });
+
+  /** Plays a check: each step ends after a moment, the environment build prints a few lines. */
+  async checkTarget(name: string, onEvent: (event: TargetCheckEvent) => void): Promise<string> {
+    await this.sleep(30);
+    const target = this.target(name);
+    if (this.checking.has(name)) throw new Error(`\`${name}\` is already being checked`);
+    this.checking.add(name);
+    const jobId = `fixture-check-${this.nextJobId++}`;
+    const { steps, doctor } = fixtureCheckScript(target);
+
+    void (async () => {
+      for (const step of steps) {
+        if (step.id === "environment") {
+          for (const text of ["Resolved 61 packages in 12ms", "Audited 58 packages in 3ms"]) {
+            await this.sleep(350);
+            onEvent({ type: "log", text });
+          }
+        }
+        await this.sleep(step.id === "connect" ? 700 : 550);
+        onEvent({ type: "step", step });
+      }
+      const check = {
+        ok: steps.every((step) => step.ok),
+        checkedAt: this.now().toISOString(),
+        steps,
+        doctor,
+      };
+      this.targets = this.targets.map((candidate) =>
+        candidate.name === name ? { ...candidate, lastCheck: check } : candidate,
+      );
+      this.checking.delete(name);
+      onEvent({ type: "done", check });
+    })();
+
+    return jobId;
   }
 }
 

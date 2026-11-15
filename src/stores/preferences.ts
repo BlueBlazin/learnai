@@ -13,6 +13,9 @@ interface PreferencesStore {
   lastFramework: Framework | null;
   /** How many hints have been revealed per problem. */
   hintsRevealed: Record<string, number>;
+  /** The run target last chosen in a workspace: "local" or an SSH target's name. */
+  target: string;
+  setTarget: (target: string) => void;
   /** Remembers the framework a problem is open in. */
   setFramework: (problemId: string, framework: Framework) => void;
   /** Records real work in a framework: an edit, a run, or a submit. */
@@ -27,6 +30,8 @@ export const usePreferences = create<PreferencesStore>()(
       frameworkByProblem: {},
       lastFramework: null,
       hintsRevealed: {},
+      target: "local",
+      setTarget: (target) => set({ target }),
       setFramework: (problemId, framework) =>
         set((state) => ({ frameworkByProblem: { ...state.frameworkByProblem, [problemId]: framework } })),
       markFrameworkUsed: (problemId, framework) => {

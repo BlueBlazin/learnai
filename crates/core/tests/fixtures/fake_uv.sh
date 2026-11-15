@@ -1,12 +1,17 @@
 #!/bin/sh
 # Fake uv for tests. Understands just enough of the real command line:
 #   uv --version
-#   uv sync --project P [--extra X]...          exact sync: records the extras in P/.fake-venv
+#   uv sync --project P [--extra X]... [--inexact]   records the extras in P/.fake-venv
 #   uv run --project P [--extra X]... [--no-sync] -- python -c <probe>      prints probe JSON
 #   uv run --project P [--extra X]... -- python -m whetstone.harness ...    runs fake_harness.sh
 #   uv run --project P [--extra X]... -- ws assets list --json              prints a listing
 #   uv run --project P [--extra X]... -- ws assets fetch NAME... --json     fake download
+#   uv run --project P [--extra X]... -- ws doctor --json                   prints a report
 # Every invocation is appended to P/.fake-uv.log. `sync` fails if P/.fail-sync exists.
+#
+# Markers beside P (in the content root, where a remote sync does not delete them) change
+# the behavior: `.fail-sync` fails `sync`, `.fail-doctor` fails `ws doctor`, `.fake-cuda`
+# makes the doctor report an NVIDIA GPU, and `.fetch-scenario` is read when P has none.
 # `run` is inexact, like the real one: it adds the extras it is given to P/.fake-venv and
 # removes nothing (`--no-sync` leaves the environment alone).
 #
@@ -30,6 +35,7 @@ while [ $# -gt 0 ]; do
     --project) project=$2; shift 2 ;;
     --extra) extras="$extras $2"; shift 2 ;;
     --no-sync) nosync=1; shift ;;
+    --inexact) shift ;;
     --) shift; break ;;
     *) echo "fake uv: unexpected argument $1" >&2; exit 2 ;;
   esac
@@ -43,7 +49,7 @@ echo "$subcommand$extras" >> "$project/.fake-uv.log"
 case "$subcommand" in
   sync)
     echo "Resolved 42 packages in 1ms"
-    if [ -e "$project/.fail-sync" ]; then
+    if [ -e "$project/.fail-sync" ] || [ -e "$project/../.fail-sync" ]; then
       echo "error: No solution found when resolving dependencies" >&2
       exit 1
     fi
@@ -95,7 +101,7 @@ case "$subcommand" in
           printf '],"issues":[]}\n'
           ;;
         fetch)
-          scenario=$(cat "$project/.fetch-scenario" 2>/dev/null)
+          scenario=$(cat "$project/.fetch-scenario" 2>/dev/null || cat "$project/../.fetch-scenario" 2>/dev/null)
           status=0
           for name in "$@"; do
             case "$name" in
@@ -131,6 +137,35 @@ case "$subcommand" in
           ;;
         *) echo "fake uv: cannot run ws assets $action" >&2; exit 2 ;;
       esac
+    elif [ "$1" = ws ] && [ "$2" = doctor ]; then
+      if [ -e "$project/../.fail-doctor" ]; then
+        echo "ModuleNotFoundError: No module named 'whetstone'" >&2
+        exit 1
+      fi
+      cuda='{"present": false, "name": null, "memory_bytes": null, "devices": [], "torch_cuda_version": null}'
+      if [ -e "$project/../.fake-cuda" ]; then
+        cuda='{"present": true, "name": "NVIDIA GeForce RTX 4090", "memory_bytes": 25757220864, "devices": [{"index": 0, "name": "NVIDIA GeForce RTX 4090", "memory_bytes": 25757220864}], "torch_cuda_version": "13.0"}'
+      fi
+      echo "probing hardware" >&2
+      cat <<DOCTOR
+{
+  "schema": 1,
+  "whetstone": "0.1.0",
+  "python": "3.15.2",
+  "executable": "$project/.venv/bin/python3",
+  "platform": {"system": "Linux", "machine": "x86_64", "release": "6.8.0"},
+  "frameworks": {"torch": "2.15.0", "jax": null, "mlx": null},
+  "packages": {"numpy": "2.5.4"},
+  "hardware": {
+    "cpu": {"present": true, "cores": 32},
+    "mlx-gpu": {"present": false, "name": null, "memory_bytes": null},
+    "cuda": $cuda
+  },
+  "hardware_override": null,
+  "root": "$WHETSTONE_ROOT",
+  "models_dir": "$WHETSTONE_ROOT/.whetstone/models"
+}
+DOCTOR
     elif [ "$1" = python ] && [ "$2" = "-m" ] && [ "$3" = whetstone.harness ]; then
       shift 3
       exec sh "$here/fake_harness.sh" "$@"

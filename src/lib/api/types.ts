@@ -253,6 +253,66 @@ export type AssetEvent =
   /** Always last. */
   | { type: "done"; ok: boolean; canceled: boolean; message: string | null };
 
+/** A host alias from `~/.ssh/config`; wildcard patterns are never listed. */
+export interface SshHost {
+  alias: string;
+  hostName: string | null;
+  user: string | null;
+  port: number | null;
+}
+
+export type CheckStepId = "connect" | "uv" | "sync" | "environment" | "doctor";
+
+export interface CheckStep {
+  id: CheckStepId;
+  ok: boolean;
+  message: string;
+  /** A command or instruction for the user when the step failed. */
+  fix: string | null;
+}
+
+/** What `ws doctor` reported on a target, reduced to what the app shows. */
+export interface RemoteDoctor {
+  python: string;
+  /** `Linux`, `Darwin`. */
+  system: string;
+  /** `x86_64`, `arm64`. */
+  machine: string;
+  frameworks: Partial<Record<Framework, string | null>>;
+  /** What is present; always includes "cpu". */
+  hardware: Requires[];
+  gpuName: string | null;
+  gpuMemoryBytes: number | null;
+}
+
+export interface TargetCheck {
+  ok: boolean;
+  /** ISO 8601. */
+  checkedAt: string;
+  /** The steps that ran, in order; the last one is the failing one when `ok` is false. */
+  steps: CheckStep[];
+  doctor: RemoteDoctor | null;
+}
+
+/** A place the judge can run: this computer, or a remote machine reached over SSH. */
+export interface TargetInfo {
+  /** "local" or "ssh:<alias>". */
+  name: string;
+  kind: "local" | "ssh";
+  label: string;
+  host: string | null;
+  remoteDir: string | null;
+  lastCheck: TargetCheck | null;
+}
+
+export type TargetCheckEvent =
+  | { type: "step"; step: CheckStep }
+  | { type: "log"; text: string }
+  /** Always last. */
+  | { type: "done"; check: TargetCheck };
+
+export const CHECK_STEPS: readonly CheckStepId[] = ["connect", "uv", "sync", "environment", "doctor"];
+
 export const FRAMEWORKS: readonly Framework[] = ["torch", "jax", "mlx", "python"];
 export const DIFFICULTIES: readonly Difficulty[] = ["easy", "medium", "hard"];
 export const JUDGES: readonly JudgeKind[] = [
