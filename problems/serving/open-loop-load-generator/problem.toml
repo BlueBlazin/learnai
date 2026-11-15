@@ -1,0 +1,22 @@
+id = "open-loop-load-generator"
+title = "An Open-Loop Load Generator"
+track = "serving"
+order = 160
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["simclock", "statistical"]
+tags = ["benchmarking", "load-testing", "poisson", "coordinated-omission", "latency", "asyncio"]
+prerequisites = ["latency-metrics"]
+requires = "cpu"
+entry = ["generate_load"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: virtual time and supplied uniforms only.
+forbidden = [
+    "time.sleep",
+    "time.time",
+    "time.monotonic",
+    "time.perf_counter",
+    "random.random",
+    "random.uniform",
+    "random.expovariate",
+]

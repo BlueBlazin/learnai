@@ -1,0 +1,12 @@
+id = "graceful-drain"
+title = "Graceful Drain"
+track = "serving"
+order = 140
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["shutdown", "draining", "readiness", "cancellation", "asyncio", "continuous-batching"]
+prerequisites = ["deadline-cancellation"]
+requires = "cpu"
+entry = ["Server", "Unavailable", "Terminated"]
+time_limit_s = 5

@@ -1,0 +1,12 @@
+id = "multi-lora-batching"
+title = "Batching Requests Across Adapters"
+track = "serving"
+order = 180
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property", "cost", "speed"]
+tags = ["lora", "adapters", "batching", "multi-tenant", "gather", "low-rank"]
+prerequisites = ["lora-merge"]
+requires = "cpu"
+entry = ["batched_lora_forward"]
+time_limit_s = 10

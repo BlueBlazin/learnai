@@ -1,0 +1,12 @@
+id = "streaming-backpressure"
+title = "Slow Consumers"
+track = "serving"
+order = 150
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["simclock", "cost"]
+tags = ["streaming", "backpressure", "buffers", "cancellation", "asyncio", "continuous-batching"]
+prerequisites = ["continuous-batching-scheduler"]
+requires = "cpu"
+entry = ["Server"]
+time_limit_s = 5

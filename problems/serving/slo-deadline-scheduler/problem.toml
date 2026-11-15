@@ -1,0 +1,12 @@
+id = "slo-deadline-scheduler"
+title = "Earliest-Deadline-First with Shedding"
+track = "serving"
+order = 170
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["scheduling", "deadlines", "edf", "load-shedding", "slo", "goodput", "continuous-batching"]
+prerequisites = ["priority-scheduler"]
+requires = "cpu"
+entry = ["plan_step", "run"]
+time_limit_s = 5
