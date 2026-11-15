@@ -1,0 +1,12 @@
+id = "json-schema-regex"
+title = "JSON Schema to Regex"
+track = "constrained"
+order = 80
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["constrained-decoding", "json-schema", "regex", "structured-output", "outlines"]
+prerequisites = ["regex-to-dfa"]
+requires = "cpu"
+entry = ["schema_to_regex"]
+time_limit_s = 5

@@ -1,0 +1,12 @@
+id = "kv-cache-quantize"
+title = "An 8-bit KV Cache"
+track = "kv-cache"
+order = 130
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["kv-cache", "quantization", "affine", "group-wise", "memory"]
+prerequisites = ["affine-int8", "kv-cache-append"]
+requires = "cpu"
+entry = ["quantized_append", "read_cache"]
+time_limit_s = 10

@@ -1,0 +1,20 @@
+id = "regex-to-dfa"
+title = "Compiling a Regex to a DFA"
+track = "constrained"
+order = 70
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["numeric", "property"]
+tags = ["constrained-decoding", "regex", "dfa", "nfa", "minimization", "utf-8"]
+prerequisites = ["dfa-token-mask"]
+requires = "cpu"
+entry = ["compile_regex"]
+time_limit_s = 5
+# The statement's rule, enforced by the harness: the kit's own regex compiler is off limits.
+forbidden = [
+    "whetstone.kit.dfa.CharDFA.from_regex",
+    "whetstone.kit.dfa._Parser",
+    "whetstone.kit.dfa._NFA",
+    "whetstone.kit.dfa._determinize",
+    "whetstone.kit.dfa._minimize",
+]
