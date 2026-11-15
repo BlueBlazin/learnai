@@ -1,0 +1,34 @@
+id = "diffusion-unmask-step"
+title = "One Step of Masked-Diffusion Decoding"
+track = "frontier"
+order = 30
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "statistical"]
+tags = ["diffusion", "masked-diffusion", "parallel-decoding", "sampling", "confidence", "llada"]
+prerequisites = ["categorical-sample"]
+requires = "cpu"
+entry = ["schedule", "unmask_step"]
+time_limit_s = 10
+# The statement's rule, enforced by the harness: randomness is an input, never drawn here.
+forbidden = [
+    "torch.rand",
+    "torch.rand_like",
+    "torch.randn",
+    "torch.randn_like",
+    "torch.multinomial",
+    "torch.Tensor.multinomial",
+    "torch.Tensor.uniform_",
+    "torch.Tensor.exponential_",
+    "jax.random.uniform",
+    "jax.random.gumbel",
+    "jax.random.categorical",
+    "jax.random.choice",
+    "mlx.core.random.uniform",
+    "mlx.core.random.gumbel",
+    "mlx.core.random.categorical",
+    "random.random",
+    "numpy.random.default_rng",
+    "numpy.random.rand",
+    "numpy.random.random",
+]

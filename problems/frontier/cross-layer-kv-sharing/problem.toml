@@ -1,0 +1,12 @@
+id = "cross-layer-kv-sharing"
+title = "Sharing KV Across Layers"
+track = "frontier"
+order = 20
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["kv-cache", "kv-sharing", "prefill", "yoco", "layers", "memory"]
+prerequisites = ["cached-greedy-decode"]
+requires = "cpu"
+entry = ["prefill_shared", "decode_step"]
+time_limit_s = 10

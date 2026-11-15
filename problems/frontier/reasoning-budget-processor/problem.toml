@@ -1,0 +1,12 @@
+id = "reasoning-budget-processor"
+title = "Enforcing a Thinking-Token Budget"
+track = "frontier"
+order = 10
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["reasoning", "thinking-budget", "logits-processor", "state-machine", "structured-output"]
+prerequisites = ["constrained-greedy-decode"]
+requires = "cpu"
+entry = ["budget_step"]
+time_limit_s = 10

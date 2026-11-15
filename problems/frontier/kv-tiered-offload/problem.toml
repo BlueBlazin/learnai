@@ -1,0 +1,12 @@
+id = "kv-tiered-offload"
+title = "A Tiered KV Store"
+track = "frontier"
+order = 40
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["simclock", "cost"]
+tags = ["kv-cache", "offloading", "tiered-storage", "lru", "prefix-caching", "lmcache"]
+prerequisites = ["block-hash-prefix-cache"]
+requires = "cpu"
+entry = ["TieredKV"]
+time_limit_s = 10
