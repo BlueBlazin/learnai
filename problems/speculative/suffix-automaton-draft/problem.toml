@@ -1,0 +1,12 @@
+id = "suffix-automaton-draft"
+title = "Drafting from a Suffix Automaton"
+track = "speculative"
+order = 140
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["numeric", "speed"]
+tags = ["speculative-decoding", "prompt-lookup", "suffix-automaton", "draft", "online-algorithm"]
+prerequisites = ["prompt-lookup-draft"]
+requires = "cpu"
+entry = ["SuffixIndex"]
+time_limit_s = 10

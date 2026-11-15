@@ -1,0 +1,12 @@
+id = "early-exit-self-speculation"
+title = "Self-Speculation by Early Exit"
+track = "speculative"
+order = 130
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["speculative-decoding", "early-exit", "layerskip", "kv-cache", "rollback", "generation-loop"]
+prerequisites = ["speculative-decode-loop"]
+requires = "cpu"
+entry = ["self_speculative_greedy"]
+time_limit_s = 10

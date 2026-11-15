@@ -1,0 +1,12 @@
+id = "tree-attention-mask"
+title = "Verifying a Token Tree in One Pass"
+track = "speculative"
+order = 110
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["speculative-decoding", "token-tree", "attention-mask", "position-ids", "verification"]
+prerequisites = ["attention-mask-builder", "greedy-speculative-verify"]
+requires = "cpu"
+entry = ["tree_inputs", "verify_tree"]
+time_limit_s = 10

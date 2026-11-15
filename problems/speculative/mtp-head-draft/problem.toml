@@ -1,0 +1,12 @@
+id = "mtp-head-draft"
+title = "Drafting with Multi-Token Prediction Heads"
+track = "speculative"
+order = 100
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["speculative-decoding", "medusa", "multi-token-prediction", "draft", "verification"]
+prerequisites = ["greedy-speculative-verify"]
+requires = "cpu"
+entry = ["mtp_draft", "mtp_accept"]
+time_limit_s = 10

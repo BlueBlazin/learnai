@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 232">
+  <title>A token tree behind a two-token prefix, and the attention mask of the flattened sequence</title>
+  <desc>Left: the prefix p0, p1 followed by a tree of six draft nodes; nodes 0 and 1 continue the prefix, nodes 2 and 3 are children of node 0, node 4 is a child of node 1, node 5 is a child of node 2. Right: the 8 by 8 attention mask. Prefix rows are causal. Each node row is filled in the two prefix columns, in its own column, and in the columns of its ancestors only.</desc>
+  <!-- The tree: edges first, then nodes -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <line x1="35" y1="112" x2="49" y2="112"/>
+    <line x1="75" y1="112" x2="99" y2="72"/>
+    <line x1="75" y1="112" x2="99" y2="168"/>
+    <line x1="125" y1="72" x2="149" y2="40"/>
+    <line x1="125" y1="72" x2="149" y2="104"/>
+    <line x1="125" y1="168" x2="149" y2="168"/>
+    <line x1="175" y1="40" x2="199" y2="40"/>
+  </g>
+  <g fill="none" stroke-width="1.5">
+    <rect x="9" y="101" width="26" height="22" rx="3" style="stroke: var(--figure-muted)"/>
+    <rect x="49" y="101" width="26" height="22" rx="3" style="stroke: var(--figure-muted)"/>
+    <rect x="99" y="61" width="26" height="22" rx="3" style="stroke: var(--figure-accent)"/>
+    <rect x="99" y="157" width="26" height="22" rx="3" style="stroke: var(--figure-accent)"/>
+    <rect x="149" y="29" width="26" height="22" rx="3" style="stroke: var(--figure-accent)"/>
+    <rect x="149" y="93" width="26" height="22" rx="3" style="stroke: var(--figure-accent)"/>
+    <rect x="149" y="157" width="26" height="22" rx="3" style="stroke: var(--figure-accent)"/>
+    <rect x="199" y="29" width="26" height="22" rx="3" style="stroke: var(--figure-accent)"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="22" y="116.5" style="fill: var(--figure-muted)">p₀</text>
+    <text x="62" y="116.5" style="fill: var(--figure-muted)">p₁</text>
+    <text x="112" y="76.5">0</text>
+    <text x="112" y="172.5">1</text>
+    <text x="162" y="44.5">2</text>
+    <text x="162" y="108.5">3</text>
+    <text x="162" y="172.5">4</text>
+    <text x="212" y="44.5">5</text>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="22" y="212">0</text>
+    <text x="62" y="212">1</text>
+    <text x="112" y="212">2</text>
+    <text x="162" y="212">3</text>
+    <text x="212" y="212">4</text>
+  </g>
+  <text x="117" y="228" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">position id</text>
+  <!-- The mask: row attends to column where a square is filled -->
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="302.5" y="33">p₀</text>
+    <text x="279" y="55.0">p₀</text>
+    <text x="323.5" y="33">p₁</text>
+    <text x="279" y="76.0">p₁</text>
+    <text x="344.5" y="33">0</text>
+    <text x="279" y="97.0">0</text>
+    <text x="365.5" y="33">1</text>
+    <text x="279" y="118.0">1</text>
+    <text x="386.5" y="33">2</text>
+    <text x="279" y="139.0">2</text>
+    <text x="407.5" y="33">3</text>
+    <text x="279" y="160.0">3</text>
+    <text x="428.5" y="33">4</text>
+    <text x="279" y="181.0">4</text>
+    <text x="449.5" y="33">5</text>
+    <text x="279" y="202.0">5</text>
+  </g>
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="292" y1="40" x2="460" y2="40"/>
+    <line x1="292" y1="40" x2="292" y2="208"/>
+    <line x1="292" y1="61" x2="460" y2="61"/>
+    <line x1="313" y1="40" x2="313" y2="208"/>
+    <line x1="292" y1="82" x2="460" y2="82"/>
+    <line x1="334" y1="40" x2="334" y2="208"/>
+    <line x1="292" y1="103" x2="460" y2="103"/>
+    <line x1="355" y1="40" x2="355" y2="208"/>
+    <line x1="292" y1="124" x2="460" y2="124"/>
+    <line x1="376" y1="40" x2="376" y2="208"/>
+    <line x1="292" y1="145" x2="460" y2="145"/>
+    <line x1="397" y1="40" x2="397" y2="208"/>
+    <line x1="292" y1="166" x2="460" y2="166"/>
+    <line x1="418" y1="40" x2="418" y2="208"/>
+    <line x1="292" y1="187" x2="460" y2="187"/>
+    <line x1="439" y1="40" x2="439" y2="208"/>
+    <line x1="292" y1="208" x2="460" y2="208"/>
+    <line x1="460" y1="40" x2="460" y2="208"/>
+  </g>
+  <g>
+    <rect x="296" y="44" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="296" y="65" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="317" y="65" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="296" y="86" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="317" y="86" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="338" y="86" width="13" height="13" style="fill: var(--figure-accent)"/>
+    <rect x="296" y="107" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="317" y="107" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="359" y="107" width="13" height="13" style="fill: var(--figure-accent)"/>
+    <rect x="296" y="128" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="317" y="128" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="338" y="128" width="13" height="13" style="fill: var(--figure-accent)"/>
+    <rect x="380" y="128" width="13" height="13" style="fill: var(--figure-accent)"/>
+    <rect x="296" y="149" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="317" y="149" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="338" y="149" width="13" height="13" style="fill: var(--figure-accent)"/>
+    <rect x="401" y="149" width="13" height="13" style="fill: var(--figure-accent)"/>
+    <rect x="296" y="170" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="317" y="170" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="359" y="170" width="13" height="13" style="fill: var(--figure-accent)"/>
+    <rect x="422" y="170" width="13" height="13" style="fill: var(--figure-accent)"/>
+    <rect x="296" y="191" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="317" y="191" width="13" height="13" style="fill: var(--figure-muted)"/>
+    <rect x="338" y="191" width="13" height="13" style="fill: var(--figure-accent)"/>
+    <rect x="380" y="191" width="13" height="13" style="fill: var(--figure-accent)"/>
+    <rect x="443" y="191" width="13" height="13" style="fill: var(--figure-accent)"/>
+  </g>
+  <text x="376" y="228" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">row attends to column</text>
+</svg>
