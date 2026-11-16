@@ -2,6 +2,9 @@ import type {
   AssetEvent,
   AssetList,
   CatalogIssue,
+  EditorDocs,
+  EditorEvent,
+  EditorStatus,
   EnvStatus,
   Framework,
   InstallEvent,
@@ -123,6 +126,30 @@ export interface Backend {
   getSettings(): Promise<Settings>;
   /** Turns reviews on or off. Schedules are kept while they are off. */
   setReviewsEnabled(enabled: boolean): Promise<Settings>;
+
+  // Editor intelligence (docs/ARCHITECTURE.md section 4.4).
+
+  /** Turns suggestions and documentation on or off. Off stops the server before resolving. */
+  setEditorIntelligence(enabled: boolean): Promise<Settings>;
+  /** Whether the language server is enabled and installed, and its latest state. Starts nothing. */
+  editorStatus(): Promise<EditorStatus>;
+  /**
+   * Starts an editor session, replacing a running one, and resolves with its id.
+   * Events arrive in order and end with exactly one terminal state (`notInstalled`,
+   * `failed`, or `stopped`). `ready` may arrive before this resolves.
+   */
+  editorStart(onEvent: (event: EditorEvent) => void): Promise<string>;
+  /** Sends one JSON-RPC message (as JSON text) to the session's server. Rejects when it is not running. */
+  editorSend(sessionId: string, message: string): Promise<void>;
+  /** Stops that session, or whatever runs when no id is given. Unknown sessions are ignored. */
+  editorStop(sessionId?: string): Promise<void>;
+  /** Installs the language server. Progress arrives as events, ending with `done`, like `envInstall`. */
+  editorInstall(onEvent: (event: InstallEvent) => void): Promise<void>;
+  /**
+   * Looks a name up in the installed libraries. `expr` is a dotted name as the
+   * file spells it; with `member`, the lookup is for that attribute of `expr`.
+   */
+  editorDocs(source: string, expr: string, member?: string): Promise<EditorDocs>;
 }
 
 export const LOCAL_TARGET = "local";

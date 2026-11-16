@@ -166,6 +166,63 @@ export type ReviewAction = "forgot" | "snooze" | "retire";
 export interface Settings {
   /** Whether solved problems are scheduled for review. */
   reviewsEnabled: boolean;
+  /** Whether the solution editor offers suggestions and documentation (section 4.4). */
+  editorIntelligence: boolean;
+}
+
+export type EditorStopReason = "requested" | "replaced" | "disabled" | "shutdown";
+
+/** The state of an editor session's language server. `notInstalled`, `failed`, and `stopped` end the stream. */
+export type EditorState =
+  | { status: "notInstalled"; message: string }
+  | { status: "starting" }
+  | {
+      status: "ready";
+      sessionId: string;
+      serverName: string;
+      serverVersion: string | null;
+      /** `file:///abs/learnai/workspace`, without a trailing slash. Document URIs are formed from it. */
+      rootUri: string;
+      workspacePath: string;
+      /** 1, 2, ... per server process. Every `ready` is a new process that knows nothing. */
+      generation: number;
+    }
+  | { status: "restarting"; attempt: number; maxAttempts: number; delayMs: number; message: string }
+  | { status: "failed"; message: string }
+  | { status: "stopped"; reason: EditorStopReason };
+
+/** True for the states that end a session's stream: nothing follows them. */
+export function isTerminalEditorState(state: EditorState): boolean {
+  return state.status === "notInstalled" || state.status === "failed" || state.status === "stopped";
+}
+
+export type EditorEvent =
+  | { type: "state"; state: EditorState }
+  /** One JSON-RPC message from the server, as JSON text. */
+  | { type: "message"; message: string };
+
+export interface EditorStatus {
+  enabled: boolean;
+  installed: boolean;
+  installing: boolean;
+  serverVersion: string | null;
+  /** The latest state of the latest session, or null when none was started. */
+  state: EditorState | null;
+}
+
+/** What the runtime docs helper knows about a name (section 4.4, `editor_docs`). */
+export interface EditorDocs {
+  found: boolean;
+  /** The public dotted path, for example `torch.nn.functional.softmax`. */
+  name: string | null;
+  kind: string | null;
+  /** `name(parameters) -> result` on one line. */
+  signature: string | null;
+  /** The docstring as plain text. */
+  doc: string | null;
+  truncated: boolean;
+  /** Why `found` is false. */
+  reason: string | null;
 }
 
 export interface Submission {

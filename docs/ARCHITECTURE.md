@@ -864,6 +864,88 @@ Component rules (enforced in review):
 5. Data access goes through the `Backend` interface via TanStack Query hooks in
    `src/lib/api/`. Components never call `invoke` or `fetch` directly.
 
+### 5.1 Editor intelligence in the front end
+
+The client side of section 4.4. Logic that needs no DOM lives in `src/lib/editor/` and
+is unit-tested; what touches CodeMirror lives in `src/components/editor/language/`.
+
+**One session for the app** (`lib/editor/session.ts`, `EditorSessionManager`, exported
+as the singleton `editorSession`). An editable `CodeEditor` that is given the `document`
+it holds (`{ problemId, framework, review? }`) acquires the session while it is mounted;
+read-only editors and editors without a document never do. The first acquire calls
+`editor_status` (a preference that is off is a state, not an error) and then
+`editor_start`; the server keeps running for 20 s after the last editor lets go, so
+moving between problems reuses it. Starts are serialized, and the events of a session
+that was stopped or replaced are ignored. The UI reads one reduced view
+(`useEditorSession`): `idle`, `off`, `starting`, `ready` (with a connection),
+`restarting`, `notInstalled`, `failed`. `stopped` maps to `idle` (`off` for reason
+`disabled`); a window that lost the server to another one starts it again when it
+regains focus. `restart()` starts a new session after `env_install` and
+`editor_install` succeed and behind "Try again"; `setEnabled` follows the Settings
+switch.
+
+**One LSP client per `ready`.** Every `ready` state becomes an `EditorConnection` with
+its own `SessionTransport` (`lib/editor/transport.ts`): messages go to `editor_send`
+one at a time and in order (two HTTP requests in flight could overtake each other), a
+failed send is a lost message, and a closed transport sends and delivers nothing. The
+CodeMirror side keeps one `LSPClient` (`@codemirror/lsp-client`) per connection
+(`language/client.ts`), created when the first editor sees the connection; a higher
+generation is a new connection and therefore a new client that sends `initialize` and
+reopens the document.
+
+**Documents.** `documentUri(rootUri, document)` (`lib/editor/uri.ts`) forms the URI as
+section 4.4 specifies. `CodeEditorView` holds the language extension in a compartment
+and reconfigures it when the connection or the URI changes: the old plugin is destroyed
+(`didClose`) and the new one created (`didOpen` with the current text), and diagnostics
+of the previous document are cleared. Values that arrive from outside (file changed on
+disk, reset, framework switch) are ordinary transactions, so the client's change
+tracking sends them like typing.
+
+**Features** (`language/`), all on the client's request API rather than its built-in
+sources, which render Markdown as HTML and cannot take the docs fallback:
+
+- Completion (`completion.ts`): while typing a word, after a dot, and on Ctrl-Space,
+  not inside strings or comments. Each row shows the kind as a word; the side panel
+  shows the item's signature and documentation. The server's `sortText` is replaced
+  (it ranks modules first, so `export` above `exp`): CodeMirror's match score decides,
+  then public names before `_private` before `__dunder__`, alphabetically. ty marks
+  every list incomplete because it filters by the typed prefix; such a list is reused
+  while the word grows and asked for again when it shrinks or when it hit the server's
+  1000-item limit (`completionValidity`). A request that fails falls back to
+  CodeMirror's local Python completion.
+- Hover (`hover.ts`), signature help (`signature.ts`: on `(` and `,`, the active
+  parameter set apart, its documentation underneath, Escape closes), and diagnostics
+  (`diagnostics.ts`: pushed diagnostics through `@codemirror/lint`, severity 4 dropped,
+  no gutter; the document is synced 400 ms after the last edit).
+- Docs fallback (`lib/editor/docs-lookup.ts`): when the server's hover or a completion
+  item has no documentation and the name could be a library name (it starts at an
+  import of the file or a known package), `editor_docs` is asked: with the dotted
+  expression under the pointer for hover, with the receiver and `member` for a
+  completion item. Lookups are debounced (150 ms), cached per name and import lines,
+  shared while in flight, and never reject; `found: false` and failures show what the
+  server gave. A hover waits at most 250 ms for the answer and fills it in afterwards.
+- Documentation (`lib/editor/doc-format.ts`, `language/doc-view.ts`): both dialects
+  (ty's Markdown with reStructuredText remnants, the helper's plain docstrings) are
+  tidied into blocks (paragraphs, headings, argument lists, code, math, notes, lists)
+  and built with `createElement` and `textContent`; nothing is parsed as HTML. Math is
+  typeset with KaTeX when it parses and shown as source otherwise.
+
+**Styling** is `components/editor/language-theme.ts`, tokens only (docs/DESIGN.md).
+
+**Status.** `SuggestionsStatus` in the editor toolbar shows nothing while suggestions
+work, start, or are off; otherwise a mark and a few words with a popover (not
+installed, with a link to Settings; stopped, with the message and "Try again") or
+"Restarting suggestions". Settings has an "Editor" section (`SuggestionsPanel`): the
+switch, status, ty's version, and Install with the same streamed log as a framework
+install (`useEditorInstall`, `InstallLog`).
+
+**Fixture backend.** `lib/api/fixture/editor.ts` is a small language server in
+TypeScript (a few `torch` members: completion with documentation, hover, signature
+help, one diagnostic and one hint) and a docs helper, so the fixture preview and the
+tests run the real client. A `# learnai: editor_restarting`, `editor_failed`, or
+`editor_not_installed` comment in the open document plays that session state, once per
+session; `FixtureOptions.editorInstalled: false` starts without the server.
+
 ## 6. Milestones
 
 1. Vertical slice: judge, CLI, app, local runs, 12 problems covering all seven judges.

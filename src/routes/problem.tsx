@@ -15,6 +15,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { EditorPane } from "@/components/workbench/editor-pane";
 import { HardwareNotice } from "@/components/workbench/hardware-notice";
 import { StatementPane } from "@/components/workbench/statement-pane";
+import { SuggestionsStatus } from "@/components/workbench/suggestions-status";
 import { useGo } from "@/hooks/use-go";
 import { useRunShortcuts } from "@/hooks/use-run-shortcuts";
 import type { Review, ReviewAction, RunMode } from "@/lib/api";
@@ -34,6 +35,7 @@ import { useEnvInstall } from "@/lib/api/use-env-install";
 import { useRun } from "@/lib/api/use-run";
 import { useSolutionEditor } from "@/lib/api/use-solution-editor";
 import { neighbors } from "@/lib/continue";
+import { editorSession, useEditorSession } from "@/lib/editor";
 import { missingHardware } from "@/lib/hardware";
 import { IS_MAC } from "@/lib/platform";
 import { reviewOutcome } from "@/lib/reviews";
@@ -72,6 +74,7 @@ function ProblemScreen({ problemId }: { problemId: string }) {
   const [reviewed, setReviewed] = useState<Review | null>(null);
 
   const editor = useSolutionEditor(problemId, framework, reviewing);
+  const suggestions = useEditorSession();
   const run = useRun(problemId);
 
   // Where runs execute: the remembered choice, while that target still exists.
@@ -278,6 +281,10 @@ function ProblemScreen({ problemId }: { problemId: string }) {
         >
           <ResizablePanel id="editor" defaultSize="60%" minSize="25%">
             <EditorPane
+              problemId={problemId}
+              suggestions={
+                <SuggestionsStatus session={suggestions} onRetry={() => editorSession.restart()} />
+              }
               frameworks={detail.frameworks}
               framework={framework}
               solvedFrameworks={detail.solvedFrameworks}

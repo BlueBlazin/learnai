@@ -6,6 +6,7 @@ import { ModelsPanel } from "@/components/models/models-panel";
 import { ContentPanel } from "@/components/settings/content-panel";
 import { EnvironmentPanel } from "@/components/settings/environment-panel";
 import { ReviewSetting } from "@/components/settings/review-setting";
+import { SuggestionsPanel } from "@/components/settings/suggestions-panel";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { TargetsPanel } from "@/components/targets/targets-panel";
 import { backend } from "@/lib/api";
@@ -13,18 +14,22 @@ import {
   useAddTarget,
   useAssets,
   useCatalogIssues,
+  useEditorStatus,
   useEnvStatus,
   useProblems,
   useRemoveAsset,
   useRemoveTarget,
+  useSetEditorIntelligence,
   useSetReviewsEnabled,
   useSettings,
   useSshHosts,
   useTargets,
 } from "@/lib/api/queries";
 import { useAssetFetch } from "@/lib/api/use-asset-fetch";
+import { useEditorInstall } from "@/lib/api/use-editor-install";
 import { useEnvInstall } from "@/lib/api/use-env-install";
 import { useTargetCheck } from "@/lib/api/use-target-check";
+import { editorSession, useEditorSession } from "@/lib/editor";
 import { useThemeStore } from "@/stores/theme";
 
 const BACKEND_NOTE = {
@@ -49,6 +54,10 @@ function SettingsScreen() {
   const { checks, check } = useTargetCheck();
   const settings = useSettings();
   const setReviews = useSetReviewsEnabled();
+  const editorStatus = useEditorStatus();
+  const setSuggestions = useSetEditorIntelligence();
+  const { state: editorInstall, install: installEditor } = useEditorInstall();
+  const suggestions = useEditorSession();
   // What this computer is comes from a check. The local check installs nothing, so
   // it runs by itself the first time, once the environment exists to ask.
   const localUnchecked = targets.data?.[0]?.kind === "local" && targets.data[0].lastCheck === null;
@@ -164,6 +173,37 @@ function SettingsScreen() {
               enabled={settings.data.reviewsEnabled}
               disabled={setReviews.isPending}
               onChange={(enabled) => setReviews.mutate(enabled)}
+            />
+          </div>
+        )}
+      </Section>
+
+      <Section title="Editor" aside="Suggestions and documentation while you write a solution.">
+        {editorStatus.error ? (
+          <ErrorState
+            title="The editor settings could not be read"
+            error={editorStatus.error}
+            onRetry={() => void editorStatus.refetch()}
+          />
+        ) : !editorStatus.data ? (
+          <LoadingLines lines={3} />
+        ) : (
+          <div className="flex flex-col gap-3">
+            {setSuggestions.error ? (
+              <ErrorState
+                title="The setting could not be saved"
+                error={setSuggestions.error}
+                className="py-0"
+              />
+            ) : null}
+            <SuggestionsPanel
+              status={editorStatus.data}
+              session={suggestions}
+              saving={setSuggestions.isPending}
+              onToggle={(enabled) => setSuggestions.mutate(enabled)}
+              install={editorInstall}
+              onInstall={() => void installEditor()}
+              onRetry={() => editorSession.restart()}
             />
           </div>
         )}

@@ -75,8 +75,11 @@ Do not use `@base-ui-components/react` (stuck at 1.0.0-rc.0); the package was re
 | `@codemirror/search` | 6.7.2 | https://www.npmjs.com/package/@codemirror/search |
 | `@codemirror/autocomplete` | 6.20.4 | https://www.npmjs.com/package/@codemirror/autocomplete |
 | `@codemirror/lint` | 6.9.8 | https://www.npmjs.com/package/@codemirror/lint |
+| `@codemirror/lsp-client` | 6.3.1 | https://www.npmjs.com/package/@codemirror/lsp-client |
 | `@lezer/highlight` | 1.2.5 | https://www.npmjs.com/package/@lezer/highlight |
 | `@uiw/react-codemirror` | 4.25.12 | https://www.npmjs.com/package/@uiw/react-codemirror |
+
+`@codemirror/lsp-client` 6.3.1 (checked with `npm view` on 2026-11-16; it was published that day, and 6.3.0 is from 2026-09-17) is the official CodeMirror LSP client. It depends on `@codemirror/lint`, `@codemirror/autocomplete`, `@codemirror/view`, `@codemirror/state`, `@codemirror/language`, and `@lezer/highlight` (all already at their latest here, re-checked the same day), plus `marked` ^15 and `vscode-languageserver-protocol` ^3.17 (types only at run time). `@codemirror/lint` is now a direct dependency: the editor draws the server's diagnostics with it. What Learn AI uses from the client, confirmed against the 6.3.1 source: `new LSPClient({ rootUri, timeout, extensions, notificationHandlers }).connect(transport)`, `client.plugin(uri, languageId)`, `client.request`, `client.sync`, `client.cancelRequest`, `LSPPlugin.get(view)`, and the `Transport` shape (`send`, `subscribe`, `unsubscribe`, bare JSON text). Its own completion, hover, and signature-help sources are not used: they render Markdown through `marked` into `innerHTML` and cannot be extended with the runtime docs fallback, so the editor has its own sources on the request API (docs/ARCHITECTURE.md section 5). It never sends `completionItem/resolve` and answers every server-to-client request with "Method not implemented"; neither matters with ty, which sends documentation inline. `marked` is therefore installed but never called.
 
 `@uiw/react-codemirror` is current and maintained (last publish 2026-09-24; peers: React >=17, `codemirror` >=6). It also peer-depends on `@babel/runtime` and `@codemirror/theme-one-dark`, which pnpm will ask you to install. A thin custom hook around `EditorView` is a reasonable alternative if those extra peers are unwanted.
 

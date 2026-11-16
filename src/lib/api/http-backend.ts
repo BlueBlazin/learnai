@@ -1,5 +1,14 @@
 import type { Backend, StartRunArgs } from "./backend";
-import type { AssetEvent, Framework, InstallEvent, ReviewAction, RunEvent, TargetCheckEvent } from "./types";
+import {
+  type AssetEvent,
+  type EditorEvent,
+  type Framework,
+  type InstallEvent,
+  isTerminalEditorState,
+  type ReviewAction,
+  type RunEvent,
+  type TargetCheckEvent,
+} from "./types";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:1421";
 /** How long the first load waits for the bridge before reporting it unreachable. */
@@ -8,6 +17,9 @@ const CONNECT_TIMEOUT_MS = 30_000;
 const RECONNECT_TIMEOUT_MS = 2_000;
 /** The wait between probes doubles from the first value up to the second. */
 const CONNECT_RETRY_MS = [250, 1_000] as const;
+/** An editor stream that fails to reconnect this many times in a row is reported lost. */
+const EDITOR_STREAM_RETRIES = 3;
+const LOST_CONNECTION = "Lost the connection to the devbridge.";
 const POST_EMPTY = { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" } as const;
 
 /**
@@ -108,6 +120,38 @@ export class HttpBackend implements Backend {
     };
   }
 
+  /**
+   * Subscribes to an editor session. Unlike the other streams this one is
+   * long-lived and resumable: every event carries its index as the SSE id, and
+   * a reconnecting `EventSource` sends it back as `Last-Event-ID`, so the bridge
+   * continues after it and nothing arrives twice. The browser's reconnect is
+   * therefore left alone; only a stream that stays broken is reported lost.
+   */
+  private subscribeEditor(sessionId: string, onEvent: (event: EditorEvent) => void): void {
+    const source = new EventSource(`${this.baseUrl}/api/editor/${encodeURIComponent(sessionId)}/events`);
+    let finished = false;
+    let failures = 0;
+    const finish = () => {
+      finished = true;
+      source.close();
+    };
+    source.onmessage = (message) => {
+      if (finished) return;
+      failures = 0;
+      const event = JSON.parse(message.data as string) as EditorEvent;
+      if (event.type === "state" && isTerminalEditorState(event.state)) finish();
+      onEvent(event);
+    };
+    source.onerror = () => {
+      if (finished) return;
+      failures += 1;
+      // CLOSED means the browser gave up (the bridge answered with an error status).
+      if (source.readyState !== 2 && failures < EDITOR_STREAM_RETRIES) return;
+      finish();
+      onEvent({ type: "state", state: { status: "failed", message: LOST_CONNECTION } });
+    };
+  }
+
   listTracks = () => this.call<Awaited<ReturnType<Backend["listTracks"]>>>("list_tracks");
   listProblems = () => this.call<Awaited<ReturnType<Backend["listProblems"]>>>("list_problems");
   getProblem = (id: string) => this.call<Awaited<ReturnType<Backend["getProblem"]>>>("get_problem", { id });
@@ -136,7 +180,7 @@ export class HttpBackend implements Backend {
           metrics: [],
           submissionId: null,
           skipped: 0,
-          message: "Lost the connection to the devbridge.",
+          message: LOST_CONNECTION,
           detail: null,
         }),
     );
@@ -165,7 +209,7 @@ export class HttpBackend implements Backend {
       `/api/jobs/${encodeURIComponent(jobId)}/events`,
       onEvent,
       (event) => event.type === "done",
-      () => onEvent({ type: "done", ok: false, message: "Lost the connection to the devbridge." }),
+      () => onEvent({ type: "done", ok: false, message: LOST_CONNECTION }),
     );
   }
 
@@ -192,7 +236,7 @@ export class HttpBackend implements Backend {
           type: "done",
           ok: false,
           canceled: false,
-          message: "Lost the connection to the devbridge.",
+          message: LOST_CONNECTION,
         }),
     );
     return jobId;
@@ -224,9 +268,7 @@ export class HttpBackend implements Backend {
           check: {
             ok: false,
             checkedAt: new Date().toISOString(),
-            steps: [
-              { id: "connect", ok: false, message: "Lost the connection to the devbridge.", fix: null },
-            ],
+            steps: [{ id: "connect", ok: false, message: LOST_CONNECTION, fix: null }],
             doctor: null,
           },
         }),
@@ -248,4 +290,33 @@ export class HttpBackend implements Backend {
   getSettings = () => this.call<Awaited<ReturnType<Backend["getSettings"]>>>("get_settings");
   setReviewsEnabled = (enabled: boolean) =>
     this.call<Awaited<ReturnType<Backend["setReviewsEnabled"]>>>("set_reviews_enabled", { enabled });
+
+  setEditorIntelligence = (enabled: boolean) =>
+    this.call<Awaited<ReturnType<Backend["setEditorIntelligence"]>>>("set_editor_intelligence", { enabled });
+  editorStatus = () => this.call<Awaited<ReturnType<Backend["editorStatus"]>>>("editor_status");
+  async editorStart(onEvent: (event: EditorEvent) => void): Promise<string> {
+    const { sessionId } = await this.call<{ sessionId: string }>("editor_start");
+    this.subscribeEditor(sessionId, onEvent);
+    return sessionId;
+  }
+  editorSend = async (sessionId: string, message: string) => {
+    await this.call<null>("editor_send", { sessionId, message });
+  };
+  editorStop = async (sessionId?: string) => {
+    await this.call<null>("editor_stop", sessionId === undefined ? {} : { sessionId });
+  };
+  async editorInstall(onEvent: (event: InstallEvent) => void): Promise<void> {
+    const { jobId } = await this.call<{ jobId: string }>("editor_install");
+    this.subscribe<InstallEvent>(
+      `/api/jobs/${encodeURIComponent(jobId)}/events`,
+      onEvent,
+      (event) => event.type === "done",
+      () => onEvent({ type: "done", ok: false, message: LOST_CONNECTION }),
+    );
+  }
+  editorDocs = (source: string, expr: string, member?: string) =>
+    this.call<Awaited<ReturnType<Backend["editorDocs"]>>>(
+      "editor_docs",
+      member === undefined ? { source, expr } : { source, expr, member },
+    );
 }

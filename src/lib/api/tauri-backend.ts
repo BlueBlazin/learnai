@@ -1,6 +1,14 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { Backend, StartRunArgs } from "./backend";
-import type { AssetEvent, Framework, InstallEvent, ReviewAction, RunEvent, TargetCheckEvent } from "./types";
+import type {
+  AssetEvent,
+  EditorEvent,
+  Framework,
+  InstallEvent,
+  ReviewAction,
+  RunEvent,
+  TargetCheckEvent,
+} from "./types";
 
 /** Tauri rejects with the command's error string; normalize to Error. */
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -92,4 +100,26 @@ export class TauriBackend implements Backend {
   getSettings = () => call<Awaited<ReturnType<Backend["getSettings"]>>>("get_settings");
   setReviewsEnabled = (enabled: boolean) =>
     call<Awaited<ReturnType<Backend["setReviewsEnabled"]>>>("set_reviews_enabled", { enabled });
+
+  setEditorIntelligence = (enabled: boolean) =>
+    call<Awaited<ReturnType<Backend["setEditorIntelligence"]>>>("set_editor_intelligence", { enabled });
+  editorStatus = () => call<Awaited<ReturnType<Backend["editorStatus"]>>>("editor_status");
+  editorStart(onEvent: (event: EditorEvent) => void): Promise<string> {
+    const channel = new Channel<EditorEvent>();
+    channel.onmessage = onEvent;
+    return call<string>("editor_start", { onEvent: channel });
+  }
+  editorSend = (sessionId: string, message: string) => call<void>("editor_send", { sessionId, message });
+  editorStop = (sessionId?: string) => call<void>("editor_stop", { sessionId: sessionId ?? null });
+  async editorInstall(onEvent: (event: InstallEvent) => void): Promise<void> {
+    const channel = new Channel<InstallEvent>();
+    channel.onmessage = onEvent;
+    await call<unknown>("editor_install", { onEvent: channel });
+  }
+  editorDocs = (source: string, expr: string, member?: string) =>
+    call<Awaited<ReturnType<Backend["editorDocs"]>>>("editor_docs", {
+      source,
+      expr,
+      member: member ?? null,
+    });
 }

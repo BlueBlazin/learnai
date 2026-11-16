@@ -232,16 +232,16 @@ Composed components, by area (all shown in their states at
 |---|---|
 | `app/` | `AppShell`, `CommandPalette`, `AppLink`, `InlineButton`, `IconButton`, `ActionButton`, `CopyButton`, `ConfirmDialog`, `ShortcutHint`, `Page`, `PageHeader`, `Section`, `ScreenMessage`, `MetaList` / `MetaItem`, `RuledList`, `DisclosureChevron`, `Notice`, `EmptyState`, `ErrorState`, `LoadingLines` |
 | `prose/` | `Prose`, `CodeBlock` (both lazy; `CodeFrame` is the block they share with their fallbacks), `Figure`, `SvgFigureBody`, `ProblemFigures` |
-| `editor/` | `CodeEditor` |
+| `editor/` | `CodeEditor` (with the completion list, documentation card, signature help, and diagnostics it draws; see below) |
 | `problem/` | `DifficultyMark`, `StatusMark`, `JudgeList`, `FrameworkList`, `FrameworkSwitcher`, `ProgressRule`, `ProblemTable`, `ProblemHeader`, `PrerequisiteList`, `PrerequisiteNote`, `HintList`, `EditorialPanel`, `SubmissionList`, `SubmissionView` |
 | `results/` | `ResultsPanel`, `VerdictHeader`, `VerdictMark`, `CaseMark`, `CaseList`, `MetricList`, `OutputBlock`, `RunProgress` |
 | `library/` | `LibraryFilterBar`, `FilterSelect`, `TrackList`, `TrackSection` |
-| `workbench/` | `StatementPane`, `EditorPane`, `PaneToolbar`, `EnvironmentNotice`, `HardwareNotice`, `SaveIndicator` |
+| `workbench/` | `StatementPane`, `EditorPane`, `PaneToolbar`, `EnvironmentNotice`, `HardwareNotice`, `SaveIndicator`, `SuggestionsStatus` |
 | `models/` | `ModelsPanel`, `AssetRow`, `AssetStateMark`, `AssetProgress`, `AssetNotice` / `AssetNoticeList`, `AssetDownloadButton`, `RemoveAssetButton` |
 | `targets/` | `TargetsPanel`, `TargetRow`, `TargetSummary`, `CheckStepList`, `CheckStepMark`, `FixText`, `AddTargetForm`, `TargetPicker` |
 | `path/` | `PathSummary`, `PathStage`, `PathEntryList` |
 | `home/` | `ContinueEntry`, `GettingStarted`, `ProgressSummary`, `PathProgress`, `TrackProgress` |
-| `settings/` | `EnvironmentPanel`, `InstallButton`, `UvGuideButton`, `ThemePicker`, `ContentPanel`, `PathField`, `CatalogIssueList` |
+| `settings/` | `EnvironmentPanel`, `InstallButton`, `UvGuideButton`, `ThemePicker`, `ContentPanel`, `PathField`, `CatalogIssueList`, `SettingSwitch`, `ReviewSetting`, `SuggestionsPanel`, `InstallLog` |
 
 Patterns that recur, and the one component that owns each:
 
@@ -257,6 +257,8 @@ Patterns that recur, and the one component that owns each:
   `SvgFigureBody`. `ProblemFigures` wraps the prose of one problem so that
   `assets/...` images resolve through the backend; `Prose` itself knows nothing
   about problems.
+- A preference that is on or off, with its explanation: `SettingSwitch`. The
+  streamed log of an install and how it ended: `InstallLog`.
 - Copy to the clipboard: `CopyButton`. A row that opens: `Collapsible` with
   `DisclosureChevron`.
 
@@ -323,6 +325,20 @@ Conventions:
 - The search panel inside CodeMirror (Mod-F) is CodeMirror's own DOM, themed
   from the tokens. It is the one interactive surface not built from a shadcn
   primitive.
+- What the language server adds to the editor (the completion list and its
+  documentation panel, the hover card, signature help, diagnostic tooltips) is
+  also CodeMirror's DOM: it has to be positioned and measured by the editor.
+  It is themed in one place (`components/editor/language-theme.ts`) to read as
+  the app's own layers: the popover surface, hairline, radius, and the one
+  elevation; rows like the command palette's, with the kind of each
+  suggestion written as a word ("function", "module") instead of an icon; a
+  signature in the mono face on the listing tint over documentation in the
+  interface face at 13px; a ruled heading per section ("Arguments",
+  "Example"); math typeset by KaTeX. Cards cap their height at 22rem or 44% of
+  the window and scroll inside. The active parameter in signature help is
+  highlighted in straw, the color already reserved for highlights. A mistake
+  is a thin wavy underline in the fail color with the word "Error" before its
+  message; hints are not shown and nothing is added to the gutter.
 - Generated primitives in `src/components/ui/` keep shadcn's own arbitrary
   values where they exist; app components use tokens only.
 

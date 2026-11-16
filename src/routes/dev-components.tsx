@@ -1,4 +1,5 @@
 import { createLazyRoute } from "@tanstack/react-router";
+import { cn } from "cn";
 import { Lock, Play } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { ActionButton } from "@/components/app/action-button";
@@ -70,6 +71,7 @@ import { EnvironmentPanel } from "@/components/settings/environment-panel";
 import { InstallButton, UvGuideButton } from "@/components/settings/install-actions";
 import { PathField } from "@/components/settings/path-field";
 import { ReviewSetting } from "@/components/settings/review-setting";
+import { SuggestionsPanel } from "@/components/settings/suggestions-panel";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { AddTargetForm } from "@/components/targets/add-target-form";
 import { CheckStepList } from "@/components/targets/check-step-list";
@@ -84,10 +86,12 @@ import { EnvironmentNotice } from "@/components/workbench/environment-notice";
 import { HardwareNotice } from "@/components/workbench/hardware-notice";
 import { PaneToolbar } from "@/components/workbench/pane-toolbar";
 import { SaveIndicator } from "@/components/workbench/save-indicator";
+import { SuggestionsStatus } from "@/components/workbench/suggestions-status";
 import {
   type AssetList,
   type CaseResult,
   DIFFICULTIES,
+  type EditorStatus,
   type Framework,
   type JudgeKind,
   type Path,
@@ -106,6 +110,7 @@ import { FIXTURE_SSH_HOSTS, fixtureTargets } from "@/lib/api/fixture/targets";
 import { initialRunState, type RunState } from "@/lib/api/run-state";
 import { stepProgress, type TargetCheckState } from "@/lib/api/target-check-state";
 import type { AssetFetchController } from "@/lib/api/use-asset-fetch";
+import type { EditorInstallState } from "@/lib/api/use-editor-install";
 import type { InstallState } from "@/lib/api/use-env-install";
 import { EMPTY_FILTERS, type LibraryFilters } from "@/lib/filters";
 import { nextOnPath, pathEntries, unmetPrerequisites } from "@/lib/paths";
@@ -280,6 +285,15 @@ ${"```"}
 
 > An ordinary quotation, for comparison with the callouts.
 `;
+
+const EDITOR_STATUS: EditorStatus = {
+  enabled: true,
+  installed: true,
+  installing: false,
+  serverVersion: "0.0.104",
+  state: null,
+};
+const IDLE_EDITOR_INSTALL: EditorInstallState = { status: "idle", log: [], message: null };
 
 const SAMPLE_CODE = `import torch
 
@@ -1010,9 +1024,44 @@ function DevComponentsScreen() {
             <CodeBlock code={'data: {"index": 0, "token": "The"}\n\ndata: [DONE]'} />
           </div>
         </Specimen>
-        <Specimen name="CodeEditor">
+        <Specimen name="CodeEditor: with suggestions, hover documentation, and argument hints (try torch.ex, then hover it)">
           <div className="h-56 max-w-measure border">
-            <CodeEditor value={code} onChange={setCode} label="Sample editor" />
+            <CodeEditor
+              value={code}
+              onChange={setCode}
+              label="Sample editor"
+              document={{ problemId: "component-gallery", framework: "torch" }}
+            />
+          </div>
+        </Specimen>
+        <Specimen name="SuggestionsStatus (editor toolbar): not installed, restarting, stopped, working (nothing); and in a narrow pane">
+          <div className="flex flex-col gap-3">
+            {(["max-w-none", "max-w-sm"] as const).map((width) => (
+              <PaneToolbar key={width} className={cn("gap-8 border", width)}>
+                <SuggestionsStatus
+                  session={{ status: "notInstalled", message: "The language server is not installed." }}
+                  onRetry={noop}
+                />
+                <SuggestionsStatus
+                  session={{
+                    status: "restarting",
+                    attempt: 1,
+                    maxAttempts: 4,
+                    message: "Starting it again.",
+                  }}
+                  onRetry={noop}
+                />
+                <SuggestionsStatus
+                  session={{
+                    status: "failed",
+                    message:
+                      "The language server keeps stopping. Suggestions are off until you open another problem or restart Learn AI.",
+                  }}
+                  onRetry={noop}
+                />
+                <SuggestionsStatus session={{ status: "idle" }} onRetry={noop} />
+              </PaneToolbar>
+            ))}
           </div>
         </Specimen>
       </Section>
@@ -1303,6 +1352,46 @@ function DevComponentsScreen() {
                   outcome={{ kind: "advanced", label: "Review 2 of 5", next: review("d", 2, 21) }}
                 />
               }
+            />
+          </div>
+        </Specimen>
+        <Specimen name="SuggestionsPanel (Settings): starting; not installed, install running; stopped; off">
+          <div className="flex flex-col gap-10">
+            <SuggestionsPanel
+              status={EDITOR_STATUS}
+              session={{ status: "starting" }}
+              onToggle={noop}
+              install={IDLE_EDITOR_INSTALL}
+              onInstall={noop}
+              onRetry={noop}
+            />
+            <SuggestionsPanel
+              status={{ ...EDITOR_STATUS, installed: false, serverVersion: null }}
+              session={{ status: "notInstalled", message: "The language server is not installed." }}
+              onToggle={noop}
+              install={{
+                status: "running",
+                log: ["$ uv sync --project python --extra torch --extra editor", "Downloading ty (14.1MiB)"],
+                message: null,
+              }}
+              onInstall={noop}
+              onRetry={noop}
+            />
+            <SuggestionsPanel
+              status={EDITOR_STATUS}
+              session={{ status: "failed", message: "The language server keeps stopping. Try again." }}
+              onToggle={noop}
+              install={IDLE_EDITOR_INSTALL}
+              onInstall={noop}
+              onRetry={noop}
+            />
+            <SuggestionsPanel
+              status={{ ...EDITOR_STATUS, enabled: false }}
+              session={{ status: "off" }}
+              onToggle={noop}
+              install={IDLE_EDITOR_INSTALL}
+              onInstall={noop}
+              onRetry={noop}
             />
           </div>
         </Specimen>

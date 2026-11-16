@@ -21,9 +21,12 @@ import { SaveIndicator } from "./save-indicator";
  * run, Run, Submit) over the code editor. When the environment cannot run the chosen
  * framework, a notice under the toolbar says why and offers the fix; `notices`
  * adds what else stands between a run and an accepted verdict. In a review
- * the same pane edits and judges the review attempt.
+ * the same pane edits and judges the review attempt. The editor gets
+ * suggestions and documentation for the file it holds; `suggestions` says so
+ * in the toolbar when they are not available.
  */
 export function EditorPane({
+  problemId,
   frameworks,
   framework,
   solvedFrameworks,
@@ -36,6 +39,7 @@ export function EditorPane({
   onRun,
   onSubmit,
   notices,
+  suggestions,
   targetPicker,
   remote = false,
   review = false,
@@ -45,6 +49,7 @@ export function EditorPane({
    * `notices`) owns starting over, so the reset control is not shown here.
    */
   review?: boolean;
+  problemId: string;
   frameworks: Framework[];
   framework: Framework;
   solvedFrameworks: Framework[];
@@ -60,6 +65,8 @@ export function EditorPane({
   onSubmit: () => void;
   /** More strips under the toolbar: a model that is not downloaded, hardware this machine lacks. */
   notices?: ReactNode;
+  /** The state of suggestions and documentation, shown only when it needs attention. */
+  suggestions?: ReactNode;
   /** The control that chooses where runs execute, when there is a choice. */
   targetPicker?: ReactNode;
   /** True when runs go to a remote machine: the local environment then does not matter. */
@@ -79,6 +86,7 @@ export function EditorPane({
           disabled={busy}
         />
         <SaveIndicator state={editor.saveState} className="pl-1" />
+        {suggestions}
         <div className="ml-auto flex items-center gap-1.5">
           {review ? null : (
             <ConfirmDialog
@@ -133,6 +141,7 @@ export function EditorPane({
             value={editor.code}
             onChange={editor.setCode}
             label={`${review ? "Review attempt" : "Solution"}, ${FRAMEWORK_LABEL[framework]}`}
+            document={{ problemId, framework, review }}
           />
         )}
       </div>

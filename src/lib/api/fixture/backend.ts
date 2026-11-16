@@ -4,6 +4,9 @@ import type {
   AssetList,
   CatalogIssue,
   Difficulty,
+  EditorDocs,
+  EditorEvent,
+  EditorStatus,
   EnvStatus,
   Framework,
   InstallEvent,
@@ -28,6 +31,7 @@ import type {
 } from "../types";
 import { FIXTURE_HARDWARE, type FixtureAsset, fixtureAssets } from "./assets";
 import { buildCatalog, type FixtureProblem, hash, renderTemplate } from "./catalog";
+import { FixtureEditor } from "./editor";
 import { FIXTURE_PATHS } from "./paths";
 import { buildPlan, type RunContext, simulateRun, verdictOf } from "./runs";
 import { FIXTURE_SSH_HOSTS, fixtureCheckScript, fixtureTargets } from "./targets";
@@ -36,6 +40,8 @@ export interface FixtureOptions {
   /** Multiplier on every simulated delay. 0 makes the backend instantaneous (tests). */
   speed?: number;
   now?: () => Date;
+  /** Whether the language server starts out installed (default true). */
+  editorInstalled?: boolean;
 }
 
 const ROOT = "/Users/ada/Developer/learnai";
@@ -110,9 +116,11 @@ export class FixtureBackend implements Backend {
   private nextSubmissionId = 1;
   private nextRunId = 1;
   private nextJobId = 1;
+  private readonly editor: FixtureEditor;
 
   constructor(options: FixtureOptions = {}) {
     this.speed = options.speed ?? 1;
+    this.editor = new FixtureEditor({ sleep: this.sleep, installed: options.editorInstalled });
     this.now = options.now ?? (() => new Date());
     this.targets = fixtureTargets(this.now());
     for (const problem of this.catalog.problems) {
@@ -476,13 +484,44 @@ export class FixtureBackend implements Backend {
       return this.activeReviews();
     });
 
-  getSettings = (): Promise<Settings> => this.respond(() => ({ reviewsEnabled: this.reviewsEnabled }));
+  private settings(): Settings {
+    return { reviewsEnabled: this.reviewsEnabled, editorIntelligence: this.editor.enabled };
+  }
+
+  getSettings = (): Promise<Settings> => this.respond(() => this.settings());
 
   setReviewsEnabled = (enabled: boolean): Promise<Settings> =>
     this.respond(() => {
       this.reviewsEnabled = enabled;
-      return { reviewsEnabled: enabled };
+      return this.settings();
     });
+
+  // Editor intelligence -------------------------------------------------------
+
+  setEditorIntelligence = (enabled: boolean): Promise<Settings> =>
+    this.respond(() => {
+      this.editor.setEnabled(enabled);
+      return this.settings();
+    });
+
+  editorStatus = (): Promise<EditorStatus> => this.respond(() => this.editor.status());
+
+  editorStart = (onEvent: (event: EditorEvent) => void): Promise<string> =>
+    this.respond(() => this.editor.start(onEvent));
+
+  editorSend = async (sessionId: string, message: string): Promise<void> => {
+    this.editor.send(sessionId, message);
+  };
+
+  editorStop = (sessionId?: string): Promise<void> => this.respond(() => this.editor.stop(sessionId));
+
+  async editorInstall(onEvent: (event: InstallEvent) => void): Promise<void> {
+    await this.sleep(30);
+    await this.editor.install(onEvent);
+  }
+
+  editorDocs = (source: string, expr: string, member?: string): Promise<EditorDocs> =>
+    this.respond(() => this.editor.docs(source, expr, member));
 
   // Runs --------------------------------------------------------------------
 

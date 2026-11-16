@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
+import { editorSession } from "@/lib/editor";
 import { backend } from "./index";
 import { keys } from "./queries";
 import type { Framework } from "./types";
@@ -32,6 +33,8 @@ export function useEnvInstall() {
               message: event.message,
             }));
             void client.invalidateQueries({ queryKey: keys.env });
+            // The language server does not see packages that appear while it runs.
+            if (event.ok) editorSession.restart();
           }
         });
       } catch (error) {

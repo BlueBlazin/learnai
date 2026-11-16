@@ -1,4 +1,5 @@
 import { focusManager, QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { editorSession } from "@/lib/editor";
 import { backend } from "./index";
 import type { Framework, ReviewAction } from "./types";
 
@@ -47,6 +48,7 @@ export const keys = {
   reviews: ["reviews"] as const,
   reviewSolution: (id: string, framework: Framework) => ["reviewSolution", id, framework] as const,
   settings: ["settings"] as const,
+  editorStatus: ["editorStatus"] as const,
 };
 
 /** Everything a stored submission or a status change can affect. */
@@ -239,6 +241,24 @@ export function useSetReviewsEnabled() {
       client.setQueryData(keys.settings, settings);
       void client.invalidateQueries({ queryKey: keys.reviews });
       void client.invalidateQueries({ queryKey: keys.stats });
+    },
+  });
+}
+
+/** Whether the language server behind suggestions is installed, and its version. Starts nothing. */
+export function useEditorStatus() {
+  return useQuery({ queryKey: keys.editorStatus, queryFn: () => backend.editorStatus() });
+}
+
+/** Turns suggestions and documentation in the editor on or off; the running session follows. */
+export function useSetEditorIntelligence() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) => backend.setEditorIntelligence(enabled),
+    onSuccess: (settings) => {
+      client.setQueryData(keys.settings, settings);
+      editorSession.setEnabled(settings.editorIntelligence);
+      void client.invalidateQueries({ queryKey: keys.editorStatus });
     },
   });
 }

@@ -2,12 +2,12 @@ import { CircleCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { MetaItem, MetaList } from "@/components/app/meta-list";
 import { Notice } from "@/components/app/notice";
-import { OutputBlock } from "@/components/results/output-block";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { EnvStatus, Framework } from "@/lib/api";
 import type { InstallState } from "@/lib/api/use-env-install";
 import { FRAMEWORK_LABEL } from "@/lib/labels";
 import { InstallButton, UvGuideButton } from "./install-actions";
+import { InstallLog } from "./install-log";
 
 /** A version string, or the reason there is none with the action that fixes it. */
 function Version({ value, missing, action }: { value: string | null; missing: string; action?: ReactNode }) {
@@ -112,20 +112,14 @@ export function EnvironmentPanel({
         </TableBody>
       </Table>
 
-      {install.status !== "idle" && install.framework ? (
-        <div className="flex flex-col gap-2" aria-live="polite">
-          <OutputBlock label={`Install log, ${FRAMEWORK_LABEL[install.framework]}`} size="tall">
-            {install.log.length > 0 ? install.log.join("\n") : "Starting"}
-          </OutputBlock>
-          {install.status === "succeeded" ? (
-            <Notice tone="pass">{FRAMEWORK_LABEL[install.framework]} installed.</Notice>
-          ) : null}
-          {install.status === "failed" ? (
-            <Notice tone="fail">
-              {install.message ?? "The install failed. The log above has the details."}
-            </Notice>
-          ) : null}
-        </div>
+      {install.framework ? (
+        <InstallLog
+          label={`Install log, ${FRAMEWORK_LABEL[install.framework]}`}
+          status={install.status}
+          log={install.log}
+          message={install.message}
+          succeeded={`${FRAMEWORK_LABEL[install.framework]} installed.`}
+        />
       ) : null}
     </div>
   );

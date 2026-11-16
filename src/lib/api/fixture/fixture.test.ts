@@ -807,8 +807,11 @@ describe("FixtureBackend reviews", () => {
   it("hides everything while reviews are off and keeps the schedules", async () => {
     const backend = new FixtureBackend({ speed: 0, now: () => new Date(NOW) });
     const before = await backend.listReviews();
-    expect(await backend.getSettings()).toEqual({ reviewsEnabled: true });
-    expect(await backend.setReviewsEnabled(false)).toEqual({ reviewsEnabled: false });
+    expect(await backend.getSettings()).toEqual({ reviewsEnabled: true, editorIntelligence: true });
+    expect(await backend.setReviewsEnabled(false)).toEqual({
+      reviewsEnabled: false,
+      editorIntelligence: true,
+    });
     expect(await backend.listReviews()).toEqual([]);
     expect((await backend.getStats()).reviewsDue).toBe(0);
     await expect(backend.startReview("stable-softmax", "torch")).rejects.toThrow("turned off");

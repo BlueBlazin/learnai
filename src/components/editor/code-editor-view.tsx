@@ -7,8 +7,9 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { python } from "@codemirror/lang-python";
 import { bracketMatching, indentOnInput, indentUnit } from "@codemirror/language";
+import { diagnosticCount, setDiagnostics } from "@codemirror/lint";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { Annotation, EditorState } from "@codemirror/state";
+import { Annotation, Compartment, EditorState } from "@codemirror/state";
 import {
   drawSelection,
   EditorView,
@@ -18,7 +19,10 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import { cn } from "cn";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { type EditorDocument, useEditorSession, useEditorSessionUser } from "@/lib/editor";
+import { documentKey, documentUri } from "@/lib/editor/uri";
+import { languageSupport } from "./language";
 import { learnaiEditorTheme } from "./theme";
 
 /** Marks transactions that come from the `value` prop so they are not echoed to `onChange`. */
@@ -30,22 +34,47 @@ export interface CodeEditorProps {
   readOnly?: boolean;
   /** Accessible name, for example "Solution, PyTorch". */
   label: string;
+  /**
+   * The solution file this editor holds. With it (and unless `readOnly`) the
+   * editor gets suggestions, hover documentation, signature help, and
+   * diagnostics from the language server. Without it the editor is plain.
+   */
+  document?: EditorDocument;
   className?: string;
 }
 
 /** The CodeMirror view behind `CodeEditor`. Import `CodeEditor` instead; this module is heavy. */
-export function CodeEditorView({ value, onChange, readOnly = false, label, className }: CodeEditorProps) {
+export function CodeEditorView({
+  value,
+  onChange,
+  readOnly = false,
+  label,
+  document: file,
+  className,
+}: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
-  const view = useRef<EditorView | null>(null);
+  const [view, setView] = useState<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
-  const initialValue = useRef(value);
+  const latestValue = useRef(value);
+  latestValue.current = value;
+  /** Holds what the language server adds; empty while there is no connection. */
+  const [language] = useState(() => new Compartment());
+
+  // One language server for the whole app: this editor only says that it wants it.
+  const assisted = !readOnly && file !== undefined;
+  useEditorSessionUser(assisted);
+  const session = useEditorSession();
+  const connection = assisted && session.status === "ready" ? session.connection : null;
+  const fileKey = documentKey(file);
+  const uri = connection && file ? documentUri(connection.rootUri, file) : null;
+
   useEffect(() => {
     if (!host.current) return;
     const editor = new EditorView({
       parent: host.current,
       state: EditorState.create({
-        doc: initialValue.current,
+        doc: latestValue.current,
         extensions: [
           lineNumbers(),
           highlightActiveLine(),
@@ -56,6 +85,7 @@ export function CodeEditorView({ value, onChange, readOnly = false, label, class
           bracketMatching(),
           closeBrackets(),
           autocompletion({ icons: false }),
+          language.of([]),
           highlightSelectionMatches(),
           python(),
           indentUnit.of("    "),
@@ -80,7 +110,7 @@ export function CodeEditorView({ value, onChange, readOnly = false, label, class
         ],
       }),
     });
-    view.current = editor;
+    setView(editor);
     // The mono face is bundled but loads on first use. CodeMirror caches character
     // and line metrics, so measure again once the real font is in.
     let live = true;
@@ -88,21 +118,35 @@ export function CodeEditorView({ value, onChange, readOnly = false, label, class
     return () => {
       live = false;
       editor.destroy();
-      view.current = null;
+      setView((current) => (current === editor ? null : current));
     };
-  }, [readOnly, label]);
+  }, [readOnly, label, language]);
 
-  // Adopt an external value (file changed on disk, reset, framework switch).
+  // Adopt an external value (file changed on disk, reset, framework switch). The
+  // change is an ordinary transaction, so the language server hears about it too.
   useEffect(() => {
-    const editor = view.current;
-    if (!editor) return;
-    const current = editor.state.doc.toString();
+    if (!view) return;
+    const current = view.state.doc.toString();
     if (current === value) return;
-    editor.dispatch({
+    view.dispatch({
       changes: { from: 0, to: current.length, insert: value },
       annotations: External.of(true),
     });
-  }, [value]);
+  }, [view, value]);
+
+  // Connect the document to the language server. Runs after the value has been
+  // adopted, so a new document opens with its own text. A new server process
+  // (`connection`) or another problem or framework (`uri`) replaces the
+  // extension: the old document is closed on its server, the new one opened.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fileKey stands for the document.
+  useEffect(() => {
+    if (!view) return;
+    // Underlines belong to the document and the server that produced them.
+    if (diagnosticCount(view.state) > 0) view.dispatch(setDiagnostics(view.state, []));
+    view.dispatch({
+      effects: language.reconfigure(connection && uri ? languageSupport(connection, uri) : []),
+    });
+  }, [view, language, connection, uri, fileKey]);
 
   return <div ref={host} className={cn("code-editor selectable min-h-0 bg-paper", className)} />;
 }

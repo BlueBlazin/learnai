@@ -2,6 +2,7 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
+import { languageTheme } from "./language-theme";
 
 /**
  * The editor theme. Every value is a CSS variable from styles/tokens.css, so the
@@ -56,25 +57,6 @@ const chrome = EditorView.theme({
     border: "none",
     color: "var(--muted-foreground)",
   },
-  ".cm-tooltip": {
-    backgroundColor: "var(--popover)",
-    color: "var(--popover-foreground)",
-    border: "1px solid var(--border)",
-    borderRadius: "var(--radius-lg)",
-    boxShadow: "var(--shadow-float)",
-    overflow: "hidden",
-  },
-  ".cm-tooltip.cm-tooltip-autocomplete > ul": {
-    fontFamily: "var(--font-mono)",
-    fontSize: "var(--text-xs)",
-    maxHeight: "14rem",
-  },
-  ".cm-tooltip-autocomplete ul li": { padding: "0.2rem 0.6rem" },
-  ".cm-tooltip-autocomplete ul li[aria-selected]": {
-    backgroundColor: "var(--accent)",
-    color: "var(--accent-foreground)",
-  },
-  ".cm-completionIcon": { display: "none" },
   ".cm-panels": {
     backgroundColor: "var(--background)",
     color: "var(--foreground)",
@@ -127,4 +109,4 @@ const syntax = HighlightStyle.define([
   { tag: t.invalid, color: "var(--fail)" },
 ]);
 
-export const learnaiEditorTheme: Extension = [chrome, syntaxHighlighting(syntax)];
+export const learnaiEditorTheme: Extension = [chrome, languageTheme, syntaxHighlighting(syntax)];
