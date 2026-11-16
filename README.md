@@ -4,6 +4,11 @@ Whetstone is a native desktop app for mastering LLM inference and serving throug
 LeetCode-style practice problems. You write solutions in PyTorch, JAX, MLX, or plain
 Python, and a local judge runs them against public and hidden tests.
 
+The catalog has 213 problems in 15 tracks, from stable softmax to capstones such as a
+continuous-batching engine and a complete runtime for a real model, and a curated study
+path (Inference 75). Catalog and path: `docs/CURRICULUM.md`. Writing problems:
+`docs/PROBLEM_AUTHORING.md`.
+
 Architecture and contracts: `docs/ARCHITECTURE.md`. Dependency versions: `docs/VERSIONS.md`.
 
 ## Prerequisites
@@ -32,9 +37,10 @@ cargo test -p whetstone-core
 cargo run -p whetstone-devbridge
 
 # Python (always pass the full set of extras; a bare `uv sync` removes them)
-uv sync --project python --extra jax --extra mlx
-uv run --project python ws
-uv run --project python pytest python/tests
+uv sync --project python --extra jax --extra mlx --extra models
+uv run --project python --extra jax --extra mlx --extra models ws
+uv run --project python --extra jax --extra mlx --extra models ws validate --all   # the catalog's quality gate
+uv run --project python --extra jax --extra mlx --extra models pytest python/tests
 uv run --project python ruff check python
 ```
 

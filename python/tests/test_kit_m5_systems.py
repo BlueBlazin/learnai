@@ -741,6 +741,27 @@ def test_cluster_replica_runs_continuous_batching_first_come_first_served(sim):
     assert cluster.replica_seconds() == 4.375
 
 
+def test_cluster_load_can_be_read_at_the_instant_a_step_ends(sim):
+    """A task woken at the time a request's last step ends may run before the replica
+    has settled that request: the request still counts as running, with no work left."""
+    seen = []
+
+    async def read_at(when):
+        await sim.sleep(when)
+        (replica,) = cluster.replicas
+        seen.append((sim.now(), replica.outstanding_tokens, cluster.metrics().outstanding_tokens))
+
+    sim.spawn(read_at(2.0))  # a timer set before the replica exists
+    cluster = SimCluster(sim, COST, replicas=1)
+    future = cluster.submit(req("a", 6, 2))  # prefill ends at 1.25, the last token at 2.0
+    sim.spawn(read_at(1.25))
+    sim.spawn(read_at(2.0))
+    sim.run()
+    assert future.result().finish_s == 2.0
+    assert sorted(seen) == [(1.25, 1, 1), (2.0, 0, 0), (2.0, 0, 0)]
+    assert served(cluster)["a"].status == "finished"
+
+
 def test_cluster_routes_by_hook_and_reports_load(sim):
     seen = []
 

@@ -956,25 +956,24 @@ four extend its loop and reuse its simulation helper.
 ## 6. Inference 75
 
 The curated path (`paths/inference-75.toml`): the 75 problems to do, in order, to cover
-what a strong inference engineer must be able to write from memory. A dagger (†) marks
-problems that do not exist at the end of M2; the path file lists all 75, and the app
-skips the missing ones until they ship (58 exist at the end of M2).
+what a strong inference engineer must be able to write from memory. All 75 exist as of
+milestone 5.
 
 | # | stage | one sentence | problems |
 |---|---|---|---|
 | 1 | Numerics and tensors | Stable arithmetic and the indexing that every later problem assumes. | `stable-softmax`, `rmsnorm`, `attention-mask-builder`, `last-token-gather`, `sequence-log-likelihood` |
-| 2 | Text to tokens and back | Encode, decode, and template text exactly as a production tokenizer does. | `bpe-encode`, `special-tokens-split`, `streaming-detokenizer`, `chat-template-render`, `tokenizer-json-load`† |
-| 3 | The forward pass | Build a current decoder-only model piece by piece, then match a real one. | `causal-self-attention`, `rope`, `swiglu-mlp`, `grouped-query-attention`, `decoder-forward`, `padded-batch-invariance`, `moe-router-forward`, `real-model-logits`† |
+| 2 | Text to tokens and back | Encode, decode, and template text exactly as a production tokenizer does. | `bpe-encode`, `special-tokens-split`, `streaming-detokenizer`, `chat-template-render`, `tokenizer-json-load` |
+| 3 | The forward pass | Build a current decoder-only model piece by piece, then match a real one. | `causal-self-attention`, `rope`, `swiglu-mlp`, `grouped-query-attention`, `decoder-forward`, `padded-batch-invariance`, `moe-router-forward`, `real-model-logits` |
 | 4 | Choosing the next token | The samplers engines ship, composed in the right order, and when to stop. | `temperature-scaling`, `top-k-filtering`, `top-p-filtering`, `min-p-filtering`, `repetition-penalty`, `categorical-sample`, `sampler-chain`, `stop-sequences` |
-| 5 | The KV cache | Compute each token once, then share, page, and index the memory. | `kv-cache-append`, `cached-greedy-decode`, `cached-rope-offsets`, `preallocated-kv-cache`, `batched-cached-decode`, `prefix-cache-reuse`, `paged-kv-allocator`, `radix-prefix-cache`† |
-| 6 | Structured output | Turn a regex or schema into per-step token masks and decode under them. | `token-mask-apply`, `dfa-token-mask`, `dfa-token-index`, `constrained-greedy-decode`, `json-schema-regex`† |
-| 7 | Quantization | Shrink weights, compute on the codes, and measure what was lost. | `affine-int8`, `symmetric-per-channel`, `groupwise-4bit`, `quantized-matmul`, `lora-merge`, `gptq-column-update`† |
+| 5 | The KV cache | Compute each token once, then share, page, and index the memory. | `kv-cache-append`, `cached-greedy-decode`, `cached-rope-offsets`, `preallocated-kv-cache`, `batched-cached-decode`, `prefix-cache-reuse`, `paged-kv-allocator`, `radix-prefix-cache` |
+| 6 | Structured output | Turn a regex or schema into per-step token masks and decode under them. | `token-mask-apply`, `dfa-token-mask`, `dfa-token-index`, `constrained-greedy-decode`, `json-schema-regex` |
+| 7 | Quantization | Shrink weights, compute on the codes, and measure what was lost. | `affine-int8`, `symmetric-per-channel`, `groupwise-4bit`, `quantized-matmul`, `lora-merge`, `gptq-column-update` |
 | 8 | Speculative decoding | Draft cheaply and verify exactly, first for one token, then in a loop. | `greedy-speculative-verify`, `speculative-sampling-step`, `speculative-sampling-block`, `speculative-decode-loop` |
-| 9 | Sizing and measurement | Predict memory and speed from a config, and measure latency correctly. | `param-count`, `kv-cache-bytes`, `memory-bandwidth-bound`, `latency-metrics`, `latency-percentiles`, `goodput-slo`† |
-| 10 | Serving | Batch, admit, schedule, cancel, and stream under load. | `dynamic-batcher`, `sse-token-stream`, `token-bucket-limiter`, `admission-control`, `continuous-batching-scheduler`, `chunked-prefill-scheduling`, `deadline-cancellation`, `vtc-fair-scheduler`, `openai-chat-endpoint`, `preemption-recompute`†, `prefix-aware-router`† |
-| 11 | On the GPU | Lazy evaluation, compilation, and static caches on MLX and CUDA. | `mlx-lazy-eval-placement`†, `mlx-compile-step`†, `mlx-streaming-generate`†, `cuda-sync-free-decode-loop`†, `cuda-static-kv-cache`† |
-| 12 | Around the model | Place a model across devices and drive it from an application loop. | `device-map-solver`†, `tool-call-loop`† |
-| 13 | Capstones | Put it together: an engine and a complete runtime for a real model. | `capstone-continuous-batching-engine`†, `capstone-real-model-runtime`† |
+| 9 | Sizing and measurement | Predict memory and speed from a config, and measure latency correctly. | `param-count`, `kv-cache-bytes`, `memory-bandwidth-bound`, `latency-metrics`, `latency-percentiles`, `goodput-slo` |
+| 10 | Serving | Batch, admit, schedule, cancel, and stream under load. | `dynamic-batcher`, `sse-token-stream`, `token-bucket-limiter`, `admission-control`, `continuous-batching-scheduler`, `chunked-prefill-scheduling`, `deadline-cancellation`, `vtc-fair-scheduler`, `openai-chat-endpoint`, `preemption-recompute`, `prefix-aware-router` |
+| 11 | On the GPU | Lazy evaluation, compilation, and static caches on MLX and CUDA. | `mlx-lazy-eval-placement`, `mlx-compile-step`, `mlx-streaming-generate`, `cuda-sync-free-decode-loop`, `cuda-static-kv-cache` |
+| 12 | Around the model | Place a model across devices and drive it from an application loop. | `device-map-solver`, `tool-call-loop` |
+| 13 | Capstones | Put it together: an engine and a complete runtime for a real model. | `capstone-continuous-batching-engine`, `capstone-real-model-runtime` |
 
 ## 7. Coverage notes and deliberate omissions
 

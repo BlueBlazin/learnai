@@ -272,7 +272,10 @@ class Replica:
         total = 0
         for job in self._waiting:
             total += _work(job)
+        live = set(self.engine.live)
         for seq_id, job in self._running.items():
+            if seq_id not in live:
+                continue  # its last token came in a step that ends at this very instant
             done = self.engine.generated(seq_id)
             goal = 1 if job.phase == "prefill" else job.request.output_tokens
             total += self.engine.remaining_prefill(seq_id) + max(0, goal - done)

@@ -1,5 +1,4 @@
-# Inference 75: the curated study path. Generated from docs/CURRICULUM.md section 6;
-# it lists only problems that exist today and is regenerated as the catalog grows.
+# Inference 75: the curated study path. Generated from docs/CURRICULUM.md section 6.
 # Format: docs/ARCHITECTURE.md section 3.3, "Paths".
 id = "inference-75"
 title = "Inference 75"
@@ -28,17 +27,17 @@ problems = ["temperature-scaling", "top-k-filtering", "top-p-filtering", "min-p-
 [[stages]]
 title = "The KV cache"
 description = "Compute each token once, then share, page, and index the memory."
-problems = ["kv-cache-append", "cached-greedy-decode", "cached-rope-offsets", "preallocated-kv-cache", "batched-cached-decode", "prefix-cache-reuse", "paged-kv-allocator"]
+problems = ["kv-cache-append", "cached-greedy-decode", "cached-rope-offsets", "preallocated-kv-cache", "batched-cached-decode", "prefix-cache-reuse", "paged-kv-allocator", "radix-prefix-cache"]
 
 [[stages]]
 title = "Structured output"
 description = "Turn a regex or schema into per-step token masks and decode under them."
-problems = ["token-mask-apply", "dfa-token-mask", "dfa-token-index", "constrained-greedy-decode"]
+problems = ["token-mask-apply", "dfa-token-mask", "dfa-token-index", "constrained-greedy-decode", "json-schema-regex"]
 
 [[stages]]
 title = "Quantization"
 description = "Shrink weights, compute on the codes, and measure what was lost."
-problems = ["affine-int8", "symmetric-per-channel", "groupwise-4bit", "quantized-matmul", "lora-merge"]
+problems = ["affine-int8", "symmetric-per-channel", "groupwise-4bit", "quantized-matmul", "lora-merge", "gptq-column-update"]
 
 [[stages]]
 title = "Speculative decoding"
@@ -48,14 +47,24 @@ problems = ["greedy-speculative-verify", "speculative-sampling-step", "speculati
 [[stages]]
 title = "Sizing and measurement"
 description = "Predict memory and speed from a config, and measure latency correctly."
-problems = ["param-count", "kv-cache-bytes", "memory-bandwidth-bound", "latency-metrics", "latency-percentiles"]
+problems = ["param-count", "kv-cache-bytes", "memory-bandwidth-bound", "latency-metrics", "latency-percentiles", "goodput-slo"]
 
 [[stages]]
 title = "Serving"
 description = "Batch, admit, schedule, cancel, and stream under load."
-problems = ["dynamic-batcher", "sse-token-stream", "token-bucket-limiter", "admission-control", "continuous-batching-scheduler", "chunked-prefill-scheduling", "deadline-cancellation", "vtc-fair-scheduler", "openai-chat-endpoint"]
+problems = ["dynamic-batcher", "sse-token-stream", "token-bucket-limiter", "admission-control", "continuous-batching-scheduler", "chunked-prefill-scheduling", "deadline-cancellation", "vtc-fair-scheduler", "openai-chat-endpoint", "preemption-recompute", "prefix-aware-router"]
 
 [[stages]]
 title = "On the GPU"
 description = "Lazy evaluation, compilation, and static caches on MLX and CUDA."
 problems = ["mlx-lazy-eval-placement", "mlx-compile-step", "mlx-streaming-generate", "cuda-sync-free-decode-loop", "cuda-static-kv-cache"]
+
+[[stages]]
+title = "Around the model"
+description = "Place a model across devices and drive it from an application loop."
+problems = ["device-map-solver", "tool-call-loop"]
+
+[[stages]]
+title = "Capstones"
+description = "Put it together: an engine and a complete runtime for a real model."
+problems = ["capstone-continuous-batching-engine", "capstone-real-model-runtime"]
