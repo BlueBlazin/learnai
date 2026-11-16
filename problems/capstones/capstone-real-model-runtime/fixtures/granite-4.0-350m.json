@@ -1,0 +1,410 @@
+{
+ "revision": "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2",
+ "texts": [
+  {
+   "text": "Hello, world!",
+   "ids": [
+    9906,
+    11,
+    1917,
+    0
+   ],
+   "decoded": "Hello, world!"
+  },
+  {
+   "text": "In 2026",
+   "ids": [
+    644,
+    220,
+    2366,
+    21
+   ],
+   "decoded": "In 2026"
+  },
+  {
+   "text": "def f(x):\n    return x ** 2  # squared\n",
+   "ids": [
+    755,
+    282,
+    2120,
+    997,
+    262,
+    471,
+    865,
+    3146,
+    220,
+    17,
+    220,
+    674,
+    53363,
+    198
+   ],
+   "decoded": "def f(x):\n    return x ** 2  # squared\n"
+  },
+  {
+   "text": "na\u00efve caf\u00e9 \u65e5\u672c\u8a9e \ud83d\ude42",
+   "ids": [
+    3458,
+    38672,
+    588,
+    53050,
+    76502,
+    22656,
+    45918,
+    252,
+    28584
+   ],
+   "decoded": "na\u00efve caf\u00e9 \u65e5\u672c\u8a9e \ud83d\ude42"
+  },
+  {
+   "text": "<|start_of_role|>user<|end_of_role|><think>1,234,567 tokens</think>",
+   "ids": [
+    100264,
+    882,
+    100265,
+    100274,
+    16,
+    11,
+    11727,
+    11,
+    19282,
+    11460,
+    100275
+   ],
+   "decoded": "<|start_of_role|>user<|end_of_role|><think>1,234,567 tokens</think>"
+  },
+  {
+   "text": "",
+   "ids": [],
+   "decoded": ""
+  }
+ ],
+ "chats": [
+  {
+   "messages": [
+    {
+     "role": "user",
+     "content": "Hi!"
+    }
+   ],
+   "text": "<|start_of_role|>system<|end_of_role|>You are a helpful assistant. Please ensure responses are professional, accurate, and safe.<|end_of_text|>\n<|start_of_role|>user<|end_of_role|>Hi!<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>",
+   "ids": [
+    100264,
+    9125,
+    100265,
+    2675,
+    527,
+    264,
+    11190,
+    18328,
+    13,
+    5321,
+    6106,
+    14847,
+    527,
+    6721,
+    11,
+    13687,
+    11,
+    323,
+    6220,
+    13,
+    100257,
+    198,
+    100264,
+    882,
+    100265,
+    13347,
+    0,
+    100257,
+    198,
+    100264,
+    78191,
+    100265
+   ]
+  },
+  {
+   "messages": [
+    {
+     "role": "system",
+     "content": "Be brief."
+    },
+    {
+     "role": "user",
+     "content": "Name a color."
+    },
+    {
+     "role": "assistant",
+     "content": "Blue."
+    },
+    {
+     "role": "user",
+     "content": "Another one."
+    }
+   ],
+   "text": "<|start_of_role|>system<|end_of_role|>Be brief.<|end_of_text|>\n<|start_of_role|>user<|end_of_role|>Name a color.<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>Blue.<|end_of_text|>\n<|start_of_role|>user<|end_of_role|>Another one.<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>",
+   "ids": [
+    100264,
+    9125,
+    100265,
+    3513,
+    10015,
+    13,
+    100257,
+    198,
+    100264,
+    882,
+    100265,
+    678,
+    264,
+    1933,
+    13,
+    100257,
+    198,
+    100264,
+    78191,
+    100265,
+    10544,
+    13,
+    100257,
+    198,
+    100264,
+    882,
+    100265,
+    14364,
+    832,
+    13,
+    100257,
+    198,
+    100264,
+    78191,
+    100265
+   ]
+  },
+  {
+   "messages": [
+    {
+     "role": "system",
+     "content": ""
+    },
+    {
+     "role": "user",
+     "content": "  What is the capital\nof France?\n"
+    },
+    {
+     "role": "assistant",
+     "content": ""
+    },
+    {
+     "role": "system",
+     "content": "Answer in one word, please."
+    },
+    {
+     "role": "user",
+     "content": "And of Japan?"
+    }
+   ],
+   "text": "<|start_of_role|>system<|end_of_role|>You are a helpful assistant. Please ensure responses are professional, accurate, and safe.<|end_of_text|>\n<|start_of_role|>user<|end_of_role|>  What is the capital\nof France?\n<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|><|end_of_text|>\n<|start_of_role|>system<|end_of_role|>Answer in one word, please.<|end_of_text|>\n<|start_of_role|>user<|end_of_role|>And of Japan?<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>",
+   "ids": [
+    100264,
+    9125,
+    100265,
+    2675,
+    527,
+    264,
+    11190,
+    18328,
+    13,
+    5321,
+    6106,
+    14847,
+    527,
+    6721,
+    11,
+    13687,
+    11,
+    323,
+    6220,
+    13,
+    100257,
+    198,
+    100264,
+    882,
+    100265,
+    220,
+    3639,
+    374,
+    279,
+    6864,
+    198,
+    1073,
+    9822,
+    5380,
+    100257,
+    198,
+    100264,
+    78191,
+    100265,
+    100257,
+    198,
+    100264,
+    9125,
+    100265,
+    16533,
+    304,
+    832,
+    3492,
+    11,
+    4587,
+    13,
+    100257,
+    198,
+    100264,
+    882,
+    100265,
+    3112,
+    315,
+    6457,
+    30,
+    100257,
+    198,
+    100264,
+    78191,
+    100265
+   ]
+  }
+ ],
+ "generate": {
+  "prompt": [
+   100264,
+   9125,
+   100265,
+   2675,
+   527,
+   264,
+   11190,
+   18328,
+   13,
+   5321,
+   6106,
+   14847,
+   527,
+   6721,
+   11,
+   13687,
+   11,
+   323,
+   6220,
+   13,
+   100257,
+   198,
+   100264,
+   882,
+   100265,
+   13347,
+   0,
+   100257,
+   198,
+   100264,
+   78191,
+   100265
+  ],
+  "sampler": {
+   "repetition_penalty": 1.15,
+   "frequency_penalty": 0.2,
+   "presence_penalty": 0.1,
+   "top_k": 40,
+   "top_p": 0.9,
+   "min_p": 0.02,
+   "temperature": 0.8
+  },
+  "max_new_tokens": 10,
+  "eos": 100257,
+  "uniforms": [
+   0.7698729038238525,
+   0.6016131639480591,
+   0.7014091610908508,
+   0.10553395748138428,
+   0.6254858374595642,
+   0.9615782499313354,
+   0.42646896839141846,
+   0.12790696322917938,
+   0.9399358034133911,
+   0.6689428687095642
+  ],
+  "tokens": [
+   9906,
+   0,
+   2650,
+   649,
+   358,
+   7945,
+   499,
+   3432,
+   30
+  ],
+  "text": "Hello! How can I assist you today?"
+ },
+ "stream": {
+  "messages": [
+   {
+    "role": "system",
+    "content": "Be brief."
+   },
+   {
+    "role": "user",
+    "content": "Count from one to ten in words."
+   }
+  ],
+  "prompt_tokens": 24,
+  "sampler": {
+   "repetition_penalty": 1.0,
+   "frequency_penalty": 0.0,
+   "presence_penalty": 0.0,
+   "top_k": 1,
+   "top_p": 1.0,
+   "min_p": 0.0,
+   "temperature": 1.0
+  },
+  "max_new_tokens": 12,
+  "eos": 100257,
+  "uniforms": [
+   0.37169304490089417,
+   0.2113235592842102,
+   0.10501603782176971,
+   0.6470640301704407,
+   0.46096357703208923,
+   0.9681686162948608,
+   0.8375053405761719,
+   0.823482871055603,
+   0.0693812146782875,
+   0.5531313419342041,
+   0.6031659245491028,
+   0.06813564151525497
+  ],
+  "stop": [
+   "\n\n",
+   ", three"
+  ],
+  "tokens": [
+   4054,
+   11,
+   1403,
+   11,
+   2380,
+   11,
+   3116,
+   11,
+   4330,
+   11,
+   4848,
+   11
+  ],
+  "used": 5,
+  "pieces": [
+   "One",
+   ", two"
+  ],
+  "full_text": "One, two, three, four, five, six,"
+ }
+}

@@ -1,0 +1,71 @@
+id = "capstone-real-model-runtime"
+title = "A Complete Runtime for a Real Model"
+track = "capstones"
+order = 50
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["capstone", "real-model", "safetensors", "tokenizer", "chat-template", "kv-cache", "sampling", "streaming"]
+prerequisites = [
+    "real-model-logits",
+    "real-model-cached-generate",
+    "tokenizer-json-load",
+    "sampler-chain",
+]
+requires = "cpu"
+entry = [
+    "load_weights",
+    "Tokenizer",
+    "chat_prompt",
+    "forward",
+    "prefill",
+    "decode_step",
+    "sample_token",
+    "generate",
+    "stream_chat",
+]
+# The first case on the real model decodes 352 M weights from bfloat16 and hands them
+# to the framework (1 to 3 s, once per run).
+time_limit_s = 30
+# The statement's rules. Every component is the solution's own: the kit's reference
+# model may not be constructed, MLX's built-in rotary embedding may not be used, and
+# randomness is an input, never drawn here. The model libraries, a template engine, and
+# the kit's own tokenizer and checkpoint reader are ruled out of the source (rejects
+# the mutant uses_kit_tokenizer).
+forbidden = [
+    "whetstone.kit.realmodel.RealLM",
+    "whetstone.kit.realmodel.RealModel",
+    "mlx.nn.RoPE",
+    "mlx.core.fast.rope",
+    "torch.rand",
+    "torch.rand_like",
+    "torch.multinomial",
+    "torch.Tensor.multinomial",
+    "torch.distributions.Categorical",
+    "jax.random.uniform",
+    "jax.random.categorical",
+    "jax.random.choice",
+    "mlx.core.random.uniform",
+    "mlx.core.random.categorical",
+    "numpy.random.default_rng",
+    "numpy.random.rand",
+    "numpy.random.random",
+    "random.random",
+]
+forbidden_source = [
+    "transformers",
+    "tokenizers",
+    "safetensors",
+    "mlx_lm",
+    "jinja2",
+    "ByteLevelBPE",
+    "SafetensorsFile",
+]
+
+# The weights, the tokenizer, and config.json.
+[[assets]]
+name = "granite-4.0-350m"
+repo = "ibm-granite/granite-4.0-350m"
+revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
+files = ["config.json", "tokenizer.json", "model.safetensors"]
+size_mb = 712

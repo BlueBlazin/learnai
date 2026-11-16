@@ -1,0 +1,25 @@
+id = "capstone-structured-output-server"
+title = "A Structured-Output Server"
+track = "capstones"
+order = 40
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["service", "numeric", "cost"]
+tags = ["capstone", "openai-api", "structured-output", "json-schema", "constrained-decoding", "tool-calls", "sse"]
+prerequisites = [
+    "openai-chat-endpoint",
+    "json-schema-regex",
+    "dfa-token-index",
+    "tool-call-stream-parser",
+]
+requires = "cpu"
+entry = ["make_app"]
+time_limit_s = 30
+# The statement's rule, enforced by the harness: the kit compiles the regex, but the
+# token index is the solution's own, built through `dfa.step` only.
+forbidden = [
+    "whetstone.kit.constraint.DFAConstraint",
+    "whetstone.kit.dfa.CharDFA.accepts",
+    "whetstone.kit.dfa.CharDFA.accepts_prefix",
+    "whetstone.kit.dfa.CharDFA.is_live",
+]
