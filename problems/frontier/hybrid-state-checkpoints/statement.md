@@ -10,7 +10,7 @@ which one to resume from, and which to keep when the store is full.
 def generate_with_checkpoints(lm, store, prompt, max_new_tokens, interval, max_checkpoints): ...
 ```
 
-`lm` is a [`RecurrentLM`](../../../python/src/whetstone/kit/recurrent.py). It is
+`lm` is a [`RecurrentLM`](../../../python/src/learnai/kit/recurrent.py). It is
 called like the `TinyLM` of `prefix-cache-reuse`:
 
 ```python

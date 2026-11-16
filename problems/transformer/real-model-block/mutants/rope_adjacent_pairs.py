@@ -1,7 +1,7 @@
 # BUG: rotates adjacent feature pairs (2i, 2i + 1), the layout of the kit's ops.rope and of Meta's Llama code, instead of pairing feature i with feature i + 32.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 HEAD_DIM = 64
 NORM_EPS = 1e-5

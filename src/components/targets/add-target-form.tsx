@@ -44,7 +44,7 @@ export function AddTargetForm({
   const value = available.some((host) => host.alias === chosen) ? chosen : (available[0]?.alias ?? null);
   const note = (
     <p className="text-xs text-muted-foreground">
-      Keys and passwords stay with SSH and your agent; Whetstone never reads or stores them.
+      Keys and passwords stay with SSH and your agent; Learn AI never reads or stores them.
     </p>
   );
 
@@ -98,8 +98,8 @@ export function AddTargetForm({
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        Hosts come from ~/.ssh/config. The machine needs uv; Whetstone copies the judge to ~/.whetstone there
-        and builds its own Python environment on the first check or run.
+        Hosts come from ~/.ssh/config. The machine needs uv; Learn AI copies the judge to ~/.learnai there and
+        builds its own Python environment on the first check or run.
       </p>
       {note}
     </div>

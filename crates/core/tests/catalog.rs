@@ -6,8 +6,8 @@ use std::fs;
 use std::time::Instant;
 
 use common::TestRoot;
-use whetstone_core::catalog::CatalogLoader;
-use whetstone_core::{CoreError, Difficulty, Framework, JudgeKind, ProblemStatus, Requires};
+use learnai_core::catalog::CatalogLoader;
+use learnai_core::{CoreError, Difficulty, Framework, JudgeKind, ProblemStatus, Requires};
 
 #[test]
 fn lists_valid_problems_in_track_then_problem_order() {

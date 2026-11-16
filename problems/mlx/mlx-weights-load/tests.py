@@ -26,9 +26,9 @@ import mlx.core as mx
 import numpy as np
 from mlx.utils import tree_flatten, tree_unflatten
 
+from learnai.judge import case, check
+from learnai.kit import EvalSpy, MLXTinyLM, mlx_memory
 from mlx import nn
-from whetstone.judge import case, check
-from whetstone.kit import EvalSpy, MLXTinyLM, mlx_memory
 
 FN = "load_into"
 TOKENS = [0, 17, 30, 5, 9, 23]  # all below 32, the smallest vocabulary used here
@@ -103,7 +103,7 @@ def watch_load():
 
 def write(ctx, tensors):
     """Write {name: mx.array} to a fresh safetensors file; removed after the case."""
-    folder = tempfile.mkdtemp(prefix="whetstone-weights-")
+    folder = tempfile.mkdtemp(prefix="learnai-weights-")
     ctx.defer(lambda: shutil.rmtree(folder, ignore_errors=True))
     path = os.path.join(folder, "model.safetensors")
     mx.save_safetensors(path, tensors)

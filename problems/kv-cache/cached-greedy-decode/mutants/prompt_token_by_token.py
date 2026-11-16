@@ -1,7 +1,7 @@
 # BUG: feeds the prompt one token per call instead of prefilling it in a single call; the tokens are right but it makes len(prompt) - 1 extra forward calls.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def greedy_decode(

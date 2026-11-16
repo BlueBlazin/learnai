@@ -1,7 +1,7 @@
 # BUG: lets every token attend to the whole sequence; only the last position's logits come out right.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

@@ -6,8 +6,8 @@ import math
 import numpy as np
 import pytest
 
-from whetstone.judge import frameworks
-from whetstone.kit import (
+from learnai.judge import frameworks
+from learnai.kit import (
     CountingExperts,
     CountingScorer,
     LayerCache,

@@ -1,7 +1,7 @@
 # BUG: has no cache at all: the 'cache' is the list of token ids, and every decode step runs the whole text through all layers again. The tokens are right; a step after a long prompt costs as much as reading the prompt.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 # The cache: for each layer, (keys, values) of every token read so far, each of shape
 # (n_kv_heads, length, head_dim). Keys are stored already rotated.

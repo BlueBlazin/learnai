@@ -1,11 +1,11 @@
-# Whetstone architecture
+# Learn AI architecture
 
-Whetstone is a native desktop app for mastering LLM inference and serving through
+Learn AI is a native desktop app for mastering LLM inference and serving through
 LeetCode-style practice problems. This document is the contract between components.
 If you change a contract here, change every side of it in the same piece of work.
 
-Working name: **Whetstone**. Bundle identifier: `dev.whetstone.app`. Python package and
-CLI: `whetstone` / `ws`.
+Name: **Learn AI**. Bundle identifier: `dev.learnai.app`. Python package and CLI:
+`learnai`.
 
 Language: American English everywhere (code, comments, docs, UI text, commits).
 Library versions: see `docs/VERSIONS.md`. Never pin a version from memory; look it up.
@@ -18,26 +18,26 @@ learnai/
   package.json, vite.config.ts, components.json, index.html     front-end project root
   src/                     React + TypeScript front end
   src-tauri/               Tauri shell: window, command layer only (thin)
-  crates/core/             whetstone-core: all app logic, no Tauri dependency
+  crates/core/             learnai-core: all app logic, no Tauri dependency
   crates/devbridge/        dev-only HTTP bridge exposing core to a plain browser
   Cargo.toml               Cargo workspace (src-tauri, crates/*)
-  python/                  uv project: the `whetstone` package (judge, kit, CLI)
+  python/                  uv project: the `learnai` package (judge, kit, CLI)
   problems/<track>/<id>/   the problem catalog
   workspace/               the user's solutions (gitignored)
-  .whetstone/              local state: SQLite database, caches (gitignored)
+  .learnai/              local state: SQLite database, caches (gitignored)
 ```
 
 ## 2. Processes
 
 ```
-React UI  --invoke/Channel-->  src-tauri (thin)  -->  whetstone-core (Rust)
-                                                        |  SQLite (.whetstone/state.db)
+React UI  --invoke/Channel-->  src-tauri (thin)  -->  learnai-core (Rust)
+                                                        |  SQLite (.learnai/state.db)
                                                         |  files (problems/, workspace/)
-                                                        '--spawns-->  uv run ... python -m whetstone.harness
+                                                        '--spawns-->  uv run ... python -m learnai.harness
                                                                          (one subprocess per run; JSONL events on stdout)
 ```
 
-- **whetstone-core** owns: catalog loading, solution files, submissions and progress,
+- **learnai-core** owns: catalog loading, solution files, submissions and progress,
   environment setup, run orchestration (spawn, stream, cancel, timeout), targets
   (local now; SSH in milestone 4), spaced re-solve (milestone 5).
 - **src-tauri** only maps Tauri commands to core functions and forwards run events
@@ -51,7 +51,7 @@ React UI  --invoke/Channel-->  src-tauri (thin)  -->  whetstone-core (Rust)
   `window.__TAURI_INTERNALS__` exists, else HTTP when `VITE_BACKEND=http`, else fixtures.
 
 **Content root.** Core needs the directory holding `python/`, `problems/`, `workspace/`.
-Resolution order: env `WHETSTONE_ROOT`, then the saved setting, then the repository path
+Resolution order: env `LEARNAI_ROOT`, then the saved setting, then the repository path
 captured at compile time.
 
 ## 3. Python side
@@ -63,7 +63,7 @@ One uv project at `python/` with ONE virtual environment.
 - Base dependencies always present: `torch` (the oracle runtime), `numpy`, `httpx`,
   `uvicorn`, `starlette`, plus judge internals.
 - Optional extras: `jax`, `mlx`, `models` (huggingface_hub, safetensors, tokenizers,
-  transformers, and mlx-lm on macOS). `models` is needed only by `ws assets fetch` and
+  transformers, and mlx-lm on macOS). `models` is needed only by `learnai assets fetch` and
   by authors generating fixtures; the harness and the kit read downloaded files with
   numpy.
 - The `mlx` extra and `mlx-lm` carry the marker `sys_platform == 'darwin' and
@@ -135,15 +135,15 @@ time_limit_s = 10                # default per-case limit
 
 ```toml
 [[assets]]
-name = "granite-4.0-350m"        # directory under <root>/.whetstone/models/
+name = "granite-4.0-350m"        # directory under <root>/.learnai/models/
 repo = "ibm-granite/granite-4.0-350m"
 revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"   # full commit hash
 files = ["config.json", "tokenizer.json", "model.safetensors"]   # names or globs; safetensors, tokenizer, and config files only
 size_mb = 712                    # approximate download size
 ```
 
-Model assets live in `<root>/.whetstone/models/<name>/` (gitignored) beside a
-`whetstone-asset.json` manifest. An asset is present when the manifest matches the
+Model assets live in `<root>/.learnai/models/<name>/` (gitignored) beside a
+`learnai-asset.json` manifest. An asset is present when the manifest matches the
 declared repository and revision, covers the declared files, and every file has its
 recorded size. Cases declare what they need with `@case(requires=..., assets=[...])`;
 the default is `requires="cpu"` and every asset of the problem.
@@ -188,7 +188,7 @@ learner's study path.
 
 ```
 uv run --project <root>/python [--extra jax] [--extra mlx] -- \
-  python -m whetstone.harness \
+  python -m learnai.harness \
     --problem <abs problem dir> --solution <abs solution file> \
     --framework torch|jax|mlx|python --mode run|submit [--case <case id>] [--reveal]
 ```
@@ -200,11 +200,11 @@ uv run --project <root>/python [--extra jax] [--extra mlx] -- \
   for harness or usage failure.
 - The solution runs inside this subprocess. Core enforces an overall wall-clock limit
   and kills the process group on cancel or timeout.
-- Environment variables: `WHETSTONE_MODELS_DIR` replaces `<root>/.whetstone/models`;
-  `WHETSTONE_HARDWARE` is a comma-separated list of hardware to treat as present (tests
-  and previews only); `WHETSTONE_JAX_CACHE` is the directory of JAX's persistent
-  compilation cache (default `<root>/.whetstone/cache/jax`; `0` disables). Anything
-  under `<root>/.whetstone/cache/` is disposable.
+- Environment variables: `LEARNAI_MODELS_DIR` replaces `<root>/.learnai/models`;
+  `LEARNAI_HARDWARE` is a comma-separated list of hardware to treat as present (tests
+  and previews only); `LEARNAI_JAX_CACHE` is the directory of JAX's persistent
+  compilation cache (default `<root>/.learnai/cache/jax`; `0` disables). Anything
+  under `<root>/.learnai/cache/` is disposable.
 
 ### 3.6 Event protocol
 
@@ -273,33 +273,33 @@ Skipped cases and the two "not judged" endings:
   first meaningful line of its text.
 - Output printed while the solution module is imported arrives as non-prefixed log lines.
 - `start.env` also carries `platform`.
-- With no saved solution file, `ws run` judges the starter and says so.
+- With no saved solution file, `learnai run` judges the starter and says so.
 
 ### 3.7 CLI
 
-`uv run --project python ws <command>`: `list`, `run <id> [-f framework]`,
+`uv run --project python learnai <command>`: `list`, `run <id> [-f framework]`,
 `submit <id> [-f framework]`, `validate [<id> | --all] [--require-assets]`,
 `new <track>/<id>`, `assets list [--json]`,
 `assets fetch <name>... | --all [--json] [--no-verify]`, `doctor [--json]`.
 
-`ws doctor --json` prints one JSON document describing the environment it runs in:
-`schema`, `whetstone`, `python`, `executable`, `platform{system,machine,release}`,
+`learnai doctor --json` prints one JSON document describing the environment it runs in:
+`schema`, `learnai`, `python`, `executable`, `platform{system,machine,release}`,
 `frameworks{torch,jax,mlx}` (installed version or null), `packages`,
 `hardware{cpu{present,cores}, mlx-gpu{present,name,memory_bytes},
 cuda{present,name,memory_bytes,devices[],torch_cuda_version}}`, `hardware_override`,
 `root`, `models_dir`. It needs no extra and no network and never fails because a
 package is missing (full schema: PROBLEM_AUTHORING section 19).
 
-`ws assets list --json` prints one JSON document (`models_dir`, `assets[]` with `name`,
+`learnai assets list --json` prints one JSON document (`models_dir`, `assets[]` with `name`,
 `repo`, `revision`, `files`, `size_mb`, `state` = `present | missing | incomplete`,
 `present`, `reason`, `path`, `bytes_on_disk`, `problems`, `fetch_command`, and
-`issues[]`); it needs no extra and no network. `ws assets fetch ... --json` needs
+`issues[]`); it needs no extra and no network. `learnai assets fetch ... --json` needs
 `--extra models` and writes `@@WS@@ `-prefixed events `asset_start`, `asset_progress`,
 `asset_file`, and `asset_end` (exactly one per asset, last, with `ok` and `message`);
 exit code 0 when every asset succeeded, 1 when one failed, 2 for a usage error. A fetch
 is pinned to the declared revision, verified, and resumable per file. Full schemas:
 PROBLEM_AUTHORING section 15.
-Core passes `WHETSTONE_ROOT=<root>` to `ws assets` commands.
+Core passes `LEARNAI_ROOT=<root>` to `learnai assets` commands.
 
 `validate` is the quality gate. For every supported framework of a problem: the reference
 is accepted; the starter is not accepted. Every mutant is rejected. Metadata is complete
@@ -425,8 +425,8 @@ Commands (Tauri command names are snake_case; the `Backend` interface uses camel
 | `list_paths` | | `Path[]` |
 | `get_problem_asset` | `id, path` | `string`: a `data:` URL. `path` is relative to the problem's `assets/` directory and may not escape it; only `.svg` and `.png`, at most 1 MiB; an SVG must be UTF-8 and a PNG must have the PNG signature |
 | `list_catalog_issues` | | `{ path: string; message: string }[]` (malformed tracks, problems, and paths, and path entries that were skipped) |
-| `list_assets` | | `AssetList` (runs `ws assets list --json`) |
-| `fetch_assets` | `names: string[], target?` + event sink | `jobId: string`; stream of `AssetEvent` (runs `ws assets fetch <names> --json` with `--extra models`) |
+| `list_assets` | | `AssetList` (runs `learnai assets list --json`) |
+| `fetch_assets` | `names: string[], target?` + event sink | `jobId: string`; stream of `AssetEvent` (runs `learnai assets fetch <names> --json` with `--extra models`) |
 | `cancel_asset_fetch` | `jobId` | |
 | `remove_asset` | `name` | `AssetList`; deletes `<models dir>/<name>` after checking that `name` is a declared asset |
 
@@ -483,7 +483,7 @@ type TargetCheckEvent =
 |---|---|---|
 | `list_ssh_hosts` | | `SshHost[]` |
 | `list_targets` | | `TargetInfo[]`, `local` first |
-| `add_target` | `host, remoteDir?` | `TargetInfo[]`; `host` must be an alias from `list_ssh_hosts`; `remoteDir` defaults to `~/.whetstone` |
+| `add_target` | `host, remoteDir?` | `TargetInfo[]`; `host` must be an alias from `list_ssh_hosts`; `remoteDir` defaults to `~/.learnai` |
 | `remove_target` | `name` | `TargetInfo[]`; removing `local` fails; nothing is deleted on the remote host |
 | `check_target` | `name` + event sink | `jobId: string`; stream of `TargetCheckEvent` |
 
@@ -498,11 +498,11 @@ Rules:
 - Remote layout: `<remoteDir>/root/` mirrors a content root: `python/` (without the
   virtual environment and caches), `problems/<track>/<id>/` for the problem being run,
   and `workspace/<id>/<framework>.py` for the solution. `launch` syncs these (only
-  what changed), then runs the section 3.5 command there with `WHETSTONE_ROOT` set and
+  what changed), then runs the section 3.5 command there with `LEARNAI_ROOT` set and
   the extras the job's framework needs, emitting `preparing` events for each step.
 - `check_target` runs the bootstrap: connect; find `uv` (the `fix` gives the official
   install command, which the user runs; the app does not install software on a remote
-  host unasked); sync `python/`; build the environment; run `ws doctor --json`. The
+  host unasked); sync `python/`; build the environment; run `learnai doctor --json`. The
   result is saved as `lastCheck`. A run on a target never requires a prior check.
   The environment step runs `uv sync --inexact`. `check_target` on `local` runs only
   the `uv` and `doctor` steps and installs nothing. A check cannot be canceled.
@@ -513,7 +513,7 @@ Rules:
   dropped mid-run ends the run with `harness_error` and a message saying so.
 - Targets are stored in the settings table. Submissions record the target name.
   `start_run` with an unknown target fails with a clear message.
-- Model assets on a remote target live under `<remoteDir>/root/.whetstone/models/`.
+- Model assets on a remote target live under `<remoteDir>/root/.learnai/models/`.
   `fetch_assets` takes an optional `target` (default `local`) and runs the same fetch
   there, syncing the problem directories that declare the assets first; `list_assets`
   and `remove_asset` are local only.

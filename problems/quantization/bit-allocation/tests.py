@@ -12,7 +12,7 @@ from functools import reduce
 from itertools import product
 from math import gcd
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 MIB = 1 << 20
 

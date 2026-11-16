@@ -1,6 +1,6 @@
 import mlx.core as mx
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def batched_greedy(

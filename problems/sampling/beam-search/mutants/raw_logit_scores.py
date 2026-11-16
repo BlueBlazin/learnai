@@ -1,7 +1,7 @@
 # BUG: accumulates raw logits instead of log-probabilities; logits are not normalized per beam, so scores of different beams are not comparable.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def beam_search(

@@ -21,8 +21,8 @@ import struct
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import CountingFile, SafetensorsFile
+from learnai.judge import case, check
+from learnai.kit import CountingFile, SafetensorsFile
 
 FN = "load_quantized"
 ASSET = "granite-4.2-3b-mlx-8bit"

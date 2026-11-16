@@ -1,7 +1,7 @@
 # BUG: with a cache, the new tokens of a chunk attend to every entry, including the new tokens after them.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

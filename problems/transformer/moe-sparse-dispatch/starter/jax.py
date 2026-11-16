@@ -1,6 +1,6 @@
 import jax
 
-from whetstone.kit import CountingExperts
+from learnai.kit import CountingExperts
 
 
 def moe_sparse(x: jax.Array, w_router: jax.Array, experts: CountingExperts, k: int) -> jax.Array:

@@ -33,8 +33,8 @@ import mlx.core as mx
 import numpy as np
 from mlx.utils import tree_flatten
 
-from whetstone.judge import case, check
-from whetstone.kit import EvalSpy, MLXTinyLM
+from learnai.judge import case, check
+from learnai.kit import EvalSpy, MLXTinyLM
 
 FN = "benchmark"
 

@@ -1,7 +1,7 @@
 # BUG: ignores the cache and runs the prompt plus every beam's tokens through the model at each step; the hypotheses are right but the number of tokens processed is quadratic.
 import torch
 
-from whetstone.kit import TinyLM, ops
+from learnai.kit import TinyLM, ops
 
 
 def beam_search(

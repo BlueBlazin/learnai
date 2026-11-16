@@ -1,7 +1,7 @@
 # BUG: applies RoPE to all keys after appending, so every cached key, already rotated when it was new, is rotated again at each step.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 # The cache: for each layer, (keys, values) of every token read so far, each of shape
 # (n_kv_heads, length, head_dim). Keys are stored already rotated.

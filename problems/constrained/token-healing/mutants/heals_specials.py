@@ -1,5 +1,5 @@
 # BUG: a special token at the end of the prompt is treated like any other: its bytes are empty, every token 'starts with' the empty string, so the special token is removed from the prompt and lost.
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def heal(prompt_ids: list[int], vocab: ToyVocab) -> tuple[list[int], bytes]:

@@ -11,8 +11,8 @@ import json
 
 import httpx
 
-from whetstone.judge import CheckFailure, case, check, iter_sse
-from whetstone.kit import ScriptedLM
+from learnai.judge import CheckFailure, case, check, iter_sse
+from learnai.kit import ScriptedLM
 
 URL = "/v1/chat/completions"
 HELLO = ["Hello", ",", " world", "!"]

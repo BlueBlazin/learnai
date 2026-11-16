@@ -14,7 +14,7 @@ and then what the sampler is for, the mean surprise of the output.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "mirostat_step"
 INF = np.inf

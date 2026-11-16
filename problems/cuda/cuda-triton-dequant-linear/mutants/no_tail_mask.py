@@ -1,7 +1,7 @@
 # BUG: loads whole blocks with no mask; a block that hangs over the row multiplies the next row's activations and codes into this output, and the last rows read past the end of the tensors.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

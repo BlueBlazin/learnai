@@ -10,7 +10,7 @@ list has no system message, and consecutive tool results sharing one turn).
 
 import copy
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 WORDS = ["the", "model", "reads", "prompt", "and", "writes", "next", "token"]
 WORDS += ["while", "cache", "stays", "warm", "for", "every", "turn"]

@@ -1,4 +1,4 @@
-//! Whetstone core: all application logic lives here. See `docs/ARCHITECTURE.md`.
+//! Learn AI core: all application logic lives here. See `docs/ARCHITECTURE.md`.
 //!
 //! The crate has no Tauri dependency. Shells (the Tauri app, the devbridge) construct a
 //! [`Core`] for a content root and map their commands onto its methods; streaming

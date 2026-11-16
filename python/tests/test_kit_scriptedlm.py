@@ -9,8 +9,8 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
-from whetstone.judge import SimClock, iter_sse, serve
-from whetstone.kit import ScriptedLM, ScriptedStream, StreamRecord
+from learnai.judge import SimClock, iter_sse, serve
+from learnai.kit import ScriptedLM, ScriptedStream, StreamRecord
 
 SCRIPT = ["Hello", ",", " world", "!"]
 

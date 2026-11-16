@@ -27,9 +27,9 @@ import mlx.core as mx
 import numpy as np
 from mlx.utils import tree_flatten, tree_map
 
+from learnai.judge import case, check
+from learnai.kit import MLXTinyLM, mlx_memory
 from mlx import nn
-from whetstone.judge import case, check
-from whetstone.kit import MLXTinyLM, mlx_memory
 
 FLOAT_LAYERS = (nn.Linear, nn.Embedding)
 QUANTIZED_LAYERS = (nn.QuantizedLinear, nn.QuantizedEmbedding)

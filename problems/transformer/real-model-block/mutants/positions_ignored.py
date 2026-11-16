@@ -1,7 +1,7 @@
 # BUG: rotates by 0, 1, ..., T - 1 whatever `positions` says.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 HEAD_DIM = 64
 NORM_EPS = 1e-5

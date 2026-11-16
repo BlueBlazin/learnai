@@ -1,7 +1,7 @@
 # BUG: the number of bits is read once, from the embedding matrix, and assumed for every matrix of the checkpoint.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

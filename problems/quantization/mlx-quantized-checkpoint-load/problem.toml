@@ -15,9 +15,9 @@ time_limit_s = 10
 # the mutant uses_kit_dequantize); the safetensors package and the kit's reader are
 # ruled out of the source.
 forbidden = [
-    "whetstone.kit.realmodel.dequantize",
-    "whetstone.kit.realmodel.unpack_codes",
-    "whetstone.kit.realmodel.RealModel",
+    "learnai.kit.realmodel.dequantize",
+    "learnai.kit.realmodel.unpack_codes",
+    "learnai.kit.realmodel.RealModel",
     "mlx.core.dequantize",
     "mlx.core.load",
 ]

@@ -1,6 +1,6 @@
 # Problem authoring guide
 
-This is the authoritative guide for writing Whetstone problems. It covers the directory
+This is the authoritative guide for writing Learn AI problems. It covers the directory
 format, the test API for all seven judge types, the framework adapter, the kit, the
 rules that keep judging deterministic, and the validation workflow. You should not need
 to read the judge's source to write a problem.
@@ -30,43 +30,43 @@ All commands below run from the repository root. Always pass both extras; a bare
 `uv sync` removes the optional frameworks.
 
 ```sh
-uv run --project python --extra jax --extra mlx ws <command>
+uv run --project python --extra jax --extra mlx learnai <command>
 ```
 
-The rest of this guide abbreviates that prefix to `ws`. Downloading model weights and
+The rest of this guide abbreviates that prefix to `learnai`. Downloading model weights and
 generating fixtures from a reference implementation additionally need `--extra models`
 (section 15); nothing else does.
 
 ## 1. Workflow
 
 ```sh
-ws new decoding/top-p-filter --title "Nucleus (Top-p) Filtering"   # scaffold
+learnai new decoding/top-p-filter --title "Nucleus (Top-p) Filtering"   # scaffold
 # ... write the problem; replace every TODO(author) marker ...
-ws submit top-p-filter -f torch --reference        # iterate on the tests
-ws submit top-p-filter --mutant forgets_renormalize
-ws run top-p-filter -f mlx --starter               # what a learner sees first
-ws validate top-p-filter -v                        # the gate; must pass before merging
+learnai submit top-p-filter -f torch --reference        # iterate on the tests
+learnai submit top-p-filter --mutant forgets_renormalize
+learnai run top-p-filter -f mlx --starter               # what a learner sees first
+learnai validate top-p-filter -v                        # the gate; must pass before merging
 uv run --project python --extra jax --extra mlx ruff check problems/decoding/top-p-filter
 ```
 
-`ws new <track>/<id>` takes `--frameworks torch,jax,mlx` (the default),
+`learnai new <track>/<id>` takes `--frameworks torch,jax,mlx` (the default),
 `--frameworks python`, or `--frameworks mlx` (an MLX-only problem, section 13), plus
 `--title` and `--difficulty`. It writes a complete toy
-problem in the house layout and creates `track.toml` if the track is new. `ws validate`
+problem in the house layout and creates `track.toml` if the track is new. `learnai validate`
 refuses any problem that still contains `TODO(author)`.
 
-`ws run` executes public cases, `ws submit` all cases. Both take `-f <framework>` and one
+`learnai run` executes public cases, `learnai submit` all cases. Both take `-f <framework>` and one
 of `--reference`, `--starter`, `--mutant <name>`, or `--solution <path>`; with none of
 them they judge `workspace/<id>/<framework>.py`. `--case <id>` runs a single case and
 `--events` prints the raw protocol.
 
-`ws run` and `ws submit` show what a learner sees: a hidden case is `hidden-3` /
+`learnai run` and `learnai submit` show what a learner sees: a hidden case is `hidden-3` /
 "Hidden case 3", with its one-line message and nothing else. Add `--reveal` while you
 write a problem to see hidden cases under their real ids and names, with the failure
 detail. `--case` takes the id as it is displayed: `--case hidden-3`, or
-`--reveal --case very_negative`. `ws validate` always reports real ids.
+`--reveal --case very_negative`. `learnai validate` always reports real ids.
 
-### What `ws validate` enforces
+### What `learnai validate` enforces
 
 For every framework the problem lists:
 
@@ -126,7 +126,7 @@ are skipped by the harness, and validation never counts what it did not see:
   counts such problems: "110 of 110 problems passed validation; 14 passed with cases
   that could NOT be validated on this machine (see the warnings above)".
 - When every case ran and only the problem's `requires` is unmet (no case is marked,
-  or `ws run` selected only CPU cases), nothing was skipped and the warning says so:
+  or `learnai run` selected only CPU cases), nothing was skipped and the warning says so:
   "all 9 cases ran and passed, but not on the hardware the problem requires (an Apple
   GPU (MLX with Metal)), which this machine does not have". In that situation a
   starter or mutant that passes every case is an error, exactly as on a machine with
@@ -140,7 +140,7 @@ are skipped by the harness, and validation never counts what it did not see:
   "80 of 81 problems passed validation; 1 skipped (not validated on this machine, see
   above)". A skip does not fail the command. Static checks (metadata, files, the
   `forbidden` list) still run.
-- `ws validate --require-assets` makes a missing asset an error. Use it on the machine
+- `learnai validate --require-assets` makes a missing asset an error. Use it on the machine
   that is supposed to validate everything (and in CI once that machine has the weights).
 
 Harness runs execute in parallel (`-j N`, default 4), with one exception that needs no
@@ -259,7 +259,7 @@ helper does for you.
 
 import numpy as np
 
-from whetstone.judge import case
+from learnai.judge import case
 
 BOTH = ("softmax", "log_softmax")
 
@@ -291,7 +291,7 @@ def very_negative(ctx):
 
 **What leaves the harness for a hidden case.** Neither the id nor the name: a function
 called `masked_logits` would tell the learner what the hidden test checks. On the wire,
-in the app, and in `ws run` / `ws submit`, a hidden case is `hidden-N` and "Hidden case
+in the app, and in `learnai run` / `learnai submit`, a hidden case is `hidden-N` and "Hidden case
 N", where N counts the hidden cases of `tests.py` in definition order (all of them,
 whatever the framework, so `hidden-3` is the same test for everyone). Inserting or
 reordering hidden cases renumbers the ones after it. So name hidden cases and their
@@ -336,12 +336,12 @@ def resumes(ctx): ...
   preemption, 2 of 5 passed" with three of those five being "Hidden case N". So a
   label names the part of the build, never what a hidden test probes. At most 60
   characters, one line.
-- Either every case of a problem has a stage or none has; `ws validate` rejects a
+- Either every case of a problem has a stage or none has; `learnai validate` rejects a
   mix. Nothing else about a case changes: ids, hidden numbering (`hidden-N` counts
   across stages), time limits, and the verdict are as before. A stage is not a gate:
   every case runs whatever happened in earlier stages, so make each stage's cases
   fail cleanly (not crash the file) when a later entry point is still a stub.
-- `ws run` and `ws submit` print a heading whenever the stage changes and, under the
+- `learnai run` and `learnai submit` print a heading whenever the stage changes and, under the
   verdict, one line per stage with its pass count. The curriculum's convention for
   capstones still holds: early stages public-heavy, the last one hidden-heavy.
 
@@ -541,7 +541,7 @@ A name is the full dotted path, starting at the package, of one of:
 | a method on a tensor or other class | `torch.Tensor.softmax` | `x.softmax(-1)` |
 | a class | `torch.nn.RMSNorm`, `mlx.nn.RoPE` | constructing it (also through a subclass) |
 
-Two kinds of names cannot be guarded, and `ws validate` refuses them with the reason
+Two kinds of names cannot be guarded, and `learnai validate` refuses them with the reason
 rather than accept a rule it cannot enforce:
 
 - **Something that is not called**: a dtype (`torch.bfloat16`), a constant. There is
@@ -565,13 +565,13 @@ How it works, so you can predict it:
 - Any other caller gets the original function. The oracle, the same-framework
   reference (`ctx.baseline`, `ctx.check_speed`), your tests, and the kit are not the
   solution file, so they are unaffected. **References must not need a forbidden call**
-  all the same: `ws validate` judges each reference as a solution, and it would fail.
+  all the same: `learnai validate` judges each reference as a solution, and it would fail.
 - The guard is transitive. `torch.nn.Softmax(dim)(x)` ends up in
   `torch.nn.functional.softmax`, so it is caught without being listed. The price: do
   not forbid a low-level utility that allowed library functions use internally
   (forbidding `time.monotonic` in a JAX problem fails correct solutions, because JAX
   reads the clock while it compiles). Forbid the specific shortcut, and let
-  `ws validate` confirm that the references still pass.
+  `learnai validate` confirm that the references still pass.
 - Names from all frameworks go in one list. Only the names of packages that are
   loaded are guarded, and the list is checked again before every case, so a JAX
   solution that imports torch to borrow its `softmax` is caught as well.
@@ -618,7 +618,7 @@ the shortcut (section 11), and the statement must still state the rule in words.
 
 ### The `check` helpers
 
-`from whetstone.judge import check`
+`from learnai.judge import check`
 
 | helper | use |
 |---|---|
@@ -778,7 +778,7 @@ Rules:
 - **Power.** The acceptance half-width is about $\sqrt{2\,p(1-p)\,t/N}$ with
   $t \approx 26$ for $K = 8$. With $N = 4000$ and $p = 0.3$ that is $\pm 0.052$; with
   $N = 20000$, $\pm 0.023$. Choose $N$ so that each mutant's distortion is outside the
-  band, and confirm it with `ws validate`. In a tensor framework a call costs tens of
+  band, and confirm it with `learnai validate`. In a tensor framework a call costs tens of
   microseconds to a millisecond, so $N$ of 2000 to 5000 is the practical range there;
   framework-free problems can afford 20000.
 - **Pin down how the randomness is used.** Because the seed is fixed, a given solution
@@ -793,7 +793,7 @@ An instrumented kit object counts the work the solution asks of it, and the test
 asserts on the count. Counts are exact, so there is no tolerance.
 
 ```python
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 @case("each token goes through the model once", public=True)
 def linear_cost(ctx):
@@ -926,7 +926,7 @@ Rules:
   must be the idiomatic fast solution in that framework. Never compare across
   frameworks: JAX runs on the CPU here, MLX and torch may use the GPU.
 - For custom timing (a class, a multi-step protocol), use `ctx.compare_speed` (above).
-  The lower-level pair `whetstone.judge.speed.compare(run_solution, run_reference)`
+  The lower-level pair `learnai.judge.speed.compare(run_solution, run_reference)`
   and `speed.require(result, max_ratio=..., label=..., ctx=ctx, tokens=None)` remains;
   with it each callable must call `ctx.fw.sync(result)` itself.
 - A speed case that only makes sense on a GPU gets `requires=` (section 14), so a
@@ -991,8 +991,8 @@ returns `[fn(item) for item in batch]`, records `batch` and `batch_done` trace e
 and raises if called while busy or with an oversized batch.
 
 ```python
-from whetstone.judge import case, check, percentile
-from whetstone.kit import SimModel
+from learnai.judge import case, check, percentile
+from learnai.kit import SimModel
 
 
 def simulate(ctx, batcher_class, arrivals, *, max_batch_size, max_wait_s):
@@ -1040,7 +1040,7 @@ serves it with uvicorn on `127.0.0.1` and an ephemeral port, inside the harness 
 and the test talks to it with an `httpx.Client`.
 
 ```python
-from whetstone.judge import case, check, read_sse
+from learnai.judge import case, check, read_sse
 
 
 @case("streams one event per token, then [DONE]", public=True)
@@ -1156,7 +1156,7 @@ mutant must break them the other way.
 ## 7. The kit
 
 Kit objects are what problems hand to solutions, the way LeetCode hands you a
-`ListNode`. They live in `whetstone.kit`, are small, and are documented for learners,
+`ListNode`. They live in `learnai.kit`, are small, and are documented for learners,
 who are told to read them. Link to the relevant one in your statement.
 
 ### TinyLM
@@ -1235,7 +1235,7 @@ Two `TinyLM`s for speculative decoding: a target, and a draft that agrees with i
 chosen rate.
 
 ```python
-from whetstone.kit import draft_target_pair
+from learnai.kit import draft_target_pair
 
 draft, target = draft_target_pair(ctx.fw, seed=3, agreement=0.8)   # also TinyLM's size arguments
 ctx.call("speculative_greedy", target, draft, prompt, 4, 24, target.eos_id)
@@ -1256,7 +1256,7 @@ check.cost(draft.counters, "tokens_processed", at_most=...)
 
 ### ops
 
-`whetstone.kit.ops` holds reference implementations of concepts from earlier problems,
+`learnai.kit.ops` holds reference implementations of concepts from earlier problems,
 so a later problem can build on them without asking for them again. One signature in
 every framework: the call is routed by the type of the first argument (torch, JAX,
 MLX, or numpy), and each framework has a native implementation written from elementary
@@ -1265,7 +1265,7 @@ built-in `softmax`, `topk`, or attention kernel. Solutions, references, and test
 all use it.
 
 ```python
-from whetstone.kit import ops
+from learnai.kit import ops
 
 h = ops.rms_norm(x, weight, eps=1e-5)
 q, k = ops.rope(q, positions), ops.rope(k, positions)
@@ -1293,7 +1293,7 @@ probabilities: `ops.softmax(ops.top_p_filter(logits, p))` equals that problem's 
 
 If your problem *teaches* one of these, forbid the kit version too, by saying so in the
 statement and adding a mutant that calls it; `forbidden` entries such as
-`whetstone.kit.ops.softmax` resolve like any other name.
+`learnai.kit.ops.softmax` resolve like any other name.
 
 ### DecoderConfig, decoder_params, decoder_forward_ref
 
@@ -1302,7 +1302,7 @@ attention, SwiGLU, tied head), named like a Hugging Face checkpoint, plus the nu
 oracle. Use them when the solution must run the forward pass itself.
 
 ```python
-from whetstone.kit import DecoderConfig, decoder_forward_ref, decoder_params, layer_params
+from learnai.kit import DecoderConfig, decoder_forward_ref, decoder_params, layer_params
 
 cfg = DecoderConfig(n_layers=2)                  # vocab_size=64, d_model=32, n_heads=4,
 params = decoder_params(cfg, seed=1)             #   n_kv_heads=2, d_mlp=48, rope_base=1e4,
@@ -1350,7 +1350,7 @@ The byte strings behind `TinyLM`'s token ids, for detokenizing, stop strings, an
 constrained decoding.
 
 ```python
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 vocab = ToyVocab(size=lm.vocab_size, seed=0)      # size 64 to 282
 ids = vocab.encode('{"a": true}')                 # byte-pair merging; never a special id
@@ -1389,7 +1389,7 @@ check.cost(vocab.counters, "bytes_decoded", at_most=...)
 A deterministic automaton over **bytes** for constrained generation.
 
 ```python
-from whetstone.kit import DEAD, CharDFA
+from learnai.kit import DEAD, CharDFA
 
 dfa = CharDFA.from_regex(r'\{"[a-z]+": (true|false|-?\d+)\}')
 state = dfa.step(dfa.start, ord("{"))        # next state, or DEAD (-1); one counted step
@@ -1436,7 +1436,7 @@ by_hand = CharDFA({0: {"a": 1}, 1: {"b": 1}}, start=0, accepting=[1])    # a b*
 `DFAConstraint(dfa, vocab)` is the reference implementation.
 
 ```python
-from whetstone.kit import CharDFA, DFAConstraint, ToyVocab
+from learnai.kit import CharDFA, DFAConstraint, ToyVocab
 
 vocab = ToyVocab(lm.vocab_size, seed=1)
 constraint = DFAConstraint(CharDFA.from_regex(r"(true|false)"), vocab)
@@ -1470,7 +1470,7 @@ what goes into each step; the engine keeps the bookkeeping, the virtual clock, t
 trace, and the rules.
 
 ```python
-from whetstone.kit import CostModel, SimEngine, workloads
+from learnai.kit import CostModel, SimEngine, workloads
 
 def simulate(ctx, run, requests, *, max_running):
     sim = ctx.simclock()
@@ -1601,7 +1601,7 @@ scheduler, a static-batching baseline, and the checks a problem would make on th
 ### SimRequest and workloads
 
 ```python
-from whetstone.kit import SimRequest, workloads
+from learnai.kit import SimRequest, workloads
 
 requests = workloads.poisson(ctx.rng, rate=12.0, n=150, prompt_tokens=(16, 128),
                              output_tokens=(2, 40), priorities=(0, 1), tenants=("a", "b"))
@@ -1684,7 +1684,7 @@ workloads.drive(sim, requests, scheduler.submit)
 A scripted token source for service problems: the "model" behind `make_app(lm)`.
 
 ```python
-from whetstone.kit import ScriptedLM
+from learnai.kit import ScriptedLM
 
 lm = ScriptedLM(["Hello", ",", " world", "!"], gated=True)
 with ctx.serve(ctx.solution.make_app(lm)) as client:
@@ -1738,7 +1738,7 @@ A `TinyLM` with the stack opened, for techniques that live between layers: early
 and layer skipping, KV shared across layers.
 
 ```python
-from whetstone.kit import LayeredLM
+from learnai.kit import LayeredLM
 
 lm = LayeredLM(ctx.fw, seed=3)                    # 4 layers; also TinyLM's size arguments
 h = lm.embed(tokens, offset=cache.length)         # (T, d_model); positions offset, offset + 1, ...
@@ -1796,7 +1796,7 @@ where sharing is the solution's job and the cost formula counts the layers it sk
 ### CountingExperts and TinyMoE
 
 ```python
-from whetstone.kit import CountingExperts, TinyMoE, moe_dense_ref, moe_route_ref
+from learnai.kit import CountingExperts, TinyMoE, moe_dense_ref, moe_route_ref
 
 moe = TinyMoE(ctx.fw, seed=2, n_experts=8, top_k=2)       # a LayeredLM with MoE MLPs
 x = moe.mlp_inputs(ctx.randint(0, 64, (2, 10)), layer=1)  # (20, d_model): real routing inputs
@@ -1832,7 +1832,7 @@ Several devices with memory budgets and a metered network: a ledger, for problem
 about models that do not fit on one device.
 
 ```python
-from whetstone.kit import SimDevices
+from learnai.kit import SimDevices
 
 devs = SimDevices(ctx.fw, memory_bytes=[shard_bytes, shard_bytes])     # or n_devices=3
 for i, (up, down) in enumerate(shards):
@@ -1876,7 +1876,7 @@ A context-free grammar in a subset of GBNF (the notation of llama.cpp), parsed, 
 an oracle.
 
 ```python
-from whetstone.kit import Grammar, ToyVocab
+from learnai.kit import Grammar, ToyVocab
 
 g = Grammar.parse('''
     root  ::= "[" ws (value ("," ws value)*)? "]"
@@ -1932,7 +1932,7 @@ An OpenAI-style chat model whose replies are scripted, and tools with a latency 
 log, for agent loops, routers, and speculative tool calls.
 
 ```python
-from whetstone.kit import ScriptedChatModel, ScriptedTool, reply, tool_call
+from learnai.kit import ScriptedChatModel, ScriptedTool, reply, tool_call
 
 model = ScriptedChatModel([
     reply(tool_calls=[tool_call("get_weather", {"city": "Paris"}),
@@ -1995,7 +1995,7 @@ tool-calling problems would otherwise write twice.
 ### TinyEncoder and CountingScorer
 
 ```python
-from whetstone.kit import CountingScorer, TinyEncoder
+from learnai.kit import CountingScorer, TinyEncoder
 
 enc = TinyEncoder(ctx.fw, seed=1)                  # bidirectional; vocab 64, width 32, 2 layers
 states = enc(tokens, mask)                         # (B, T, d_model); mask: nonzero = real token
@@ -2032,7 +2032,7 @@ A language model whose memory of a prefix is a fixed-size state, for
 `hybrid-state-checkpoints`.
 
 ```python
-from whetstone.kit import RecurrentLM
+from learnai.kit import RecurrentLM
 
 lm = RecurrentLM(ctx.fw, seed=3)                   # vocab 64, 2 layers, state 48 per layer
 logits, state = lm(tokens)                         # the TinyLM call convention
@@ -2063,7 +2063,7 @@ Replicas of `SimEngine`, each with a fixed scheduler and a prefix cache, behind 
 prefill-decode disaggregation.
 
 ```python
-from whetstone.kit import CostModel, SimCluster, workloads
+from learnai.kit import CostModel, SimCluster, workloads
 
 def simulate(ctx, route, requests):
     sim = ctx.simclock()
@@ -2163,7 +2163,7 @@ Seeded vector sets with known neighbors, an exact top-k oracle, and a distance
 function that counts, for the vector-search problems.
 
 ```python
-from whetstone.kit import vectors
+from learnai.kit import vectors
 
 data = vectors.clustered(ctx.rng, n=2000, dim=32, clusters=16)      # .vectors .centroids .labels
 queries = vectors.queries_near(ctx.rng, data.vectors, [3, 17, 256], noise=0.05)
@@ -2222,7 +2222,7 @@ Schema fixtures. Shared helpers that were added instead: `SimRequest.tokens`,
 
 ### Adding a kit object
 
-Add it under `python/src/whetstone/kit/`, export it from `whetstone/kit/__init__.py`,
+Add it under `python/src/learnai/kit/`, export it from `learnai/kit/__init__.py`,
 write tests under `python/tests/`, and document it here. Requirements: deterministic
 (seeded), implemented once (numpy or plain Python), speaking the solution's framework
 at its boundary through an adapter passed as `fw`, functional (state in, state out), a
@@ -2428,7 +2428,7 @@ element. Defaults: `rtol=1e-4`, `atol=1e-6`.
 ## 10. Time budgets
 
 A full submit should usually finish in a few seconds, wall clock, in every framework.
-`ws validate -v` prints, for each reference submit, the total duration and the time
+`learnai validate -v` prints, for each reference submit, the total duration and the time
 spent in cases, and warns when the cases take more than 3 s.
 
 - Starting the harness and importing torch (always needed, for the oracle) costs about
@@ -2443,9 +2443,9 @@ spent in cases, and warns when the cases take more than 3 s.
   shapes for the whole `tests.py` (module-level constants help), draw fresh *values*
   per trial but not fresh shapes, and when a property needs varied shapes, draw them
   from a short fixed list (`rng.choice([(4, 8), (2, 3, 8)])`) rather than from a range.
-  `ws validate -v` prints the time in cases per framework; when the JAX figure is ten
+  `learnai validate -v` prints the time in cases per framework; when the JAX figure is ten
   times the torch one, count your distinct shapes.
-- **The harness keeps JAX's compiled kernels on disk** (`<root>/.whetstone/cache/jax`,
+- **The harness keeps JAX's compiled kernels on disk** (`<root>/.learnai/cache/jax`,
   JAX's persistent compilation cache), so that per-shape cost is paid by the first
   run of a problem on a machine and not by later ones. Measured on the four slowest
   JAX references, alone on the machine (first run, then later runs):
@@ -2462,9 +2462,9 @@ spent in cases, and warns when the cases take more than 3 s.
   transposed weights (0.074 s instead of 0.119 s per step, measured) or jitted
   (0.072 s) would push an honest eager solution toward the limit. A JAX real-model
   problem that must be quick has to do less: fewer steps, a shorter prompt.
-  `WHETSTONE_JAX_CACHE=0` turns the cache off (to measure a first run again);
-  `ws validate` times are also inflated by its four parallel runs, so time a single
-  problem with `ws submit`.
+  `LEARNAI_JAX_CACHE=0` turns the cache off (to measure a first run again);
+  `learnai validate` times are also inflated by its four parallel runs, so time a single
+  problem with `learnai submit`.
 - **One-time library costs are not charged to a case.** The first operation on a
   `torch.device("meta")` tensor, the first operation under `FakeCudaGraph` capture,
   and the first `torch.compile` each make torch import `torch._dynamo` (about 2.5 s,
@@ -2473,7 +2473,7 @@ spent in cases, and warns when the cases take more than 3 s.
   suspended, the supervisor's deadline is moved, and the time is subtracted from the
   case's `duration_ms`. The run still takes those seconds of wall time, once, and
   only in a run that reaches the code that needs them. A kit object with a one-time
-  cost of its own wraps it in `whetstone.judge.warmup.once(name, fn)` (as
+  cost of its own wraps it in `learnai.judge.warmup.once(name, fn)` (as
   `CompileCounter` does for the first compilation); a module whose first import is
   slow is added to `warmup.SLOW_IMPORTS`. Do not use this for anything the solution
   controls.
@@ -2484,7 +2484,7 @@ spent in cases, and warns when the cases take more than 3 s.
   failure is an infinite loop.
 - Statistical cases dominate their problem's budget: N calls into a tensor framework.
   Keep each statistical case under about 3 s in **every** framework, measured with
-  `ws submit <id> -f <framework> --reference` for each one, not only torch: the same
+  `learnai submit <id> -f <framework> --reference` for each one, not only torch: the same
   cases of `speculative-sampling-step` take 0.15 s in torch, 1.3 s in JAX, and 2.4 s in
   MLX, because per-call overhead (dispatch in JAX, a GPU round trip in MLX whenever a
   value is read back) dominates tiny tensors. Measure first, then pick N; if the slowest framework cannot afford the N
@@ -2532,7 +2532,7 @@ What makes a good mutant:
 - **One mutant takes the forbidden shortcut.** If the problem has a `forbidden` list
   (section 4.1), include a mutant that produces the right numbers by calling the
   built-in (`mutants/uses_builtin.py`). It is the test that the list works: it must be
-  rejected, and `ws submit <id> --mutant uses_builtin` must show the "is not allowed in
+  rejected, and `learnai submit <id> --mutant uses_builtin` must show the "is not allowed in
   this problem" message. Mutants are written in the oracle framework, so for a rule
   that only concerns another framework's built-in (`mlx.nn.RoPE`), the mutant borrows
   it from torch code.
@@ -2585,7 +2585,7 @@ requires = "mlx-gpu"
 ```
 
 ```sh
-ws new mlx/mlx-lazy-eval-placement --frameworks mlx
+learnai new mlx/mlx-lazy-eval-placement --frameworks mlx
 ```
 
 What changes, compared with a three-framework problem:
@@ -2618,7 +2618,7 @@ the same kind of model built from `mlx.nn`, so its outputs are lazy graphs and i
 be traced by `mx.compile`.
 
 ```python
-from whetstone.kit import MLXTinyLM
+from learnai.kit import MLXTinyLM
 
 lm = MLXTinyLM(seed=0)                       # vocab 64, width 32, 2 layers, 4 heads, RoPE
 logits, cache = lm(tokens)                   # tokens: (T,) or (B, T); nothing computed yet
@@ -2659,7 +2659,7 @@ mx.eval(logits, cache)                       # cache: a list of (keys, values) p
 ### EvalSpy: where evaluation happens
 
 ```python
-from whetstone.kit import EvalSpy, MLXTinyLM
+from learnai.kit import EvalSpy, MLXTinyLM
 
 @case("one evaluation per generated token, and no hidden reads", public=True)
 def evaluation_placement(ctx):
@@ -2699,7 +2699,7 @@ count.
 ### TraceCounter: how often a compiled function is traced
 
 ```python
-from whetstone.kit import TraceCounter
+from learnai.kit import TraceCounter
 
 tc = TraceCounter()
 step = ctx.solution.make_step(lambda x: tc.mark(x) * 2)    # mark is the identity
@@ -2732,7 +2732,7 @@ shows 2, one that concatenates the cache shows 50.
 ### Memory: `mlx_memory` and `check.memory`
 
 ```python
-from whetstone.kit import mlx_memory
+from learnai.kit import mlx_memory
 
 # Rejects promotes: a float32 result is 4 MiB, the float16 one 2 MiB.
 @case("a float16 input stays float16 and stays small", requires="mlx-gpu")
@@ -2783,7 +2783,7 @@ with its limit, and fails beyond it. Rules that keep memory cases honest:
 ### CountingFile: how much of a file was read
 
 ```python
-from whetstone.kit import CountingFile
+from learnai.kit import CountingFile
 
 @case("only the requested tensor is read", assets=["granite-4.2-3b-mlx-8bit"])
 def reads_one_tensor(ctx):
@@ -2807,7 +2807,7 @@ picks out one tensor is charged for the whole file.
 Three helpers that MLX problems kept rewriting:
 
 ```python
-from whetstone.kit import LazyClock, pending_ops, watch_load
+from learnai.kit import LazyClock, pending_ops, watch_load
 
 check.that(pending_ops(model.parameters()) == 0, "load_into: the parameters are still lazy")
 
@@ -2894,12 +2894,12 @@ The rules:
    the verdict is the failure's, as always (`wrong_answer`, `runtime_error`,
    `time_limit`). If everything that ran passed, the verdict is `hardware_missing`.
 4. If the problem's `requires` is not met, the verdict is `hardware_missing` even when
-   no case was marked and every case passed (for example `ws run`, which executes only
+   no case was marked and every case passed (for example `learnai run`, which executes only
    the public cases, on a `cuda` problem whose public cases are all CPU cases). An
    `accepted` verdict therefore always means: every case ran, on the required
    hardware.
 
-What a learner without the hardware sees, in the app and in `ws submit`:
+What a learner without the hardware sees, in the app and in `learnai submit`:
 
 ```
 cuda-scale / torch / submit  python 3.15.2, device cpu, torch 2.15.0
@@ -2927,7 +2927,7 @@ How to split a problem:
 - **Marked cases check only what the hardware makes observable**: where a tensor
   lives, a speed or memory property of the GPU path, a Metal kernel. Keep them few.
 - Every mutant should be caught by a CPU case if at all possible. A mutant that only
-  a marked case catches is reported by `ws validate` as "NOT validated" on a machine
+  a marked case catches is reported by `learnai validate` as "NOT validated" on a machine
   without the hardware (section 1), which is honest and unsatisfying. Section 18
   describes the kit that makes GPU mistakes visible on the CPU for exactly this.
 - For the MLX track (`requires = "mlx-gpu"`), mark the cases that need the GPU:
@@ -2938,11 +2938,11 @@ How to split a problem:
 To see how a problem behaves on a machine you do not have, override detection:
 
 ```sh
-WHETSTONE_HARDWARE=cpu ws submit cuda-scale --reference     # pretend: no GPU of any kind
-WHETSTONE_HARDWARE=cpu,cuda ws submit cuda-scale --reference   # pretend CUDA is there
+LEARNAI_HARDWARE=cpu learnai submit cuda-scale --reference     # pretend: no GPU of any kind
+LEARNAI_HARDWARE=cpu,cuda learnai submit cuda-scale --reference   # pretend CUDA is there
 ```
 
-`WHETSTONE_HARDWARE` is a comma-separated list of what to treat as present (`cpu` is
+`LEARNAI_HARDWARE` is a comma-separated list of what to treat as present (`cpu` is
 always included). It changes which cases are skipped, nothing else: pretending CUDA
 exists on a Mac makes the CUDA cases run and fail with torch's own error. Without the
 variable, `mlx-gpu` means `mx.metal.is_available()` with a GPU default device, and
@@ -2953,8 +2953,8 @@ variable, `mlx-gpu` means `mx.metal.is_available()` with a GPU default device, a
 ## 15. Model assets and real-model problems
 
 Some problems run on the weights of a real open model. Weights are never committed:
-a problem *declares* what it needs, the learner downloads it once with `ws assets
-fetch` (or the app's button), and it lives in `.whetstone/models/` under the
+a problem *declares* what it needs, the learner downloads it once with `learnai assets
+fetch` (or the app's button), and it lives in `.learnai/models/` under the
 repository root, which is gitignored.
 
 ### The house models
@@ -2968,12 +2968,12 @@ repository root, which is gitignored.
 | parameters | 352.4 M | 3.66 B |
 | use | CPU tests in every framework | MLX-only problems |
 
-Both are in the kit as `whetstone.kit.SMALL` and `LARGE_8BIT` (`AssetSpec` objects),
-and `ws assets fetch <name>` knows them before any problem declares them, so you can
+Both are in the kit as `learnai.kit.SMALL` and `LARGE_8BIT` (`AssetSpec` objects),
+and `learnai assets fetch <name>` knows them before any problem declares them, so you can
 download first and write the problem second:
 
 ```sh
-uv run --project python --extra models ws assets fetch granite-4.0-350m
+uv run --project python --extra models learnai assets fetch granite-4.0-350m
 ```
 
 Use the house models unless a problem truly cannot. Every extra model is another
@@ -2993,12 +2993,12 @@ size_mb = 712
 Print the block for a house model instead of typing it:
 
 ```sh
-uv run --project python python -c "from whetstone.kit import SMALL; from whetstone.kit.realmodel import asset_toml; print(asset_toml(SMALL))"
+uv run --project python python -c "from learnai.kit import SMALL; from learnai.kit.realmodel import asset_toml; print(asset_toml(SMALL))"
 ```
 
 | key | meaning |
 |---|---|
-| `name` | The directory under `.whetstone/models/` and the name used by `ctx.asset`, `@case(assets=...)`, and `ws assets fetch`. Lowercase letters and digits with `.`, `_`, `-` between them. |
+| `name` | The directory under `.learnai/models/` and the name used by `ctx.asset`, `@case(assets=...)`, and `learnai assets fetch`. Lowercase letters and digits with `.`, `_`, `-` between them. |
 | `repo` | The Hugging Face repository id. |
 | `revision` | The full 40-character commit hash. A branch name such as `main` is refused: it can move, and fixtures are only valid for the bytes they were made from. |
 | `files` | File names or glob patterns inside the repository. Only `*.safetensors` and the tokenizer and config files can be assets (`config.json`, `generation_config.json`, `tokenizer.json`, `tokenizer_config.json`, `special_tokens_map.json`, `added_tokens.json`, `vocab.json`, `merges.txt`, `chat_template.jinja`, `model.safetensors.index.json`). Nothing that executes or unpickles is ever downloaded: no `.bin`, `.pt`, `.pkl`, `.py`, even when a glob would match it. A pattern that selects nothing is an error. |
@@ -3010,8 +3010,8 @@ ask for. A problem may declare several assets.
 
 ### What the learner and the harness do
 
-- `ws assets list` shows every asset the catalog declares, whether it is present, its
-  size, and which problems use it. `ws assets fetch <name>...` (or `--all`) downloads.
+- `learnai assets list` shows every asset the catalog declares, whether it is present, its
+  size, and which problems use it. `learnai assets fetch <name>...` (or `--all`) downloads.
   Fetching needs the `models` extra (`huggingface_hub`); nothing else in the harness
   does. A fetch is pinned to the declared revision, verifies each file's size and (for
   the weights) SHA-256, and can be repeated: files that are complete are not
@@ -3023,7 +3023,7 @@ ask for. A problem may declare several assets.
   truncated file) counts as not downloaded.
 - **A case whose asset is not present is skipped**, with the message "skipped: model
   asset `granite-4.0-350m` (ibm-granite/granite-4.0-350m, about 712 MB) is not
-  downloaded; fetch it with `ws assets fetch granite-4.0-350m`". The other cases run.
+  downloaded; fetch it with `learnai assets fetch granite-4.0-350m`". The other cases run.
   If nothing that ran failed, the run ends with the verdict **`assets_missing`**
   (shown as "Not judged: model asset missing") and a message naming the asset and the
   command; it is never `accepted`. If every case needs the asset, nothing runs and the
@@ -3050,20 +3050,20 @@ would have been skipped). Asking for an asset the problem does not declare is an
 error naming the declared ones.
 
 To see what a learner without the download sees, point the harness at an empty
-directory: `WHETSTONE_MODELS_DIR=/nonexistent ws submit <id> --reference`.
-(`WHETSTONE_MODELS_DIR` replaces `<root>/.whetstone/models` everywhere.)
+directory: `LEARNAI_MODELS_DIR=/nonexistent learnai submit <id> --reference`.
+(`LEARNAI_MODELS_DIR` replaces `<root>/.learnai/models` everywhere.)
 
 ### The machine-readable forms (what the desktop app calls)
 
-Both commands read the catalog under the content root (`WHETSTONE_ROOT`, else the
+Both commands read the catalog under the content root (`LEARNAI_ROOT`, else the
 working directory's repository).
 
-`ws assets list --json` prints one JSON document on stdout and exits 0. It needs no
+`learnai assets list --json` prints one JSON document on stdout and exits 0. It needs no
 extra and no network.
 
 ```json
 {
-  "models_dir": "/abs/learnai/.whetstone/models",
+  "models_dir": "/abs/learnai/.learnai/models",
   "assets": [
     {
       "name": "granite-4.0-350m",
@@ -3074,10 +3074,10 @@ extra and no network.
       "state": "missing",
       "present": false,
       "reason": null,
-      "path": "/abs/learnai/.whetstone/models/granite-4.0-350m",
+      "path": "/abs/learnai/.learnai/models/granite-4.0-350m",
       "bytes_on_disk": 0,
       "problems": ["real-model-block", "real-model-logits"],
-      "fetch_command": "ws assets fetch granite-4.0-350m"
+      "fetch_command": "learnai assets fetch granite-4.0-350m"
     }
   ],
   "issues": [{"problem": "some-problem", "message": "asset `x`: `revision` must be ..."}]
@@ -3090,7 +3090,7 @@ says which). `present` is `state == "present"`. `size_mb` is the declared approx
 download size; `bytes_on_disk` is what is there now. `files` is the union of the
 patterns of the problems in `problems`. Assets are sorted by name.
 
-`ws assets fetch <name>... --json` (or `--all --json`) writes one line per event to
+`learnai assets fetch <name>... --json` (or `--all --json`) writes one line per event to
 stdout, each `@@WS@@ ` followed by a single-line JSON object, the framing of the
 harness protocol; any other line is a log line. It needs `--extra models`. Exit code
 0 when every asset ended with `ok: true`, 1 when one failed, 2 for a usage error (an
@@ -3168,7 +3168,7 @@ Rules for fixtures:
 ### RealModel: config, tokenizer, weights
 
 ```python
-from whetstone.kit import RealModel
+from learnai.kit import RealModel
 
 model = RealModel(ctx.asset("granite-4.0-350m"))
 model.config            # RealConfig: the architecture, normalized (below)
@@ -3272,7 +3272,7 @@ that misses any single item is off by far more than any tolerance:
    **divide by 4** (`logits_scaling`).
 9. The weights are bfloat16 on disk and must be used as float32.
 
-`RealLM` implements exactly this list (`whetstone/kit/realmodel.py`, about 150 lines,
+`RealLM` implements exactly this list (`learnai/kit/realmodel.py`, about 150 lines,
 meant to be read by authors, not linked from statements of problems that ask for it).
 The large model needs the same list with the multipliers at 1, separate MLP matrices,
 a separate head, and quantized linear layers.
@@ -3298,7 +3298,7 @@ checked to stay finite (assert it in `fixtures/make.py`), and a problem that wan
 
 **KL divergence between two sets of logits** (how far a quantized or half-precision
 model's predictions moved): `logit_kl(p_logits, q_logits, axis=-1)` from
-`whetstone.kit` returns `KL(softmax(p) || softmax(q))` in nats per row, computed in
+`learnai.kit` returns `KL(softmax(p) || softmax(q))` in nats per row, computed in
 float64 from log-softmax; `p` is the original model. Report the mean with
 `check.at_most("logit_kl", float(kl.mean()), limit, unit="nats")`.
 
@@ -3353,27 +3353,27 @@ asset problem (with a made-up asset that the tests install themselves).
 
 ## 16. Checklist before you open a pull request
 
-- `ws validate <id> -v` passes, with no warning.
+- `learnai validate <id> -v` passes, with no warning.
 - `ruff check problems/<track>/<id>` is clean.
-- `ws run <id> -f <each framework> --starter` shows a failure a beginner can act on.
-- `ws submit <id> --mutant <each>`: every mutant fails for the reason its `# BUG:` line
+- `learnai run <id> -f <each framework> --starter` shows a failure a beginner can act on.
+- `learnai submit <id> --mutant <each>`: every mutant fails for the reason its `# BUG:` line
   gives, and the failure message would make sense to a learner.
-- `ws submit <id> --mutant <one>` without `--reveal` shows nothing about the hidden
+- `learnai submit <id> --mutant <one>` without `--reveal` shows nothing about the hidden
   cases beyond "Hidden case N" and a message free of expected values.
 - If the statement forbids a call: `forbidden` lists every spelling of it in every
   framework, and a mutant takes the shortcut. If it forbids something that is not
   called (a dtype, a package), `forbidden_source` names the identifier.
-- If the problem has `requires` other than `cpu`: `WHETSTONE_HARDWARE=cpu ws submit
+- If the problem has `requires` other than `cpu`: `LEARNAI_HARDWARE=cpu learnai submit
   <id> --reference` passes every case that still runs, skips the rest with a clear
   reason, and ends with "Not accepted: hardware missing" (section 14).
 - If the problem has `[[assets]]`: it validates with the asset present
-  (`ws validate <id> --require-assets`) and behaves sensibly without it
-  (`WHETSTONE_MODELS_DIR=/nonexistent ws submit <id> --reference`); fixtures are small
+  (`learnai validate <id> --require-assets`) and behaves sensibly without it
+  (`LEARNAI_MODELS_DIR=/nonexistent learnai submit <id> --reference`); fixtures are small
   and `fixtures/make.py` regenerates them (section 15).
 - If a case has a memory limit: the reference uses at most two thirds of it and the
   mutant it is written for at least one and a half times it (section 13).
 - If the problem is in the `cuda` track: every mutant is rejected by a CPU case
-  (`ws validate <id>` prints no "NOT validated" line for a mutant), the GPU cases are
+  (`learnai validate <id>` prints no "NOT validated" line for a mutant), the GPU cases are
   marked `requires="cuda"` and few, and the statement says which facts were checked
   only on the CPU (section 18).
 - Every statistical case takes under about 3 s in every framework.
@@ -3391,7 +3391,7 @@ section of `docs/ARCHITECTURE.md`. Everything is additive: a run of a problem wi
 
 **3.1 Environment.** Optional extras: `jax`, `mlx`, `models` (huggingface_hub,
 safetensors, tokenizers, transformers, and mlx-lm on macOS). `models` is needed only
-by `ws assets fetch` and by authors generating fixtures; the harness and the kit read
+by `learnai assets fetch` and by authors generating fixtures; the harness and the kit read
 downloaded files with numpy.
 
 **3.2 Frameworks.** A problem may be MLX-only (`frameworks = ["mlx"]`). Its oracle is
@@ -3405,7 +3405,7 @@ requires = "cpu"                 # cpu | mlx-gpu | cuda: hardware needed to be a
 forbidden_source = ["bfloat16"]  # optional: identifiers that may not appear in the solution's source
 
 [[assets]]                       # optional, repeatable: model files the problem needs
-name = "granite-4.0-350m"        # directory under <root>/.whetstone/models/
+name = "granite-4.0-350m"        # directory under <root>/.learnai/models/
 repo = "ibm-granite/granite-4.0-350m"
 revision = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"   # full commit hash
 files = ["config.json", "tokenizer.json", "model.safetensors"]   # names or globs; safetensors, tokenizer, and config files only
@@ -3415,12 +3415,12 @@ size_mb = 712                    # approximate download size
 Optional `fixtures/` directory: committed reference outputs loaded by the tests.
 Cases declare what they need with `@case(requires=..., assets=[...])`; the default is
 `requires="cpu"` and every asset of the problem. Assets live in
-`<root>/.whetstone/models/<name>/` (gitignored) beside a `whetstone-asset.json`
+`<root>/.learnai/models/<name>/` (gitignored) beside a `learnai-asset.json`
 manifest; an asset is present when the manifest matches the declared repository and
 revision, covers the declared files, and every file has its recorded size.
 
 **3.5 Harness command.** No new flags. Two environment variables:
-`WHETSTONE_MODELS_DIR` (replaces `<root>/.whetstone/models`) and `WHETSTONE_HARDWARE`
+`LEARNAI_MODELS_DIR` (replaces `<root>/.learnai/models`) and `LEARNAI_HARDWARE`
 (comma-separated list of hardware to treat as present, for tests and previews).
 
 **3.6 Event protocol.**
@@ -3460,8 +3460,8 @@ revision, covers the declared files, and every file has its recorded size.
   and for `assets_missing` an action that runs the fetch. They never mark a problem
   solved; store them like any other non-accepted submit.
 
-**3.7 CLI.** `ws assets list [--json]`, `ws assets fetch <name>... | --all [--json]
-[--no-verify]` (schemas in section 15), and `ws validate --require-assets`. `validate`
+**3.7 CLI.** `learnai assets list [--json]`, `learnai assets fetch <name>... | --all [--json]
+[--no-verify]` (schemas in section 15), and `learnai validate --require-assets`. `validate`
 reports a problem as `ok`, `FAIL`, or `SKIP` (nothing could run on this machine;
 does not fail the command) and warns about every case it could not run.
 
@@ -3515,19 +3515,19 @@ Rules for the split:
    `ctx.call` and `ctx.fw.tensor` make CPU tensors. `ctx.fw.sync(x)` calls
    `torch.cuda.synchronize()` when a CUDA tensor is among its arguments, so
    `ctx.compare_speed` times GPU work correctly.
-4. On this machine `ws validate` reports each CUDA problem as `ok` with the warning
+4. On this machine `learnai validate` reports each CUDA problem as `ok` with the warning
    "only N of M cases could run ... (GPU cases not validated: <ids>)". That line is
    the honest state of the track: its GPU cases have never run. Say so in the pull
    request, and do not write a GPU case you would not bet on.
 
-The tools, all in `whetstone.kit`, all working on CPU tensors
-(`python/src/whetstone/kit/cudatools.py` and `tritonshim.py`; unit tests in
+The tools, all in `learnai.kit`, all working on CPU tensors
+(`python/src/learnai/kit/cudatools.py` and `tritonshim.py`; unit tests in
 `python/tests/test_kit_cuda.py` and `test_kit_tritonshim.py`).
 
 ### SyncSpy: host synchronizations
 
 ```python
-from whetstone.kit import SyncSpy
+from learnai.kit import SyncSpy
 
 @case("at most one host read per check_every steps, and one transfer", public=True)
 def sync_free(ctx):
@@ -3584,7 +3584,7 @@ and `spy.shape_syncs` the counts by kind, `spy.describe()` one line per event.
 ### DeviceSpy and the meta device: tensors created in the wrong place
 
 ```python
-from whetstone.kit import DeviceSpy
+from learnai.kit import DeviceSpy
 
 with DeviceSpy() as spy:
     out = ctx.solution.run(model, inputs, torch.device("cpu"))
@@ -3615,7 +3615,7 @@ with `DeviceSpy`, and check numbers in a separate CPU case (meta tensors have no
 ### FakeDevice and RealDevice: asynchronous work on a virtual clock
 
 ```python
-from whetstone.kit import FakeDevice, RealDevice
+from learnai.kit import FakeDevice, RealDevice
 
 @case("median seconds per call, warm-up excluded", public=True)
 def exact_time(ctx):
@@ -3656,7 +3656,7 @@ and a GPU case needs the real counterpart.
 ### OOMModel: out of memory above a batch size
 
 ```python
-from whetstone.kit import OOMModel
+from learnai.kit import OOMModel
 
 model = OOMModel(lambda x: x * 2, max_items=3)
 out = ctx.solution.run_batched(model, items, 8, model.empty_cache)
@@ -3689,7 +3689,7 @@ makes a given call raise something else.
 ### FakeCudaGraph: capture, then replay on the captured memory
 
 ```python
-from whetstone.kit import FakeCudaGraph
+from learnai.kit import FakeCudaGraph
 
 graph = FakeCudaGraph()
 calls = []
@@ -3738,7 +3738,7 @@ through `graph.capturing`, as above).
 ### CompileCounter: how many graphs `torch.compile` built
 
 ```python
-from whetstone.kit import CompileCounter
+from learnai.kit import CompileCounter
 
 with CompileCounter() as cc:
     step = ctx.solution.make_step(model, cache, backend="eager")
@@ -3791,7 +3791,7 @@ one place that touches these internals.
 ### TransferSpy: pinning and non-blocking transfers
 
 ```python
-from whetstone.kit import TransferSpy
+from learnai.kit import TransferSpy
 
 spy = TransferSpy()
 batches = [spy.label(torch.randn(4, 8), i) for i in range(5)]
@@ -3817,7 +3817,7 @@ non_blocking=non_blocking)`.
 
 ```python
 # solution
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 @tl.jit
 def rmsnorm_kernel(x_ptr, w_ptr, out_ptr, n_cols, eps, BLOCK: tl.constexpr):
@@ -4022,10 +4022,10 @@ with them) and no MLX. `uv.lock` stays universal. The `models` extra needs a sou
 build of `pyyaml` on Linux for Python 3.15 (no wheel is published); the harness and
 the kit do not need that extra.
 
-**3.5 Harness command.** One more environment variable: `WHETSTONE_JAX_CACHE`, a
+**3.5 Harness command.** One more environment variable: `LEARNAI_JAX_CACHE`, a
 directory for JAX's persistent compilation cache, or `0`/`off` to disable it. Default:
-`<root>/.whetstone/cache/jax`, created on the first JAX run. Anything under
-`<root>/.whetstone/cache/` is disposable. A `JAX_COMPILATION_CACHE_DIR` set by the
+`<root>/.learnai/cache/jax`, created on the first JAX run. Anything under
+`<root>/.learnai/cache/` is disposable. A `JAX_COMPILATION_CACHE_DIR` set by the
 user is respected instead.
 
 **3.6 Event protocol.** No new fields. The one-line `message` of a case that ended
@@ -4034,15 +4034,15 @@ line that ends with a colon is joined with the next), for public and hidden case
 alike; for a hidden case the location in the solution file follows, as before. The
 full multi-line text stays in the public case's `detail`.
 
-**3.7 CLI.** `ws doctor [--json]`: what this environment has. It needs no extra and
+**3.7 CLI.** `learnai doctor [--json]`: what this environment has. It needs no extra and
 no network, imports torch (a base dependency) and, when installed, MLX, to detect
-hardware, and never fails because a package is missing. `ws doctor --json` prints
+hardware, and never fails because a package is missing. `learnai doctor --json` prints
 one JSON document:
 
 ```jsonc
 {
   "schema": 1,                      // bumped on an incompatible change
-  "whetstone": "0.1.0",
+  "learnai": "0.1.0",
   "python": "3.15.2",
   "executable": "/abs/path/python/.venv/bin/python3",
   "platform": {"system": "Linux", "machine": "x86_64", "release": "6.8.0"},   // platform.system(), machine(), release()
@@ -4056,9 +4056,9 @@ one JSON document:
              "devices": [{"index": 0, "name": "NVIDIA GeForce RTX 4090", "memory_bytes": 25757220864}],
              "torch_cuda_version": "13.0"}                                    // torch.version.cuda, null on a CPU build
   },
-  "hardware_override": null,        // WHETSTONE_HARDWARE as a sorted list (always with "cpu"), or null
+  "hardware_override": null,        // LEARNAI_HARDWARE as a sorted list (always with "cpu"), or null
   "root": "/abs/content/root",
-  "models_dir": "/abs/content/root/.whetstone/models"                         // WHETSTONE_MODELS_DIR applied
+  "models_dir": "/abs/content/root/.learnai/models"                         // LEARNAI_MODELS_DIR applied
 }
 ```
 
@@ -4067,12 +4067,12 @@ one JSON document:
 - `hardware.<name>.present` is real detection and is exactly what decides whether
   cases with that `requires` run: `torch.cuda.is_available()` for `cuda`,
   `mx.metal.is_available()` with a GPU default device for `mlx-gpu`.
-  `WHETSTONE_HARDWARE` does not change it; it is reported in `hardware_override`.
+  `LEARNAI_HARDWARE` does not change it; it is reported in `hardware_override`.
 - `cuda.name` and `cuda.memory_bytes` describe device 0 (`null` when absent, or when
   the driver does not answer); `devices` lists all of them.
 - Exit code 0. Without `--json` the same facts are printed as text.
 
-`ws validate` prints, per problem, which cases this machine could not validate
+`learnai validate` prints, per problem, which cases this machine could not validate
 (`... (GPU cases not validated: <ids>)`), a different warning when every case ran but
 the problem's `requires` is unmet, and a summary count of problems that passed with
 unvalidated cases.
@@ -4084,7 +4084,7 @@ captured by redirecting file descriptors 1 and 2 to a file in a `tempfile`
 directory, with `fflush` through `ctypes.CDLL(None)`; no path is hard-coded. MLX is
 imported only by the MLX adapter, the MLX kit tools, and hardware detection, each
 guarded. A remote host needs Python 3.15, `uv`, the `python/` directory, and the
-problem directory at `<root>/problems/<track>/<id>` (or `WHETSTONE_ROOT`); assets are
+problem directory at `<root>/problems/<track>/<id>` (or `LEARNAI_ROOT`); assets are
 looked up under that root.
 
 ## 20. Contract additions of milestone 5 (to mirror in ARCHITECTURE.md)
@@ -4125,10 +4125,10 @@ progress from `start.cases` and the `case_end` statuses.
   limit is suspended for that time as well. `end.duration_ms` is wall time and
   includes it.
 
-**3.7 CLI.** `ws run` and `ws submit` (text output) print a heading line `Stage
+**3.7 CLI.** `learnai run` and `learnai submit` (text output) print a heading line `Stage
 <label>` whenever the stage of the next case differs from the previous one's, and,
 after the verdict line, one line per stage in first-appearance order: `<passed>/<total>
 passed[, <k> skipped]  Stage <label>`. `--events` output is the protocol, unchanged
-but for the `stage` key. `ws validate` fails a problem in which some cases have a
+but for the `stage` key. `learnai validate` fails a problem in which some cases have a
 stage and others do not (`tests.py: N of M cases have no stage (<ids>); give every
 @case a stage= or none`).

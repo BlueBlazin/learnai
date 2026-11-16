@@ -1,7 +1,7 @@
 # BUG: the new keys and values are put before the cached ones, so the cache is no longer in sequence order and the mask hides the wrong columns.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def attend_step(

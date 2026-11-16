@@ -1,7 +1,7 @@
 # BUG: rotates the values with RoPE as well as the queries and keys; only queries and keys carry position.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 
 def forward(params: dict[str, torch.Tensor], cfg: DecoderConfig, tokens: torch.Tensor) -> torch.Tensor:

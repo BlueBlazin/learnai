@@ -10,7 +10,7 @@ interface ThemeStore {
 }
 
 /** The key is also read by the inline script in index.html to avoid a flash on launch. */
-const THEME_STORAGE_KEY = "whetstone.theme";
+const THEME_STORAGE_KEY = "learnai.theme";
 
 export const useThemeStore = create<ThemeStore>()(
   persist(

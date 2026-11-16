@@ -2,7 +2,7 @@
 import asyncio
 import json
 
-from whetstone.kit import assemble
+from learnai.kit import assemble
 
 
 class Call:

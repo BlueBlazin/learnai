@@ -11,7 +11,7 @@ def detok_step(state, token_id: int, vocab: ToyVocab) -> tuple[state, str]: ...
 def detok_flush(state) -> str: ...
 ```
 
-`vocab` is a [`ToyVocab`](../../../python/src/whetstone/kit/vocab.py), the kit's small
+`vocab` is a [`ToyVocab`](../../../python/src/learnai/kit/vocab.py), the kit's small
 token table. `vocab.bytes(token_id)` returns the bytes of one token. Special tokens
 (ids 0 to 4, such as `<|eos|>`) have the bytes `b""`.
 

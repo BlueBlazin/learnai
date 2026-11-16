@@ -1,7 +1,7 @@
 # BUG: sample_chain draws from the softmax of the filtered logits before the temperature is applied, so the temperature changes the returned logits but not the samples.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def penalize(logits: torch.Tensor, cfg: dict, history: torch.Tensor) -> torch.Tensor:

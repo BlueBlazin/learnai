@@ -7,7 +7,7 @@ keys of `runs` and are compared exactly.
 
 from fractions import Fraction
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 SLO = {"ttft": 0.5, "tpot": 0.05}
 

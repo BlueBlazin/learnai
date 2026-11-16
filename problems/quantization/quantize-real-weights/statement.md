@@ -38,7 +38,7 @@ clamp in step 4 cuts it off. The floor in step 1 keeps a group of equal values f
 
 **`quantize_report(weights, bits, group_size)`**. `weights` maps tensor names to
 float32 tensors (a dict, or the kit's lazy
-[`Weights`](../../../python/src/whetstone/kit/realmodel.py), a read-only mapping
+[`Weights`](../../../python/src/learnai/kit/realmodel.py), a read-only mapping
 with `.items()`). Every tensor with **two dimensions** is a matrix and is quantized: the
 linear layers, and also the embedding matrix and a separate output head if there is
 one. Every other tensor (the 1-D norm gains) is left as it is. The function returns a

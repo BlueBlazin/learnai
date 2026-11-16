@@ -1,6 +1,6 @@
 [package]
-name = "whetstone-core"
-description = "Whetstone application logic (no Tauri dependency)"
+name = "learnai-core"
+description = "Learn AI application logic (no Tauri dependency)"
 version.workspace = true
 edition.workspace = true
 

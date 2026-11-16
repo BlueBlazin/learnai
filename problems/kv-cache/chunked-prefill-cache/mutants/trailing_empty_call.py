@@ -1,7 +1,7 @@
 # BUG: the loop bound is len(prompt) + 1, so a prompt whose length is a multiple of chunk_size ends with a call on an empty chunk.
 import torch
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def prefill(lm: TinyLM, prompt: list[int], chunk_size: int) -> tuple[torch.Tensor, KVCache]:

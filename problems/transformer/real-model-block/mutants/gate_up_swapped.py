@@ -1,7 +1,7 @@
 # BUG: takes the first half of the fused projection as up and the second as gate; the gate rows come first.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 HEAD_DIM = 64
 NORM_EPS = 1e-5

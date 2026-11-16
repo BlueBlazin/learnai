@@ -1,5 +1,5 @@
 # BUG: allowed_tokens checks only the first byte of each token; a multi-byte token whose later bytes leave the language is still allowed.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 def allowed_tokens(dfa: CharDFA, state: int, vocab: ToyVocab) -> list[int]:

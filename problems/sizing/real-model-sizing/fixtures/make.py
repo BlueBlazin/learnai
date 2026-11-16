@@ -3,7 +3,7 @@
     uv run --project python --extra jax --extra mlx --extra models \
         python problems/sizing/real-model-sizing/fixtures/make.py
 
-Needs both house models on disk (``ws assets fetch granite-4.0-350m
+Needs both house models on disk (``learnai assets fetch granite-4.0-350m
 granite-4.2-3b-mlx-8bit``) and the ``models`` extra. Every expected number is measured
 with a library or on a file, never computed with the formulas the problem asks for:
 
@@ -32,9 +32,9 @@ from mlx_lm.models.cache import make_prompt_cache
 from mlx_lm.utils import get_total_parameters
 from transformers import AutoModelForCausalLM
 
-from whetstone import assets
-from whetstone.kit.realmodel import LARGE_8BIT, SMALL
-from whetstone.problem import find_root
+from learnai import assets
+from learnai.kit.realmodel import LARGE_8BIT, SMALL
+from learnai.problem import find_root
 
 HERE = Path(__file__).parent
 TOKENS = [644, 220, 2366, 21, 279, 1646, 706, 220]  # any eight ids

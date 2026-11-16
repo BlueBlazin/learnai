@@ -1,7 +1,7 @@
 # BUG: jumps whenever the next text is forced, not the next token: if every permitted token spells a prefix of the longest one, it takes the longest without asking the model, choosing a tokenization the model might not have chosen.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def jump_forward_decode(

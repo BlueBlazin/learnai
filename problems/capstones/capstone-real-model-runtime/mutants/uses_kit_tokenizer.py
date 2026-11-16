@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import numpy as np
 import torch
 
-from whetstone.kit import ByteLevelBPE, ops
-from whetstone.kit.bpe import translate_pattern
+from learnai.kit import ByteLevelBPE, ops
+from learnai.kit.bpe import translate_pattern
 
 # -- stage 1: weights from a memory-mapped safetensors file --------------------------------
 

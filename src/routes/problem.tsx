@@ -94,8 +94,8 @@ function ProblemScreen({ problemId }: { problemId: string }) {
   useEffect(() => {
     if (edited && framework) markFrameworkUsed(problemId, framework);
   }, [edited, framework, markFrameworkUsed, problemId]);
-  const columns = useDefaultLayout({ id: "whetstone.workspace.columns" });
-  const rows = useDefaultLayout({ id: "whetstone.workspace.rows" });
+  const columns = useDefaultLayout({ id: "learnai.workspace.columns" });
+  const rows = useDefaultLayout({ id: "learnai.workspace.rows" });
 
   const { flush } = editor;
   const { start: startRun, active } = run;

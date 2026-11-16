@@ -1,5 +1,5 @@
 # BUG: the index is keyed by token only: it records where each token leads from the start state and answers every query from that, whatever the current state is.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class _Node:

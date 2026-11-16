@@ -1,7 +1,7 @@
 # BUG: the loads are masked but the store is not; the tail of every row's last block is written into the next row, or past the end of the tensor.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

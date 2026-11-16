@@ -57,7 +57,7 @@ Details:
   `masked_probs`, allowed or not. Every row that has an allowed token has at least one
   allowed token with a finite logit. `+inf` and NaN never appear.
 - Neither function modifies its arguments.
-- You may use your framework's `softmax` or `whetstone.kit.ops.softmax`; this problem
+- You may use your framework's `softmax` or `learnai.kit.ops.softmax`; this problem
   is about the mask.
 
 ## Shapes

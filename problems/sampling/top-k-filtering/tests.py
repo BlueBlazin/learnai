@@ -8,7 +8,7 @@ min(k, finite) survivors, the largest ones, ties to the lowest index) in numpy.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "top_k_filter"
 INF = np.inf

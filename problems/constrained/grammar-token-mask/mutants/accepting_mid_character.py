@@ -1,5 +1,5 @@
 # BUG: is_accepting ignores the pending bytes of an unfinished character: a text that ends with half a character counts as complete when the text before it was.
-from whetstone.kit import Chars, Grammar, Ref, ToyVocab
+from learnai.kit import Chars, Grammar, Ref, ToyVocab
 
 
 def _code_points(data: bytes) -> tuple[int, int] | None:

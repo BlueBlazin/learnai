@@ -1,7 +1,7 @@
 # BUG: always re-feeds the last token of the common prefix (reused = shared - 1), which is needed only when the prefix is the whole prompt.
 import torch
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def common_prefix_len(a, b) -> int:

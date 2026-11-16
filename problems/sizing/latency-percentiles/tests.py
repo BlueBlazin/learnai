@@ -10,7 +10,7 @@ from fractions import Fraction
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 LATENCIES = [120.0, 95.0, 110.0, 2300.0, 105.0, 98.0, 130.0, 101.0, 99.0, 115.0]
 SHARD_A = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0]

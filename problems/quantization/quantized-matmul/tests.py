@@ -9,7 +9,7 @@ cases share a few layouts.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 RTOL, ATOL = 1e-4, 5e-4
 

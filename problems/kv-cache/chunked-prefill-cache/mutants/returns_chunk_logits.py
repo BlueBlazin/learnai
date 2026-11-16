@@ -1,7 +1,7 @@
 # BUG: returns the logits of the whole last chunk, shape (T, vocab_size), instead of its last row.
 import torch
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def prefill(lm: TinyLM, prompt: list[int], chunk_size: int) -> tuple[torch.Tensor, KVCache]:

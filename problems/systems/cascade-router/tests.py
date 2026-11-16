@@ -6,8 +6,8 @@ rule is restated here in `expected` (so the expected values do not come from the
 reference), and the worked example is compared with literal values.
 """
 
-from whetstone.judge import case, check
-from whetstone.kit import Counters, ScriptedChatModel, reply
+from learnai.judge import case, check
+from learnai.kit import Counters, ScriptedChatModel, reply
 
 KEYS = ["answer", "model", "confidence", "cost", "accepted"]
 

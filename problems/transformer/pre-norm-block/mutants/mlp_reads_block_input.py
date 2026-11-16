@@ -1,7 +1,7 @@
 # BUG: runs the two sublayers in parallel: the MLP reads the normalized block input instead of the stream after attention was added.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def attn(h: torch.Tensor, params: dict[str, torch.Tensor], mask: torch.Tensor) -> torch.Tensor:

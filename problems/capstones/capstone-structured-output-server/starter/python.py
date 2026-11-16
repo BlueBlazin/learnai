@@ -3,7 +3,7 @@ import json
 import time
 import uuid
 
-from whetstone.kit import DEAD, CharDFA
+from learnai.kit import DEAD, CharDFA
 
 PATH = "/v1/chat/completions"
 ROLES = ("system", "user", "assistant")

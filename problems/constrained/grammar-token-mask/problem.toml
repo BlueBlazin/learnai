@@ -12,7 +12,7 @@ entry = ["GrammarMatcher"]
 time_limit_s = 10
 # The statement's rule, enforced by the harness: the grammar's test oracle is off limits.
 forbidden = [
-    "whetstone.kit.grammar.Grammar.accepts",
-    "whetstone.kit.grammar.Grammar.accepts_prefix",
-    "whetstone.kit.grammar.Grammar._run",
+    "learnai.kit.grammar.Grammar.accepts",
+    "learnai.kit.grammar.Grammar.accepts_prefix",
+    "learnai.kit.grammar.Grammar._run",
 ]

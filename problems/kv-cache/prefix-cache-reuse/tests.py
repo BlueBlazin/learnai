@@ -10,8 +10,8 @@ come from the store, and `g` generated tokens, the limits are `g` forward calls 
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import KVCache, TinyLM
+from learnai.judge import case, check
+from learnai.kit import KVCache, TinyLM
 
 FN = "generate_with_store"
 

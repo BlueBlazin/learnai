@@ -13,8 +13,8 @@ def allowed_from_index(index, state) -> list[int]: ...
 def advance_from_index(index, state, token) -> int: ...
 ```
 
-`dfa` is a [`CharDFA`](../../../python/src/whetstone/kit/dfa.py) and `vocab` a
-[`ToyVocab`](../../../python/src/whetstone/kit/vocab.py), as in `dfa-token-mask`, and
+`dfa` is a [`CharDFA`](../../../python/src/learnai/kit/dfa.py) and `vocab` a
+[`ToyVocab`](../../../python/src/learnai/kit/vocab.py), as in `dfa-token-mask`, and
 "allowed" means the same thing: token `t` is **allowed** in state `q` when
 `vocab.bytes(t)` has at least one byte and reading all of its bytes from `q` never
 yields `DEAD`. The state reached is its **next state**. Special tokens have no bytes

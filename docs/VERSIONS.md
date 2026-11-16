@@ -1,4 +1,4 @@
-# Whetstone dependency versions
+# Learn AI dependency versions
 
 **Verified on 2026-11-14.** Versions come from live registry queries (`npm view`, the crates.io API, the PyPI JSON API) run on that date; behavior notes come from the linked official docs. Anything not confirmed against a primary source is marked **UNVERIFIED**. Only stable releases are listed (pre-releases such as Tauri 3.0.0-alpha.6, notify 9.0.0-rc.8, and TypeScript 7.1 beta were ignored).
 
@@ -163,8 +163,8 @@ UNVERIFIED: that `axum` 0.8.9 and `tower-http` 0.7.1 are compatible with each ot
 Scaffold (non-interactive; documented in the create-tauri-app README, https://github.com/tauri-apps/create-tauri-app):
 
 ```sh
-pnpm create tauri-app whetstone --template react-ts
-cd whetstone
+pnpm create tauri-app learnai --template react-ts
+cd learnai
 pnpm install
 pnpm tauri dev
 ```
@@ -343,14 +343,14 @@ No dependency was added or bumped for milestone 4. What changed is two markers i
   `--only-binary :all:`, both platforms resolve to 48 packages, every one a wheel.
   With `models` added (69 packages) one package has no Linux wheel for Python 3.15:
   **`pyyaml` 6.0.3** (needed by `huggingface_hub` and `transformers`) must be built
-  from its sdist, so `ws assets fetch` on a Linux host needs a working build
+  from its sdist, so `learnai assets fetch` on a Linux host needs a working build
   environment or a later `pyyaml`. `uv pip compile pyproject.toml --python-platform
   x86_64-manylinux_2_28` resolves to the same versions as the lock.
 - NOT verified: an actual install or run on Linux (wheel contents, the CUDA runtime
   loading, glibc compatibility of the host, a managed Python 3.15 from uv on Linux),
   and anything on a GPU.
-- `ws doctor --json` was run in a fresh environment with no extras
-  (`UV_PROJECT_ENVIRONMENT=<tmp> uv run --frozen --no-dev ws doctor --json`): it
+- `learnai doctor --json` was run in a fresh environment with no extras
+  (`UV_PROJECT_ENVIRONMENT=<tmp> uv run --frozen --no-dev learnai doctor --json`): it
   reports `jax` and `mlx` as null and exits 0, and a torch problem is judged there.
 - JAX's persistent compilation cache (`jax_compilation_cache_dir`,
   `jax_persistent_cache_min_compile_time_secs`,

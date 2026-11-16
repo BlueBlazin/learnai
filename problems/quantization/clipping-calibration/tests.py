@@ -14,7 +14,7 @@ change which candidate wins. Two kinds of input guarantee that:
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 GAP = 1.02
 

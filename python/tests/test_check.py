@@ -3,7 +3,7 @@ import math
 import numpy as np
 import pytest
 
-from whetstone.judge import CheckFailure, check
+from learnai.judge import CheckFailure, check
 
 F32 = np.float32
 

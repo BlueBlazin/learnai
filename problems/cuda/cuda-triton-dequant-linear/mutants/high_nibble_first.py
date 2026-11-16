@@ -1,7 +1,7 @@
 # BUG: reads the codes of a word from the highest bits down; the order of the eight codes inside every word is reversed.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

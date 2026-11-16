@@ -21,8 +21,8 @@ import time
 
 import httpx
 
-from whetstone.judge import CheckFailure, case, check
-from whetstone.kit import ScriptedLM
+from learnai.judge import CheckFailure, case, check
+from learnai.kit import ScriptedLM
 
 BUCKETS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.5)
 RUNNING = "vllm:num_requests_running"

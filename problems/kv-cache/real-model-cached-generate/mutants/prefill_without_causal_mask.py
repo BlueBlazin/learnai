@@ -1,7 +1,7 @@
 # BUG: lets every prompt token attend to the whole prompt during prefill; the last row looks plausible, but the cached keys and values of earlier tokens have seen the future.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 # The cache: for each layer, (keys, values) of every token read so far, each of shape
 # (n_kv_heads, length, head_dim). Keys are stored already rotated.

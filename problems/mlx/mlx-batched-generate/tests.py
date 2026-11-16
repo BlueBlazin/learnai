@@ -18,8 +18,8 @@ Nothing here needs the device, so no case is marked `mlx-gpu`.
 import mlx.core as mx
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import EvalSpy, MLXTinyLM
+from learnai.judge import case, check
+from learnai.kit import EvalSpy, MLXTinyLM
 
 FN = "batch_generate"
 _alone: dict[tuple, list[int]] = {}

@@ -42,7 +42,7 @@ The pieces of a turn, in order:
 
 Calls are streamed one after another: after the header of call $i + 1$, no more
 fragments of call $i$ arrive. `assemble(pieces)` from the kit
-(`from whetstone.kit import assemble`) turns the list of all pieces of a turn into
+(`from learnai.kit import assemble`) turns the list of all pieces of a turn into
 the assistant message, which is appended to the transcript unchanged. The model
 validates the conversation when `stream` is called, as in `tool-call-loop`.
 

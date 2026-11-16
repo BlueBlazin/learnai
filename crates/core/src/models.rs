@@ -2,7 +2,7 @@
 //! 3.3, 3.7, and 4).
 //!
 //! The Python side owns what an asset is and whether it is present; core only runs
-//! `ws assets list --json` and `ws assets fetch <names> --json` in the project
+//! `learnai assets list --json` and `learnai assets fetch <names> --json` in the project
 //! environment and maps their output onto the wire types. A fetch streams
 //! [`AssetEvent`]s and always finishes with exactly one `done` event, whatever happens
 //! (launch failure, a failed asset, cancel).
@@ -35,9 +35,9 @@ use crate::stream::{Message, spawn_reader};
 use crate::target::{LocalProcess, Process};
 
 /// Environment variable that tells the Python side where the content root is.
-const ROOT_ENV: &str = "WHETSTONE_ROOT";
+const ROOT_ENV: &str = "LEARNAI_ROOT";
 
-/// `ws assets list --json` as the CLI prints it (snake_case; see PROBLEM_AUTHORING
+/// `learnai assets list --json` as the CLI prints it (snake_case; see PROBLEM_AUTHORING
 /// section 15). Keys core does not use (`present`, `fetch_command`, `issues`) and keys
 /// added later are ignored.
 #[derive(Debug, Deserialize)]
@@ -93,7 +93,7 @@ impl From<WireListing> for AssetList {
     }
 }
 
-/// Parses the document printed by `ws assets list --json`. Anything printed before it
+/// Parses the document printed by `learnai assets list --json`. Anything printed before it
 /// (a warning, say) is skipped: the document is the last line that is a JSON object.
 pub(crate) fn parse_listing(stdout: &str) -> Result<AssetList> {
     let whole = serde_json::from_str::<WireListing>(stdout.trim());
@@ -105,14 +105,14 @@ pub(crate) fn parse_listing(stdout: &str) -> Result<AssetList> {
             .find_map(|line| serde_json::from_str::<WireListing>(line.trim()).ok())
             .ok_or_else(|| {
                 CoreError::Assets(format!(
-                    "`ws assets list --json` printed something unexpected: {error}"
+                    "`learnai assets list --json` printed something unexpected: {error}"
                 ))
             })?,
     };
     Ok(listing.into())
 }
 
-/// An event of `ws assets fetch --json` as the CLI writes it.
+/// An event of `learnai assets fetch --json` as the CLI writes it.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "event")]
 enum FetchEvent {
@@ -262,7 +262,7 @@ pub struct RemoteFetch {
     /// The remote working directory.
     pub remote_dir: String,
     /// The directories of the problems that declare the assets being fetched: the
-    /// remote `ws assets fetch` reads the declarations from them.
+    /// remote `learnai assets fetch` reads the declarations from them.
     pub problem_dirs: Vec<PathBuf>,
 }
 
@@ -293,11 +293,11 @@ impl ModelAssets {
         self.job().is_some()
     }
 
-    /// `uv run --project <root>/python [--extra ...] -- ws assets <args>`, told where
+    /// `uv run --project <root>/python [--extra ...] -- learnai assets <args>`, told where
     /// the content root is.
     fn command(&self, extras: &[Extra], args: &[&str]) -> CommandSpec {
         let mut spec = self.env.uv().run(extras);
-        spec.args.extend(["ws".into(), "assets".into()]);
+        spec.args.extend(["learnai".into(), "assets".into()]);
         spec.args.extend(args.iter().map(OsString::from));
         spec.envs.push((ROOT_ENV.into(), self.root.clone().into()));
         spec
@@ -314,7 +314,7 @@ impl ModelAssets {
             .map_err(|error| {
                 CoreError::Assets(if error.kind() == std::io::ErrorKind::NotFound {
                     "uv was not found, so model assets cannot be listed. Install uv \
-                     (https://docs.astral.sh/uv/), then reopen Whetstone."
+                     (https://docs.astral.sh/uv/), then reopen Learn AI."
                         .to_owned()
                 } else {
                     format!("`{}` could not be started: {error}", spec.display())
@@ -324,7 +324,7 @@ impl ModelAssets {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let reason = last_line(&stderr).unwrap_or("it printed nothing");
             return Err(CoreError::Assets(format!(
-                "`ws assets list` failed: {reason}"
+                "`learnai assets list` failed: {reason}"
             )));
         }
         parse_listing(&String::from_utf8_lossy(&output.stdout))
@@ -337,7 +337,7 @@ impl ModelAssets {
     /// an install already running) means nothing was started and no events follow.
     ///
     /// With `remote`, the same fetch runs on that host and the files land under
-    /// `<remoteDir>/root/.whetstone/models/`; the local environment is not touched.
+    /// `<remoteDir>/root/.learnai/models/`; the local environment is not touched.
     pub fn fetch(
         &self,
         names: &[String],
@@ -461,7 +461,7 @@ impl ModelAssets {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return failed(
                     "uv was not found, so nothing can be downloaded. Install uv \
-                     (https://docs.astral.sh/uv/), then reopen Whetstone."
+                     (https://docs.astral.sh/uv/), then reopen Learn AI."
                         .to_owned(),
                 );
             }
@@ -502,7 +502,7 @@ impl ModelAssets {
             }
             // `uv run` only adds packages, so asking for `models` removes nothing there.
             let mut command = session.uv_run(&[Extra::Models.as_str()], false)?;
-            command.extend(["ws", "assets", "fetch"].map(str::to_owned));
+            command.extend(["learnai", "assets", "fetch"].map(str::to_owned));
             command.extend(names.iter().cloned());
             command.push("--json".to_owned());
             preparing(format!(
@@ -656,7 +656,7 @@ mod tests {
     use super::*;
 
     const LISTING: &str = r#"{
-  "models_dir": "/abs/learnai/.whetstone/models",
+  "models_dir": "/abs/learnai/.learnai/models",
   "assets": [
     {
       "name": "granite-4.0-350m",
@@ -667,10 +667,10 @@ mod tests {
       "state": "missing",
       "present": false,
       "reason": null,
-      "path": "/abs/learnai/.whetstone/models/granite-4.0-350m",
+      "path": "/abs/learnai/.learnai/models/granite-4.0-350m",
       "bytes_on_disk": 0,
       "problems": ["real-model-block", "real-model-logits"],
-      "fetch_command": "ws assets fetch granite-4.0-350m",
+      "fetch_command": "learnai assets fetch granite-4.0-350m",
       "a_key_from_the_future": {"x": 1}
     },
     {
@@ -682,10 +682,10 @@ mod tests {
       "state": "incomplete",
       "present": false,
       "reason": "config.json is missing",
-      "path": "/abs/learnai/.whetstone/models/tiny",
+      "path": "/abs/learnai/.learnai/models/tiny",
       "bytes_on_disk": 12,
       "problems": ["p"],
-      "fetch_command": "ws assets fetch tiny"
+      "fetch_command": "learnai assets fetch tiny"
     }
   ],
   "issues": [{"problem": "some-problem", "message": "asset `x`: `revision` must be ..."}]
@@ -694,7 +694,7 @@ mod tests {
     #[test]
     fn the_documented_listing_parses() {
         let listing = parse_listing(LISTING).expect("listing");
-        assert_eq!(listing.models_dir, "/abs/learnai/.whetstone/models");
+        assert_eq!(listing.models_dir, "/abs/learnai/.learnai/models");
         assert_eq!(listing.assets.len(), 2);
         let granite = &listing.assets[0];
         assert_eq!(granite.name, "granite-4.0-350m");
@@ -830,7 +830,7 @@ mod tests {
         let listing = parse_listing(LISTING).expect("listing");
         assert_eq!(
             removal_target(&listing, "tiny").expect("target"),
-            Path::new("/abs/learnai/.whetstone/models/tiny")
+            Path::new("/abs/learnai/.learnai/models/tiny")
         );
         for name in ["..", "../state.db", "tiny/..", "/abs", "", "TINY"] {
             assert!(

@@ -1,7 +1,7 @@
 # BUG: continues from the matching entry's whole cache without truncating it to the common prefix, so when the entry goes on differently the model sees the entry's tail before the rest of the prompt.
 import torch
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def common_prefix_len(a, b) -> int:

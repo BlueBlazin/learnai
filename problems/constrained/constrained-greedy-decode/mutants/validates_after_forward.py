@@ -1,7 +1,7 @@
 # BUG: picks the unconstrained argmax and feeds it to the model before checking it against the constraint; a rejected candidate is masked and the step retried, so every rejection (and the final token) costs an extra forward call.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def constrained_greedy(

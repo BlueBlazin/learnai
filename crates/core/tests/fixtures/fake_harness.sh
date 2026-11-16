@@ -1,5 +1,5 @@
 #!/bin/sh
-# Fake Whetstone harness for tests. Accepts the real harness arguments and speaks the
+# Fake Learn AI harness for tests. Accepts the real harness arguments and speaks the
 # event protocol from docs/ARCHITECTURE.md section 3.6.
 #
 # The scenario comes from $FAKE_SCENARIO, else from a `# scenario: <name>` line in the
@@ -132,7 +132,7 @@ case "$scenario" in
         pass "$id"
       fi
     done
-    ev "{\"event\":\"end\",\"status\":\"assets_missing\",\"passed\":$((total - 1)),\"total\":$total,\"skipped\":1,\"duration_ms\":9.0,\"metrics\":[{\"name\":\"throughput\",\"value\":41.0,\"unit\":\"tok/s\",\"limit\":20,\"higher_is_better\":true}],\"message\":\"Model asset \`tiny\` is not downloaded; fetch it with \`ws assets fetch tiny\`.\",\"missing_assets\":[{\"name\":\"tiny\",\"repo\":\"fake/tiny\",\"size_mb\":0.5,\"fetch_command\":\"ws assets fetch tiny\"}]}"
+    ev "{\"event\":\"end\",\"status\":\"assets_missing\",\"passed\":$((total - 1)),\"total\":$total,\"skipped\":1,\"duration_ms\":9.0,\"metrics\":[{\"name\":\"throughput\",\"value\":41.0,\"unit\":\"tok/s\",\"limit\":20,\"higher_is_better\":true}],\"message\":\"Model asset \`tiny\` is not downloaded; fetch it with \`learnai assets fetch tiny\`.\",\"missing_assets\":[{\"name\":\"tiny\",\"repo\":\"fake/tiny\",\"size_mb\":0.5,\"fetch_command\":\"learnai assets fetch tiny\"}]}"
     ;;
   staged)
     ev "{\"event\":\"start\",\"problem\":\"$(basename "$problem")\",\"framework\":\"$framework\",\"mode\":\"$mode\",\"cases\":[{\"id\":\"t1\",\"name\":\"Encodes ASCII\",\"public\":true,\"stage\":\"1: Tokenizer\"},{\"id\":\"hidden-2\",\"name\":\"Hidden case 2\",\"public\":false,\"stage\":\"1: Tokenizer\"},{\"id\":\"s1\",\"name\":\"Greedy matches argmax\",\"public\":true,\"stage\":\"Stage 2: Sampler\"}],\"env\":{\"python\":\"3.15.2\"}}"

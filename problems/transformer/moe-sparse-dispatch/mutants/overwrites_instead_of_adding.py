@@ -1,7 +1,7 @@
 # BUG: scatters with assignment instead of accumulation, so for k > 1 the last expert of a token overwrites the contributions of the others.
 import torch
 
-from whetstone.kit import CountingExperts
+from learnai.kit import CountingExperts
 
 
 def moe_sparse(

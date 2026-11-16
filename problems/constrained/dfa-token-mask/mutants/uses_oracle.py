@@ -1,5 +1,5 @@
 # BUG: takes the forbidden shortcut: decides with the DFA's test oracle `is_live` instead of comparing the walk's result with DEAD.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 def _walk_token(dfa: CharDFA, state: int, token: int, vocab: ToyVocab) -> int:

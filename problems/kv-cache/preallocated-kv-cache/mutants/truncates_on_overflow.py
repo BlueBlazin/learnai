@@ -1,7 +1,7 @@
 # BUG: a write past capacity is silently truncated to the slots that are left instead of raising ValueError; the tokens that do not fit are lost.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 Cache = tuple[torch.Tensor, torch.Tensor, int]
 

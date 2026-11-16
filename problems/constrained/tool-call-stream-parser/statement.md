@@ -34,7 +34,7 @@ call is, exactly:
 <tool_call> ws { ws "name" ws : ws NAME ws , ws "arguments" ws : ws ARGS ws } ws </tool_call>
 ```
 
-where `ws` is any amount of JSON whitespace (space, `\n`, `\r`, `\t`), `NAME` is a
+where `learnai` is any amount of JSON whitespace (space, `\n`, `\r`, `\t`), `NAME` is a
 JSON string, and `ARGS` is a JSON object. `"name"` always comes before
 `"arguments"`. Everything outside tool calls is **content**. In content, only the
 exact string `<tool_call>` begins a call; any other text, including `<`, `<tool`,

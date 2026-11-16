@@ -56,8 +56,8 @@ Both functions are pure: they return new tensors and keep no state between calls
 only state is the cache length, which the caller passes in, so the same code is
 natural in PyTorch, JAX, and MLX.
 
-You may call [`ops.rope(x, positions, base)`](../../../python/src/whetstone/kit/ops/__init__.py)
-from the kit (`from whetstone.kit import ops`), which accepts positions of shape
+You may call [`ops.rope(x, positions, base)`](../../../python/src/learnai/kit/ops/__init__.py)
+from the kit (`from learnai.kit import ops`), which accepts positions of shape
 `(T,)` or `(B, T)`, or write the rotation yourself.
 
 ## Shapes

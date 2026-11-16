@@ -3,7 +3,7 @@
     uv run --project python --extra jax --extra mlx --extra models \
         python problems/mlx/mlx-real-8bit-generate/fixtures/make.py
 
-Needs the 8-bit house model on disk (``ws assets fetch granite-4.2-3b-mlx-8bit``, 3.9
+Needs the 8-bit house model on disk (``learnai assets fetch granite-4.2-3b-mlx-8bit``, 3.9
 GB) and the ``models`` extra. The reference implementation is ``mlx-lm``
 (``mlx_lm.utils.load_model``), with the floating parameters converted to float32:
 ``mlx-lm`` itself runs the checkpoint in bfloat16, whose logits differ by up to about
@@ -35,9 +35,9 @@ import numpy as np
 from mlx_lm import load
 from mlx_lm.utils import load_model
 
-from whetstone import assets
-from whetstone.kit.realmodel import LARGE_8BIT
-from whetstone.problem import find_root
+from learnai import assets
+from learnai.kit.realmodel import LARGE_8BIT
+from learnai.problem import find_root
 
 HERE = Path(__file__).parent
 COLUMNS = np.sort(np.random.default_rng(180).choice(100352, size=64, replace=False))
@@ -190,7 +190,7 @@ def greedy(
 def tiny() -> None:
     (HERE / "tiny-configs.json").write_text(json.dumps(TINY, indent=2) + "\n", encoding="utf-8")
     out: dict[str, np.ndarray] = {}
-    scratch = Path(tempfile.mkdtemp(prefix="whetstone-make-"))
+    scratch = Path(tempfile.mkdtemp(prefix="learnai-make-"))
     try:
         for name, spec in TINY.items():
             tensors = tiny_checkpoint(spec["seed"], spec["config"])

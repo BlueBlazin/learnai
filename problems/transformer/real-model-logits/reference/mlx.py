@@ -1,7 +1,7 @@
 import mlx.core as mx
-from mlx import nn
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
+from mlx import nn
 
 
 def granite_logits(weights: dict[str, mx.array], cfg: RealConfig, tokens: mx.array) -> mx.array:

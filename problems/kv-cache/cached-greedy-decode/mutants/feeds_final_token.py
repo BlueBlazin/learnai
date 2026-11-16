@@ -1,7 +1,7 @@
 # BUG: feeds every generated token to the model before checking whether to stop, so the final token costs one forward call whose logits are never used.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def greedy_decode(

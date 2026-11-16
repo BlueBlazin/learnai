@@ -11,7 +11,7 @@ that happens, so every misplaced evaluation shows up as a wrong number.
 def benchmark(model, prompt, n_tokens, n_warmup, n_runs, clock): ...
 ```
 
-`model` behaves like the [`MLXTinyLM`](../../../python/src/whetstone/kit/mlxlm.py) of
+`model` behaves like the [`MLXTinyLM`](../../../python/src/learnai/kit/mlxlm.py) of
 `mlx-lazy-eval-placement`: `logits, cache = model(tokens)` runs a 1-D integer array of
 tokens from scratch, `logits, cache = model(tokens, cache)` continues a cache, and
 both return **lazy** arrays; `logits[-1]` scores the next token. `clock()` returns the

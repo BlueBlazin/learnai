@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, Utc};
 use common::{Collector, FakeRemote, TestRoot, fixtures, test_limits};
-use whetstone_core::{
+use learnai_core::{
     Clock, Core, CoreError, CoreOptions, Framework, LOCAL_TARGET, ProgramHarness, ReviewAction,
     RunEvent, RunMode, Verdict,
 };

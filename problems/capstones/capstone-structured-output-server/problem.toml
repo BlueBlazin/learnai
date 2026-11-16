@@ -18,8 +18,8 @@ time_limit_s = 30
 # The statement's rule, enforced by the harness: the kit compiles the regex, but the
 # token index is the solution's own, built through `dfa.step` only.
 forbidden = [
-    "whetstone.kit.constraint.DFAConstraint",
-    "whetstone.kit.dfa.CharDFA.accepts",
-    "whetstone.kit.dfa.CharDFA.accepts_prefix",
-    "whetstone.kit.dfa.CharDFA.is_live",
+    "learnai.kit.constraint.DFAConstraint",
+    "learnai.kit.dfa.CharDFA.accepts",
+    "learnai.kit.dfa.CharDFA.accepts_prefix",
+    "learnai.kit.dfa.CharDFA.is_live",
 ]

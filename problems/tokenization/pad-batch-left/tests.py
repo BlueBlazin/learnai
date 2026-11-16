@@ -7,7 +7,7 @@ Every comparison goes through `run`, which also checks the structure of the resu
 
 import copy
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 
 def is_int(value):

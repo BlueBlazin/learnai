@@ -12,7 +12,7 @@ JAX compiles every new shape, so the cases share three layouts: (1, 64), (4, 64)
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 BLOCK = 32
 MAGNITUDES = np.array([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0])

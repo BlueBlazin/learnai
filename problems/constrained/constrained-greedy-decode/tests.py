@@ -8,8 +8,8 @@ returned tokens from a prompt of `P` tokens the limits are `g` forward calls and
 `P + g - 1` tokens processed, and nothing at all when `g` is 0.
 """
 
-from whetstone.judge import case, check
-from whetstone.kit import CharDFA, DFAConstraint, TinyLM, ToyVocab
+from learnai.judge import case, check
+from learnai.kit import CharDFA, DFAConstraint, TinyLM, ToyVocab
 
 FN = "constrained_greedy"
 PROMPT = [0, 17, 42, 5]

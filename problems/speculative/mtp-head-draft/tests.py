@@ -17,8 +17,8 @@ some drafts are right and the loop needs fewer passes than tokens.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import LayeredLM
+from learnai.judge import case, check
+from learnai.kit import LayeredLM
 
 DRAFT = "mtp_draft"
 ACCEPT = "mtp_accept"

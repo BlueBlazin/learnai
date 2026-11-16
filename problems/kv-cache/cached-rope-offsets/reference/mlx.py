@@ -1,6 +1,6 @@
 import mlx.core as mx
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def rope_positions(cache_lengths: mx.array, n_new: int) -> mx.array:

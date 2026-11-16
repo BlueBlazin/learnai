@@ -24,9 +24,9 @@ import mlx.core as mx
 import numpy as np
 from mlx.utils import tree_flatten
 
+from learnai.judge import case, check
+from learnai.kit import dequantize, mlx_memory
 from mlx import nn
-from whetstone.judge import case, check
-from whetstone.kit import dequantize, mlx_memory
 
 MIB = 2**20
 

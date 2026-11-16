@@ -19,7 +19,7 @@ import {
 } from "@codemirror/view";
 import { cn } from "cn";
 import { useEffect, useRef } from "react";
-import { whetstoneEditorTheme } from "./theme";
+import { learnaiEditorTheme } from "./theme";
 
 /** Marks transactions that come from the `value` prop so they are not echoed to `onChange`. */
 const External = Annotation.define<boolean>();
@@ -71,7 +71,7 @@ export function CodeEditorView({ value, onChange, readOnly = false, label, class
             ...completionKeymap,
             indentWithTab,
           ]),
-          whetstoneEditorTheme,
+          learnaiEditorTheme,
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return;
             if (update.transactions.some((tr) => tr.annotation(External))) return;

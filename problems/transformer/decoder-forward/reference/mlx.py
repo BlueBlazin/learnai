@@ -1,6 +1,6 @@
 import mlx.core as mx
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 
 def forward(params: dict[str, mx.array], cfg: DecoderConfig, tokens: mx.array) -> mx.array:

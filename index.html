@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
-    <title>Whetstone</title>
+    <title>Learn AI</title>
     <script>
       // Apply the saved theme before first paint so launch never flashes the wrong one.
       (() => {
         var preference = "system";
         try {
-          var saved = JSON.parse(localStorage.getItem("whetstone.theme") || "null");
+          var saved = JSON.parse(localStorage.getItem("learnai.theme") || "null");
           if (saved && saved.state && saved.state.preference) preference = saved.state.preference;
         } catch (error) {}
         var dark =

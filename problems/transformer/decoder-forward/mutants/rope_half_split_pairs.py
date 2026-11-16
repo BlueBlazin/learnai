@@ -1,7 +1,7 @@
 # BUG: pairs feature i with feature i + head_dim / 2 (the rotate_half layout of Hugging Face checkpoints) instead of rotating the adjacent pairs (2i, 2i + 1) that this model uses.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 
 def rope_half_split(x: torch.Tensor, positions: torch.Tensor, base: float) -> torch.Tensor:

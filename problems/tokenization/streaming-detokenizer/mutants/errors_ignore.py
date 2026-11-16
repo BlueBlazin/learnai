@@ -1,7 +1,7 @@
 # BUG: decodes with errors="ignore", so invalid bytes vanish instead of becoming U+FFFD and the streamed text differs from the full decode.
 from typing import Any
 
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def detok_step(state: Any, token_id: int, vocab: ToyVocab) -> tuple[Any, str]:

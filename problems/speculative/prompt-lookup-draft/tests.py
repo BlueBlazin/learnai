@@ -5,7 +5,7 @@ call is compared with `definition`, a deliberately different formulation of the 
 rule (collect every earlier occurrence, then take the minimum), and with the oracle.
 """
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "lookup_draft"
 

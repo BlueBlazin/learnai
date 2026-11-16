@@ -1,7 +1,7 @@
 # BUG: saves one checkpoint per request, at the end of the prompt, and reads the prompt in one call: a prompt that leaves a stored one in the middle finds nothing to resume from.
 import torch
 
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.kit import RecurrentLM, RecurrentState
 
 Store = dict[tuple[int, ...], RecurrentState]
 

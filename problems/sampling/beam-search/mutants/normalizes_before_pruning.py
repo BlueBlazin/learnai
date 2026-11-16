@@ -1,7 +1,7 @@
 # BUG: stores the length-normalized score as the beam's running score, so later steps add log-probabilities to a normalized number and the pruning compares the wrong quantities.
 import torch
 
-from whetstone.kit import TinyLM, ops
+from learnai.kit import TinyLM, ops
 
 
 def beam_search(

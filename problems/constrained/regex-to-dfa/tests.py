@@ -20,8 +20,8 @@ import functools
 import re
 from collections import deque
 
-from whetstone.judge import case, check
-from whetstone.kit import CharDFA
+from learnai.judge import case, check
+from learnai.kit import CharDFA
 
 FN = "compile_regex"
 

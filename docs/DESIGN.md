@@ -1,6 +1,6 @@
-# Whetstone design system
+# Learn AI design system
 
-Whetstone is a study tool someone will spend hundreds of hours in. The design
+Learn AI is a study tool someone will spend hundreds of hours in. The design
 direction is **technical editorial**: the problem statement is set like a page
 from a well-made textbook, the editor sits beside it, and everything else gets
 out of the way.
@@ -98,7 +98,7 @@ steps of roughly 1.2.
 
 ## 3. Color
 
-The palette comes from the subject: a whetstone and tempered steel. Paper is a
+The palette comes from sharpening tools: stone and tempered steel. Paper is a
 cool stone white (not cream), ink is blue-black, and the single accent is the
 blue that steel turns when it is tempered. A straw yellow, the first temper
 color, is used only for highlighting (bracket and search matches).
@@ -141,7 +141,7 @@ CSS-variables theme, so one render is correct in both modes.
 
 ## 4. Difficulty, status, and verdicts
 
-These are the places where a generic app reaches for colored pills. Whetstone
+These are the places where a generic app reaches for colored pills. Learn AI
 does not.
 
 - **Difficulty** is a magnitude, not an outcome, so it has no hue: a three-bar

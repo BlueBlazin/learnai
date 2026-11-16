@@ -1,7 +1,7 @@
 # BUG: computes the attention weights with a plain softmax: a padding query has every key masked, its softmax is 0 / 0 = NaN, and the NaN in the padding rows reaches the real rows through 0 * NaN in the next layer.
 import torch
 
-from whetstone.kit import DecoderConfig, layer_params, ops
+from learnai.kit import DecoderConfig, layer_params, ops
 
 
 def decoder_block(

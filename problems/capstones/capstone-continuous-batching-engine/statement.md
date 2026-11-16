@@ -51,7 +51,7 @@ budget and a pool that are large enough). So the stages can be solved, and pass,
 order.
 
 **The simulated engine.** `sim_engine` is the kit's
-[`SimEngine`](../../../python/src/whetstone/kit/simengine.py): a forward pass with the
+[`SimEngine`](../../../python/src/learnai/kit/simengine.py): a forward pass with the
 model taken out. Time is virtual and counted in **milliseconds**. What `Engine` uses:
 
 - `sim_engine.admit(request, cached_tokens=0)` makes a request a live sequence. It
@@ -80,7 +80,7 @@ is incomplete, a chunk larger than the remaining prefill, more than
 `max_batch_tokens` tokens in a step, an unknown id) raises `ProtocolViolation` and
 fails the case, also if the exception is caught.
 
-**Requests** are [`SimRequest`](../../../python/src/whetstone/kit/workloads.py)
+**Requests** are [`SimRequest`](../../../python/src/learnai/kit/workloads.py)
 objects. Read `id` (hashable, unique), `prompt_tokens`, `priority` (stage 4), and
 `tokens` (stage 5). Do not read `output_tokens`: an engine learns the length of an
 output when the sequence finishes.

@@ -1,7 +1,7 @@
 # BUG: RoPE positions start at 0 in every call of step_q, whatever the cache already holds.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

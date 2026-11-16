@@ -1,7 +1,7 @@
 # BUG: expands the prompt's cache to n_beams rows once and never reorders it afterwards, so after the beams are reshuffled each row continues some other beam's history.
 import torch
 
-from whetstone.kit import TinyLM, ops
+from learnai.kit import TinyLM, ops
 
 
 def beam_search(

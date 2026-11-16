@@ -2,7 +2,7 @@ import math
 
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def absorb(

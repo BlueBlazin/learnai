@@ -1,5 +1,5 @@
 # BUG: keeps one stack instead of a set: at each character it commits to the first alternative that can read that character, so when two alternatives begin alike (`tr` and `true`, or a repetition that may stop or go on) the ones not chosen are forgotten.
-from whetstone.kit import Chars, Grammar, Ref, ToyVocab
+from learnai.kit import Chars, Grammar, Ref, ToyVocab
 
 
 def _code_points(data: bytes) -> tuple[int, int] | None:

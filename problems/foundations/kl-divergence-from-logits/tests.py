@@ -7,7 +7,7 @@ checked for the things the statement rules out everywhere: NaN and negative valu
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 NINF = -np.inf
 ATOL = 1e-5

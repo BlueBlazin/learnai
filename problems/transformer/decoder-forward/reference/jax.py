@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 
 def forward(params: dict[str, jax.Array], cfg: DecoderConfig, tokens: jax.Array) -> jax.Array:

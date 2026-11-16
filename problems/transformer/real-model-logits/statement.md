@@ -12,9 +12,9 @@ def granite_logits(weights, cfg, tokens): ...
 ```
 
 - `weights`: a mapping from checkpoint names to float32 tensors (a dict, or the kit's
-  lazy [`Weights`](../../../python/src/whetstone/kit/realmodel.py)), with the names
+  lazy [`Weights`](../../../python/src/learnai/kit/realmodel.py)), with the names
   and shapes under [Shapes](#shapes). Matrices are `(out, in)`; there are no biases.
-- `cfg`: a [`RealConfig`](../../../python/src/whetstone/kit/realmodel.py), the
+- `cfg`: a [`RealConfig`](../../../python/src/learnai/kit/realmodel.py), the
   architecture read from `config.json`. The fields you need:
 
   | field | Granite 4.0 350M | meaning |

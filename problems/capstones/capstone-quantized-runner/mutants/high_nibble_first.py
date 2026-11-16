@@ -1,7 +1,7 @@
 # BUG: two 4-bit codes are packed with the first code in the high half of the byte (and unpacked the same way), not in the low half.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

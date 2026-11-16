@@ -1,7 +1,7 @@
 # BUG: never checks for eos_id and always generates max_new_tokens tokens.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def greedy_decode(

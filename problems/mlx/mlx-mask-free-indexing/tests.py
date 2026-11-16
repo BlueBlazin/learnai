@@ -20,8 +20,8 @@ import io
 import mlx.core as mx
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import EvalSpy
+from learnai.judge import case, check
+from learnai.kit import EvalSpy
 
 INF = np.inf
 

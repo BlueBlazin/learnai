@@ -31,9 +31,9 @@ import mlx.core as mx
 import numpy as np
 from mlx.utils import tree_flatten
 
+from learnai.judge import case, check
+from learnai.kit import RealConfig, RealModel
 from mlx import nn
-from whetstone.judge import case, check
-from whetstone.kit import RealConfig, RealModel
 
 ASSET = "granite-4.0-350m"
 REVISION = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
@@ -95,7 +95,7 @@ def scratch(ctx):
     """A temporary directory for the running case, removed when the case ends."""
     key = ("dir", id(ctx))
     if key not in _cache:
-        path = Path(tempfile.mkdtemp(prefix="whetstone-granite-"))
+        path = Path(tempfile.mkdtemp(prefix="learnai-granite-"))
         _cache[key] = path
 
         def remove():

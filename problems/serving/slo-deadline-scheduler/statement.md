@@ -10,7 +10,7 @@ def plan_step(waiting: list, now_ms: float, running: int, free_slots: int, step_
 async def run(engine, queue: asyncio.Queue, max_running: int, on_shed) -> None: ...
 ```
 
-Requests are [`SimRequest`](../../../python/src/whetstone/kit/workloads.py) objects.
+Requests are [`SimRequest`](../../../python/src/learnai/kit/workloads.py) objects.
 Time is virtual and counted in **milliseconds**. `request.deadline_s` is the request's
 **TTFT deadline**: the absolute time in milliseconds by which its first output token
 must appear, or `None` for a request without a deadline, which counts as a deadline

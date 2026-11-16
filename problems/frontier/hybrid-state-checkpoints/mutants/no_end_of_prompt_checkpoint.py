@@ -1,7 +1,7 @@
 # BUG: saves checkpoints at the multiples of interval only and none at the end of the prompt, so a follow-up that extends the prompt resumes from up to interval - 1 tokens earlier than it could.
 import torch
 
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.kit import RecurrentLM, RecurrentState
 
 Store = dict[tuple[int, ...], RecurrentState]
 

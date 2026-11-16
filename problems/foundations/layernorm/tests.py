@@ -7,7 +7,7 @@ that float32 rounding of the mean stays far below the tolerance in every framewo
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 ATOL = 1e-5
 

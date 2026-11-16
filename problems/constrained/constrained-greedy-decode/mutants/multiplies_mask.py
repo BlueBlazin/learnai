@@ -1,7 +1,7 @@
 # BUG: applies the mask by multiplying the logits with 0 or 1, which turns forbidden logits into 0 instead of -inf; a forbidden token wins whenever every permitted logit is negative.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def constrained_greedy(

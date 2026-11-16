@@ -3,7 +3,7 @@
     uv run --project python --extra jax --extra mlx --extra models \
         python problems/transformer/real-model-logits/fixtures/make.py
 
-Needs the small house model on disk (``ws assets fetch granite-4.0-350m``) and the
+Needs the small house model on disk (``learnai assets fetch granite-4.0-350m``) and the
 ``models`` extra. The reference implementation is ``transformers`` (float32, CPU);
 token ids come from its tokenizer.
 
@@ -32,9 +32,9 @@ from transformers import (
     GraniteMoeHybridForCausalLM,
 )
 
-from whetstone import assets
-from whetstone.kit.realmodel import SMALL
-from whetstone.problem import find_root
+from learnai import assets
+from learnai.kit.realmodel import SMALL
+from learnai.problem import find_root
 
 HERE = Path(__file__).parent
 PROMPTS = [

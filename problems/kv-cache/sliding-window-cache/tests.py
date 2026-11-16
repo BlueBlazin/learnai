@@ -10,7 +10,7 @@ oracle. Entries are copies, so comparisons are exact.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "rotating_write"
 B, H, D = 2, 2, 4  # the sizes most cases share (fewer shapes: faster in JAX)

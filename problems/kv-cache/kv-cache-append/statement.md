@@ -63,8 +63,8 @@ solution is natural in all three frameworks: JAX arrays are immutable and MLX ar
 are evaluated lazily, and concatenation returns new tensors in each of them, as it
 does in PyTorch.
 
-You may use [`ops.attention`](../../../python/src/whetstone/kit/ops/__init__.py) from
-the kit (`from whetstone.kit import ops`), which computes
+You may use [`ops.attention`](../../../python/src/learnai/kit/ops/__init__.py) from
+the kit (`from learnai.kit import ops`), which computes
 $\operatorname{softmax}(q K^\top / \sqrt{D} + \text{mask})\,V$ for a mask you supply,
 or write the arithmetic yourself.
 

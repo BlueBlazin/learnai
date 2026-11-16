@@ -10,7 +10,7 @@ Since probing must change nothing, a solution whose `lookup` has side effects sh
 up as a wrong eviction later.
 """
 
-from whetstone.judge import CheckFailure, case, check
+from learnai.judge import CheckFailure, case, check
 
 
 class Model:

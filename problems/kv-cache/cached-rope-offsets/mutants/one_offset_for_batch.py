@@ -1,7 +1,7 @@
 # BUG: one offset for the whole batch: every row continues from the first row's cache length.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def rope_positions(cache_lengths: torch.Tensor, n_new: int) -> torch.Tensor:

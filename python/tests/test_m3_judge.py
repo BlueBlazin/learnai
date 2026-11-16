@@ -11,10 +11,10 @@ import numpy as np
 import pytest
 from conftest import CATALOG, SOLUTIONS, run_harness
 
-from whetstone.judge import check, forbidden, frameworks, speed
-from whetstone.judge.errors import CheckFailure
-from whetstone.judge.forbidden import ForbiddenCall, Guard
-from whetstone.kit import Counters
+from learnai.judge import check, forbidden, frameworks, speed
+from learnai.judge.errors import CheckFailure
+from learnai.judge.forbidden import ForbiddenCall, Guard
+from learnai.kit import Counters
 
 
 def fails(fn, *args, **kwargs) -> CheckFailure:
@@ -262,11 +262,11 @@ def test_forbidden_source_fails_every_case_before_anything_runs(tmp_path):
 
 
 def test_validate_checks_forbidden_source_entries(tmp_path, monkeypatch):
-    from whetstone import validate as gate
+    from learnai import validate as gate
 
     root = tmp_path / "root"
     shutil.copytree(CATALOG / "problems" / "basics", root / "problems" / "basics")
-    monkeypatch.setenv("WHETSTONE_ROOT", str(root))
+    monkeypatch.setenv("LEARNAI_ROOT", str(root))
     problem = root / "problems" / "basics" / "sum-list"
     toml = problem / "problem.toml"
     toml.write_text(toml.read_text() + 'forbidden_source = ["torch.bfloat16", "sum", "sum"]\n')
@@ -281,7 +281,7 @@ def test_bf16_decode_uses_forbidden_source_and_no_hand_rolled_scan():
     problem = REPO_ROOT / "problems" / "foundations" / "bf16-decode"
     if not problem.is_dir():
         pytest.skip("the catalog is not next to the package")
-    from whetstone.problem import load_problem
+    from learnai.problem import load_problem
 
     assert load_problem(problem).forbidden_source == ("bfloat16",)
     assert "ast" not in (problem / "tests.py").read_text().split("import numpy")[0]
@@ -318,7 +318,7 @@ def test_compare_speed_times_prepared_callables(ctx):
 
 def test_mlx_sync_forces_arrays_hidden_in_objects_and_waits_for_async_work():
     mx = pytest.importorskip("mlx.core")
-    from whetstone.kit import EvalSpy
+    from learnai.kit import EvalSpy
 
     fw = frameworks.get("mlx")
 

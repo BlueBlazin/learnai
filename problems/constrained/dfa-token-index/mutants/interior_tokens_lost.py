@@ -1,5 +1,5 @@
 # BUG: tokens are recorded only at the leaves of the vocabulary trie, so a token whose bytes are a prefix of another token (b't' under b'tr', b'tr' under b'true') is missing from the index.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class _Node:

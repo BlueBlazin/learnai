@@ -1,4 +1,4 @@
-//! Persistent state in SQLite at `<root>/.whetstone/state.db`.
+//! Persistent state in SQLite at `<root>/.learnai/state.db`.
 //!
 //! Holds submissions (with the code snapshot and per-case results), editorial unlocks,
 //! review schedules, and settings. The schema is versioned with `PRAGMA user_version`; each entry of
@@ -738,7 +738,7 @@ mod tests {
     #[test]
     fn unlocks_and_settings_persist_across_reopen() -> Result<()> {
         let tmp = tempfile::tempdir().map_err(|e| CoreError::io("create", Path::new("tmp"), e))?;
-        let path = tmp.path().join(".whetstone").join("state.db");
+        let path = tmp.path().join(".learnai").join("state.db");
         {
             let store = Store::open(&path)?;
             assert!(!store.editorial_revealed("a")?);

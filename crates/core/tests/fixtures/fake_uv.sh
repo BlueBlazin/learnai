@@ -3,21 +3,21 @@
 #   uv --version
 #   uv sync --project P [--extra X]... [--inexact]   records the extras in P/.fake-venv
 #   uv run --project P [--extra X]... [--no-sync] -- python -c <probe>      prints probe JSON
-#   uv run --project P [--extra X]... -- python -m whetstone.harness ...    runs fake_harness.sh
-#   uv run --project P [--extra X]... -- ws assets list --json              prints a listing
-#   uv run --project P [--extra X]... -- ws assets fetch NAME... --json     fake download
-#   uv run --project P [--extra X]... -- ws doctor --json                   prints a report
+#   uv run --project P [--extra X]... -- python -m learnai.harness ...    runs fake_harness.sh
+#   uv run --project P [--extra X]... -- learnai assets list --json              prints a listing
+#   uv run --project P [--extra X]... -- learnai assets fetch NAME... --json     fake download
+#   uv run --project P [--extra X]... -- learnai doctor --json                   prints a report
 # Every invocation is appended to P/.fake-uv.log. `sync` fails if P/.fail-sync exists.
 #
 # Markers beside P (in the content root, where a remote sync does not delete them) change
-# the behavior: `.fail-sync` fails `sync`, `.fail-doctor` fails `ws doctor`, `.fake-cuda`
+# the behavior: `.fail-sync` fails `sync`, `.fail-doctor` fails `learnai doctor`, `.fake-cuda`
 # makes the doctor report an NVIDIA GPU, and `.fetch-scenario` is read when P has none.
 # `run` is inexact, like the real one: it adds the extras it is given to P/.fake-venv and
 # removes nothing (`--no-sync` leaves the environment alone).
 #
-# Model assets live in $WHETSTONE_ROOT/.whetstone/models. The catalog declares two:
+# Model assets live in $LEARNAI_ROOT/.learnai/models. The catalog declares two:
 # `tiny` (used by add-two) and `other`. An asset is present when its directory holds
-# whetstone-asset.json, incomplete when the directory exists without it. The fetch
+# learnai-asset.json, incomplete when the directory exists without it. The fetch
 # scenario is the content of P/.fetch-scenario: empty (success), `fail`, or `hang`
 # (the child's pid goes to P/.fetch-pid). Fetching an undeclared name exits with 2.
 
@@ -78,21 +78,21 @@ case "$subcommand" in
         esac
       done
       echo "{\"python\": \"3.15.2\", \"torch\": \"2.15.0\", \"jax\": $jax, \"mlx\": $mlx, \"models\": $models}"
-    elif [ "$1" = ws ] && [ "$2" = assets ]; then
+    elif [ "$1" = learnai ] && [ "$2" = assets ]; then
       action=$3; shift 3
-      models_dir="$WHETSTONE_ROOT/.whetstone/models"
+      models_dir="$LEARNAI_ROOT/.learnai/models"
       ev() { printf '@@WS@@ %s\n' "$1"; }
       case "$action" in
         list)
           entry() {
             state=missing bytes=0 reason=null
-            if [ -f "$models_dir/$1/whetstone-asset.json" ]; then
+            if [ -f "$models_dir/$1/learnai-asset.json" ]; then
               state=present bytes=2048
             elif [ -d "$models_dir/$1" ]; then
               state=incomplete bytes=512 reason='"config.json is missing"'
             fi
             present=false; [ "$state" = present ] && present=true
-            printf '{"name":"%s","repo":"fake/%s","revision":"0123456789abcdef0123456789abcdef01234567","files":["config.json"],"size_mb":%s,"state":"%s","present":%s,"reason":%s,"path":"%s","bytes_on_disk":%s,"problems":%s,"fetch_command":"ws assets fetch %s"}' \
+            printf '{"name":"%s","repo":"fake/%s","revision":"0123456789abcdef0123456789abcdef01234567","files":["config.json"],"size_mb":%s,"state":"%s","present":%s,"reason":%s,"path":"%s","bytes_on_disk":%s,"problems":%s,"fetch_command":"learnai assets fetch %s"}' \
               "$1" "$1" "$2" "$state" "$present" "$reason" "$models_dir/$1" "$bytes" "$3" "$1"
           }
           printf '{"models_dir":"%s","assets":[' "$models_dir"
@@ -107,7 +107,7 @@ case "$subcommand" in
             case "$name" in
               --json) continue ;;
               tiny|other) ;;
-              *) echo "ws assets fetch: no asset named $name in the catalog (known: other, tiny)" >&2; exit 2 ;;
+              *) echo "learnai assets fetch: no asset named $name in the catalog (known: other, tiny)" >&2; exit 2 ;;
             esac
             echo "Fetching 1 files" >&2
             ev "{\"event\":\"asset_start\",\"asset\":\"$name\",\"repo\":\"fake/$name\",\"revision\":\"0123\",\"path\":\"$models_dir/$name\",\"files\":[{\"path\":\"config.json\",\"size\":2048}],\"total_bytes\":2048}"
@@ -125,7 +125,7 @@ case "$subcommand" in
                 ;;
               *)
                 mkdir -p "$models_dir/$name"
-                echo '{}' > "$models_dir/$name/whetstone-asset.json"
+                echo '{}' > "$models_dir/$name/learnai-asset.json"
                 echo "a plain progress line"
                 ev "{\"event\":\"asset_progress\",\"asset\":\"$name\",\"file\":\"config.json\",\"file_bytes\":2048,\"file_total\":2048,\"done_bytes\":2048,\"total_bytes\":2048}"
                 ev "{\"event\":\"asset_file\",\"asset\":\"$name\",\"file\":\"config.json\",\"size\":2048,\"cached\":false}"
@@ -135,11 +135,11 @@ case "$subcommand" in
           done
           exit $status
           ;;
-        *) echo "fake uv: cannot run ws assets $action" >&2; exit 2 ;;
+        *) echo "fake uv: cannot run learnai assets $action" >&2; exit 2 ;;
       esac
-    elif [ "$1" = ws ] && [ "$2" = doctor ]; then
+    elif [ "$1" = learnai ] && [ "$2" = doctor ]; then
       if [ -e "$project/../.fail-doctor" ]; then
-        echo "ModuleNotFoundError: No module named 'whetstone'" >&2
+        echo "ModuleNotFoundError: No module named 'learnai'" >&2
         exit 1
       fi
       cuda='{"present": false, "name": null, "memory_bytes": null, "devices": [], "torch_cuda_version": null}'
@@ -150,7 +150,7 @@ case "$subcommand" in
       cat <<DOCTOR
 {
   "schema": 1,
-  "whetstone": "0.1.0",
+  "learnai": "0.1.0",
   "python": "3.15.2",
   "executable": "$project/.venv/bin/python3",
   "platform": {"system": "Linux", "machine": "x86_64", "release": "6.8.0"},
@@ -162,11 +162,11 @@ case "$subcommand" in
     "cuda": $cuda
   },
   "hardware_override": null,
-  "root": "$WHETSTONE_ROOT",
-  "models_dir": "$WHETSTONE_ROOT/.whetstone/models"
+  "root": "$LEARNAI_ROOT",
+  "models_dir": "$LEARNAI_ROOT/.learnai/models"
 }
 DOCTOR
-    elif [ "$1" = python ] && [ "$2" = "-m" ] && [ "$3" = whetstone.harness ]; then
+    elif [ "$1" = python ] && [ "$2" = "-m" ] && [ "$3" = learnai.harness ]; then
       shift 3
       exec sh "$here/fake_harness.sh" "$@"
     else

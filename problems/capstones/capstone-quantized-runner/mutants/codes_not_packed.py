@@ -1,7 +1,7 @@
 # BUG: 4-bit codes are stored one per byte: the checkpoint is as large as an 8-bit one.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

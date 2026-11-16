@@ -1,4 +1,4 @@
-from whetstone.kit import LayerCache, LayeredLM
+from learnai.kit import LayerCache, LayeredLM
 
 
 def prefill_shared(lm: LayeredLM, prompt: list[int], share_from: int) -> tuple:

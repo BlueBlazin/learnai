@@ -11,8 +11,8 @@ is checked strictly.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import vectors
+from learnai.judge import case, check
+from learnai.kit import vectors
 
 FN = "search"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints

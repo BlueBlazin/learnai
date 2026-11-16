@@ -1,7 +1,7 @@
 # BUG: runs every expert on every token and lets zero weights discard the rest; the output is right and the work is E / k times what the routing asks for.
 import torch
 
-from whetstone.kit import CountingExperts
+from learnai.kit import CountingExperts
 
 
 def moe_sparse(

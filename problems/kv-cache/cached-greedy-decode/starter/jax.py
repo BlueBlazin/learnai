@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def greedy_decode(

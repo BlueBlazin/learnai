@@ -1,7 +1,7 @@
 # BUG: the target's cache is never truncated after a rejection, so rejected draft tokens stay in the context the target predicts from.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def speculative_greedy(

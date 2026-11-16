@@ -6,4 +6,4 @@ line-length = 100
 "**/starter/*.py" = ["F401"]
 
 [lint.isort]
-known-first-party = ["whetstone"]
+known-first-party = ["learnai"]

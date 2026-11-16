@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::{Collector, TestRoot, assert_well_formed, logs, test_limits};
-use whetstone_core::{
+use learnai_core::{
     CaseStatus, Core, CoreError, CoreOptions, Framework, LOCAL_TARGET, LogStream, MissingAsset,
     ProblemStatus, ProgramHarness, Requires, RunEvent, RunLimits, RunMode, Skip, Verdict,
 };
@@ -200,18 +200,12 @@ fn accepted_submit_is_stored_and_solves_the_problem() {
 
     let stats = core.get_stats().expect("stats");
     assert_eq!((stats.solved, stats.total), (1, 3));
+    assert_eq!(stats.by_difficulty[&learnai_core::Difficulty::Easy], (1, 1));
     assert_eq!(
-        stats.by_difficulty[&whetstone_core::Difficulty::Easy],
-        (1, 1)
-    );
-    assert_eq!(
-        stats.by_difficulty[&whetstone_core::Difficulty::Medium],
+        stats.by_difficulty[&learnai_core::Difficulty::Medium],
         (0, 1)
     );
-    assert_eq!(
-        stats.by_difficulty[&whetstone_core::Difficulty::Hard],
-        (0, 1)
-    );
+    assert_eq!(stats.by_difficulty[&learnai_core::Difficulty::Hard], (0, 1));
     assert_eq!(stats.streak_days, 1);
 }
 

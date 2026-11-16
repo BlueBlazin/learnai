@@ -14,7 +14,7 @@ three ways:
   fork, then its own), whatever its siblings did.
 """
 
-from whetstone.judge import CheckFailure, case, check
+from learnai.judge import CheckFailure, case, check
 
 OUT = "OutOfBlocks"  # the expected outcome of an append the pool cannot satisfy
 

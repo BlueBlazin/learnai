@@ -1,7 +1,7 @@
 # BUG: puts the padding condition on the query axis instead of the key axis: padding queries are blocked, but real queries still attend to padding keys.
 import torch
 
-from whetstone.kit import DecoderConfig, layer_params, ops
+from learnai.kit import DecoderConfig, layer_params, ops
 
 
 def decoder_block(

@@ -1,7 +1,7 @@
 # BUG: reads only the first BLOCK columns of the row, with no loop; correct only when the row fits in one block.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

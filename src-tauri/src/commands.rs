@@ -4,13 +4,13 @@
 //! a string. Core calls block (files, SQLite, subprocesses), so they run on the blocking
 //! thread pool rather than on the main thread or an async worker.
 
-use tauri::State;
-use tauri::ipc::Channel;
-use whetstone_core::{
+use learnai_core::{
     AssetEvent, AssetList, CatalogIssue, Core, EnvStatus, Framework, InstallEvent, ProblemDetail,
     ProblemSummary, Review, ReviewAction, RunEvent, RunMode, Settings, SolutionFile, SshHost,
     Stats, StudyPath, Submission, SubmissionDetail, TargetCheckEvent, TargetInfo, Track,
 };
+use tauri::State;
+use tauri::ipc::Channel;
 
 /// Shared application state: the core, or the reason it could not be opened.
 pub struct AppState(pub Result<Core, String>);
@@ -19,7 +19,7 @@ pub struct AppState(pub Result<Core, String>);
 type CommandResult<T> = Result<T, String>;
 
 /// Runs `call` against the core on the blocking thread pool. Every command is logged
-/// at debug level (`WHETSTONE_LOG=debug`) and every failure as a warning.
+/// at debug level (`LEARNAI_LOG=debug`) and every failure as a warning.
 async fn with_core<T, F>(
     state: State<'_, AppState>,
     command: &'static str,
@@ -27,7 +27,7 @@ async fn with_core<T, F>(
 ) -> CommandResult<T>
 where
     T: Send + 'static,
-    F: FnOnce(Core) -> whetstone_core::Result<T> + Send + 'static,
+    F: FnOnce(Core) -> learnai_core::Result<T> + Send + 'static,
 {
     tracing::debug!(command, "command");
     let result = match state.0.clone() {

@@ -1,5 +1,5 @@
 # BUG: when the held bytes stop matching, the scan restarts from the current byte alone instead of from the longest suffix that is still a prefix of a trigger; a trigger that overlaps its own beginning is missed (`<<fn=` in `<<<fn=`).
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class TagDispatch:

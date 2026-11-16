@@ -31,7 +31,7 @@ import tempfile
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 RTOL = 5e-3  # about five float16 ulps (one ulp is between 4.9e-4 and 9.8e-4, relative)
 ATOL = 4e-6

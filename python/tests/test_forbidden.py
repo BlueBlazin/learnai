@@ -8,8 +8,8 @@ import types
 import pytest
 from conftest import SOLUTIONS, fixture_problem, run_harness
 
-from whetstone.judge import forbidden
-from whetstone.judge.forbidden import ForbiddenCall, Guard
+from learnai.judge import forbidden
+from learnai.judge.forbidden import ForbiddenCall, Guard
 
 
 @pytest.fixture
@@ -199,7 +199,7 @@ def test_names_that_cannot_be_guarded_are_reported(lib):
         "ws_no_such_package.thing": "cannot import `ws_no_such_package`",
         "notdotted": "must be a dotted name such as `torch.softmax`",
     }
-    assert lib.builtin(2) == 4 and not hasattr(lib.builtin, "__whetstone_forbidden__")
+    assert lib.builtin(2) == 4 and not hasattr(lib.builtin, "__learnai_forbidden__")
 
 
 def test_methods_of_immutable_types_are_found_in_the_source(tmp_path):

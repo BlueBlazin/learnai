@@ -24,8 +24,8 @@ at the default delta of 1e-10.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import draft_target_pair
+from learnai.judge import case, check
+from learnai.kit import draft_target_pair
 
 S1 = "1: greedy speculation"
 S2 = "2: exact sampling"

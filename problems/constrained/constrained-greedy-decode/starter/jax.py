@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def constrained_greedy(

@@ -39,8 +39,8 @@ import math
 import numpy as np
 import torch
 
-from whetstone.judge import case, check
-from whetstone.kit import FakeCudaGraph
+from learnai.judge import case, check
+from learnai.kit import FakeCudaGraph
 
 NAME = "GraphedStep"
 VOCAB, DIM, HEADS, LAYERS, MAX_LEN = 24, 16, 2, 2, 24

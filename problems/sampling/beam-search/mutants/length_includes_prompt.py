@@ -1,7 +1,7 @@
 # BUG: normalizes by the length of the whole sequence, prompt included, instead of the number of generated tokens.
 import torch
 
-from whetstone.kit import TinyLM, ops
+from learnai.kit import TinyLM, ops
 
 
 def beam_search(

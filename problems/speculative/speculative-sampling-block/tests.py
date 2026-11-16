@@ -23,7 +23,7 @@ which keeps the false-failure rate of a correct solution below 1e-9.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "verify_block"
 MARGIN = 1e-3

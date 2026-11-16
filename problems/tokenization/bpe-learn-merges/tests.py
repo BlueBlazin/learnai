@@ -5,7 +5,7 @@ the oracle. Corpora are passed as fresh dicts, in several key orders where the o
 could tempt an implementation, and are checked to come back unmodified.
 """
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 PAPER = {"low": 5, "lower": 2, "newest": 6, "widest": 3}
 PAPER_MERGES = [

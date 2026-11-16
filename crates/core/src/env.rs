@@ -121,7 +121,7 @@ impl Environment {
     ///
     /// Extras found installed are adopted into the enabled set, so extras installed
     /// outside the app (for example with `uv sync --extra mlx` or
-    /// `uv run --extra models ws assets fetch ...` in a terminal) are not removed by a
+    /// `uv run --extra models learnai assets fetch ...` in a terminal) are not removed by a
     /// later install.
     pub fn status(&self, root: &std::path::Path) -> Result<EnvStatus> {
         let uv = capture(&self.uv.version()).and_then(|out| parse_uv_version(&out));

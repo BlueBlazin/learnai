@@ -13,8 +13,8 @@ and nothing is held back unless it could still become a stop string.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import ToyVocab
+from learnai.judge import case, check
+from learnai.kit import ToyVocab
 
 
 def first_stop(text, stops, checked=0):

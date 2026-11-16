@@ -9,7 +9,7 @@ entries equal to the maximum sit on the cutoff, in every framework.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "top_n_sigma_filter"
 INF = np.inf

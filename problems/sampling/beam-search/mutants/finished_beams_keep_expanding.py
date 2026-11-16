@@ -1,7 +1,7 @@
 # BUG: records a hypothesis that ends with EOS as finished but also keeps it among the live beams, so it takes a beam slot and is extended past its EOS.
 import torch
 
-from whetstone.kit import TinyLM, ops
+from learnai.kit import TinyLM, ops
 
 
 def beam_search(

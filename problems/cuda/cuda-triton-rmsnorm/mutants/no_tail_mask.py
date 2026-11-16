@@ -1,7 +1,7 @@
 # BUG: loads and stores whole blocks with no mask; the last block of a row reads the next row into the sum and writes over it, and the last row runs off the end of the tensor.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

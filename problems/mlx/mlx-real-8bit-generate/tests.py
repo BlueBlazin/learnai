@@ -37,9 +37,9 @@ import mlx.core as mx
 import numpy as np
 from mlx.utils import tree_flatten
 
+from learnai.judge import case, check
+from learnai.kit import EvalSpy, mlx_memory
 from mlx import nn
-from whetstone.judge import case, check
-from whetstone.kit import EvalSpy, mlx_memory
 
 ASSET = "granite-4.2-3b-mlx-8bit"
 REVISION = "7c630b526561db6b4641767c54595fe494176695"
@@ -114,7 +114,7 @@ def scratch(ctx):
     """A temporary directory for the running case, removed when the case ends."""
     key = ("dir", id(ctx))
     if key not in _cache:
-        path = Path(tempfile.mkdtemp(prefix="whetstone-granite8-"))
+        path = Path(tempfile.mkdtemp(prefix="learnai-granite8-"))
         _cache[key] = path
 
         def remove():

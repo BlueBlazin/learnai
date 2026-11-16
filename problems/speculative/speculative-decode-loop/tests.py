@@ -17,8 +17,8 @@ rounds.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import draft_target_pair
+from learnai.judge import case, check
+from learnai.kit import draft_target_pair
 
 FN = "speculative_greedy"
 MARGIN = 1e-3

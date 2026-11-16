@@ -21,8 +21,8 @@ exit would be invisible.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import LayeredLM
+from learnai.judge import case, check
+from learnai.kit import LayeredLM
 
 FN = "self_speculative_greedy"
 MARGIN = 1e-3

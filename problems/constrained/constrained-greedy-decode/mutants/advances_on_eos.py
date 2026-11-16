@@ -1,7 +1,7 @@
 # BUG: advances the constraint before checking for end-of-sequence; EOS is not a token of the constraint, so advance raises ValueError.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def constrained_greedy(

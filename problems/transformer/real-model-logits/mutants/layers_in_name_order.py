@@ -1,7 +1,7 @@
 # BUG: runs the blocks in the order of their sorted names, so layer 10 follows layer 1 and layer 2 comes after layer 19; correct for any model with at most ten layers.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

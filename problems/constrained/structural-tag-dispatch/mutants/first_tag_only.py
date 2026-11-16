@@ -1,5 +1,5 @@
 # BUG: after a trigger fires, only the first tag that begins with it is considered; the other tags of the same trigger can never be generated.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class TagDispatch:

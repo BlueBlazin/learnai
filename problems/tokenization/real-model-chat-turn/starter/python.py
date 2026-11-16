@@ -2,7 +2,7 @@ from collections.abc import Callable, Iterator
 
 import numpy as np
 
-from whetstone.kit import ByteLevelBPE
+from learnai.kit import ByteLevelBPE
 
 START_OF_ROLE = "<|start_of_role|>"
 END_OF_ROLE = "<|end_of_role|>"

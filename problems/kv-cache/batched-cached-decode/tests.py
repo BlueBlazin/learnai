@@ -15,8 +15,8 @@ called with (`RecordingLM`), which is how point 2 is checked.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import TinyLM
+from learnai.judge import case, check
+from learnai.kit import TinyLM
 
 FN = "batched_greedy"
 

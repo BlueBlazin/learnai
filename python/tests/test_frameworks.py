@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from whetstone.judge import CheckFailure, frameworks
+from learnai.judge import CheckFailure, frameworks
 
 
 def test_float_arrays_become_float32_tensors_and_round_trip(fw):

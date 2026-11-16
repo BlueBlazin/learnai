@@ -1,7 +1,7 @@
 # BUG: the early and the late layers keep separate caches and only the early one is rolled back after a rejection; the late layers keep the keys and values of rejected drafts and verify the next round against them.
 import torch
 
-from whetstone.kit import LayeredLM
+from learnai.kit import LayeredLM
 
 
 def self_speculative_greedy(

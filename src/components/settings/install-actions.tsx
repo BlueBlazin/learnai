@@ -22,7 +22,7 @@ export function InstallButton({
   );
 }
 
-/** Opens uv's installation guide in the system browser. Whetstone cannot install uv itself. */
+/** Opens uv's installation guide in the system browser. Learn AI cannot install uv itself. */
 export function UvGuideButton() {
   return (
     <Button variant="outline" size="xs" onClick={() => openExternal(UV_INSTALL_URL)}>

@@ -13,7 +13,7 @@ and hide a solution that mutates it.
 
 import json
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 OPEN = "<tool_call>"
 CLOSE = "</tool_call>"

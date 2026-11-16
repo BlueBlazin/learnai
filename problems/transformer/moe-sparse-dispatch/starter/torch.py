@@ -1,6 +1,6 @@
 import torch
 
-from whetstone.kit import CountingExperts
+from learnai.kit import CountingExperts
 
 
 def moe_sparse(

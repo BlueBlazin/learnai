@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 
-from whetstone.kit import LayeredLM
+from learnai.kit import LayeredLM
 
 
 def self_speculative_greedy(

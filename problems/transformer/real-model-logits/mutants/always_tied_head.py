@@ -1,7 +1,7 @@
 # BUG: always uses the embedding matrix as the output head, also when cfg.tied_embeddings is False and the checkpoint has its own lm_head.weight.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

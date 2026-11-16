@@ -27,8 +27,8 @@ until stage 3, `lookup` is `None` until stage 4, and `generate_batch` is called 
 in stage 5.
 
 **The models.** `target` and `draft` are two
-[`TinyLM`](../../../python/src/whetstone/kit/tinylm.py) models over one vocabulary,
-built by [`draft_target_pair`](../../../python/src/whetstone/kit/draft.py):
+[`TinyLM`](../../../python/src/learnai/kit/tinylm.py) models over one vocabulary,
+built by [`draft_target_pair`](../../../python/src/learnai/kit/draft.py):
 
 ```python
 logits, cache = lm(tokens)  # no cache: `tokens` is the whole sequence so far
@@ -42,7 +42,7 @@ is float32 of shape `(T, vocab_size)`, and row `i` scores the token after
 (`cache.length` tokens long). Each model counts `forward_calls` and
 `tokens_processed` in its own `counters`. The models are causal. You may use
 `ops.softmax` from the kit's
-[`ops`](../../../python/src/whetstone/kit/ops/__init__.py).
+[`ops`](../../../python/src/learnai/kit/ops/__init__.py).
 
 **A round.** Write $S$ for the verified sequence (the prompt followed by the tokens
 emitted so far), $r$ for the number of tokens still to emit, and $k$ for the current

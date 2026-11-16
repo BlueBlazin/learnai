@@ -7,7 +7,7 @@ and random inputs are kept away from the knife edges the statement excludes.
 
 import math
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 GB = 10**9
 # lmstudio-community/granite-4.2-3b-MLX-8bit, model.safetensors (bytes on the Hub).

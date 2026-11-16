@@ -1,5 +1,5 @@
 # BUG: takes the forbidden shortcut: the state is the text so far, and every question is passed to the grammar's test oracle instead of being answered by a matcher.
-from whetstone.kit import Grammar, ToyVocab
+from learnai.kit import Grammar, ToyVocab
 
 
 class GrammarMatcher:

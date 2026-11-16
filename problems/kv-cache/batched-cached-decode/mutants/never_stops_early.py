@@ -1,7 +1,7 @@
 # BUG: always runs max_new_tokens steps, also when every row has already emitted EOS; the tokens are right but the model is called after all rows have finished.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def batched_greedy(

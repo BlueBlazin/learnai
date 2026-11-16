@@ -1,5 +1,5 @@
 # BUG: after a tag ends, the trigger scan is not started afresh: the bytes of the end string still count, so an end string that finishes like a trigger begins makes the following text fire a trigger it does not contain.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class TagDispatch:

@@ -1,7 +1,7 @@
 # BUG: takes only the n_beams best candidates instead of 2 * n_beams, so every candidate that ends with EOS costs a live beam and the search narrows.
 import torch
 
-from whetstone.kit import TinyLM, ops
+from learnai.kit import TinyLM, ops
 
 
 def beam_search(

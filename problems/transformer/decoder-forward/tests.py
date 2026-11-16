@@ -7,8 +7,8 @@ the tokens from position t on must leave the logits before t unchanged.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import DecoderConfig, decoder_forward_ref, decoder_params
+from learnai.judge import case, check
+from learnai.kit import DecoderConfig, decoder_forward_ref, decoder_params
 
 FN = "forward"
 TOL = {"rtol": 1e-3, "atol": 1e-4}  # the tolerance stated in Constraints (a deep stack)

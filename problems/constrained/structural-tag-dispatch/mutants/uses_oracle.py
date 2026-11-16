@@ -1,5 +1,5 @@
 # BUG: takes the forbidden shortcut: asks the content automaton's test oracle `is_live` whether a state can still reach acceptance instead of comparing the result of `step` with DEAD.
-from whetstone.kit import CharDFA, ToyVocab
+from learnai.kit import CharDFA, ToyVocab
 
 
 class TagDispatch:

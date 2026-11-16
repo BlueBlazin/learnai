@@ -2,7 +2,7 @@ from typing import Any
 
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 # The cache is yours to design: anything that holds, for every layer, the keys and
 # values of the tokens read so far. The tests only pass it back to decode_step.

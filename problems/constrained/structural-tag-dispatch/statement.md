@@ -22,10 +22,10 @@ This is the `TokenConstraint` protocol of `constrained-greedy-decode`.
 
 - `triggers`: a list of non-empty strings.
 - `tags`: a list of tuples `(begin, inner, end)`. `begin` and `end` are strings and
-  `inner` is a [`CharDFA`](../../../python/src/whetstone/kit/dfa.py), built with
+  `inner` is a [`CharDFA`](../../../python/src/learnai/kit/dfa.py), built with
   `CharDFA.from_regex`, for the language of the tag's content. A tag *belongs to* the
   trigger that its `begin` starts with.
-- `vocab`: a [`ToyVocab`](../../../python/src/whetstone/kit/vocab.py);
+- `vocab`: a [`ToyVocab`](../../../python/src/learnai/kit/vocab.py);
   `vocab.bytes(t)` is the byte string of token `t`, empty for special tokens.
 
 Everything below is about **bytes**: strings mean their UTF-8 encoding, and the

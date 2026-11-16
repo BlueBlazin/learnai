@@ -1,7 +1,7 @@
 # BUG: the wrapper launches a grid of (batch, n_out) while the kernel reads the output row from axis 0 and the batch row from axis 1.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

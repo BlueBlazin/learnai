@@ -1,6 +1,6 @@
 import torch
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def common_prefix_len(a, b) -> int:

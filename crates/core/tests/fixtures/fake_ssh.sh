@@ -42,7 +42,7 @@ shell=sh
 if [ -f "$state/shell" ]; then shell=$(cat "$state/shell"); fi
 drop=
 if [ -e "$state/drop" ]; then
-  case "$*" in *whetstone.harness*) drop=1 ;; esac
+  case "$*" in *learnai.harness*) drop=1 ;; esac
 fi
 
 HOME="$state/home"

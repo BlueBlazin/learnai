@@ -1,7 +1,7 @@
 [project]
-name = "whetstone"
+name = "learnai"
 version = "0.1.0"
-description = "Whetstone judge, kit, and CLI"
+description = "Learn AI judge, kit, and CLI"
 readme = "README.md"
 requires-python = ">=3.15,<3.16"
 dependencies = [
@@ -19,7 +19,7 @@ jax = ["jax>=0.12.0.1"]
 mlx = ["mlx>=0.32.4; sys_platform == 'darwin' and platform_machine == 'arm64'"]
 # Real-model problems (milestone 3): downloading assets, and the reference
 # implementations that authors generate fixtures with. Never a base dependency: the
-# judge, the kit loaders, and the app work without it (see whetstone/assets.py).
+# judge, the kit loaders, and the app work without it (see learnai/assets.py).
 models = [
     "huggingface_hub>=2.4.0",
     "safetensors>=0.8.0",
@@ -29,7 +29,7 @@ models = [
 ]
 
 [project.scripts]
-ws = "whetstone.cli:main"
+learnai = "learnai.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=9.2.0", "ruff"]

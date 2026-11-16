@@ -26,8 +26,8 @@ have never run on the machine that validates the catalog.
 import numpy as np
 import torch
 
-from whetstone.judge import case, check
-from whetstone.kit import DeviceSpy, SyncSpy
+from learnai.judge import case, check
+from learnai.kit import DeviceSpy, SyncSpy
 
 CPU = torch.device("cpu")
 META = torch.device("meta")

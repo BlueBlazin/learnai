@@ -1,7 +1,7 @@
 # BUG: lets every EOS candidate among the 2 * n_beams finish, also those ranked below n_beams, which a beam of width n_beams would have pruned.
 import torch
 
-from whetstone.kit import TinyLM, ops
+from learnai.kit import TinyLM, ops
 
 
 def beam_search(

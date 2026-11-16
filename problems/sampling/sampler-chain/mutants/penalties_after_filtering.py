@@ -1,7 +1,7 @@
 # BUG: runs the filters on the raw logits and applies the penalties afterwards, so a heavily penalized token keeps its place in the top-k and the nucleus while a token it should have made room for is gone.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def penalize(logits: torch.Tensor, cfg: dict, history: torch.Tensor) -> torch.Tensor:

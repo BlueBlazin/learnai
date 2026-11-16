@@ -1,7 +1,7 @@
 # BUG: ignores cfg.norm_eps and cfg.rope_base and uses the defaults of the ops (eps 1e-5, base 10000) for every model.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 
 def forward(params: dict[str, torch.Tensor], cfg: DecoderConfig, tokens: torch.Tensor) -> torch.Tensor:

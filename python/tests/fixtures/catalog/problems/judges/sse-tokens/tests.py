@@ -1,4 +1,4 @@
-from whetstone.judge import case, check, read_sse
+from learnai.judge import case, check, read_sse
 
 
 @case("streams one event per token, then [DONE]", public=True)

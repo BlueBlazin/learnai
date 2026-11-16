@@ -7,8 +7,8 @@ Numeric cases check it on chosen batches, the property cases on random length mi
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import DecoderConfig, decoder_forward_ref, decoder_params
+from learnai.judge import case, check
+from learnai.kit import DecoderConfig, decoder_forward_ref, decoder_params
 
 FN = "batched_forward"
 TOL = {"rtol": 1e-3, "atol": 1e-4}  # the tolerance stated in Constraints (a deep stack)

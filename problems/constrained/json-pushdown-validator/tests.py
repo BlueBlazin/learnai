@@ -15,7 +15,7 @@ hide a solution that mutates it.
 
 import json
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 # Characters tried as "the next character" at every prefix: structure, whitespace,
 # digits and number punctuation, the letters of the literals, string specials, a

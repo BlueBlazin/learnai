@@ -1,7 +1,7 @@
 # BUG: always uses the embedding matrix as the output head and ignores lm_head.weight when cfg.tie_embeddings is False.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 
 def forward(params: dict[str, torch.Tensor], cfg: DecoderConfig, tokens: torch.Tensor) -> torch.Tensor:

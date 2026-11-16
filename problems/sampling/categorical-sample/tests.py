@@ -14,7 +14,7 @@ delta of 1e-10, which keeps the false-failure rate of a correct solution below 1
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "sample"
 MARGIN = 1e-4

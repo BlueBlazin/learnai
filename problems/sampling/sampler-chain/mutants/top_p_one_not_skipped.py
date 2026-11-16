@@ -1,7 +1,7 @@
 # BUG: calls the top-p filter also when top_p is 1.0; in float32 the cumulative mass reaches exactly 1 before the last tokens, so a stage that is switched off still removes the far tail.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def penalize(logits: torch.Tensor, cfg: dict, history: torch.Tensor) -> torch.Tensor:

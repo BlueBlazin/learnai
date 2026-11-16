@@ -12,8 +12,8 @@ import math
 import mlx.core as mx
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import mlx_memory
+from learnai.judge import case, check
+from learnai.kit import mlx_memory
 
 FN = "forward_f16"
 GELU_C = math.sqrt(2.0 / math.pi)

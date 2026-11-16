@@ -1,5 +1,5 @@
 # BUG: advance returns DEAD for a token that is not allowed instead of raising ValueError, so a decoding loop that picked a bad token carries on from a dead state.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 def _walk_token(dfa: CharDFA, state: int, token: int, vocab: ToyVocab) -> int:

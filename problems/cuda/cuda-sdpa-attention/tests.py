@@ -29,8 +29,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from whetstone.judge import case, check
-from whetstone.kit import DeviceSpy
+from learnai.judge import case, check
+from learnai.kit import DeviceSpy
 
 FN = "attend"
 KERNEL = F.scaled_dot_product_attention

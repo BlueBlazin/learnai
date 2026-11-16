@@ -19,8 +19,8 @@ statement says cross between that pair of devices. Nothing else is added to the 
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import CountingExperts, SimDevices, TinyMoE, moe_dense_ref, moe_route_ref
+from learnai.judge import case, check
+from learnai.kit import CountingExperts, SimDevices, TinyMoE, moe_dense_ref, moe_route_ref
 
 FN = "ep_forward"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints

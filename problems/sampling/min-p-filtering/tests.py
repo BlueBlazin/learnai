@@ -13,7 +13,7 @@ equal to the top logit has exactly the top probability.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "min_p_filter"
 INF = np.inf

@@ -10,7 +10,7 @@ do.
 def greedy_decode(lm, prompt, max_new_tokens, eos_id): ...
 ```
 
-`lm` is a [`TinyLM`](../../../python/src/whetstone/kit/tinylm.py), a small seeded
+`lm` is a [`TinyLM`](../../../python/src/learnai/kit/tinylm.py), a small seeded
 decoder-only transformer from the kit. It is called in two ways:
 
 ```python

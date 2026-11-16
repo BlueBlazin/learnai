@@ -40,7 +40,7 @@ export function EnvironmentPanel({
         <MetaItem label="uv">
           <Version
             value={env.uv}
-            missing="Not found. Install uv, then reopen Whetstone."
+            missing="Not found. Install uv, then reopen Learn AI."
             action={<UvGuideButton />}
           />
         </MetaItem>

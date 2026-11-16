@@ -12,7 +12,7 @@ import math
 
 import numpy as np
 
-from whetstone.judge import CheckFailure, case, check
+from learnai.judge import CheckFailure, case, check
 
 TOL = 1e-9
 KEYS = ("intended_s", "sent_s", "done_s", "latency_s", "ok")

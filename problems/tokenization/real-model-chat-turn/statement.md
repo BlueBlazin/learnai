@@ -13,7 +13,7 @@ def chat_turn(messages, tokenizer, step, max_new_tokens): ...  # a generator of 
 - `messages`: the conversation, a non-empty list of dicts with the keys `"role"`
   (`"system"`, `"user"`, or `"assistant"`) and `"content"` (a string).
 - `tokenizer`: the model's tokenizer, a
-  [`ByteLevelBPE`](../../../python/src/whetstone/kit/bpe.py) from the kit.
+  [`ByteLevelBPE`](../../../python/src/learnai/kit/bpe.py) from the kit.
   `tokenizer.encode(text)` returns a list of ints, and an added token written in the
   text (such as `<|end_of_text|>`) becomes its single id; `tokenizer.token_bytes(i)`
   returns the bytes of one token; `tokenizer.specials` is a dict from the text of each

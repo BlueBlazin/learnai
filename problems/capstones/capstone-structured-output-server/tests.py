@@ -20,8 +20,8 @@ import json
 
 import httpx
 
-from whetstone.judge import CheckFailure, case, check, iter_sse
-from whetstone.kit import CharDFA, DFAConstraint, ScriptedLM, ToyVocab
+from learnai.judge import CheckFailure, case, check, iter_sse
+from learnai.kit import CharDFA, DFAConstraint, ScriptedLM, ToyVocab
 
 S1 = "1: chat completions"
 S2 = "2: schema-constrained output"

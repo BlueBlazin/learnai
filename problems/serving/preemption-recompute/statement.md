@@ -12,12 +12,12 @@ async def run(engine, queue: asyncio.Queue, max_running: int, watermark_blocks: 
 ```
 
 `run` never returns. `queue` receives
-[`SimRequest`](../../../python/src/whetstone/kit/workloads.py) objects at their
+[`SimRequest`](../../../python/src/learnai/kit/workloads.py) objects at their
 arrival times; read `request.id` and `request.prompt_tokens`, not
 `request.output_tokens`. Time is virtual, in **milliseconds**: a step over $P$
 prefilled tokens and $D$ decoded sequences takes $8 + 0.25\,P + D$ ms.
 
-**Memory.** The [`SimEngine`](../../../python/src/whetstone/kit/simengine.py) has
+**Memory.** The [`SimEngine`](../../../python/src/learnai/kit/simengine.py) has
 `engine.kv_blocks` blocks of `engine.block_tokens` tokens. A sequence that holds
 $k$ tokens of keys and values occupies $\lceil k / \text{block\_tokens} \rceil$
 blocks. Prefilling $n$ tokens adds $n$ to $k$ and decoding adds 1, **when the step

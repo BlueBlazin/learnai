@@ -11,7 +11,7 @@ and the lock counts, so splits and locks are checked exactly; access times are c
 through the order in which `evict` removes leaves.
 """
 
-from whetstone.judge import CheckFailure, case, check
+from learnai.judge import CheckFailure, case, check
 
 
 def common_prefix(a, b):

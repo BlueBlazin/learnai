@@ -1,7 +1,7 @@
 # BUG: the capacity check uses >= instead of >: a write that exactly fills the buffer is refused, so the last slot can never be used.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 Cache = tuple[torch.Tensor, torch.Tensor, int]
 

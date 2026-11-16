@@ -1,7 +1,7 @@
 # BUG: cache_attend lets every query see all `length` valid slots: correct for one new token, but after a multi-token write the earlier queries see later tokens.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 Cache = tuple[torch.Tensor, torch.Tensor, int]
 

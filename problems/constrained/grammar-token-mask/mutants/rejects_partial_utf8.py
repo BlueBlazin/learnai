@@ -1,5 +1,5 @@
 # BUG: a token is decoded on its own before it is matched, so a token whose bytes are only part of a character is never allowed and a character split across tokens cannot be generated.
-from whetstone.kit import Chars, Grammar, Ref, ToyVocab
+from learnai.kit import Chars, Grammar, Ref, ToyVocab
 
 
 def _code_points(data: bytes) -> tuple[int, int] | None:

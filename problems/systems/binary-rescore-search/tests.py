@@ -11,8 +11,8 @@ Shapes are shared across cases for JAX's sake: the corpus is (2000, 64) with
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import vectors
+from learnai.judge import case, check
+from learnai.kit import vectors
 
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints
 POPCOUNT = np.array([byte.bit_count() for byte in range(256)])

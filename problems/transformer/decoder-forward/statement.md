@@ -14,7 +14,7 @@ The model is the layout shared by Llama, Qwen, Mistral, and Granite: token embed
 without a position embedding, `cfg.n_layers` pre-norm blocks with rotary positions and
 grouped-query attention, a final norm, and a linear output head.
 
-`cfg` is a [`DecoderConfig`](../../../python/src/whetstone/kit/decoder.py) with the
+`cfg` is a [`DecoderConfig`](../../../python/src/learnai/kit/decoder.py) with the
 fields `vocab_size`, `d_model`, `n_layers`, `n_heads`, `n_kv_heads`, `d_mlp`,
 `rope_base`, `norm_eps`, `tie_embeddings`, and the derived
 `head_dim = d_model // n_heads`. `params` maps the names in the table under
@@ -74,7 +74,7 @@ Arguments and result:
 - Returns the logits: float32, shape `(B, T, vocab_size)`. Row `[b, t]` scores the
   token that follows `tokens[b, : t + 1]`.
 
-Use the kit's [`ops`](../../../python/src/whetstone/kit/ops/__init__.py) for the
+Use the kit's [`ops`](../../../python/src/learnai/kit/ops/__init__.py) for the
 blocks: `ops.rms_norm`, `ops.rope`, `ops.attention` (which does the grouped-query
 pairing when `k` and `v` have fewer heads than `q`), and `ops.swiglu`. Do not call the
 kit's own forward pass, `decoder_forward_ref` or `decoder_block_ref`.
@@ -102,7 +102,7 @@ A one-layer model of width 4 with two query heads sharing one key/value head, an
 kit's seeded weights:
 
 ```python
-from whetstone.kit import DecoderConfig, decoder_params
+from learnai.kit import DecoderConfig, decoder_params
 
 cfg = DecoderConfig(vocab_size=5, d_model=4, n_layers=1, n_heads=2, n_kv_heads=1, d_mlp=6)
 params = decoder_params(cfg, seed=0)  # 11 tensors; no "lm_head.weight": the head is tied

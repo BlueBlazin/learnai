@@ -1,8 +1,8 @@
 # BUG: computes attention with matmul and softmax by hand; the logits are right, but the fused attention kernel the statement asks for is not used.
 import mlx.core as mx
 
+from learnai.kit import RealConfig
 from mlx import nn
-from whetstone.kit import RealConfig
 
 # Attribute names are checkpoint names: `model.layers.3.self_attn.q_proj.weight` in the
 # file is `self.model.layers[3].self_attn.q_proj.weight` here, so `load_weights` needs

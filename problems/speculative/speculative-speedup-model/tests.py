@@ -9,7 +9,7 @@ statement promises.
 
 from fractions import Fraction
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 RTOL = 1e-9
 MARGIN = Fraction(1, 10**6)

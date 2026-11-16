@@ -1,6 +1,6 @@
 [package]
-name = "whetstone"
-description = "Whetstone desktop shell"
+name = "learnai"
+description = "Learn AI desktop shell"
 version.workspace = true
 edition.workspace = true
 publish = false
@@ -9,14 +9,14 @@ publish = false
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "whetstone_lib"
+name = "learnai_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
-whetstone-core.workspace = true
+learnai-core.workspace = true
 tauri = { version = "2.12.5", features = [] }
 tauri-plugin-opener = "2.7.3"
 tracing.workspace = true

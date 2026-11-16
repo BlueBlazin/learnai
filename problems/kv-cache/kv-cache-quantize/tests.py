@@ -17,8 +17,8 @@ JAX compiles every new shape, so the cases share a few layouts and chunk sizes.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import KVCache, TinyLM, logit_kl
+from learnai.judge import case, check
+from learnai.kit import KVCache, TinyLM, logit_kl
 
 APPEND, READ = "quantized_append", "read_cache"
 B, H, D, GROUP = 1, 2, 8, 4  # the layout most cases share

@@ -1,5 +1,5 @@
 # BUG: while a begin string is being read, a byte is accepted if any tag of the trigger has it at this position, but tags that already disagreed are not dropped: the output can mix the beginnings of two tags.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class TagDispatch:

@@ -1,7 +1,7 @@
 # BUG: sorts ascending and takes the last k, so among equal router logits the expert with the highest index wins instead of the lowest.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def moe(

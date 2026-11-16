@@ -16,13 +16,13 @@ def ep_forward(x, home, w_router, experts, placement, devs, k): ...
   lives: its row is there before the layer, and its output is needed there after.
 - `w_router`: float32 `(E, D)`, in `(out, in)` layout. Every device has a copy, so
   routing is computed at home.
-- `experts`: a [`CountingExperts`](../../../python/src/whetstone/kit/moe.py), as
+- `experts`: a [`CountingExperts`](../../../python/src/learnai/kit/moe.py), as
   in `moe-sparse-dispatch`: `experts(e, rows)` runs expert `e` on rows `(n, D)`,
   returns `(n, D)` row for row, and counts one `expert_calls` and `n`
   `expert_rows`.
 - `placement`: a list of $E$ Python ints. Expert $e$ lives on device
   `placement[e]`, and only there.
-- `devs`: a [`SimDevices`](../../../python/src/whetstone/kit/simdevices.py) with
+- `devs`: a [`SimDevices`](../../../python/src/learnai/kit/simdevices.py) with
   `devs.n_devices` devices. `devs.send(src, dst, tensor)` is one message: it
   returns the tensor for the receiving side to use and adds one to `sends` and the
   tensor's size in bytes to `comm_bytes`. Sending from a device to itself is an

@@ -1,7 +1,7 @@
 # BUG: groups tokens by expert separately for each of the k slots, so an expert that is first choice for some tokens and second choice for others is called twice.
 import torch
 
-from whetstone.kit import CountingExperts
+from learnai.kit import CountingExperts
 
 
 def moe_sparse(

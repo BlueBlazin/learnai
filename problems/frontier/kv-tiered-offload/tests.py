@@ -19,7 +19,7 @@ moved between tiers and total serving time, against the specified policy's.
 
 import asyncio
 
-from whetstone.judge import CheckFailure, case, check
+from learnai.judge import CheckFailure, case, check
 
 TIERS = ("gpu", "host", "disk")
 BLOCK_BYTES = 1 << 20

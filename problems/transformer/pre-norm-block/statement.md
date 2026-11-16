@@ -57,7 +57,7 @@ RoPE come back in the next problem.
   causal, but the block must pass on whatever mask it is given.
 - Returns `y`: float32, shape `(B, T, D)`.
 
-The building blocks are in [`whetstone.kit.ops`](../../../python/src/whetstone/kit/ops/__init__.py):
+The building blocks are in [`learnai.kit.ops`](../../../python/src/learnai/kit/ops/__init__.py):
 `ops.rms_norm`, `ops.attention`, and `ops.swiglu`. Use them; this problem does not ask
 you to write them again.
 

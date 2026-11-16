@@ -11,7 +11,7 @@ def batched_forward(params, cfg, seqs, pad_id): ...
 ```
 
 `params` and `cfg` describe the decoder of the `decoder-forward` problem (the kit's
-[`DecoderConfig` and `decoder_params`](../../../python/src/whetstone/kit/decoder.py)):
+[`DecoderConfig` and `decoder_params`](../../../python/src/learnai/kit/decoder.py)):
 embedding, `cfg.n_layers` pre-norm blocks with RoPE and grouped-query attention, final
 RMSNorm, and a head that is the embedding matrix when `cfg.tie_embeddings` is `True`
 and `lm_head.weight` otherwise. Write $\operatorname{forward}(s)$ for that model's
@@ -51,7 +51,7 @@ integer positions of shape `(T,)` or `(B, T)`. Its attention gives a query that 
 attend to nothing an output of zero rather than NaN. You write everything around it.
 
 - `params`: a dict from checkpoint-style names to float32 tensors, as in
-  `decoder-forward`. `layer_params(params, i)` from `whetstone.kit` returns the
+  `decoder-forward`. `layer_params(params, i)` from `learnai.kit` returns the
   weights of layer `i` with the `model.layers.{i}.` prefix removed, which is what
   `decoder_block` takes.
 - `cfg`: the `DecoderConfig`.
@@ -77,7 +77,7 @@ A two-layer model of width 4 with the kit's seeded weights, and three sequences 
 lengths 3, 1, and 2:
 
 ```python
-from whetstone.kit import DecoderConfig, decoder_params
+from learnai.kit import DecoderConfig, decoder_params
 
 cfg = DecoderConfig(vocab_size=5, d_model=4, n_layers=2, n_heads=2, n_kv_heads=1, d_mlp=6)
 params = decoder_params(cfg, seed=0)

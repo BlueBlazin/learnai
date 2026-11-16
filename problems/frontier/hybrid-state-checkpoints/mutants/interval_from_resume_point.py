@@ -1,7 +1,7 @@
 # BUG: counts the interval from the checkpoint it resumed from instead of from the start of the sequence, so after resuming at a length that is not a multiple of interval every later checkpoint is at the wrong position.
 import torch
 
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.kit import RecurrentLM, RecurrentState
 
 Store = dict[tuple[int, ...], RecurrentState]
 

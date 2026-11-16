@@ -1,7 +1,7 @@
 # BUG: the draft's cache is never truncated after a rejection, so the draft keeps proposing from a context that contains its rejected tokens; the output stays right, but far fewer drafts are accepted.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def speculative_greedy(

@@ -2,7 +2,7 @@
 import numpy as np
 import torch
 
-from whetstone.kit import DecoderConfig, decoder_forward_ref
+from learnai.kit import DecoderConfig, decoder_forward_ref
 
 
 def batched_forward(

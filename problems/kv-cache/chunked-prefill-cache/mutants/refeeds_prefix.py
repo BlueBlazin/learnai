@@ -1,7 +1,7 @@
 # BUG: re-feeds the whole prefix with every chunk instead of continuing from the cache; the logits are right but tokens_processed grows quadratically with the number of chunks.
 import torch
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def prefill(lm: TinyLM, prompt: list[int], chunk_size: int) -> tuple[torch.Tensor, KVCache]:

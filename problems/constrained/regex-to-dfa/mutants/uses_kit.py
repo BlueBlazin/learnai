@@ -1,5 +1,5 @@
 # BUG: takes the forbidden shortcut: the automaton comes from the kit's CharDFA.from_regex.
-from whetstone.kit import CharDFA
+from learnai.kit import CharDFA
 
 
 def compile_regex(pattern: str) -> tuple[dict[int, dict[int, int]], int, set[int]]:

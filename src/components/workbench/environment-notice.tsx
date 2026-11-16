@@ -28,7 +28,7 @@ export function EnvironmentNotice({
   if (problem.kind === "uv-missing") {
     return (
       <Notice layout={layout} action={<UvGuideButton />}>
-        uv was not found, so solutions cannot run. Install uv, then reopen Whetstone.
+        uv was not found, so solutions cannot run. Install uv, then reopen Learn AI.
       </Notice>
     );
   }

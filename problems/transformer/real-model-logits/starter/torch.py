@@ -1,6 +1,6 @@
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

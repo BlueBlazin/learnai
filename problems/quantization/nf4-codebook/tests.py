@@ -13,7 +13,7 @@ layouts.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 # The table hard-coded in bitsandbytes (functional.py), reproduced by its
 # create_normal_map(offset=0.9677083) in float64.

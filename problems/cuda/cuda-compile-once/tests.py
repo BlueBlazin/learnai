@@ -41,8 +41,8 @@ import numpy as np
 import torch
 from torch._dynamo.exc import FailOnRecompileLimitHit
 
-from whetstone.judge import case, check
-from whetstone.kit import CompileCounter, DeviceSpy, SyncSpy
+from learnai.judge import case, check
+from learnai.kit import CompileCounter, DeviceSpy, SyncSpy
 
 CPU = torch.device("cpu")
 VOCAB, DIM, HEADS, LAYERS, MAX_LEN = 32, 16, 2, 2, 96

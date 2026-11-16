@@ -23,7 +23,7 @@ use crate::harness::CommandSpec;
 use crate::model::SshHost;
 
 /// Where the app works on a remote host unless the user chose another directory.
-pub const DEFAULT_REMOTE_DIR: &str = "~/.whetstone";
+pub const DEFAULT_REMOTE_DIR: &str = "~/.learnai";
 
 /// Seconds `ssh` waits for a connection before giving up.
 const CONNECT_TIMEOUT_S: u32 = 10;
@@ -41,19 +41,19 @@ pub const UV_INSTALL_COMMAND: &str = "curl -LsSf https://astral.sh/uv/install.sh
 /// Runs on the remote host before anything else: reports the home directory, where uv
 /// and rsync are, and what the machine is. uv's installer puts it in `~/.local/bin`
 /// (older versions: `~/.cargo/bin`), which a non-interactive SSH session does not have
-/// on its `PATH`, so both are added. Lines other than `ws-<key>=<value>` (a login
+/// on its `PATH`, so both are added. Lines other than `learnai-<key>=<value>` (a login
 /// banner, say) are ignored by the reader.
 pub const PROBE_SCRIPT: &str = r#"PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-echo "ws-home=$HOME"
-echo "ws-uv=$(command -v uv 2>/dev/null)"
-echo "ws-rsync=$(command -v rsync 2>/dev/null)"
-echo "ws-system=$(uname -s 2>/dev/null)"
-echo "ws-machine=$(uname -m 2>/dev/null)"
+echo "learnai-home=$HOME"
+echo "learnai-uv=$(command -v uv 2>/dev/null)"
+echo "learnai-rsync=$(command -v rsync 2>/dev/null)"
+echo "learnai-system=$(uname -s 2>/dev/null)"
+echo "learnai-machine=$(uname -m 2>/dev/null)"
 "#;
 
 /// Runs a command on the remote host so that it can always be stopped from here.
 ///
-/// Usage: `sh -c <this> whetstone <WHETSTONE_ROOT> <program> <args>...`.
+/// Usage: `sh -c <this> learnai <LEARNAI_ROOT> <program> <args>...`.
 ///
 /// Without a terminal, a remote command does not die when the SSH client goes away: it
 /// keeps running until it happens to write to the closed connection. So the command is
@@ -71,8 +71,8 @@ echo "ws-machine=$(uname -m 2>/dev/null)"
 /// The script is POSIX `sh` and contains no backslash, so it survives being quoted for
 /// any login shell.
 pub const SUPERVISOR_SCRIPT: &str = r#"PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-WHETSTONE_ROOT=$1
-export PATH WHETSTONE_ROOT
+LEARNAI_ROOT=$1
+export PATH LEARNAI_ROOT
 shift
 exec 3<&0 4>&2 2>/dev/null
 if command -v setsid >/dev/null 2>&1; then
@@ -186,7 +186,7 @@ pub fn sh_join<S: AsRef<str>>(words: impl IntoIterator<Item = S>) -> String {
 /// The remote command line that runs `script` with `args` under `sh`, whatever the
 /// user's login shell is.
 pub fn sh_script(script: &str, args: &[String]) -> String {
-    let mut words = vec!["-c".to_owned(), script.to_owned(), "whetstone".to_owned()];
+    let mut words = vec!["-c".to_owned(), script.to_owned(), "learnai".to_owned()];
     words.extend(args.iter().cloned());
     format!("exec sh {}", sh_join(&words))
 }
@@ -596,14 +596,14 @@ fn rsh_word(word: &str) -> Result<String, String> {
     }
 }
 
-/// The default directory for connection-sharing sockets: `/tmp/whetstone-ssh-<uid>`,
+/// The default directory for connection-sharing sockets: `/tmp/learnai-ssh-<uid>`,
 /// private to the user. Kept short because a socket path is limited to about 100
 /// bytes, and the system temporary directory on macOS already uses half of that.
 #[cfg(unix)]
 fn default_control_dir() -> Option<PathBuf> {
     // SAFETY: `geteuid` has no preconditions and cannot fail.
     let uid = unsafe { libc::geteuid() };
-    let dir = PathBuf::from(format!("/tmp/whetstone-ssh-{uid}"));
+    let dir = PathBuf::from(format!("/tmp/learnai-ssh-{uid}"));
     prepare_private_dir(&dir).then_some(dir)
 }
 
@@ -675,7 +675,7 @@ pub fn diagnose_connection(alias: &str, stderr: &str) -> Diagnosis {
     } else if has("permission denied") {
         Diagnosis {
             message: format!(
-                "`{alias}` did not accept a key, and Whetstone never asks for a password."
+                "`{alias}` did not accept a key, and Learn AI never asks for a password."
             ),
             fix: format!(
                 "Load your key into the SSH agent with `ssh-add`, confirm that \
@@ -850,9 +850,9 @@ mod tests {
 
         for dir in [
             "~",
-            "~/.whetstone",
+            "~/.learnai",
             "~/a/b-c/d_e",
-            "/srv/whetstone",
+            "/srv/learnai",
             "/data/u@h/x+y",
         ] {
             assert!(is_remote_dir(dir), "{dir}");
@@ -879,8 +879,8 @@ mod tests {
             assert!(!is_remote_dir(dir), "{dir:?}");
         }
         assert_eq!(
-            resolve_remote_dir("~/.whetstone", "/home/ada"),
-            "/home/ada/.whetstone"
+            resolve_remote_dir("~/.learnai", "/home/ada"),
+            "/home/ada/.learnai"
         );
         assert_eq!(resolve_remote_dir("~", "/home/ada/"), "/home/ada");
         assert_eq!(resolve_remote_dir("/srv/ws", "/home/ada"), "/srv/ws");
@@ -897,7 +897,7 @@ mod tests {
         assert_eq!(sh_quote("it's"), "'it'\\''s'");
         assert_eq!(sh_join(["mkdir", "-p", "/a b"]), "'mkdir' '-p' '/a b'");
         let line = sh_script("echo \"$1\"", &["x y".to_owned()]);
-        assert_eq!(line, "exec sh '-c' 'echo \"$1\"' 'whetstone' 'x y'");
+        assert_eq!(line, "exec sh '-c' 'echo \"$1\"' 'learnai' 'x y'");
     }
 
     #[test]
@@ -959,7 +959,7 @@ mod tests {
             .rsync(
                 "gpu-box",
                 &["/r/python/".into()],
-                "/home/ada/.whetstone/root/python/",
+                "/home/ada/.learnai/root/python/",
                 true,
                 &[".venv", "__pycache__"],
             )
@@ -981,7 +981,7 @@ mod tests {
                 "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 \
                  -o ServerAliveCountMax=3 -o ControlMaster=no -o ControlPath=/tmp/ws-ctl/%C",
                 "/r/python/",
-                "gpu-box:/home/ada/.whetstone/root/python/",
+                "gpu-box:/home/ada/.learnai/root/python/",
             ]
         );
         for dest in ["relative", "/a b", "/a/$(x)", "/a;b", "~/x", "/a/../b"] {

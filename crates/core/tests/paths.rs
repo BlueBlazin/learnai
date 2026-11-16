@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 
 use common::{Collector, TestRoot};
-use whetstone_core::{Framework, RunEvent, RunMode};
+use learnai_core::{Framework, RunEvent, RunMode};
 
 const STARTER: &str = r#"
 id = "starter"
@@ -165,7 +165,7 @@ fn paths_are_sorted_by_file_name_and_reloaded_on_every_call() {
     };
     write_path(root.path(), "zeta.toml", &one("zeta"));
     write_path(root.path(), "alpha.toml", &one("alpha"));
-    let ids = |core: &whetstone_core::Core| -> Vec<String> {
+    let ids = |core: &learnai_core::Core| -> Vec<String> {
         core.list_paths()
             .expect("paths")
             .into_iter()
@@ -208,9 +208,9 @@ fn progress_counts_solved_problems_on_the_path() {
 #[test]
 fn the_shipped_starter_path_is_valid_against_the_real_catalog() {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let mut loader = whetstone_core::catalog::CatalogLoader::new(&repo);
+    let mut loader = learnai_core::catalog::CatalogLoader::new(&repo);
     let catalog = loader.load();
-    let (paths, issues) = whetstone_core::paths::load_paths(&repo, &catalog);
+    let (paths, issues) = learnai_core::paths::load_paths(&repo, &catalog);
     assert!(issues.is_empty(), "{issues:?}");
     let path = paths
         .iter()

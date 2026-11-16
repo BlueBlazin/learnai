@@ -14,7 +14,7 @@ def heal(prompt_ids, vocab) -> tuple[list[int], bytes]: ...
 def healing_allowed(required_prefix, generated_bytes, vocab) -> list[int]: ...
 ```
 
-`vocab` is a [`ToyVocab`](../../../python/src/whetstone/kit/vocab.py): token ids are
+`vocab` is a [`ToyVocab`](../../../python/src/learnai/kit/vocab.py): token ids are
 `0` to `vocab.size - 1`, `vocab.bytes(t)` is the byte string of token `t`, and
 special tokens (`vocab.is_special(t)`, ids 0 to 4) have the empty byte string `b""`.
 

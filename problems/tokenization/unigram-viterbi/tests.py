@@ -8,7 +8,7 @@ multiple of 1/8, so sums are exact in floating point and ties are real ties.
 
 from itertools import combinations, pairwise
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 HUG = {"h": -3.0, "u": -3.0, "g": -3.0, "s": -2.0, "hu": -4.0, "ug": -3.5, "gs": -4.5, "hug": -9.0}
 

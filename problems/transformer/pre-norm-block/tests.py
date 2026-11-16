@@ -7,8 +7,8 @@ and the block must agree with the kit's `decoder_block_ref` on a one-head config
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import DecoderConfig, decoder_block_ref, decoder_params, layer_params
+from learnai.judge import case, check
+from learnai.kit import DecoderConfig, decoder_block_ref, decoder_params, layer_params
 
 FN = "block"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints

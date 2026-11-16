@@ -8,8 +8,8 @@ largest logits of every row are at least 1e-3 apart, as the statement promises.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import draft_target_pair
+from learnai.judge import case, check
+from learnai.kit import draft_target_pair
 
 FN = "verify_greedy"
 

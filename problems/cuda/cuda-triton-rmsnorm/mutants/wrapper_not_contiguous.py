@@ -1,7 +1,7 @@
 # BUG: the wrapper passes x and the gain to the kernel as they come; a strided view has the right shape and the wrong memory layout, and the kernel indexes memory.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

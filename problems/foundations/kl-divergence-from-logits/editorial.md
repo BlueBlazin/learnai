@@ -106,4 +106,4 @@ The float32 sum carries rounding noise: for two nearly identical distributions o
 32 tokens the unclamped result in this problem's tests is as low as $-2 \times
 10^{-7}$, and the noise grows with the vocabulary. A careful comparison of two 8-bit
 quantizations, whose divergences can be that small, computes the log-softmax and the
-sum in float64 on the CPU, as Whetstone's own `logit_kl` helper does.
+sum in float64 on the CPU, as Learn AI's own `logit_kl` helper does.

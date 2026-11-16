@@ -27,9 +27,9 @@ class Handle:  # returned by submit; the class itself is yours
     async def result(self) -> int: ...
 ```
 
-`engine` is a [`SimEngine`](../../../python/src/whetstone/kit/simengine.py) with
+`engine` is a [`SimEngine`](../../../python/src/learnai/kit/simengine.py) with
 `max_running` slots and requests are
-[`SimRequest`](../../../python/src/whetstone/kit/workloads.py) objects. Time is virtual
+[`SimRequest`](../../../python/src/learnai/kit/workloads.py) objects. Time is virtual
 and counted in **milliseconds**. A step over $P$ prompt tokens and $D$ decoded
 sequences takes $8 + 0.25\,P + D$ ms.
 

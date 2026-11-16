@@ -10,7 +10,7 @@ float64 by `margin`), so float32 rounding can never decide the outcome.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 MARGIN = 1e-3
 

@@ -2,8 +2,8 @@ from typing import Any
 
 import mlx.core as mx
 
+from learnai.kit import RealConfig, ops
 from mlx import nn
-from whetstone.kit import RealConfig, ops
 
 # The cache is yours to design: anything that holds, for every layer, the keys and
 # values of the tokens read so far. The tests only pass it back to decode_step.

@@ -24,7 +24,7 @@ const rootRoute = createRootRoute({
   component: RootLayout,
   notFoundComponent: () => (
     <ScreenMessage>
-      <ErrorState title="There is no such screen" error="The address does not match any part of Whetstone." />
+      <ErrorState title="There is no such screen" error="The address does not match any part of Learn AI." />
     </ScreenMessage>
   ),
 });

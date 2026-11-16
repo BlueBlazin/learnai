@@ -7,7 +7,7 @@ it: every weight placed exactly once, no device over its budget, no-split module
 whole, devices in forward order, tied modules next to their owners.
 """
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 GB = 1 << 30
 

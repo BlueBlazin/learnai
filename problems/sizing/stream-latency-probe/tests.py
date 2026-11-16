@@ -14,7 +14,7 @@ the same simulation.
 
 import numpy as np
 
-from whetstone.judge import CheckFailure, case, check
+from learnai.judge import CheckFailure, case, check
 
 TOL = 1e-9
 KEYS = ("status", "t_start", "token_times", "ttft", "itl", "tpot", "e2e")

@@ -1,7 +1,7 @@
 # BUG: adds the bias to the product x * code * scale instead of to the weight; the bias is no longer multiplied by the activation.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

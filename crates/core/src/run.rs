@@ -189,7 +189,7 @@ fn launch_failure(error: &std::io::Error) -> String {
         message.to_owned()
     } else if error.kind() == std::io::ErrorKind::NotFound {
         "uv was not found, so the judge cannot run. Install uv \
-         (https://docs.astral.sh/uv/), then reopen Whetstone."
+         (https://docs.astral.sh/uv/), then reopen Learn AI."
             .to_owned()
     } else {
         format!("The judge could not be started: {error}")

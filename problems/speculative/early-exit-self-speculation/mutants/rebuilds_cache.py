@@ -1,7 +1,7 @@
 # BUG: no cache is kept between rounds: every round feeds the whole verified sequence through all layers again, so the layer-token count grows quadratically.
 import torch
 
-from whetstone.kit import LayeredLM
+from learnai.kit import LayeredLM
 
 
 def self_speculative_greedy(

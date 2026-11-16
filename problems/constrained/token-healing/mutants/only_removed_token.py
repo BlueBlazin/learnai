@@ -1,5 +1,5 @@
 # BUG: while the removed text is missing, only a token whose bytes equal it is allowed, so the model can only repeat the removed token and never the longer token that healing exists for.
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def heal(prompt_ids: list[int], vocab: ToyVocab) -> tuple[list[int], bytes]:

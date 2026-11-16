@@ -1,6 +1,6 @@
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 Cache = tuple[torch.Tensor, torch.Tensor, int]
 

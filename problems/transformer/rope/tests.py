@@ -7,7 +7,7 @@ tolerance, cases with larger positions a looser one (see the statement's Constra
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "apply_rope"
 TIGHT = {"rtol": 1e-4, "atol": 1e-4}  # positions below 64

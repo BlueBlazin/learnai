@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def rope_positions(cache_lengths: jax.Array, n_new: int) -> jax.Array:

@@ -11,7 +11,7 @@ fairly; and the search should stop as soon as nothing better can still be found.
 def beam_search(lm, prompt, n_beams, max_new_tokens, eos_id, length_penalty): ...
 ```
 
-`lm` is a [`TinyLM`](../../../python/src/whetstone/kit/tinylm.py). What you need
+`lm` is a [`TinyLM`](../../../python/src/learnai/kit/tinylm.py). What you need
 from it:
 
 ```python

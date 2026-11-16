@@ -11,7 +11,7 @@ def pick_next(waiting: list, now_ms: float, aging_ms: float): ...
 async def run(engine, queue: asyncio.Queue, max_running: int, aging_ms: float) -> None: ...
 ```
 
-Requests are [`SimRequest`](../../../python/src/whetstone/kit/workloads.py) objects.
+Requests are [`SimRequest`](../../../python/src/learnai/kit/workloads.py) objects.
 Time is virtual and counted in **milliseconds**; `request.arrival_s` is the arrival
 time in that unit (the kit's field names end in `_s`, the numbers here are
 milliseconds). `request.priority` is an integer, and **a smaller value is more

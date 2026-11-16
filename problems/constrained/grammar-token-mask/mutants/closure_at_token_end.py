@@ -1,5 +1,5 @@
 # BUG: inside a token, characters are scanned without predicting and completing in between; only the item sets at token boundaries are closed, so a token whose characters belong to more than one rule (`, ` across a separator and optional whitespace) is rejected.
-from whetstone.kit import Chars, Grammar, Ref, ToyVocab
+from learnai.kit import Chars, Grammar, Ref, ToyVocab
 
 
 def _code_points(data: bytes) -> tuple[int, int] | None:

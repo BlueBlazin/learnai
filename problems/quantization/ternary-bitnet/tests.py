@@ -11,7 +11,7 @@ JAX compiles every new shape, so the cases share a few layouts.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 MARGIN = 0.05
 

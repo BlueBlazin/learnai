@@ -8,7 +8,7 @@ input goes through `tie_free`, which keeps both x / scale and the zero-point at 
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 QMIN, QMAX = -128, 127
 MARGIN = 0.05

@@ -3,7 +3,7 @@
     uv run --project python --extra jax --extra mlx --extra models \
         python problems/capstones/capstone-real-model-runtime/fixtures/make.py
 
-Needs the small house model on disk (``ws assets fetch granite-4.0-350m``) and the
+Needs the small house model on disk (``learnai assets fetch granite-4.0-350m``) and the
 ``models`` extra. The oracle is the kit: ``RealLM`` (the numpy forward pass, with its
 own cache) for logits, keys, and values, and ``ByteLevelBPE`` for token ids and token
 bytes. Three things are cross-checked against the libraries while the fixtures are
@@ -34,10 +34,10 @@ from pathlib import Path
 
 import numpy as np
 
-from whetstone import assets
-from whetstone.kit import RealModel
-from whetstone.kit.realmodel import SMALL
-from whetstone.problem import find_root
+from learnai import assets
+from learnai.kit import RealModel
+from learnai.kit.realmodel import SMALL
+from learnai.problem import find_root
 
 HERE = Path(__file__).parent
 TINY_DIR = HERE / "tiny"

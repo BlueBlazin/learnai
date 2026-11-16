@@ -1,7 +1,7 @@
 # BUG: the mask is `cols <= n_cols`: the block reads and writes one element past the end of the row.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

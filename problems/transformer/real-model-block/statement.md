@@ -12,7 +12,7 @@ def granite_block(x, weights, layer, positions): ...
 
 - `x`: the hidden state entering the block, float32, shape `(B, T, D)`.
 - `weights`: a mapping from checkpoint names to float32 tensors (a dict, or the kit's
-  lazy [`Weights`](../../../python/src/whetstone/kit/realmodel.py), which is indexed
+  lazy [`Weights`](../../../python/src/learnai/kit/realmodel.py), which is indexed
   and iterated the same way). It holds every tensor of the model; the block uses the
   eight named `model.layers.{layer}.*` in the table under [Shapes](#shapes). Matrices
   are in `(out, in)` layout, and there are no biases.

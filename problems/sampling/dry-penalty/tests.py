@@ -12,7 +12,7 @@ import math
 
 import numpy as np
 
-from whetstone.judge import CheckFailure, case, check
+from learnai.judge import CheckFailure, case, check
 
 FN = "dry_penalties"
 FLOAT_MAX_LOG = 88.7228391

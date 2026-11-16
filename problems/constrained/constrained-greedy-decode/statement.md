@@ -10,13 +10,13 @@ step with the tokens, and still run each token through the model only once.
 def constrained_greedy(lm, prompt, constraint, max_new_tokens, eos_id): ...
 ```
 
-`lm` is a [`TinyLM`](../../../python/src/whetstone/kit/tinylm.py), used as in
+`lm` is a [`TinyLM`](../../../python/src/learnai/kit/tinylm.py), used as in
 `cached-greedy-decode`: `logits, cache = lm(tokens)` starts a sequence,
 `logits, cache = lm(tokens, cache)` continues the cached prefix, and `logits[-1]`
 (shape `(vocab_size,)`) scores the next token.
 
 `constraint` is a
-[`TokenConstraint`](../../../python/src/whetstone/kit/constraint.py). It describes a
+[`TokenConstraint`](../../../python/src/learnai/kit/constraint.py). It describes a
 set of valid outputs through four methods:
 
 ```python

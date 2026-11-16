@@ -5,7 +5,7 @@ oracle, on hand-written vocabularies and on random ones built here from a seeded
 generator. Vocabularies are passed as fresh copies, and ids are checked to be ints.
 """
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 UNK = "[UNK]"
 

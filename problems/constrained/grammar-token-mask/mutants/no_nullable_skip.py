@@ -1,5 +1,5 @@
 # BUG: prediction does not step over a rule that can match nothing; the empty rule's completion only advances the items that were already in the set, so an item that reaches the same empty rule later at the same position is stuck in front of it.
-from whetstone.kit import Chars, Grammar, Ref, ToyVocab
+from learnai.kit import Chars, Grammar, Ref, ToyVocab
 
 
 def _code_points(data: bytes) -> tuple[int, int] | None:

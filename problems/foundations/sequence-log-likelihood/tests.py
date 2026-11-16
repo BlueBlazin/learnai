@@ -3,7 +3,7 @@ a few add a value that follows from the definition alone."""
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 BOTH = ("sequence_logprob", "perplexity")
 TOL = {"rtol": 1e-4, "atol": 1e-4}  # the tolerance stated in Constraints

@@ -1,7 +1,7 @@
 # BUG: draws the token with torch.multinomial instead of the supplied uniform numbers, so the result is not a function of u.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def penalize(logits: torch.Tensor, cfg: dict, history: torch.Tensor) -> torch.Tensor:

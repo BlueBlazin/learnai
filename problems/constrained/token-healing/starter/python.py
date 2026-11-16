@@ -1,4 +1,4 @@
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def heal(prompt_ids: list[int], vocab: ToyVocab) -> tuple[list[int], bytes]:

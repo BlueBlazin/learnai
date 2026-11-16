@@ -1,10 +1,10 @@
-"""whetstone.kit.ops: one contract, four implementations."""
+"""learnai.kit.ops: one contract, four implementations."""
 
 import numpy as np
 import pytest
 
-from whetstone.judge import frameworks
-from whetstone.kit import ops
+from learnai.judge import frameworks
+from learnai.kit import ops
 
 NEG_INF = float("-inf")
 

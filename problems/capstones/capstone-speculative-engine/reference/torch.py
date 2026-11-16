@@ -2,7 +2,7 @@ from itertools import accumulate
 
 import torch
 
-from whetstone.kit import TinyLM, ops
+from learnai.kit import TinyLM, ops
 
 # Decisions about single tokens are scalar logic. Each model call's probabilities are
 # brought to Python once (`tolist`), and everything after that is plain arithmetic.

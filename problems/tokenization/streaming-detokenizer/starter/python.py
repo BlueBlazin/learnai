@@ -1,6 +1,6 @@
 from typing import Any
 
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def detok_step(state: Any, token_id: int, vocab: ToyVocab) -> tuple[Any, str]:

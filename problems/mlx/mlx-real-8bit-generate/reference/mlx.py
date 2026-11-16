@@ -3,8 +3,8 @@ from pathlib import Path
 
 import mlx.core as mx
 
+from learnai.kit import RealConfig
 from mlx import nn
-from whetstone.kit import RealConfig
 
 # Every linear layer and the embedding is an nn.QuantizedLinear / nn.QuantizedEmbedding:
 # its parameters are `weight` (packed uint32 codes), `scales`, and `biases`, the three

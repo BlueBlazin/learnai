@@ -14,8 +14,8 @@ import copy
 from dataclasses import dataclass
 from types import SimpleNamespace
 
-from whetstone.judge import CheckFailure, case, check
-from whetstone.kit import CostModel, SimCluster, workloads
+from learnai.judge import CheckFailure, case, check
+from learnai.kit import CostModel, SimCluster, workloads
 
 COST = CostModel(base_s=2**-6, prefill_s_per_token=2**-12, decode_s_per_seq=2**-9)
 STARTUP_S, PERIOD_S, SLO_S = 4.0, 1.0, 1.0

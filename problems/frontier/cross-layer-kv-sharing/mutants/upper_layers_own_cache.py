@@ -1,5 +1,5 @@
 # BUG: the upper layers attend over keys and values of their own and cache them, which is the ordinary model: a different function with different logits, and twice the stored KV.
-from whetstone.kit import LayerCache, LayeredLM
+from learnai.kit import LayerCache, LayeredLM
 
 
 def prefill_shared(lm: LayeredLM, prompt: list[int], share_from: int) -> tuple:

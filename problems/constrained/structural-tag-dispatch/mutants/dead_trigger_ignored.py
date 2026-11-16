@@ -1,5 +1,5 @@
 # BUG: a trigger to which no tag belongs is ignored instead of being impossible to complete: the free text may contain it.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class TagDispatch:

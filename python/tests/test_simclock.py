@@ -3,8 +3,8 @@ import time
 
 import pytest
 
-from whetstone.judge import CheckFailure, SimClock, percentile
-from whetstone.kit import SimModel
+from learnai.judge import CheckFailure, SimClock, percentile
+from learnai.kit import SimModel
 
 
 def test_virtual_time_jumps_without_real_sleeping():

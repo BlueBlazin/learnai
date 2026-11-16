@@ -1,7 +1,7 @@
 # BUG: numbers the new tokens from position 0 in every call, so a decoded token is rotated as if it were the first token of the text instead of continuing after the cache.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 # The cache: for each layer, (keys, values) of every token read so far, each of shape
 # (n_kv_heads, length, head_dim). Keys are stored already rotated.

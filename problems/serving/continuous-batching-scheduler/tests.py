@@ -10,8 +10,8 @@ here from the statement and against the oracle's steps.
 import asyncio
 from collections import deque
 
-from whetstone.judge import case, check, percentile
-from whetstone.kit import CostModel, ProtocolViolation, SimEngine, workloads
+from learnai.judge import case, check, percentile
+from learnai.kit import CostModel, ProtocolViolation, SimEngine, workloads
 
 # A step over P prompt tokens and D decoded sequences takes 8 + 0.25 * P + D milliseconds.
 COST = CostModel(base_s=8, prefill_s_per_token=0.25, decode_s_per_seq=1)

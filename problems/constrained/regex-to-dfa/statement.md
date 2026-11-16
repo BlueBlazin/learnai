@@ -20,7 +20,7 @@ def compile_regex(pattern: str) -> tuple[dict[int, dict[int, int]], int, set[int
 - `start` is the start state and `accepting` the **set** of accepting states.
 - States are ints; which ints is up to you.
 
-This is exactly what the kit's [`CharDFA`](../../../python/src/whetstone/kit/dfa.py)
+This is exactly what the kit's [`CharDFA`](../../../python/src/learnai/kit/dfa.py)
 takes: `CharDFA(transitions, start, accepting)`.
 
 A byte string is **accepted** when reading its bytes from `start` never hits a
@@ -119,7 +119,7 @@ when `re.fullmatch(pattern, s, re.ASCII)` matches.
 Tests use only patterns of the subset and patterns from this list.
 
 Do not use the kit's regex compiler (`CharDFA.from_regex` and the private helpers of
-`whetstone.kit.dfa`); the harness rejects them. Python's `re` cannot produce an
+`learnai.kit.dfa`); the harness rejects them. Python's `re` cannot produce an
 automaton and is of no use here.
 
 ## Example

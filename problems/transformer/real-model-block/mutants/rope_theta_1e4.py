@@ -1,7 +1,7 @@
 # BUG: uses the usual RoPE base of 10,000; this model's rope_theta is 10,000,000.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 HEAD_DIM = 64
 NORM_EPS = 1e-5

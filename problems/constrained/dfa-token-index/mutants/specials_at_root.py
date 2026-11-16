@@ -1,5 +1,5 @@
 # BUG: special tokens are inserted into the trie like any other token; their empty byte string puts them at the root, so they are allowed in every state and lead back to the same state.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class _Node:

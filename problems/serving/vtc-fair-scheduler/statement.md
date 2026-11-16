@@ -15,9 +15,9 @@ class VTCScheduler:
     async def run(self) -> None: ...
 ```
 
-`engine` is a [`SimEngine`](../../../python/src/whetstone/kit/simengine.py) with
+`engine` is a [`SimEngine`](../../../python/src/learnai/kit/simengine.py) with
 `max_running` slots. Requests are
-[`SimRequest`](../../../python/src/whetstone/kit/workloads.py) objects;
+[`SimRequest`](../../../python/src/learnai/kit/workloads.py) objects;
 `request.tenant` is a string naming who sent it. Time is virtual and counted in
 **milliseconds**; a step over $P$ prompt tokens and $D$ decoded sequences takes
 $8 + 0.25\,P + D$ ms. Do not read `request.output_tokens`: a server does not know how

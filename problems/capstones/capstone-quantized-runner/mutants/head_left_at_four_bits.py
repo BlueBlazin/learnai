@@ -1,7 +1,7 @@
 # BUG: only the embedding gets 8 bits; a separate lm_head.weight is quantized to 4.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

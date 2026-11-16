@@ -1,7 +1,7 @@
 # BUG: stops at eos_id but does not include it in the returned tokens.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def greedy_decode(

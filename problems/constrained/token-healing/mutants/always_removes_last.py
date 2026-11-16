@@ -1,5 +1,5 @@
 # BUG: always removes the last ordinary token, even when no longer token extends it; the prompt loses a token and a generation step for nothing.
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def heal(prompt_ids: list[int], vocab: ToyVocab) -> tuple[list[int], bytes]:

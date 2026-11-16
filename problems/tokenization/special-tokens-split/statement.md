@@ -115,7 +115,7 @@ index 1 is still the longest one, `"<|sep|>\n"`, and it is not allowed.
 - `len(text) <= 5000`; `specials` has at most 32 keys, each a non-empty string of at
   most 32 characters. Ids are arbitrary non-negative ints.
 - When `allowed` is a set, it is a subset of the keys of `specials`.
-- Most tests use the kit's [`ToyVocab`](../../../python/src/whetstone/kit/vocab.py) with 282 tokens: `specials`
+- Most tests use the kit's [`ToyVocab`](../../../python/src/learnai/kit/vocab.py) with 282 tokens: `specials`
   is `vocab.specials` (`<|bos|>`, `<|eos|>`, `<|pad|>`, `<|im_start|>`, `<|im_end|>`,
   ids 0 to 4), sometimes extended, and `encode_ordinary` is `vocab.encode`, a byte-level
   BPE encoder with merges such as `t`+`r`+`u`+`e`.

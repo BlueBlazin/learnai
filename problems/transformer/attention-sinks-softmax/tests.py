@@ -8,7 +8,7 @@ vector itself. Those are compared with a float64 computation written here.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "attention_with_sinks"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints

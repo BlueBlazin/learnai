@@ -1,4 +1,4 @@
-"""The ``ws`` CLI, including the validate gate."""
+"""The ``learnai`` CLI, including the validate gate."""
 
 import shutil
 from pathlib import Path
@@ -6,17 +6,17 @@ from pathlib import Path
 import pytest
 from conftest import CATALOG, FIXTURES, REPO_ROOT, SOLUTIONS, fixture_problem
 
-from whetstone import cli, protocol
-from whetstone import validate as gate
+from learnai import cli, protocol
+from learnai import validate as gate
 
 
 @pytest.fixture
 def fixture_root(monkeypatch):
-    monkeypatch.setenv("WHETSTONE_ROOT", str(CATALOG))
+    monkeypatch.setenv("LEARNAI_ROOT", str(CATALOG))
     return CATALOG
 
 
-def ws(capsys, *argv: str) -> tuple[int, str, str]:
+def learnai(capsys, *argv: str) -> tuple[int, str, str]:
     code = cli.main(list(argv))
     captured = capsys.readouterr()
     return code, captured.out, captured.err
@@ -27,7 +27,7 @@ def scratch_root(tmp_path, monkeypatch) -> Path:
     """An empty content root with one copy of the sum-list fixture to break."""
     root = tmp_path / "root"
     shutil.copytree(CATALOG / "problems" / "basics", root / "problems" / "basics")
-    monkeypatch.setenv("WHETSTONE_ROOT", str(root))
+    monkeypatch.setenv("LEARNAI_ROOT", str(root))
     return root
 
 
@@ -41,7 +41,7 @@ def errors_for(root: Path, name: str = "sum-list") -> list[str]:
 
 
 def test_list(capsys, fixture_root):
-    code, out, _ = ws(capsys, "list")
+    code, out, _ = learnai(capsys, "list")
     assert code == 0
     lines = out.splitlines()
     assert lines[0].split() == ["TRACK", "ID", "DIFFICULTY", "FRAMEWORKS", "JUDGES", "TITLE"]
@@ -52,7 +52,7 @@ def test_list(capsys, fixture_root):
 
 
 def test_run_renders_public_cases(capsys, fixture_root):
-    code, out, _ = ws(capsys, "run", "sum-list", "--solution", str(SOLUTIONS / "good.py"))
+    code, out, _ = learnai(capsys, "run", "sum-list", "--solution", str(SOLUTIONS / "good.py"))
     assert code == 0
     assert "sum-list / python / run" in out
     assert "PASS  short" in out and "sums a short list" in out
@@ -61,7 +61,7 @@ def test_run_renders_public_cases(capsys, fixture_root):
 
 
 def test_submit_renders_failures_from_the_same_events(capsys, fixture_root):
-    code, out, _ = ws(capsys, "submit", "sum-list", "--mutant", "absolute_values")
+    code, out, _ = learnai(capsys, "submit", "sum-list", "--mutant", "absolute_values")
     assert code == 1
     assert "FAIL  hidden-1" in out and "Hidden case 1" in out
     assert "total: differs from the expected result" in out
@@ -70,13 +70,13 @@ def test_submit_renders_failures_from_the_same_events(capsys, fixture_root):
     assert "negatives" not in out and "negative numbers" not in out and "expected:" not in out
 
     # ...unless an author asks.
-    code, out, _ = ws(capsys, "submit", "sum-list", "--mutant", "absolute_values", "--reveal")
+    code, out, _ = learnai(capsys, "submit", "sum-list", "--mutant", "absolute_values", "--reveal")
     assert code == 1
     assert "FAIL  negatives" in out and "negative numbers" in out and "expected: -10" in out
-    code, out, _ = ws(capsys, "submit", "sum-list", "--reference", "--case", "hidden-2")
+    code, out, _ = learnai(capsys, "submit", "sum-list", "--reference", "--case", "hidden-2")
     assert code == 0 and "PASS  hidden-2" in out and "1/1 passed" in out
 
-    code, out, _ = ws(
+    code, out, _ = learnai(
         capsys, "submit", "sum-list", "--solution", str(SOLUTIONS / "raises_on_empty.py")
     )
     assert code == 1
@@ -87,25 +87,25 @@ def test_submit_renders_failures_from_the_same_events(capsys, fixture_root):
 
 def test_metrics_and_captured_output_are_shown(capsys, fixture_root):
     problem = fixture_problem("greedy-decode")
-    code, out, _ = ws(
+    code, out, _ = learnai(
         capsys, "run", "greedy-decode", "-f", "torch",
         "--solution", str(problem / "mutants" / "no_cache.py"),
     )  # fmt: skip
     assert code == 1
     assert "tokens_processed: 114 tokens (limit 15 tokens)" in out
     assert "tokens_processed: 114 tokens exceeds the limit of 15 tokens" in out
-    code, out, _ = ws(capsys, "run", "sum-list", "--solution", str(SOLUTIONS / "prints.py"))
+    code, out, _ = learnai(capsys, "run", "sum-list", "--solution", str(SOLUTIONS / "prints.py"))
     assert code == 0
     assert "log: printed at import time" in out
     assert "| python print 3" in out
 
 
 def test_reference_starter_and_default_solution(capsys, fixture_root):
-    assert ws(capsys, "submit", "sum-list", "--reference")[0] == 0
-    code, out, _ = ws(capsys, "run", "sum-list", "--starter")
+    assert learnai(capsys, "submit", "sum-list", "--reference")[0] == 0
+    code, out, _ = learnai(capsys, "run", "sum-list", "--starter")
     assert code == 1 and "NotImplementedError" in out
     # No workspace file yet: the starter runs and the CLI says so.
-    code, out, err = ws(capsys, "run", "sum-list")
+    code, out, err = learnai(capsys, "run", "sum-list")
     assert code == 1
     assert "running the unmodified starter" in err
 
@@ -114,12 +114,12 @@ def test_workspace_solution_is_the_default(capsys, scratch_root):
     workspace = scratch_root / "workspace" / "sum-list"
     workspace.mkdir(parents=True)
     shutil.copy(SOLUTIONS / "good.py", workspace / "python.py")
-    code, out, err = ws(capsys, "submit", "sum-list")
+    code, out, err = learnai(capsys, "submit", "sum-list")
     assert code == 0 and "Accepted  4/4 passed" in out and err == ""
 
 
 def test_events_flag_prints_the_raw_protocol(capsys, fixture_root):
-    code, out, _ = ws(capsys, "run", "sum-list", "--reference", "--events")
+    code, out, _ = learnai(capsys, "run", "sum-list", "--reference", "--events")
     assert code == 0
     events = [protocol.decode(line) for line in out.splitlines()]
     assert [e["event"] for e in events] == [
@@ -128,13 +128,13 @@ def test_events_flag_prints_the_raw_protocol(capsys, fixture_root):
 
 
 def test_usage_errors(capsys, fixture_root):
-    code, _, err = ws(capsys, "run", "no-such-problem")
+    code, _, err = learnai(capsys, "run", "no-such-problem")
     assert code == 2 and "no problem with id 'no-such-problem'" in err
-    code, _, err = ws(capsys, "run", "sum-list", "-f", "torch")
+    code, _, err = learnai(capsys, "run", "sum-list", "-f", "torch")
     assert code == 2 and "supports python" in err
-    code, _, err = ws(capsys, "run", "sum-list", "--mutant", "nope")
+    code, _, err = learnai(capsys, "run", "sum-list", "--mutant", "nope")
     assert code == 2 and "available: absolute_values" in err
-    code, _, err = ws(capsys, "validate")
+    code, _, err = learnai(capsys, "validate")
     assert code == 2
 
 
@@ -142,7 +142,7 @@ def test_usage_errors(capsys, fixture_root):
 
 
 def test_fixture_catalog_passes_validation(capsys, fixture_root):
-    code, out, _ = ws(capsys, "validate", "--all", "-v")
+    code, out, _ = learnai(capsys, "validate", "--all", "-v")
     assert code == 0, out
     assert "7 of 7 problems passed validation" in out
     for line in (
@@ -160,8 +160,8 @@ def test_fixture_catalog_passes_validation(capsys, fixture_root):
 
 
 def test_the_exemplar_problem_passes_validation(capsys, monkeypatch):
-    monkeypatch.setenv("WHETSTONE_ROOT", str(REPO_ROOT))
-    code, out, _ = ws(capsys, "validate", "stable-softmax", "-v")
+    monkeypatch.setenv("LEARNAI_ROOT", str(REPO_ROOT))
+    code, out, _ = learnai(capsys, "validate", "stable-softmax", "-v")
     assert code == 0, out
     assert out.count("rejected (") == 3 + 7  # three starters, seven mutants
     assert "mutant uses_builtin rejected (wrong_answer)" in out
@@ -169,8 +169,8 @@ def test_the_exemplar_problem_passes_validation(capsys, monkeypatch):
 
 
 def test_deliberately_broken_fixture_fails_validation(capsys, monkeypatch):
-    monkeypatch.setenv("WHETSTONE_ROOT", str(FIXTURES / "broken"))
-    code, out, _ = ws(capsys, "validate", "--all")
+    monkeypatch.setenv("LEARNAI_ROOT", str(FIXTURES / "broken"))
+    code, out, _ = learnai(capsys, "validate", "--all")
     assert code == 1
     assert "FAIL basics/weak-tests" in out
     assert "error: tests.py: no hidden case" in out
@@ -296,7 +296,7 @@ def test_timing_sensitive_problems_validate_alone_after_the_parallel_batch(monke
 
 
 def test_which_judges_count_as_timing_sensitive():
-    from whetstone.problem import load_problem
+    from learnai.problem import load_problem
 
     verdicts = {
         d.name: gate.is_timing_sensitive(load_problem(d)) for d in gate.problem_dirs(CATALOG)
@@ -380,7 +380,7 @@ def test_validate_requires_globally_unique_ids(scratch_root):
 
 @pytest.mark.parametrize("frameworks", ["torch", "python"])
 def test_new_scaffolds_a_problem_that_validates_once_filled_in(capsys, scratch_root, frameworks):
-    code, _, _ = ws(capsys, "new", "decoding/top-k-filter", "--frameworks", frameworks,
+    code, _, _ = learnai(capsys, "new", "decoding/top-k-filter", "--frameworks", frameworks,
                       "--title", "Top-k Filtering", "--difficulty", "medium")  # fmt: skip
     assert code == 0
     problem = scratch_root / "problems" / "decoding" / "top-k-filter"
@@ -403,8 +403,8 @@ def test_new_scaffolds_a_problem_that_validates_once_filled_in(capsys, scratch_r
 
 
 def test_new_refuses_bad_targets(capsys, scratch_root):
-    assert ws(capsys, "new", "Not A Path")[0] == 2
-    assert ws(capsys, "new", "basics/sum-list")[0] == 2  # the id already exists
-    assert ws(capsys, "new", "x/y", "--frameworks", "jax")[0] == 2
-    code, _, err = ws(capsys, "new", "x/y", "--frameworks", "python,torch")
+    assert learnai(capsys, "new", "Not A Path")[0] == 2
+    assert learnai(capsys, "new", "basics/sum-list")[0] == 2  # the id already exists
+    assert learnai(capsys, "new", "x/y", "--frameworks", "jax")[0] == 2
+    code, _, err = learnai(capsys, "new", "x/y", "--frameworks", "python,torch")
     assert code == 2 and "cannot be combined" in err

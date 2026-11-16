@@ -16,8 +16,8 @@ Every expected logit comes from `transformers` (float32, CPU), stored by
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import RealConfig, RealModel
+from learnai.judge import case, check
+from learnai.kit import RealConfig, RealModel
 
 FN = "granite_logits"
 ASSET = "granite-4.0-350m"

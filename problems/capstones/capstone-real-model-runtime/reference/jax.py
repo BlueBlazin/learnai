@@ -8,8 +8,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from whetstone.kit import ops
-from whetstone.kit.bpe import translate_pattern
+from learnai.kit import ops
+from learnai.kit.bpe import translate_pattern
 
 # -- stage 1: weights from a memory-mapped safetensors file --------------------------------
 

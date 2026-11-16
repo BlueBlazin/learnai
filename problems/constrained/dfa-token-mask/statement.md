@@ -11,7 +11,7 @@ def allowed_tokens(dfa, state, vocab) -> list[int]: ...
 def advance(dfa, state, token, vocab) -> int: ...
 ```
 
-**The automaton.** `dfa` is a [`CharDFA`](../../../python/src/whetstone/kit/dfa.py), a
+**The automaton.** `dfa` is a [`CharDFA`](../../../python/src/learnai/kit/dfa.py), a
 deterministic automaton that reads **bytes**. Its states are non-negative ints.
 `dfa.step(state, byte)` returns the state after reading one byte (an int in
 `[0, 256)`), or the constant `DEAD` (`-1`) if no string of the language continues that
@@ -21,7 +21,7 @@ form a complete string of the language. The automaton is *trimmed*: from every s
 some continuation reaches an accepting state, so a walk that is not `DEAD` has read a
 prefix of a string of the language.
 
-**The vocabulary.** `vocab` is a [`ToyVocab`](../../../python/src/whetstone/kit/vocab.py).
+**The vocabulary.** `vocab` is a [`ToyVocab`](../../../python/src/learnai/kit/vocab.py).
 Token ids are `0` to `vocab.size - 1`, and `vocab.bytes(token)` is the byte string the
 token stands for. Three kinds of tokens matter here:
 

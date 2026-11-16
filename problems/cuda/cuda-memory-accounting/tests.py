@@ -25,7 +25,7 @@ have never run on the machine that validates the catalog.
 
 import torch
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 KIB, MIB, GIB = 2**10, 2**20, 2**30
 BLOCK = 512

@@ -1,7 +1,7 @@
 # BUG: feeds the raw embedding rows into the first block; this model multiplies them by cfg.embedding_multiplier (12).
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

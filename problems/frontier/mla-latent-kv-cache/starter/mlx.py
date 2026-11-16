@@ -2,7 +2,7 @@ import math
 
 import mlx.core as mx
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def absorb(

@@ -1,6 +1,6 @@
 import json
 
-from whetstone import protocol
+from learnai import protocol
 
 
 def test_encode_is_one_prefixed_json_line():

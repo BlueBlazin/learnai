@@ -7,7 +7,7 @@ random conversations and check the invariants of the segment list directly.
 
 from itertools import pairwise
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 S, E = "<|im_start|>", "<|im_end|>"
 DEFAULT_TURN = S + "system\nYou are a helpful assistant." + E + "\n"

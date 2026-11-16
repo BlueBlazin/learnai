@@ -1,8 +1,8 @@
 # BUG: builds every RMSNorm with the default epsilon of 1e-5 and ignores cfg.norm_eps.
 import mlx.core as mx
 
+from learnai.kit import RealConfig
 from mlx import nn
-from whetstone.kit import RealConfig
 
 # Attribute names are checkpoint names: `model.layers.3.self_attn.q_proj.weight` in the
 # file is `self.model.layers[3].self_attn.q_proj.weight` here, so `load_weights` needs

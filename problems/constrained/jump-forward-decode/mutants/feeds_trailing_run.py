@@ -1,7 +1,7 @@
 # BUG: after generation has ended, feeds the tokens the model has not seen (the last free token and the forced run after it) to bring the cache up to date, a call whose logits nobody reads.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def jump_forward_decode(

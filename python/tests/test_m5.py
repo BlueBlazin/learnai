@@ -11,12 +11,12 @@ from pathlib import Path
 import pytest
 from conftest import CATALOG, SOLUTIONS, run_harness
 
-from whetstone import cli, render
-from whetstone.judge import case, registry, speed, warmup
-from whetstone.judge.registry import load_cases, stages_of
+from learnai import cli, render
+from learnai.judge import case, registry, speed, warmup
+from learnai.judge.registry import load_cases, stages_of
 
 STAGED_TESTS = """
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 
 @case("sums a short list", public=True, stage="1: small lists")
@@ -51,7 +51,7 @@ def one_negative(ctx):
 def scratch_root(tmp_path, monkeypatch) -> Path:
     root = tmp_path / "root"
     shutil.copytree(CATALOG / "problems" / "basics", root / "problems" / "basics")
-    monkeypatch.setenv("WHETSTONE_ROOT", str(root))
+    monkeypatch.setenv("LEARNAI_ROOT", str(root))
     return root
 
 
@@ -62,7 +62,7 @@ def staged(scratch_root) -> Path:
     return problem
 
 
-def ws(capsys, *argv: str) -> tuple[int, str, str]:
+def learnai(capsys, *argv: str) -> tuple[int, str, str]:
     code = cli.main(list(argv))
     captured = capsys.readouterr()
     return code, captured.out, captured.err
@@ -109,7 +109,7 @@ def test_start_event_carries_the_stage_also_for_hidden_cases(staged, sum_list):
 
 
 def test_text_output_groups_cases_by_stage_and_counts_each(capsys, staged):
-    code, out, _ = ws(capsys, "submit", "sum-list", "--solution",
+    code, out, _ = learnai(capsys, "submit", "sum-list", "--solution",
                       str(SOLUTIONS / "wrong_on_negatives.py"))  # fmt: skip
     assert code == 1
     lines = out.splitlines()
@@ -127,7 +127,7 @@ def test_text_output_groups_cases_by_stage_and_counts_each(capsys, staged):
         "  0/2 passed  Stage 2: signs",
     ]
 
-    code, out, _ = ws(capsys, "run", "sum-list", "--reference")
+    code, out, _ = learnai(capsys, "run", "sum-list", "--reference")
     assert code == 0
     assert "  3/3 passed  Stage 1: small lists" in out and "Stage 2" not in out
 
@@ -151,11 +151,11 @@ def test_renderer_counts_skipped_cases_of_a_stage_and_keeps_a_stage_prefix():
 
 
 def test_validate_requires_every_case_to_have_a_stage_or_none(capsys, staged):
-    code, out, _ = ws(capsys, "validate", "sum-list")
+    code, out, _ = learnai(capsys, "validate", "sum-list")
     assert code == 0, out
     tests = staged / "tests.py"
     tests.write_text(tests.read_text().replace(', stage="2: signs")', ")", 1))
-    code, out, _ = ws(capsys, "validate", "sum-list")
+    code, out, _ = learnai(capsys, "validate", "sum-list")
     assert code == 1
     assert "tests.py: 1 of 5 cases have no stage (negatives)" in out
     assert out.count("have no stage") == 1
@@ -169,7 +169,7 @@ SLOW_SETUP_CASE = """
 @case("a case that needs a slow one-time setup", public=True, id="slow_setup")
 def slow_setup(ctx):
     import time
-    from whetstone.judge import warmup
+    from learnai.judge import warmup
 
     with warmup.off_the_clock():
         time.sleep(1.6)            # longer than the case's limit of 1 s
@@ -181,7 +181,7 @@ def slow_setup(ctx):
 @case("the limit still applies to the rest of a case", public=True, id="after_pause")
 def after_pause(ctx):
     import time
-    from whetstone.judge import warmup
+    from learnai.judge import warmup
 
     with warmup.off_the_clock():
         time.sleep(0.3)

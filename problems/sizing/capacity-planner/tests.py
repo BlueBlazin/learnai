@@ -9,7 +9,7 @@ replica count carries the load inside the headroom and one fewer does not.
 from fractions import Fraction
 from itertools import pairwise
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 COST = {"base_us": 8000, "prefill_us_per_token": 100, "decode_us_per_seq": 1000, "max_seqs": 32}
 WORKLOAD = {"requests_per_s": 40, "prompt_tokens": 500, "output_tokens": 200}

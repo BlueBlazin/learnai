@@ -14,7 +14,7 @@ class Granite(nn.Module):
     def __call__(self, tokens): ...
 ```
 
-`cfg` is a [`RealConfig`](../../../python/src/whetstone/kit/realmodel.py), the
+`cfg` is a [`RealConfig`](../../../python/src/learnai/kit/realmodel.py), the
 architecture read from `config.json`:
 
 | field | Granite 4.0 350M | meaning |

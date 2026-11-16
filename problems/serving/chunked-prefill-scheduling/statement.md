@@ -46,7 +46,7 @@ two lists. In particular, a sequence that receives its last chunk in this step i
 sequence is in `running` at the next call.
 
 **The loop around `plan`.** The tests run this loop, with a
-[`SimEngine`](../../../python/src/whetstone/kit/simengine.py) whose
+[`SimEngine`](../../../python/src/learnai/kit/simengine.py) whose
 `max_batch_tokens` is the budget. You do not write it.
 
 ```python

@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from whetstone.kit import DEAD, CharDFA, DFAConstraint, TokenConstraint, ToyVocab
+from learnai.kit import DEAD, CharDFA, DFAConstraint, TokenConstraint, ToyVocab
 
 # -- a hand-built automaton -------------------------------------------------------------
 

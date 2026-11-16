@@ -1,26 +1,26 @@
-//! Thin shell: maps Tauri commands to whetstone-core functions. No logic lives here.
+//! Thin shell: maps Tauri commands to learnai-core functions. No logic lives here.
 
 mod commands;
 
 use std::fs::{self, OpenOptions};
 use std::sync::Mutex;
 
+use learnai_core::{Core, CoreOptions, RootInputs, resolve_root};
 use tauri::Manager;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use whetstone_core::{Core, CoreOptions, RootInputs, resolve_root};
 
 use crate::commands::AppState;
 
 /// File name of the app log inside the platform log directory
-/// (`~/Library/Logs/dev.whetstone.app/` on macOS).
-const LOG_FILE: &str = "whetstone.log";
+/// (`~/Library/Logs/dev.learnai.app/` on macOS).
+const LOG_FILE: &str = "learnai.log";
 
-/// The log level: `info` unless `WHETSTONE_LOG` names another (`debug` logs every
+/// The log level: `info` unless `LEARNAI_LOG` names another (`debug` logs every
 /// command the window invokes). The windowing libraries trace every event, so the
 /// default keeps the log to what a person reads.
 fn log_level() -> tracing_subscriber::filter::LevelFilter {
-    std::env::var("WHETSTONE_LOG")
+    std::env::var("LEARNAI_LOG")
         .ok()
         .and_then(|level| level.parse().ok())
         .unwrap_or(tracing_subscriber::filter::LevelFilter::INFO)

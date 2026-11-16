@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Whetstone",
+  "productName": "Learn AI",
   "version": "0.1.0",
-  "identifier": "dev.whetstone.app",
+  "identifier": "dev.learnai.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Whetstone",
+        "title": "Learn AI",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,

@@ -1,7 +1,7 @@
 # BUG: the late layers verify one position per call instead of all k' + 1 positions in one call: the tokens are right, and the layer calls of sequential decoding are back.
 import torch
 
-from whetstone.kit import LayeredLM
+from learnai.kit import LayeredLM
 
 
 def self_speculative_greedy(

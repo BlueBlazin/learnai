@@ -1,7 +1,7 @@
 # BUG: the cache stores keys before the RoPE rotation and rotates all of them again at every step; the cache is not in the specified layout.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

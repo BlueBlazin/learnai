@@ -1,8 +1,8 @@
 # BUG: scales the attention scores by 1 / sqrt(head_dim), the textbook value, where Granite uses the config's attention_multiplier, 1 / head_dim.
 import mlx.core as mx
 
+from learnai.kit import RealConfig
 from mlx import nn
-from whetstone.kit import RealConfig
 
 # Attribute names are checkpoint names: `model.layers.3.self_attn.q_proj.weight` in the
 # file is `self.model.layers[3].self_attn.q_proj.weight` here, so `load_weights` needs

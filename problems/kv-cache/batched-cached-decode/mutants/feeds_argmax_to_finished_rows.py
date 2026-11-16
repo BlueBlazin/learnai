@@ -1,7 +1,7 @@
 # BUG: keeps feeding a finished row the argmax of its (ignored) logits instead of eos_id, so the model goes on generating a continuation past EOS for that row.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def batched_greedy(

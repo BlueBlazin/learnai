@@ -1,7 +1,7 @@
 # BUG: squares and accumulates in the element type of x; for float16 activations above 255 the square overflows to infinity and the row comes out as zeros.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 
 @case("scales on the CPU", public=True)

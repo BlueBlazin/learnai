@@ -5,8 +5,8 @@ pair, so the expected values do not come from the reference. The cost limits are
 what the statement's batching rule produces, computed here by `plan`.
 """
 
-from whetstone.judge import case, check
-from whetstone.kit import CountingScorer
+from learnai.judge import case, check
+from learnai.kit import CountingScorer
 
 FN = "rerank"
 

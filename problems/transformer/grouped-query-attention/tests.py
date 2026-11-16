@@ -7,7 +7,7 @@ keys and values, and a key/value head influences exactly the query heads of its 
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "gqa"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints

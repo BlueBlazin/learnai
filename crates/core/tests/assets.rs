@@ -6,8 +6,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use common::TestRoot;
-use whetstone_core::assets::MAX_ASSET_BYTES;
-use whetstone_core::{Core, CoreError};
+use learnai_core::assets::MAX_ASSET_BYTES;
+use learnai_core::{Core, CoreError};
 
 const SVG: &str =
     "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 4 4\"><path d=\"M0 0h4\"/></svg>\n";
@@ -24,7 +24,7 @@ fn setup() -> (TestRoot, Core, PathBuf) {
     (root, core, assets)
 }
 
-fn invalid(result: whetstone_core::Result<String>) -> String {
+fn invalid(result: learnai_core::Result<String>) -> String {
     match result {
         Err(CoreError::InvalidArgument(message)) => message,
         other => panic!("expected InvalidArgument, got {other:?}"),

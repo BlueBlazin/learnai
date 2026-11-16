@@ -300,7 +300,7 @@ export interface CheckStep {
   fix: string | null;
 }
 
-/** What `ws doctor` reported on a target, reduced to what the app shows. */
+/** What `learnai doctor` reported on a target, reduced to what the app shows. */
 export interface RemoteDoctor {
   python: string;
   /** `Linux`, `Darwin`. */

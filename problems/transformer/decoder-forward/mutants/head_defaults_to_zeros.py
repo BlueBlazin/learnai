@@ -1,7 +1,7 @@
 # BUG: always looks up lm_head.weight and falls back to zeros when the key is missing, so a tied checkpoint (which has no such key) gets all-zero logits instead of using the embedding matrix.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 
 def forward(params: dict[str, torch.Tensor], cfg: DecoderConfig, tokens: torch.Tensor) -> torch.Tensor:

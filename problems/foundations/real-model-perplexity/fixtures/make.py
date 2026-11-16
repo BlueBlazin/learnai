@@ -3,7 +3,7 @@
     uv run --project python --extra jax --extra mlx --extra models \
         python problems/foundations/real-model-perplexity/fixtures/make.py
 
-Needs the small house model on disk (``ws assets fetch granite-4.0-350m``) and the
+Needs the small house model on disk (``learnai assets fetch granite-4.0-350m``) and the
 ``models`` extra. The reference implementation is ``transformers`` (float32, CPU) with
 its own tokenizer; the windowing is the loop of the Hugging Face guide "Perplexity of
 fixed-length models", written out below with explicit targets.
@@ -23,10 +23,10 @@ import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from whetstone import assets
-from whetstone.kit import RealModel
-from whetstone.kit.realmodel import SMALL
-from whetstone.problem import find_root
+from learnai import assets
+from learnai.kit import RealModel
+from learnai.kit.realmodel import SMALL
+from learnai.problem import find_root
 
 HERE = Path(__file__).parent
 MAX_LEN = 16

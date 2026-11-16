@@ -1,5 +1,5 @@
-from whetstone.judge import case, check
-from whetstone.kit import TinyLM
+from learnai.judge import case, check
+from learnai.kit import TinyLM
 
 
 @case("generates the same tokens as the reference", public=True)

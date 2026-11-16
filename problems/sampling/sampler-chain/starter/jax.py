@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def chain_logits(logits: jax.Array, cfg: dict, history: jax.Array) -> jax.Array:

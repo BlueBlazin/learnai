@@ -1,8 +1,8 @@
 # BUG: expands the key and value heads to the number of query heads with mx.tile, which cycles through the heads (0, 1, 0, 1); query head h belongs to KV head h // group, and the fused kernel wants the heads unexpanded anyway.
 import mlx.core as mx
 
+from learnai.kit import RealConfig
 from mlx import nn
-from whetstone.kit import RealConfig
 
 # Attribute names are checkpoint names: `model.layers.3.self_attn.q_proj.weight` in the
 # file is `self.model.layers[3].self_attn.q_proj.weight` here, so `load_weights` needs

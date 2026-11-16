@@ -33,7 +33,7 @@ that this stage and the earlier ones define: stage 1 never sends `response_forma
 compilations. So the stages can be solved, and pass, in order.
 
 **The model.** `lm` is a
-[`ScriptedLM`](../../../python/src/whetstone/kit/scriptedlm.py) whose script is made
+[`ScriptedLM`](../../../python/src/learnai/kit/scriptedlm.py) whose script is made
 of logits:
 
 - `lm.stream(prompt, max_tokens)` returns an async iterator. Each item is one
@@ -49,7 +49,7 @@ of logits:
 Call `lm.stream` exactly once per valid request and never for an invalid one.
 
 **The vocabulary.** `vocab` is a
-[`ToyVocab`](../../../python/src/whetstone/kit/vocab.py) with 282 tokens.
+[`ToyVocab`](../../../python/src/learnai/kit/vocab.py) with 282 tokens.
 `vocab.bytes(t)` is the text of token `t` as `bytes`; every single byte is a token,
 and so are a few longer pieces such as `{"`, `":`, `": `, `"}`, `, `, `true`, `tru`,
 and `nul`. Ids 0 to 4 are special tokens with empty bytes; `vocab.eos_id` (1) is
@@ -304,7 +304,7 @@ into its text as
 <tool_call> ws { ws "name" ws : ws NAME ws , ws "arguments" ws : ws ARGS ws } ws </tool_call>
 ```
 
-where `ws` is any amount of JSON whitespace, `NAME` a JSON string, and `ARGS` a JSON
+where `learnai` is any amount of JSON whitespace, `NAME` a JSON string, and `ARGS` a JSON
 object. The server parses the output incrementally, token by token, by the rules of
 `tool-call-stream-parser`:
 

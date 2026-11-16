@@ -1,7 +1,7 @@
 # BUG: feeds each new token without passing the cache, so the model sees a one-token sequence and has forgotten the prefix.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def greedy_decode(

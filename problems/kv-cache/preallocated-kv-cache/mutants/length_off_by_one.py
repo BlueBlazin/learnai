@@ -1,7 +1,7 @@
 # BUG: cache_write advances the length by 1 instead of by the number of tokens written: right for decode steps, wrong after a multi-token write.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 Cache = tuple[torch.Tensor, torch.Tensor, int]
 

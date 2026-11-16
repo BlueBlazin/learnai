@@ -1,7 +1,7 @@
 # BUG: no mask at all: correct for a single new token, but in a multi-token chunk every new token also attends to the new tokens after it.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def attend_step(

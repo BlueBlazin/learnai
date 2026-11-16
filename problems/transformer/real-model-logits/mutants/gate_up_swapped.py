@@ -1,7 +1,7 @@
 # BUG: takes the first half of the fused projection as up and the second as gate; the gate rows come first.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

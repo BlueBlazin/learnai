@@ -5,8 +5,8 @@ import re
 import numpy as np
 import torch
 
-from whetstone.kit import ops
-from whetstone.kit.bpe import translate_pattern
+from learnai.kit import ops
+from learnai.kit.bpe import translate_pattern
 
 # -- stage 1 --------------------------------------------------------------------------------
 

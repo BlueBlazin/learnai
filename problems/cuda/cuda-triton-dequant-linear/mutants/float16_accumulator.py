@@ -1,7 +1,7 @@
 # BUG: accumulates the products in a float16 block; every partial sum is rounded to 11 bits, and sums beyond 65504 overflow.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

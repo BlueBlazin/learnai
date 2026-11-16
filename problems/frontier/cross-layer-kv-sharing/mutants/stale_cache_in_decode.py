@@ -1,5 +1,5 @@
 # BUG: decode_step hands the upper layers the cache from before the step, so they read layer share_from - 1 without the new token's keys and values and the new position cannot attend to itself.
-from whetstone.kit import LayerCache, LayeredLM
+from learnai.kit import LayerCache, LayeredLM
 
 
 def prefill_shared(lm: LayeredLM, prompt: list[int], share_from: int) -> tuple:

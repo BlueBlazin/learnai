@@ -1,7 +1,7 @@
 # BUG: when there is a cache, the new queries attend over the cached entries only; the new keys and values are appended afterwards, so no new token sees itself or the new tokens before it.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def attend_step(

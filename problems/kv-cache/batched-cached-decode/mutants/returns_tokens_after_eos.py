@@ -1,7 +1,7 @@
 # BUG: has no per-row finished flag: every row keeps appending whatever the model produces until all rows have emitted EOS at some point, so rows that finished early carry tokens after their EOS.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def batched_greedy(

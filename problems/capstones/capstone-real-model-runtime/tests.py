@@ -24,8 +24,8 @@ from pathlib import Path
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import ByteLevelBPE, CountingFile, SafetensorsFile, bf16_to_f32
+from learnai.judge import case, check
+from learnai.kit import ByteLevelBPE, CountingFile, SafetensorsFile, bf16_to_f32
 
 S1 = "1: weights from a safetensors file"
 S2 = "2: tokenizer and chat template"

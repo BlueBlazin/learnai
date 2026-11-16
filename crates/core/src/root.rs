@@ -2,7 +2,7 @@
 //!
 //! The content root is the directory holding `python/`, `problems/`, and `workspace/`.
 //! Resolution order: an explicit override (for example the devbridge `--root` flag), the
-//! `WHETSTONE_ROOT` environment variable, the saved setting, then the repository path
+//! `LEARNAI_ROOT` environment variable, the saved setting, then the repository path
 //! captured at compile time.
 //!
 //! The saved setting cannot live in the state database (which sits under the root), so it
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{CoreError, Result};
 
 /// Environment variable that overrides the content root.
-pub const ROOT_ENV: &str = "WHETSTONE_ROOT";
+pub const ROOT_ENV: &str = "LEARNAI_ROOT";
 
 /// File name of the saved root setting inside the configuration directory.
 pub const ROOT_SETTING_FILE: &str = "root.json";
@@ -26,7 +26,7 @@ pub const ROOT_SETTING_FILE: &str = "root.json";
 pub enum RootSource {
     /// Passed explicitly by the caller.
     Explicit,
-    /// The `WHETSTONE_ROOT` environment variable.
+    /// The `LEARNAI_ROOT` environment variable.
     Env,
     /// The saved setting.
     Saved,
@@ -48,7 +48,7 @@ pub struct ResolvedRoot {
 pub struct RootInputs {
     /// Explicit override; wins over everything.
     pub explicit: Option<PathBuf>,
-    /// Value of `WHETSTONE_ROOT`.
+    /// Value of `LEARNAI_ROOT`.
     pub env: Option<PathBuf>,
     /// Directory holding the saved setting file, if the shell has one.
     pub config_dir: Option<PathBuf>,

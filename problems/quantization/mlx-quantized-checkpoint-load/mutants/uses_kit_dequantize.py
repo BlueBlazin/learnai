@@ -3,7 +3,7 @@ import json
 
 import numpy as np
 
-from whetstone.kit import bf16_to_f32, dequantize
+from learnai.kit import bf16_to_f32, dequantize
 
 
 def load_quantized(buf, name: str, bits: int, group_size: int) -> np.ndarray:

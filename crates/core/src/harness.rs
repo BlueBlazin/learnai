@@ -1,7 +1,7 @@
 //! Building the harness command line (`docs/ARCHITECTURE.md` section 3.5).
 //!
 //! The command is injectable through [`HarnessCommand`], so tests and the devbridge can
-//! substitute a fake harness for `uv run ... python -m whetstone.harness`.
+//! substitute a fake harness for `uv run ... python -m learnai.harness`.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -31,7 +31,7 @@ pub struct HarnessJob {
 }
 
 impl HarnessJob {
-    /// The arguments understood by `python -m whetstone.harness`.
+    /// The arguments understood by `python -m learnai.harness`.
     pub fn harness_args(&self) -> Vec<OsString> {
         let mut args: Vec<OsString> = vec![
             "--problem".into(),
@@ -82,7 +82,7 @@ pub trait HarnessCommand: Send + Sync {
 }
 
 /// The real harness:
-/// `uv run --project <root>/python [--extra ...] -- python -m whetstone.harness <args>`.
+/// `uv run --project <root>/python [--extra ...] -- python -m learnai.harness <args>`.
 #[derive(Debug, Clone)]
 pub struct UvHarness {
     uv: Uv,
@@ -99,7 +99,7 @@ impl HarnessCommand for UvHarness {
     fn command(&self, job: &HarnessJob) -> CommandSpec {
         let mut spec = self.uv.run(&job.extras);
         spec.args
-            .extend(["python".into(), "-m".into(), "whetstone.harness".into()]);
+            .extend(["python".into(), "-m".into(), "learnai.harness".into()]);
         spec.args.extend(job.harness_args());
         spec
     }
@@ -176,7 +176,7 @@ mod tests {
         let spec = harness.command(&job(vec![Extra::Jax, Extra::Mlx]));
         assert_eq!(
             spec.display(),
-            "uv run --project /r/python --extra jax --extra mlx -- python -m whetstone.harness \
+            "uv run --project /r/python --extra jax --extra mlx -- python -m learnai.harness \
              --problem /r/problems/t/p --solution /r/workspace/p/torch.py --framework torch --mode submit"
         );
         let bare = harness.command(&HarnessJob {
@@ -186,7 +186,7 @@ mod tests {
         });
         assert_eq!(
             bare.display(),
-            "uv run --project /r/python -- python -m whetstone.harness \
+            "uv run --project /r/python -- python -m learnai.harness \
              --problem /r/problems/t/p --solution /r/workspace/p/torch.py --framework torch --mode run --case c2"
         );
     }

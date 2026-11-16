@@ -1,5 +1,5 @@
 # BUG: the content automaton's state is remembered per tag and reused: the second time a tag is opened its content continues from where the first one stopped instead of from the start state.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class TagDispatch:

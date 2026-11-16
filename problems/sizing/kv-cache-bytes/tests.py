@@ -4,7 +4,7 @@ The worked examples are compared with literal byte counts; everything else with 
 oracle. All results are exact integers.
 """
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 DTYPES = ("float32", "float16", "bfloat16", "int8")
 

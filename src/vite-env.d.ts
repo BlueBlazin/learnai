@@ -8,4 +8,4 @@ interface ImportMetaEnv {
 }
 
 /** False in builds made for the Tauri shell: the fixture backend and its data are left out. */
-declare const __WHETSTONE_FIXTURES__: boolean;
+declare const __LEARNAI_FIXTURES__: boolean;

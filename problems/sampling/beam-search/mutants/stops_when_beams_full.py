@@ -1,7 +1,7 @@
 # BUG: stops as soon as n_beams hypotheses have finished, without checking whether a live beam could still beat the worst of them.
 import torch
 
-from whetstone.kit import TinyLM, ops
+from learnai.kit import TinyLM, ops
 
 
 def beam_search(

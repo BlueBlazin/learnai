@@ -1,7 +1,7 @@
 import re
 from collections.abc import Callable
 
-from whetstone.kit.bpe import translate_pattern
+from learnai.kit.bpe import translate_pattern
 
 
 def load_tokenizer(

@@ -17,8 +17,8 @@ time_limit_s = 30
 # model has a cache of its own (rejects the mutant uses_kit_reference); MLX's built-in
 # rotary embedding and the model libraries are ruled out as in real-model-logits.
 forbidden = [
-    "whetstone.kit.realmodel.RealLM",
-    "whetstone.kit.realmodel.RealModel",
+    "learnai.kit.realmodel.RealLM",
+    "learnai.kit.realmodel.RealModel",
     "mlx.nn.RoPE",
     "mlx.core.fast.rope",
 ]

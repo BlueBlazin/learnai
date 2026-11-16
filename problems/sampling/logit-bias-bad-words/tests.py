@@ -9,7 +9,7 @@ vocabulary of 12 tokens, and histories over a few of them so that sequences do m
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "apply_bias"
 INF = np.inf

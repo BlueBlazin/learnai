@@ -1,7 +1,7 @@
 # BUG: attends over the whole buffer and masks the tail in the scores only: the tail gets weight 0, but 0 times a NaN or infinite value in the tail of v is NaN.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 Cache = tuple[torch.Tensor, torch.Tensor, int]
 

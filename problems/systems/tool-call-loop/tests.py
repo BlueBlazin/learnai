@@ -14,8 +14,8 @@ is exact.
 import copy
 import json
 
-from whetstone.judge import case, check
-from whetstone.kit import Counters, ScriptedChatModel, ScriptedTool, reply, tool_call
+from learnai.judge import case, check
+from learnai.kit import Counters, ScriptedChatModel, ScriptedTool, reply, tool_call
 
 MODEL_S = 1.0
 WEATHER = {"Paris": 21, "Oslo": 4, "Cairo": 33, "Lima": 18}

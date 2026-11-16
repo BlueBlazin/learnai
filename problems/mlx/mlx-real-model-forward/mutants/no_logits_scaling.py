@@ -1,8 +1,8 @@
 # BUG: returns the head's output without dividing by logits_scaling; every logit is 4 times too large.
 import mlx.core as mx
 
+from learnai.kit import RealConfig
 from mlx import nn
-from whetstone.kit import RealConfig
 
 # Attribute names are checkpoint names: `model.layers.3.self_attn.q_proj.weight` in the
 # file is `self.model.layers[3].self_attn.q_proj.weight` here, so `load_weights` needs

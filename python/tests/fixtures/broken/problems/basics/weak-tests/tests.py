@@ -1,4 +1,4 @@
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 
 @case("sums a short list", public=True)

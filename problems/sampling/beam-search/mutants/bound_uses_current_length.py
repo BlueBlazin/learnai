@@ -1,7 +1,7 @@
 # BUG: bounds the live beams with the current length instead of max_new_tokens; with a positive length penalty a longer hypothesis can still score higher, so the search stops too early.
 import torch
 
-from whetstone.kit import TinyLM, ops
+from learnai.kit import TinyLM, ops
 
 
 def beam_search(

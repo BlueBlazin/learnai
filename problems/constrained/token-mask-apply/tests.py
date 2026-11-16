@@ -8,7 +8,7 @@ probabilities are the softmax over the allowed tokens alone (computed here in fl
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 BOTH = ("mask_logits", "masked_probs")
 NEG_INF = float("-inf")

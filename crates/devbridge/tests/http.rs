@@ -5,11 +5,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use learnai_core::{Core, CoreOptions, ProgramHarness, SshOptions};
 use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::net::TcpListener;
-use whetstone_core::{Core, CoreOptions, ProgramHarness, SshOptions};
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/tests/fixtures")
@@ -65,7 +65,7 @@ impl Bridge {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let base = format!("http://{}", listener.local_addr().expect("address"));
         let origins = vec!["http://localhost:1420".to_owned()];
-        tokio::spawn(async move { whetstone_devbridge::serve(listener, core, &origins).await });
+        tokio::spawn(async move { learnai_devbridge::serve(listener, core, &origins).await });
         Self {
             base,
             client: Client::new(),
@@ -615,7 +615,7 @@ async fn model_assets_over_http() {
     let bridge = Bridge::start().await;
 
     let listing = bridge.call("list_assets", json!({})).await;
-    let models_dir = bridge.root.path().join(".whetstone/models");
+    let models_dir = bridge.root.path().join(".learnai/models");
     assert_eq!(listing["modelsDir"], models_dir.to_string_lossy().as_ref());
     assert_eq!(
         listing["assets"][1],
@@ -943,7 +943,7 @@ async fn run_targets_over_http() {
     assert_eq!(
         targets[1],
         json!({"name": "ssh:gpu-box", "kind": "ssh", "label": "gpu-box", "host": "gpu-box",
-               "remoteDir": "~/.whetstone", "lastCheck": null})
+               "remoteDir": "~/.learnai", "lastCheck": null})
     );
 
     // The local check streams steps and ends with `done`, like any other job.

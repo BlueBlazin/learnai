@@ -1,5 +1,5 @@
 # BUG: walks backwards and stops at the first suffix that is not healable, assuming longer ones cannot be; a prompt ending in `t`, `r` is left alone although `tr` is a token.
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def heal(prompt_ids: list[int], vocab: ToyVocab) -> tuple[list[int], bytes]:

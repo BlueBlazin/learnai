@@ -6,7 +6,7 @@ use std::fs;
 use std::sync::Arc;
 
 use common::{Collector, TestRoot, fixtures, test_limits};
-use whetstone_core::{
+use learnai_core::{
     Core, CoreError, CoreOptions, Extra, Framework, FrameworkEnv, InstallEvent, LOCAL_TARGET,
     RunMode,
 };

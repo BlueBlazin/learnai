@@ -34,7 +34,7 @@ export interface StartRunArgs {
 }
 
 /**
- * The single seam between the UI and whetstone-core. One method per command in
+ * The single seam between the UI and learnai-core. One method per command in
  * docs/ARCHITECTURE.md section 4 (camelCase here, snake_case on the wire).
  * Every method rejects with an `Error` whose message is the core's error string.
  */
@@ -99,7 +99,7 @@ export interface Backend {
   listSshHosts(): Promise<SshHost[]>;
   /** Run targets: `local` first, then the SSH targets in the order they were added. */
   listTargets(): Promise<TargetInfo[]>;
-  /** Registers an SSH host from the configuration as a target; `remoteDir` defaults to `~/.whetstone`. */
+  /** Registers an SSH host from the configuration as a target; `remoteDir` defaults to `~/.learnai`. */
   addTarget(host: string, remoteDir?: string): Promise<TargetInfo[]>;
   /** Forgets an SSH target. Nothing is deleted on the remote machine. */
   removeTarget(name: string): Promise<TargetInfo[]>;

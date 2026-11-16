@@ -1,7 +1,7 @@
 # BUG: ends the loop as soon as one row has finished (any instead of all), so the other rows are cut short.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def batched_greedy(

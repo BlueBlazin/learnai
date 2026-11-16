@@ -15,7 +15,7 @@ class Coordinator:
     async def serve(self, request) -> None: ...
 ```
 
-`cluster` is the kit's [`SimCluster`](../../../python/src/whetstone/kit/simcluster.py).
+`cluster` is the kit's [`SimCluster`](../../../python/src/learnai/kit/simcluster.py).
 `prefill_ids` and `decode_ids` are the replica ids of the two pools (disjoint, each
 non-empty, in no particular order). The test starts `serve(request)` as a task at
 the request's arrival; it returns when the request has finished. Time is virtual,

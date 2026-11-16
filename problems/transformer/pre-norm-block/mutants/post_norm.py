@@ -1,7 +1,7 @@
 # BUG: post-norm wiring: each sublayer reads the raw stream and the norm is applied to the sum, x = norm(x + f(x)), instead of x = x + f(norm(x)).
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def attn(h: torch.Tensor, params: dict[str, torch.Tensor], mask: torch.Tensor) -> torch.Tensor:

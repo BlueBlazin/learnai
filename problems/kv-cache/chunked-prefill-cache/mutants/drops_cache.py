@@ -1,7 +1,7 @@
 # BUG: does not pass the cache to the next call, so every chunk is run as if it were the start of the sequence and the returned cache covers only the last chunk.
 import torch
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def prefill(lm: TinyLM, prompt: list[int], chunk_size: int) -> tuple[torch.Tensor, KVCache]:

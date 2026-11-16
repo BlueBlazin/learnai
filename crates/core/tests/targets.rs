@@ -14,8 +14,8 @@ use common::{
     Collector, FakeRemote, TestRoot, assert_well_formed, logs, process_alive, test_limits,
     wait_for_exit, wait_for_file,
 };
-use whetstone_core::ssh::SUPERVISOR_SCRIPT;
-use whetstone_core::{
+use learnai_core::ssh::SUPERVISOR_SCRIPT;
+use learnai_core::{
     AssetEvent, CheckStepId, Core, CoreError, Framework, LOCAL_TARGET, LogStream, Requires,
     RunEvent, RunLimits, RunMode, TargetCheck, TargetCheckEvent, TargetKind, Verdict,
 };
@@ -173,7 +173,7 @@ fn the_registry_validates_persists_and_keeps_local_first() {
         assert_eq!(targets[1].kind, TargetKind::Ssh);
         assert_eq!(targets[1].label, "box");
         assert_eq!(targets[1].host.as_deref(), Some("box"));
-        assert_eq!(targets[1].remote_dir.as_deref(), Some("~/.whetstone"));
+        assert_eq!(targets[1].remote_dir.as_deref(), Some("~/.learnai"));
         assert_eq!(targets[1].last_check, None);
         let targets = core.add_target("down", Some("/srv/ws/")).expect("add");
         assert_eq!(targets[2].remote_dir.as_deref(), Some("/srv/ws"));
@@ -343,7 +343,7 @@ fn every_invocation_is_non_interactive_and_nothing_is_spliced_unquoted() {
     );
     assert!(
         whole.contains(&format!(
-            "'python' '-m' 'whetstone.harness' '--problem' '{root_dir}/problems/basics/add-two' \
+            "'python' '-m' 'learnai.harness' '--problem' '{root_dir}/problems/basics/add-two' \
              '--solution' '{root_dir}/workspace/add-two/torch.py' '--framework' 'torch' '--mode' 'run'"
         )),
         "{whole}"
@@ -477,16 +477,9 @@ fn closing_the_channel_alone_stops_the_remote_command() {
     let tmp = tempfile::tempdir().expect("temp dir");
     let pidfile = tmp.path().join("pid");
     let mut child = Command::new("sh")
-        .args([
-            "-c",
-            SUPERVISOR_SCRIPT,
-            "whetstone",
-            "/tmp/root",
-            "sh",
-            "-c",
-        ])
+        .args(["-c", SUPERVISOR_SCRIPT, "learnai", "/tmp/root", "sh", "-c"])
         .arg(format!(
-            "echo \"root=$WHETSTONE_ROOT\"; sh -c 'sleep 600 & echo $! > {}; wait' & wait",
+            "echo \"root=$LEARNAI_ROOT\"; sh -c 'sleep 600 & echo $! > {}; wait' & wait",
             pidfile.display()
         ))
         .stdin(Stdio::piped())
@@ -523,14 +516,7 @@ fn the_supervisor_passes_the_exit_code_on_and_sweeps_leftovers() {
     let tmp = tempfile::tempdir().expect("temp dir");
     let pidfile = tmp.path().join("pid");
     let mut child = Command::new("sh")
-        .args([
-            "-c",
-            SUPERVISOR_SCRIPT,
-            "whetstone",
-            "/tmp/root",
-            "sh",
-            "-c",
-        ])
+        .args(["-c", SUPERVISOR_SCRIPT, "learnai", "/tmp/root", "sh", "-c"])
         .arg(format!(
             "sleep 600 & echo $! > {}; exit 7",
             pidfile.display()
@@ -769,7 +755,7 @@ fn each_failing_check_step_stops_the_check_with_a_message() {
     core.add_target("box", None).expect("add");
     remote.mark_root(".fail-doctor");
     let (message, _) = failed_at(&check(&core, BOX).1, CheckStepId::Doctor);
-    assert!(message.contains("No module named 'whetstone'"), "{message}");
+    assert!(message.contains("No module named 'learnai'"), "{message}");
 }
 
 #[test]
@@ -777,10 +763,10 @@ fn a_local_rsync_that_is_missing_is_reported_as_such() {
     let (root, remote) = (TestRoot::new(), FakeRemote::new());
     let mut options = remote.ssh_options();
     options.rsync_program = Some(remote.path().join("bin/no-such-rsync"));
-    let core = Core::open(whetstone_core::CoreOptions {
+    let core = Core::open(learnai_core::CoreOptions {
         uv_program: Some(common::fixtures().join("fake_uv.sh")),
         ssh: options,
-        ..whetstone_core::CoreOptions::new(root.path())
+        ..learnai_core::CoreOptions::new(root.path())
     })
     .expect("open core");
     core.add_target("box", None).expect("add");
@@ -879,7 +865,7 @@ fn a_remote_fetch_streams_the_same_events_and_lands_on_the_remote_host() {
     let remote_root = remote.root();
     assert!(
         remote_root
-            .join(".whetstone/models/tiny/whetstone-asset.json")
+            .join(".learnai/models/tiny/learnai-asset.json")
             .is_file()
     );
     assert!(
@@ -887,7 +873,7 @@ fn a_remote_fetch_streams_the_same_events_and_lands_on_the_remote_host() {
             .join("problems/basics/add-two/problem.toml")
             .is_file()
     );
-    assert!(!root.path().join(".whetstone/models/tiny").exists());
+    assert!(!root.path().join(".learnai/models/tiny").exists());
     // The remote environment got the download tools; the local one was not touched.
     let uv_log = fs::read_to_string(remote_root.join("python/.fake-uv.log")).expect("log");
     assert_eq!(uv_log.trim(), "run models");
@@ -903,7 +889,7 @@ fn a_remote_fetch_streams_the_same_events_and_lands_on_the_remote_host() {
     wait_done(&local);
     assert!(
         root.path()
-            .join(".whetstone/models/tiny/whetstone-asset.json")
+            .join(".learnai/models/tiny/learnai-asset.json")
             .is_file()
     );
 }

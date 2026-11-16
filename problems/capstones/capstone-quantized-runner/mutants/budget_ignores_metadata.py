@@ -1,7 +1,7 @@
 # BUG: bits_per_weight counts the codes and the gains but not the scales and biases, so a recipe that is over the budget is not refused.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

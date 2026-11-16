@@ -6,7 +6,7 @@ which hangs over the end of the row and must neither read nor write what is ther
 ## Specification
 
 ```python
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

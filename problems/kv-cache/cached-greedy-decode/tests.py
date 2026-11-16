@@ -9,8 +9,8 @@ prompt once, in one call, then each generated token except the last, one per cal
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import TinyLM
+from learnai.judge import case, check
+from learnai.kit import TinyLM
 
 FN = "greedy_decode"
 

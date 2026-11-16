@@ -14,7 +14,7 @@ from the threshold unless two entries share an embedding.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 NS = ("small", "", None)
 OTHER = ("large", "", None)

@@ -1,7 +1,7 @@
 # BUG: multiplies the whole stream by 0.263 after each addition, (x + branch) * 0.263, instead of scaling only the branch.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 HEAD_DIM = 64
 NORM_EPS = 1e-5

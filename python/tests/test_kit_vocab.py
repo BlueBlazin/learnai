@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 
-from whetstone.judge import frameworks
-from whetstone.kit import TinyLM, ToyVocab
-from whetstone.kit.vocab import MAX_SIZE, MIN_SIZE, SPECIALS
+from learnai.judge import frameworks
+from learnai.kit import TinyLM, ToyVocab
+from learnai.kit.vocab import MAX_SIZE, MIN_SIZE, SPECIALS
 
 
 def test_sizes_and_alignment_with_tinylm():

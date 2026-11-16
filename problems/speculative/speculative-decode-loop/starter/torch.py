@@ -1,6 +1,6 @@
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def speculative_greedy(

@@ -1,7 +1,7 @@
 # BUG: the wrapper unpacks the codes with torch operations, builds the whole float32 weight matrix, and multiplies by it; the numbers are right, the kernel is never launched, and the matrix the format exists to avoid is back in memory.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

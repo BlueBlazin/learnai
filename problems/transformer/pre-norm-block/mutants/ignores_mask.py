@@ -1,7 +1,7 @@
 # BUG: does not pass the mask to the attention, so every position attends to every other position, including the ones the mask hides.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def attn(h: torch.Tensor, params: dict[str, torch.Tensor], mask: torch.Tensor) -> torch.Tensor:

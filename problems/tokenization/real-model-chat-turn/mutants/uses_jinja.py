@@ -5,7 +5,7 @@ from collections.abc import Callable, Iterator
 import jinja2
 import numpy as np
 
-from whetstone.kit import ByteLevelBPE
+from learnai.kit import ByteLevelBPE
 
 END_OF_TEXT = "<|end_of_text|>"
 DEFAULT_SYSTEM = (

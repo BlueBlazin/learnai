@@ -5,7 +5,7 @@ mod common;
 use std::fs;
 
 use common::TestRoot;
-use whetstone_core::{CoreError, Framework, ProblemStatus};
+use learnai_core::{CoreError, Framework, ProblemStatus};
 
 const STARTER: &str = "def add(a, b):\n    raise NotImplementedError\n";
 

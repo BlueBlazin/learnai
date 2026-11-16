@@ -1,27 +1,27 @@
-//! Dev-only HTTP bridge: serves whetstone-core on `127.0.0.1:1421`.
+//! Dev-only HTTP bridge: serves learnai-core on `127.0.0.1:1421`.
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use learnai_core::{Core, CoreOptions, ProgramHarness, RootInputs, SshOptions, resolve_root};
+use learnai_devbridge::{DEFAULT_ORIGINS, DEFAULT_PORT, serve};
 use tokio::net::TcpListener;
-use whetstone_core::{Core, CoreOptions, ProgramHarness, RootInputs, SshOptions, resolve_root};
-use whetstone_devbridge::{DEFAULT_ORIGINS, DEFAULT_PORT, serve};
 
 const USAGE: &str = "\
-whetstone-devbridge: expose whetstone-core over HTTP for browser development
+learnai-devbridge: expose learnai-core over HTTP for browser development
 
-Usage: whetstone-devbridge [--root <dir>] [--port <port>] [--origin <url>]... [--harness <program>]
+Usage: learnai-devbridge [--root <dir>] [--port <port>] [--origin <url>]... [--harness <program>]
                           [--ssh <program>] [--rsync <program>] [--ssh-config <file>]
 
 Options:
   --root <dir>         Content root holding python/, problems/, workspace/
-                       (default: $WHETSTONE_ROOT, then the repository this was built from)
+                       (default: $LEARNAI_ROOT, then the repository this was built from)
   --port <port>        Port on 127.0.0.1 (default: 1421)
   --origin <url>       Extra origin allowed by CORS (default: the Vite dev server on 1420)
   --harness <program>  Run <program> with the harness arguments instead of
-                       `uv run ... python -m whetstone.harness` (for fake harnesses)
+                       `uv run ... python -m learnai.harness` (for fake harnesses)
   --ssh <program>      Use <program> instead of `ssh` for remote targets (for fake hosts)
   --rsync <program>    Use <program> instead of `rsync` for remote targets
   --ssh-config <file>  Read host aliases from <file> instead of ~/.ssh/config

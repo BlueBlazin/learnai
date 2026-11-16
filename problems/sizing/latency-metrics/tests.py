@@ -5,7 +5,7 @@ The worked example is compared with literal values. Everything else is compared 
 random sweep is also compared with the oracle.
 """
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 KEYS = ("ttft", "itl", "tpot", "e2e", "tokens_per_s")
 TOL = {"rtol": 1e-9, "atol": 1e-9}

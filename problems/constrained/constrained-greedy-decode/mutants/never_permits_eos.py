@@ -1,7 +1,7 @@
 # BUG: masks with constraint.allowed(state) only and never adds end-of-sequence, so a complete output cannot be closed with EOS.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def constrained_greedy(

@@ -14,7 +14,7 @@ export default defineConfig(() => ({
   define: {
     // The Tauri CLI sets TAURI_ENV_PLATFORM for `tauri dev` and `tauri build`. Those
     // always talk to the real core, so the fixture backend and its data are compiled out.
-    __WHETSTONE_FIXTURES__: JSON.stringify(!process.env.TAURI_ENV_PLATFORM),
+    __LEARNAI_FIXTURES__: JSON.stringify(!process.env.TAURI_ENV_PLATFORM),
   },
   resolve: {
     alias: {

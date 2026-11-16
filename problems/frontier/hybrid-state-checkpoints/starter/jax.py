@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.kit import RecurrentLM, RecurrentState
 
 Store = dict[tuple[int, ...], RecurrentState]
 

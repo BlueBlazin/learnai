@@ -18,8 +18,8 @@ reference solution.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.judge import case, check
+from learnai.kit import RecurrentLM, RecurrentState
 
 FN = "generate_with_checkpoints"
 

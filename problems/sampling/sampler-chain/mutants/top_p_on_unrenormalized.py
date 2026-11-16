@@ -1,7 +1,7 @@
 # BUG: computes the nucleus from the probabilities of the full distribution instead of the distribution renormalized over the top-k survivors, so the survivors' mass reaches p later and too many tokens are kept.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def penalize(logits: torch.Tensor, cfg: dict, history: torch.Tensor) -> torch.Tensor:

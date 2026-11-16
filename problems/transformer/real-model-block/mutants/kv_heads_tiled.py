@@ -1,7 +1,7 @@
 # BUG: expands the key/value heads by tiling (0, 1, 0, 1, ...) instead of repeating each one (0, 0, 1, 1, ...), so query heads are paired with the wrong KV heads.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 HEAD_DIM = 64
 NORM_EPS = 1e-5

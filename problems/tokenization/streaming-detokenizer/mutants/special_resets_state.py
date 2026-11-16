@@ -1,7 +1,7 @@
 # BUG: treats a token without bytes (a special token) as a break in the stream and discards the held-back bytes, although the bytes after it may complete the character.
 from typing import Any
 
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def detok_step(state: Any, token_id: int, vocab: ToyVocab) -> tuple[Any, str]:

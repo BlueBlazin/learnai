@@ -29,7 +29,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "forward_amp"
 CPU = torch.device("cpu")

@@ -16,7 +16,7 @@ import struct
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 ASSET = "granite-4.0-350m"
 REVISION = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"

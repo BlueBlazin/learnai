@@ -1,7 +1,7 @@
 # BUG: keeps every token id in the state and looks up the whole sequence again at every step; the text is right, but the bytes decoded grow quadratically with the length of the stream.
 from typing import Any
 
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def detok_step(state: Any, token_id: int, vocab: ToyVocab) -> tuple[Any, str]:

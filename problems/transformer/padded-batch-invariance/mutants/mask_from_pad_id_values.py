@@ -1,7 +1,7 @@
 # BUG: detects padding by comparing token values with pad_id instead of using the lengths, so real tokens that equal pad_id are masked out as well.
 import torch
 
-from whetstone.kit import DecoderConfig, layer_params, ops
+from learnai.kit import DecoderConfig, layer_params, ops
 
 
 def decoder_block(

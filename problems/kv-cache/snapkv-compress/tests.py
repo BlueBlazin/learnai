@@ -12,7 +12,7 @@ JAX compiles every new shape: most cases use prompts of 24 tokens.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "snapkv_select"
 B, H, L = 1, 2, 24

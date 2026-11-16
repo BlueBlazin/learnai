@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 # The cache: (keys, values, length). keys[i] and values[i] belong to layer i and have
 # shape (n_kv_heads, capacity, head_dim); the first `length` slots hold the tokens read

@@ -17,8 +17,8 @@ Three kinds of checks:
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import DecoderConfig, decoder_block_ref, decoder_params, layer_params, ops
+from learnai.judge import case, check
+from learnai.kit import DecoderConfig, decoder_block_ref, decoder_params, layer_params, ops
 
 INPUTS = "tree_inputs"
 VERIFY = "verify_tree"

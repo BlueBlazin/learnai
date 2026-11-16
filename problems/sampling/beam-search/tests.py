@@ -16,8 +16,8 @@ from itertools import pairwise
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import TinyLM
+from learnai.judge import case, check
+from learnai.kit import TinyLM
 
 FN = "beam_search"
 MARGIN = 1e-3

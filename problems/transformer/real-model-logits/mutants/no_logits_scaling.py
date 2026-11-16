@@ -1,7 +1,7 @@
 # BUG: returns the head's output as it is; this model divides the logits by cfg.logits_scaling (4).
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

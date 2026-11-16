@@ -11,22 +11,22 @@ from typing import Any
 
 import pytest
 
-from whetstone import protocol
-from whetstone.judge import frameworks
-from whetstone.judge.context import Context, make_context
-from whetstone.judge.registry import Case
-from whetstone.problem import load_problem
+from learnai import protocol
+from learnai.judge import frameworks
+from learnai.judge.context import Context, make_context
+from learnai.judge.registry import Case
+from learnai.problem import load_problem
 
 # Harness runs with JAX keep compiled kernels on disk under the content root
 # (frameworks.use_jax_compilation_cache). The judge's own tests use fixture catalogs
 # inside the repository as roots; their cache goes to a temporary directory instead.
-if "WHETSTONE_JAX_CACHE" not in os.environ:
+if "LEARNAI_JAX_CACHE" not in os.environ:
     import atexit
     import shutil
     import tempfile
 
-    _jax_cache = tempfile.mkdtemp(prefix="whetstone-test-jax-cache-")
-    os.environ["WHETSTONE_JAX_CACHE"] = _jax_cache
+    _jax_cache = tempfile.mkdtemp(prefix="learnai-test-jax-cache-")
+    os.environ["LEARNAI_JAX_CACHE"] = _jax_cache
     atexit.register(shutil.rmtree, _jax_cache, ignore_errors=True)
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -83,7 +83,7 @@ def run_harness(
     extra: list[str] | None = None,
 ) -> HarnessRun:
     command = [
-        sys.executable, "-m", "whetstone.harness",
+        sys.executable, "-m", "learnai.harness",
         "--problem", str(problem), "--solution", str(solution),
         "--framework", framework, "--mode", mode,
     ]  # fmt: skip
@@ -96,7 +96,7 @@ def run_harness(
         capture_output=True,
         text=True,
         cwd=cwd,
-        env={**os.environ, "WHETSTONE_HARD_GRACE_S": "0.5", **(env or {})},
+        env={**os.environ, "LEARNAI_HARD_GRACE_S": "0.5", **(env or {})},
         timeout=120,
     )
     events, logs = [], []

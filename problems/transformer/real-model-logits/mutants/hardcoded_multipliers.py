@@ -1,7 +1,7 @@
 # BUG: hard-codes Granite 4.0 350M's numbers (12, 0.263, 1/64, 4, theta 1e7, eps 1e-5) instead of reading them from cfg.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

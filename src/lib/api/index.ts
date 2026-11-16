@@ -16,7 +16,7 @@ export function isTauri(): boolean {
  * shell, the devbridge when `VITE_BACKEND=http`, fixtures otherwise.
  *
  * The fixture data is large and only useful for component work, so it loads on
- * demand, and builds made for the Tauri shell (`__WHETSTONE_FIXTURES__` false,
+ * demand, and builds made for the Tauri shell (`__LEARNAI_FIXTURES__` false,
  * see vite.config.ts) leave it out entirely.
  */
 function selectBackend(): Backend {
@@ -24,12 +24,12 @@ function selectBackend(): Backend {
   if (import.meta.env.VITE_BACKEND === "http") {
     return new HttpBackend(import.meta.env.VITE_BACKEND_URL);
   }
-  if (__WHETSTONE_FIXTURES__) {
+  if (__LEARNAI_FIXTURES__) {
     return lazyBackend("fixture", async () => new (await import("./fixture/backend")).FixtureBackend());
   }
   return unavailableBackend(
     "fixture",
-    "This build runs only inside the Whetstone app. Open the app, or start the development server.",
+    "This build runs only inside the Learn AI app. Open the app, or start the development server.",
   );
 }
 

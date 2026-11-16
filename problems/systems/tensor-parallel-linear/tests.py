@@ -17,9 +17,9 @@ from itertools import pairwise
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import SimDevices
-from whetstone.kit.simdevices import OutOfDeviceMemory
+from learnai.judge import case, check
+from learnai.kit import SimDevices
+from learnai.kit.simdevices import OutOfDeviceMemory
 
 NAMES = ("up", "up_bias", "down", "down_bias")
 RTOL, ATOL = 1e-4, 1e-5

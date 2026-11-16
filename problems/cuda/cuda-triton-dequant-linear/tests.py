@@ -33,8 +33,8 @@ agreement with Triton has ever been tested on a GPU.
 import numpy as np
 import torch
 
-from whetstone.judge import case, check
-from whetstone.kit import tritonshim as tl
+from learnai.judge import case, check
+from learnai.kit import tritonshim as tl
 
 KERNEL = "qlinear_kernel"
 FN = "qlinear"

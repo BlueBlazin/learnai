@@ -7,10 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
+use learnai_core::{Core, CoreOptions, EventSink, ProgramHarness, RunEvent, RunLimits, SshOptions};
 use tempfile::TempDir;
-use whetstone_core::{
-    Core, CoreOptions, EventSink, ProgramHarness, RunEvent, RunLimits, SshOptions,
-};
 
 /// The fixtures directory.
 pub fn fixtures() -> PathBuf {
@@ -255,7 +253,7 @@ impl FakeRemote {
 
     /// The remote content root of a target added with the default directory.
     pub fn root(&self) -> PathBuf {
-        self.home().join(".whetstone/root")
+        self.home().join(".learnai/root")
     }
 
     pub fn ssh_options(&self) -> SshOptions {

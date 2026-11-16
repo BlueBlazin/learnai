@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(weights: dict[str, jax.Array], cfg: RealConfig, tokens: jax.Array) -> jax.Array:

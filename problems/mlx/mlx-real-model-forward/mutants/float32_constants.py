@@ -1,8 +1,8 @@
 # BUG: wraps the multipliers in mx.array, which is float32; multiplying promotes a float16 or bfloat16 model to float32 from the embedding on.
 import mlx.core as mx
 
+from learnai.kit import RealConfig
 from mlx import nn
-from whetstone.kit import RealConfig
 
 # Attribute names are checkpoint names: `model.layers.3.self_attn.q_proj.weight` in the
 # file is `self.model.layers[3].self_attn.q_proj.weight` here, so `load_weights` needs

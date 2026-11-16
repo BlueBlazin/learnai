@@ -41,7 +41,7 @@ The measurement is defined as follows.
 ## Example
 
 ```python
-dev = FakeDevice()  # from whetstone.kit
+dev = FakeDevice()  # from learnai.kit
 fn = dev.kernel(0.004, first_call_s=0.050)  # 4 ms of device work per call, 50 ms the first time
 
 time_region(fn, dev, 5)  # 0.004

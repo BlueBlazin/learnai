@@ -1,7 +1,7 @@
 # BUG: gives each selected expert the weight 1 / k instead of its renormalized router probability.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def moe(

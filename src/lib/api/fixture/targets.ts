@@ -61,7 +61,7 @@ export function fixtureCheckScript(target: TargetInfo): { steps: CheckStep[]; do
     };
   }
   const doctor = host === "gpu-box" ? GPU_BOX_DOCTOR : A100_DOCTOR;
-  const root = `/home/ada/${(target.remoteDir ?? "~/.whetstone").replace(/^~\//, "")}/root`;
+  const root = `/home/ada/${(target.remoteDir ?? "~/.learnai").replace(/^~\//, "")}/root`;
   return {
     steps: [
       pass("connect", `Connected to ${host} (Linux x86_64).`),
@@ -90,7 +90,7 @@ export function fixtureTargets(now: Date): TargetInfo[] {
     kind,
     label,
     host: kind === "ssh" ? label : null,
-    remoteDir: kind === "ssh" ? "~/.whetstone" : null,
+    remoteDir: kind === "ssh" ? "~/.learnai" : null,
     lastCheck: null,
   });
   const targets = [

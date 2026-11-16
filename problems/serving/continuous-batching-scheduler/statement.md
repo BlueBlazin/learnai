@@ -11,7 +11,7 @@ async def run(engine, queue: asyncio.Queue, max_running: int) -> None: ...
 ```
 
 `run` is a coroutine that never returns. It drives a
-[`SimEngine`](../../../python/src/whetstone/kit/simengine.py), the kit's simulated
+[`SimEngine`](../../../python/src/learnai/kit/simengine.py), the kit's simulated
 inference engine: a forward pass with the model taken out. Time is virtual and this
 problem counts it in **milliseconds**.
 
@@ -35,7 +35,7 @@ an unknown or finished id, a second step while one runs) raises a `ProtocolViola
 and fails the case, also if you catch the exception.
 
 **The requests.** `queue` is an `asyncio.Queue` of
-[`SimRequest`](../../../python/src/whetstone/kit/workloads.py) objects. The test puts
+[`SimRequest`](../../../python/src/learnai/kit/workloads.py) objects. The test puts
 each request into it at the request's arrival time. You may read `request.id` (opaque,
 hashable, unique) and `request.prompt_tokens`. Do not read `request.output_tokens`: a
 server learns the length of an output when the sequence finishes.

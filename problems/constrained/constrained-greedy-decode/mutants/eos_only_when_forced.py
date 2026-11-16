@@ -1,7 +1,7 @@
 # BUG: permits end-of-sequence only when no other token is allowed, so an output that is complete but could also continue can never stop there.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def constrained_greedy(

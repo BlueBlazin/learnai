@@ -1,5 +1,5 @@
 # BUG: a token is allowed only if the walk ends in an accepting state, so every token that leaves the string unfinished (most of them) is masked out.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 def _walk_token(dfa: CharDFA, state: int, token: int, vocab: ToyVocab) -> int:

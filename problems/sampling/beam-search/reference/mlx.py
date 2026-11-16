@@ -1,6 +1,6 @@
 import mlx.core as mx
 
-from whetstone.kit import TinyLM, ops
+from learnai.kit import TinyLM, ops
 
 
 def beam_search(

@@ -1,7 +1,7 @@
 # BUG: does not move the checkpoint it resumed from to the recent end of the store, so eviction is first-in-first-out and a system prompt's checkpoint that every request uses is evicted as if it were never touched.
 import torch
 
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.kit import RecurrentLM, RecurrentState
 
 Store = dict[tuple[int, ...], RecurrentState]
 

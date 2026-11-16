@@ -12,6 +12,6 @@ entry = ["batched_forward"]
 time_limit_s = 10
 # The statement's rule, enforced by the harness: the kit's oracle is not a building block.
 forbidden = [
-    "whetstone.kit.decoder.decoder_forward_ref",
-    "whetstone.kit.decoder.decoder_block_ref",
+    "learnai.kit.decoder.decoder_forward_ref",
+    "learnai.kit.decoder.decoder_block_ref",
 ]

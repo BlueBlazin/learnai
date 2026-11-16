@@ -1,7 +1,7 @@
 # BUG: cache_write drops the unused tail and concatenates, so the buffers have `length` slots instead of `capacity`: the shape changes on every write, which is what preallocation exists to avoid.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 Cache = tuple[torch.Tensor, torch.Tensor, int]
 

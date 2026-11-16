@@ -46,7 +46,7 @@ export const usePreferences = create<PreferencesStore>()(
         set((state) => ({ hintsRevealed: { ...state.hintsRevealed, [problemId]: count } })),
     }),
     {
-      name: "whetstone.preferences",
+      name: "learnai.preferences",
       version: 1,
       // Version 0 set `lastFramework` on every switch, so one look at another framework
       // became the default everywhere. Drop that value; it is re-learned from real work.

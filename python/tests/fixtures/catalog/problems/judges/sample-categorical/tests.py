@@ -1,6 +1,6 @@
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 PROBS = [0.5, 0.25, 0.125, 0.125]
 

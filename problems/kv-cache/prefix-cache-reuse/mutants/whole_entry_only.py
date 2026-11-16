@@ -1,7 +1,7 @@
 # BUG: reuses an entry only when all of its tokens are a prefix of the prompt; an entry that diverges from the prompt part-way is ignored instead of truncated.
 import torch
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def common_prefix_len(a, b) -> int:

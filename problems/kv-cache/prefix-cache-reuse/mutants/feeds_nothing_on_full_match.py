@@ -1,7 +1,7 @@
 # BUG: reuses the whole common prefix even when it is the whole prompt, so the prefill call has no token to pass and the model rejects it.
 import torch
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def common_prefix_len(a, b) -> int:

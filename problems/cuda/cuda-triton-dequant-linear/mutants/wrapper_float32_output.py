@@ -1,7 +1,7 @@
 # BUG: the wrapper always allocates a float32 output, whatever the dtype of the activations.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

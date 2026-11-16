@@ -29,8 +29,8 @@ out-of-memory error, whose threshold depends on the machine.
 
 import torch
 
-from whetstone.judge import case, check
-from whetstone.kit import OOMModel
+from learnai.judge import case, check
+from learnai.kit import OOMModel
 
 FN = "run_batched"
 CALL_LIMIT = 80

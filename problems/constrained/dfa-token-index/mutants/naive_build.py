@@ -1,5 +1,5 @@
 # BUG: build_index walks every token separately from every state, repeating the steps of shared prefixes (the step for b't' is taken again for b'tr', b'tru', and b'true'), which exceeds the step budget.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 def build_index(dfa: CharDFA, vocab: ToyVocab):

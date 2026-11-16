@@ -9,7 +9,7 @@ one that adds them up first.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 COUNT = "count_generated"
 APPLY = "apply_penalties"

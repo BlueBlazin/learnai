@@ -11,7 +11,7 @@ which layers ran on how many tokens.
 def self_speculative_greedy(lm, prompt, exit_layer, k, max_new_tokens): ...
 ```
 
-`lm` is a [`LayeredLM`](../../../python/src/whetstone/kit/layeredlm.py): a decoder
+`lm` is a [`LayeredLM`](../../../python/src/learnai/kit/layeredlm.py): a decoder
 with $L$ = `lm.n_layers` layers whose stack can be run one range at a time.
 
 ```python

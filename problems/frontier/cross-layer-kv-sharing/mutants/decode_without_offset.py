@@ -1,5 +1,5 @@
 # BUG: decode_step embeds the new token at position 0 instead of position cache.length, so it gets the wrong position embedding.
-from whetstone.kit import LayerCache, LayeredLM
+from learnai.kit import LayerCache, LayeredLM
 
 
 def prefill_shared(lm: LayeredLM, prompt: list[int], share_from: int) -> tuple:

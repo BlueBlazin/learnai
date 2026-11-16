@@ -1,7 +1,7 @@
 # BUG: uses lm_head.weight whenever the mapping has one instead of asking cfg.tied_embeddings; a tied model's file that also stores a stale lm_head gets the wrong head.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

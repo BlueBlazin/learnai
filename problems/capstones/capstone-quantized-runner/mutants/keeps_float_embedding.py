@@ -1,7 +1,7 @@
 # BUG: the float embedding matrix is kept in the checkpoint next to its codes, and the embedding lookup reads it instead of dequantizing rows.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

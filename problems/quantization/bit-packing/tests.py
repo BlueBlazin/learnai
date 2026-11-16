@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 # One row of 64 weights, np.linspace(-1, 1, 64), quantized by MLX 0.32.4 with
 # mx.quantize(w, group_size=64, bits=4): the packed words it returned, and the 4-bit

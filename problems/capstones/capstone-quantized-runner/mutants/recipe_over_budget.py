@@ -1,7 +1,7 @@
 # BUG: quantize_mixed never compares the size of its checkpoint with max_bpw.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

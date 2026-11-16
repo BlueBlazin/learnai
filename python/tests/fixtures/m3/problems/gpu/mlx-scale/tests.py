@@ -1,7 +1,7 @@
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import mlx_memory
+from learnai.judge import case, check
+from learnai.kit import mlx_memory
 
 
 @case("scales a small array", public=True)

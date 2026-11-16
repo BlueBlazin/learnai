@@ -17,7 +17,7 @@ import sys
 import mlx.core as mx
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "attend"
 KERNEL = mx.fast.scaled_dot_product_attention
@@ -35,7 +35,7 @@ class KernelCalls:
         monitoring = sys.monitoring
         for tool in (4, 3, 2, 1):
             try:
-                monitoring.use_tool_id(tool, "whetstone-kernel-calls")
+                monitoring.use_tool_id(tool, "learnai-kernel-calls")
             except ValueError:
                 continue
             self._tool = tool

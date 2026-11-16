@@ -69,12 +69,12 @@ const SCENARIOS: Scenario[] = [
 ];
 
 /**
- * Picks the outcome for a run. A `# ws: <scenario>` comment in the code forces
+ * Picks the outcome for a run. A `# learnai: <scenario>` comment in the code forces
  * one (useful when demonstrating states); untouched starter code raises; any
  * other code gets the problem's seeded outcome.
  */
 export function resolveScenario(problem: FixtureProblem, code: string): Scenario {
-  const marker = /#\s*ws:\s*([a-z_]+)/.exec(code)?.[1];
+  const marker = /#\s*learnai:\s*([a-z_]+)/.exec(code)?.[1];
   if (marker && (SCENARIOS as string[]).includes(marker)) return marker as Scenario;
   if (/raise NotImplementedError/.test(code)) return "runtime_error";
   return problem.scenario;
@@ -104,7 +104,7 @@ function traceback(problem: FixtureProblem, framework: Framework, starter: boole
   if (starter) {
     return [
       "Traceback (most recent call last):",
-      `  File "whetstone/harness/runner.py", line 212, in run_case`,
+      `  File "learnai/harness/runner.py", line 212, in run_case`,
       "    outcome = case.check(solution)",
       `  File "problems/${problem.meta.track}/${problem.meta.id}/tests.py", line 31, in check`,
       `    got = solution.${entry}(*args)`,
@@ -115,7 +115,7 @@ function traceback(problem: FixtureProblem, framework: Framework, starter: boole
   }
   return [
     "Traceback (most recent call last):",
-    `  File "whetstone/harness/runner.py", line 212, in run_case`,
+    `  File "learnai/harness/runner.py", line 212, in run_case`,
     "    outcome = case.check(solution)",
     `  File "problems/${problem.meta.track}/${problem.meta.id}/tests.py", line 31, in check`,
     `    got = solution.${entry}(*args)`,
@@ -189,7 +189,7 @@ export function buildPlan(
     if (needs === "asset" && asset) {
       return {
         skip: { kind: "asset", asset: asset.name },
-        message: `skipped: model asset ${describeAsset(asset)} is not downloaded; fetch it with \`ws assets fetch ${asset.name}\``,
+        message: `skipped: model asset ${describeAsset(asset)} is not downloaded; fetch it with \`learnai assets fetch ${asset.name}\``,
       };
     }
     if (needs === "hardware" && !requiresMet) {
@@ -373,7 +373,7 @@ function notJudgedMessage(verdict: Verdict, results: CaseResult[], plan: RunPlan
   const counts = `${passed} of ${ran} cases that could run passed; ${skipped} of ${results.length} cases were skipped because`;
   if (verdict === "assets_missing") {
     const assets = plan.missingAssets;
-    return `${counts} a model asset is not downloaded: ${assets.map(describeAsset).join(", ")}. Fetch with \`ws assets fetch ${assets.map((a) => a.name).join(" ")}\`, then run again.`;
+    return `${counts} a model asset is not downloaded: ${assets.map(describeAsset).join(", ")}. Fetch with \`learnai assets fetch ${assets.map((a) => a.name).join(" ")}\`, then run again.`;
   }
   if (verdict === "hardware_missing") {
     return `${counts} they need ${HARDWARE_PHRASE[plan.requires]}, which this machine does not have. The solution can only be accepted on a machine that runs every case.`;

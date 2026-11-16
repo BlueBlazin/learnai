@@ -7,8 +7,8 @@ chunks and compare with one full causal pass, computed here in numpy with the ki
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import ops
+from learnai.judge import case, check
+from learnai.kit import ops
 
 FN = "attend_step"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints

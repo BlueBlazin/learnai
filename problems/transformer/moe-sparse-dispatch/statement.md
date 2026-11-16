@@ -13,7 +13,7 @@ def moe_sparse(x, w_router, experts, k): ...
 - `x`: float32 tensor of shape `(N, D)`, one row per token (batch and positions are
   already flattened).
 - `w_router`: float32 tensor of shape `(E, D)`, in `(out, in)` layout.
-- `experts`: a [`CountingExperts`](../../../python/src/whetstone/kit/moe.py) object holding $E$ SwiGLU experts.
+- `experts`: a [`CountingExperts`](../../../python/src/learnai/kit/moe.py) object holding $E$ SwiGLU experts.
   `experts(e, rows)` runs expert `e` (a Python int) on a float32 tensor `rows` of
   shape `(n, D)` and returns a tensor of shape `(n, D)`, row for row.
   `experts.n_experts` is $E$. This call is the only way to evaluate an expert, and

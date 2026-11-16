@@ -14,8 +14,8 @@ by `fixtures/make.py`; the reference solution is never the oracle.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import RealModel
+from learnai.judge import case, check
+from learnai.kit import RealModel
 
 FN = "granite_block"
 ASSET = "granite-4.0-350m"

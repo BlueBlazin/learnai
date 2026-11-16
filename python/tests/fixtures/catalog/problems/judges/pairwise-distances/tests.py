@@ -1,4 +1,4 @@
-from whetstone.judge import case
+from learnai.judge import case
 
 
 @case("matches the reference", public=True)

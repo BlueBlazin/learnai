@@ -1,7 +1,7 @@
 # BUG: indexes the scales and biases by group only, without the output row's offset; every output row is dequantized with the scales and biases of row 0.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

@@ -1,5 +1,5 @@
 # BUG: is_accepting looks for any finished `root` item, wherever it began; when `root` is used recursively, a finished inner occurrence makes an incomplete text count as complete.
-from whetstone.kit import Chars, Grammar, Ref, ToyVocab
+from learnai.kit import Chars, Grammar, Ref, ToyVocab
 
 
 def _code_points(data: bytes) -> tuple[int, int] | None:

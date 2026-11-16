@@ -1,7 +1,7 @@
 # BUG: keeps the hidden state in bfloat16, the checkpoint's storage type, between blocks instead of float32; eight bits of mantissa per block add up to errors of several tenths in the logits.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

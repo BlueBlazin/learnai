@@ -12,8 +12,8 @@ import copy
 import json
 from math import prod
 
-from whetstone.judge import case, check
-from whetstone.kit import SafetensorsFile
+from learnai.judge import case, check
+from learnai.kit import SafetensorsFile
 
 ASSET = "granite-4.0-350m"
 LARGE = "granite-4.2-3b-mlx-8bit"

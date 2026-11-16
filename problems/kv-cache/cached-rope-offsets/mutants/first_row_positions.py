@@ -1,7 +1,7 @@
 # BUG: rotates every batch row with the positions of row 0 (code written for a shared (T,) position vector).
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def rope_positions(cache_lengths: torch.Tensor, n_new: int) -> torch.Tensor:

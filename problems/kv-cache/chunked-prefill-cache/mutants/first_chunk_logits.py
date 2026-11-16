@@ -1,7 +1,7 @@
 # BUG: keeps the logits of the first chunk instead of the last one, so the returned row scores the token after the first chunk, not after the prompt.
 import torch
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def prefill(lm: TinyLM, prompt: list[int], chunk_size: int) -> tuple[torch.Tensor, KVCache]:

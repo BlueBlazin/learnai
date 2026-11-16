@@ -30,8 +30,8 @@ have never run on the machine that validates the catalog.
 import numpy as np
 import torch
 
-from whetstone.judge import case, check
-from whetstone.kit import TransferSpy
+from learnai.judge import case, check
+from learnai.kit import TransferSpy
 
 CPU = torch.device("cpu")
 

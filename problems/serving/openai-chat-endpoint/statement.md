@@ -17,7 +17,7 @@ socket and talk to it over HTTP. The starter is written for the raw ASGI interfa
 [`sse-token-stream`](../sse-token-stream/statement.md) and provides `read_body`,
 `send_json`, `render_prompt`, and `error_body`. Starlette may be used instead.
 
-**The model.** `lm` is a [`ScriptedLM`](../../../python/src/whetstone/kit/scriptedlm.py):
+**The model.** `lm` is a [`ScriptedLM`](../../../python/src/learnai/kit/scriptedlm.py):
 
 - `lm.stream(prompt, max_tokens)` returns an async iterator of the generated pieces
   (`str`, never empty). **One piece is one completion token.** `max_tokens` is an int

@@ -10,7 +10,7 @@ counts the calls and the tokens.
 def prefill(lm, prompt, chunk_size): ...
 ```
 
-`lm` is a [`TinyLM`](../../../python/src/whetstone/kit/tinylm.py), the kit's small
+`lm` is a [`TinyLM`](../../../python/src/learnai/kit/tinylm.py), the kit's small
 seeded transformer, as in `cached-greedy-decode`:
 
 ```python

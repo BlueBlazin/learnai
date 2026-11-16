@@ -1,7 +1,7 @@
 # BUG: takes the router softmax over the token axis instead of the expert axis.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def moe(

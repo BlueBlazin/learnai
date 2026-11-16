@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

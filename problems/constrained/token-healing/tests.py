@@ -5,8 +5,8 @@ Expected results are computed here from the statement's definitions by brute for
 so they do not depend on the reference. Failure details show the prompt as pieces.
 """
 
-from whetstone.judge import case, check
-from whetstone.kit import ToyVocab
+from learnai.judge import case, check
+from learnai.kit import ToyVocab
 
 
 def expected_heal(ids, vocab):

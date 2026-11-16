@@ -1,7 +1,7 @@
 import mlx.core as mx
 
+from learnai.kit import RealConfig
 from mlx import nn
-from whetstone.kit import RealConfig
 
 
 class Granite(nn.Module):

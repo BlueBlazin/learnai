@@ -7,7 +7,7 @@ their send times are exact and are compared with literals; everything else is
 compared with the oracle run through the same simulation, to 1e-9 s.
 """
 
-from whetstone.judge import CheckFailure, case, check
+from learnai.judge import CheckFailure, case, check
 
 TOL = 1e-9
 

@@ -1,7 +1,7 @@
 # BUG: feeds the prompt one token per call so that a state is at hand at every position: the right tokens and checkpoints, but one forward call per prompt token instead of one per segment.
 import torch
 
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.kit import RecurrentLM, RecurrentState
 
 Store = dict[tuple[int, ...], RecurrentState]
 

@@ -32,7 +32,7 @@ earlier ones specify: later features are off in `cfg` by default, and `evaluate`
 only called in stage 5.
 
 **The cluster** is the kit's
-[`SimCluster`](../../../python/src/whetstone/kit/simcluster.py). Time is virtual, in
+[`SimCluster`](../../../python/src/learnai/kit/simcluster.py). Time is virtual, in
 **seconds**: read it with `cluster.sim.now()`. What the gateway uses:
 
 - `cluster.replicas`: the replicas that are not stopped, in id order. A replica has
@@ -54,7 +54,7 @@ does not prefill the longest prefix, in whole blocks of 16 tokens, that a new pr
 shares with a prompt it has finished prefilling; the cache holds 1200 tokens, about
 three prompts, least recently used evicted first. The gateway cannot see the caches.
 
-**Requests** are [`SimRequest`](../../../python/src/whetstone/kit/workloads.py)
+**Requests** are [`SimRequest`](../../../python/src/learnai/kit/workloads.py)
 objects: `id` (unique), `prompt_tokens`, `tenant` (a string), `tokens` (the prompt
 as a tuple of token ids, or `None`). `output_tokens` may be read only **after** the
 request has finished: a gateway learns the length of an answer when it is complete.

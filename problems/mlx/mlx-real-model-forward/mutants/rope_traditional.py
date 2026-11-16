@@ -1,8 +1,8 @@
 # BUG: uses the traditional RoPE layout, which rotates adjacent feature pairs (2i, 2i + 1); the checkpoint was trained with the half-split layout (i, i + head_dim / 2).
 import mlx.core as mx
 
+from learnai.kit import RealConfig
 from mlx import nn
-from whetstone.kit import RealConfig
 
 # Attribute names are checkpoint names: `model.layers.3.self_attn.q_proj.weight` in the
 # file is `self.model.layers[3].self_attn.q_proj.weight` here, so `load_weights` needs

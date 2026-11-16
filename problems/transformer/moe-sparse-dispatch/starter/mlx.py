@@ -1,6 +1,6 @@
 import mlx.core as mx
 
-from whetstone.kit import CountingExperts
+from learnai.kit import CountingExperts
 
 
 def moe_sparse(x: mx.array, w_router: mx.array, experts: CountingExperts, k: int) -> mx.array:

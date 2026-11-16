@@ -11,7 +11,7 @@ shorter cases have tied the two together.
 The speed case drives the loop a decoder would: one `extend` and one `draft` per token.
 """
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 CLS = "SuffixIndex"
 

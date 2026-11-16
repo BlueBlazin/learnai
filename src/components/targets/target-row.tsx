@@ -81,7 +81,7 @@ export function TargetRow({
                 </Button>
               }
               title={`Remove ${target.label}?`}
-              description={`Whetstone will stop offering ${target.label} as a place to run. Nothing is deleted on the remote machine: the files in ${target.remoteDir} stay until you delete them there, and you can add it again at any time.`}
+              description={`Learn AI will stop offering ${target.label} as a place to run. Nothing is deleted on the remote machine: the files in ${target.remoteDir} stay until you delete them there, and you can add it again at any time.`}
               confirmLabel="Remove target"
               onConfirm={onRemove}
             />

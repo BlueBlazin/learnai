@@ -13,7 +13,7 @@ def make_step(model, eos_id): ...  # returns step
 next_token, state = step(token, state)
 ```
 
-`model` is an [`MLXTinyLM`](../../../python/src/whetstone/kit/mlxlm.py), used through
+`model` is an [`MLXTinyLM`](../../../python/src/learnai/kit/mlxlm.py), used through
 its fixed-shape interface:
 
 ```python

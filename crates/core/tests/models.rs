@@ -8,7 +8,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use common::{Collector, TestRoot};
-use whetstone_core::{
+use learnai_core::{
     AssetEvent, AssetState, Core, CoreError, Extra, Framework, InstallEvent, LOCAL_TARGET,
     RunEvent, RunMode,
 };
@@ -79,7 +79,7 @@ fn listing_reports_declared_assets_under_the_content_root() {
     let core = root.core_with_fake_uv();
     let listing = core.list_assets().expect("list");
 
-    let models_dir = root.path().join(".whetstone/models");
+    let models_dir = root.path().join(".learnai/models");
     assert_eq!(listing.models_dir, models_dir.to_string_lossy());
     assert_eq!(
         listing
@@ -271,7 +271,7 @@ fn every_uv_command_passes_the_same_extras_once_models_is_installed() {
 fn models_installed_outside_the_app_survive_a_framework_install() {
     let root = TestRoot::new();
     fs::write(root.path().join("python/.fake-venv"), " models\n")
-        .expect("simulate `uv run --extra models ws assets fetch` in a terminal");
+        .expect("simulate `uv run --extra models learnai assets fetch` in a terminal");
     let core = root.core_with_fake_uv();
 
     let collector = Collector::new();
@@ -334,7 +334,8 @@ fn an_unknown_asset_fails_with_what_the_cli_said() {
             ok: false,
             canceled: false,
             message: Some(
-                "ws assets fetch: no asset named nope in the catalog (known: other, tiny)".into()
+                "learnai assets fetch: no asset named nope in the catalog (known: other, tiny)"
+                    .into()
             )
         })
     );
@@ -343,9 +344,9 @@ fn an_unknown_asset_fails_with_what_the_cli_said() {
 #[test]
 fn without_uv_a_fetch_ends_with_a_clear_message_and_listing_fails() {
     let root = TestRoot::new();
-    let core = Core::open(whetstone_core::CoreOptions {
+    let core = Core::open(learnai_core::CoreOptions {
         uv_program: Some("/definitely/not/uv".into()),
-        ..whetstone_core::CoreOptions::new(root.path())
+        ..learnai_core::CoreOptions::new(root.path())
     })
     .expect("open core");
 
@@ -468,9 +469,9 @@ fn removal_deletes_only_the_declared_asset_directory() {
     let core = root.core_with_fake_uv();
     fetch(&core, &["tiny"]);
     fetch(&core, &["other"]);
-    let models = root.path().join(".whetstone/models");
-    let database = root.path().join(".whetstone/state.db");
-    assert!(models.join("tiny/whetstone-asset.json").is_file());
+    let models = root.path().join(".learnai/models");
+    let database = root.path().join(".learnai/state.db");
+    assert!(models.join("tiny/learnai-asset.json").is_file());
     assert!(database.is_file());
 
     // Path tricks and undeclared names are refused, and delete nothing.

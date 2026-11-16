@@ -2,7 +2,7 @@
 import mlx.core as mx
 from mlx_lm.models import granitemoehybrid
 
-from whetstone.kit import RealConfig
+from learnai.kit import RealConfig
 
 
 class Granite(granitemoehybrid.Model):

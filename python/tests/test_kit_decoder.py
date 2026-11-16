@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from whetstone.kit import (
+from learnai.kit import (
     DecoderConfig,
     decoder_block_ref,
     decoder_forward_ref,

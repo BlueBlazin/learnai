@@ -18,9 +18,9 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# Whetstone user data and local state
+# Learn AI user data and local state
 workspace/
-.whetstone/
+.learnai/
 
 # Logs
 *.log

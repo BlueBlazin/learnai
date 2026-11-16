@@ -18,8 +18,8 @@ The solution's cache is opaque, so `prefill` and `decode_step` are called direct
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import RealConfig, RealModel
+from learnai.judge import case, check
+from learnai.kit import RealConfig, RealModel
 
 ASSET = "granite-4.0-350m"
 REVISION = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"

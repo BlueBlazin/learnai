@@ -1,7 +1,7 @@
 # BUG: has no stopping rule: it keeps expanding until max_new_tokens even when no live beam can still beat the finished hypotheses; the result is right but model calls are wasted.
 import torch
 
-from whetstone.kit import TinyLM, ops
+from learnai.kit import TinyLM, ops
 
 
 def beam_search(

@@ -16,7 +16,7 @@ tests serve the app on a local socket and talk to it over HTTP. Each app has its
 metrics, all starting at zero.
 
 **The model.** `lm` behaves like the kit's
-[`ScriptedLM`](../../../python/src/whetstone/kit/scriptedlm.py):
+[`ScriptedLM`](../../../python/src/learnai/kit/scriptedlm.py):
 
 - `lm.stream(prompt, max_tokens)` returns an async iterator that yields the generated
   pieces (`str`), at most `max_tokens` of them. One piece is one generated token.

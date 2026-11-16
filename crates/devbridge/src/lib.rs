@@ -1,4 +1,4 @@
-//! Dev-only HTTP bridge exposing whetstone-core to a plain browser.
+//! Dev-only HTTP bridge exposing learnai-core to a plain browser.
 //!
 //! Implements the devbridge transport in `docs/ARCHITECTURE.md` section 4.2:
 //! `POST /api/<command>` with a JSON object body, and server-sent event streams for run
@@ -16,15 +16,15 @@ use axum::http::{HeaderValue, Method, StatusCode};
 use axum::response::sse::{KeepAlive, Sse};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
+use learnai_core::{
+    AssetEvent, Core, CoreError, Framework, InstallEvent, ReviewAction, RunEvent, RunMode,
+    TargetCheckEvent,
+};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
-use whetstone_core::{
-    AssetEvent, Core, CoreError, Framework, InstallEvent, ReviewAction, RunEvent, RunMode,
-    TargetCheckEvent,
-};
 
 use crate::events::{EventLog, LogRegistry};
 

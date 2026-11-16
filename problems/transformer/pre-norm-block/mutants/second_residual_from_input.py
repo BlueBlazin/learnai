@@ -1,7 +1,7 @@
 # BUG: the second residual connection adds the MLP output to the block input instead of to the stream after attention, so the attention output is dropped from the result.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def attn(h: torch.Tensor, params: dict[str, torch.Tensor], mask: torch.Tensor) -> torch.Tensor:

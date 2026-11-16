@@ -1,7 +1,7 @@
 # BUG: treats the store like a KV prefix cache: it takes the entry with the longest common prefix and continues from its state, although that state also contains the entry's tokens after the shared part and cannot be cut back.
 import torch
 
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.kit import RecurrentLM, RecurrentState
 
 Store = dict[tuple[int, ...], RecurrentState]
 

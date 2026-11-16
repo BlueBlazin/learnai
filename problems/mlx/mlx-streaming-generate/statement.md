@@ -10,7 +10,7 @@ that time, provided it was scheduled **before** the current token was read.
 def stream_generate(model, prompt, n, detok): ...
 ```
 
-`model` is an [`MLXTinyLM`](../../../python/src/whetstone/kit/mlxlm.py), called as in
+`model` is an [`MLXTinyLM`](../../../python/src/learnai/kit/mlxlm.py), called as in
 `mlx-lazy-eval-placement`; both forms return **lazy** arrays:
 
 ```python

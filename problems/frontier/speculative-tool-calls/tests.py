@@ -19,8 +19,8 @@ rules that walks the pieces of each turn; it does not come from the reference.
 import copy
 import json
 
-from whetstone.judge import case, check
-from whetstone.kit import ScriptedChatModel, ScriptedTool, reply, tool_call
+from learnai.judge import case, check
+from learnai.kit import ScriptedChatModel, ScriptedTool, reply, tool_call
 
 PIECE_S = 0.125  # one stream piece every 1/8 s
 CHUNK = 8  # characters of content or arguments per piece

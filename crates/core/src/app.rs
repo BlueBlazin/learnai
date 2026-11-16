@@ -31,7 +31,7 @@ use crate::uv::Uv;
 pub struct CoreOptions {
     /// The content root (see [`crate::root::resolve_root`]).
     pub root: PathBuf,
-    /// Overrides the harness command; `None` uses `uv run ... python -m whetstone.harness`.
+    /// Overrides the harness command; `None` uses `uv run ... python -m learnai.harness`.
     pub harness: Option<Arc<dyn HarnessCommand>>,
     /// Overrides the uv executable; `None` searches for it.
     pub uv_program: Option<PathBuf>,
@@ -78,10 +78,10 @@ pub struct Core {
 }
 
 impl Core {
-    /// Opens the core for a content root, creating `.whetstone/state.db` if needed.
+    /// Opens the core for a content root, creating `.learnai/state.db` if needed.
     pub fn open(options: CoreOptions) -> Result<Self> {
         let root = options.root;
-        let store = Arc::new(Store::open(&root.join(".whetstone").join("state.db"))?);
+        let store = Arc::new(Store::open(&root.join(".learnai").join("state.db"))?);
         let uv = match options.uv_program {
             Some(program) => Uv::new(program, root.join("python")),
             None => Uv::locate(&root),

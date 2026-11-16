@@ -10,7 +10,7 @@ row is done.
 def batch_generate(model, prompts, max_new_tokens, eos_id): ...
 ```
 
-`model` is an [`MLXTinyLM`](../../../python/src/whetstone/kit/mlxlm.py), the kit's
+`model` is an [`MLXTinyLM`](../../../python/src/learnai/kit/mlxlm.py), the kit's
 small seeded transformer in `mlx.nn`. On a batch it takes two extra arguments:
 
 ```python

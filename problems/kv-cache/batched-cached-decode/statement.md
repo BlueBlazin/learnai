@@ -10,7 +10,7 @@ done.
 def batched_greedy(lm, prompts, max_new_tokens, eos_id): ...
 ```
 
-`lm` is a [`TinyLM`](../../../python/src/whetstone/kit/tinylm.py), the kit's small
+`lm` is a [`TinyLM`](../../../python/src/learnai/kit/tinylm.py), the kit's small
 seeded transformer. With batched tokens it works on all rows in one call:
 
 ```python

@@ -23,7 +23,7 @@ class Admission:
     A request is *queued* from the `admit` call that accepts it until `start`, and
     *running* from `start` until `finish`. Only queued requests count against the
     bounds. A request is any object with `id` (hashable, unique) and `prompt_tokens`
-    (int >= 1), such as a `whetstone.kit.SimRequest`.
+    (int >= 1), such as a `learnai.kit.SimRequest`.
     """
 
     def __init__(self, max_queued_requests: int, max_queued_tokens: int, drain_tokens_per_s: float):

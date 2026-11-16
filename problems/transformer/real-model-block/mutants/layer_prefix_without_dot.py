@@ -1,7 +1,7 @@
 # BUG: collects the layer's tensors with name.startswith('model.layers.{layer}') and no trailing dot, so for layer 1 the tensors of layers 10 to 19 match too and overwrite the right ones.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 HEAD_DIM = 64
 NORM_EPS = 1e-5

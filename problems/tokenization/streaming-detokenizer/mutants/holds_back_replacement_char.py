@@ -1,7 +1,7 @@
 # BUG: decides by looking at the decoded text: while it ends in U+FFFD, everything is held back. That delays invalid bytes, and a genuine U+FFFD character, until a later token (or the flush) releases them.
 from typing import Any
 
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def detok_step(state: Any, token_id: int, vocab: ToyVocab) -> tuple[Any, str]:

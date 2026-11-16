@@ -10,7 +10,7 @@ and add the new prompt's cache to the store.
 def generate_with_store(lm, store, prompt, max_new_tokens): ...
 ```
 
-`lm` is a [`TinyLM`](../../../python/src/whetstone/kit/tinylm.py), used as in
+`lm` is a [`TinyLM`](../../../python/src/learnai/kit/tinylm.py), used as in
 `cached-greedy-decode`: `logits, cache = lm(tokens)` starts a sequence,
 `logits, cache = lm(tokens, cache)` continues the cached prefix, a call needs at
 least one token, and `logits[-1]` scores the next token. Caches are immutable, and

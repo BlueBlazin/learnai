@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "last_token_logits"
 EXACT = {"rtol": 0.0, "atol": 0.0}

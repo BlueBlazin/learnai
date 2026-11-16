@@ -100,7 +100,7 @@ describe("simulated run stream", () => {
       "import_error",
       "harness_error",
     ]) {
-      const plan = buildPlan(byId("kv-cache-decode"), "torch", "submit", `# ws: ${scenario}\n`);
+      const plan = buildPlan(byId("kv-cache-decode"), "torch", "submit", `# learnai: ${scenario}\n`);
       const events = await collect(simulateRun(plan, instant));
       const types = events.map((e) => e.type);
       expect(types.filter((t) => t === "end")).toHaveLength(1);
@@ -158,7 +158,7 @@ describe("simulated run stream", () => {
     // Hidden cases never leak expected values.
     expect(hiddenFail.results.find((r) => r.status === "fail")?.detail).toBeNull();
 
-    const harness = await end("stable-softmax", "# ws: harness_error");
+    const harness = await end("stable-softmax", "# learnai: harness_error");
     expect(harness.last).toMatchObject({ verdict: "harness_error", total: 0 });
     expect(harness.events.some((e) => e.type === "start")).toBe(false);
     expect(harness.events.some((e) => e.type === "log" && e.stream === "stderr")).toBe(true);
@@ -177,10 +177,10 @@ describe("simulated run stream", () => {
 
   it("resolves scenarios from markers, starter code, then the problem default", () => {
     const problem = byId("top-p-sampling");
-    expect(resolveScenario(problem, "x = 1  # ws: time_limit")).toBe("time_limit");
+    expect(resolveScenario(problem, "x = 1  # learnai: time_limit")).toBe("time_limit");
     expect(resolveScenario(problem, "raise NotImplementedError")).toBe("runtime_error");
     expect(resolveScenario(problem, "return 1")).toBe("wrong_answer");
-    expect(resolveScenario(problem, "# ws: nonsense")).toBe("wrong_answer");
+    expect(resolveScenario(problem, "# learnai: nonsense")).toBe("wrong_answer");
   });
 });
 
@@ -347,7 +347,7 @@ describe("FixtureBackend", () => {
   it("lists one model of each kind, with the problems that use it", async () => {
     const backend = new FixtureBackend({ speed: 0 });
     const listing = await backend.listAssets();
-    expect(listing.modelsDir).toMatch(/\.whetstone\/models$/);
+    expect(listing.modelsDir).toMatch(/\.learnai\/models$/);
     expect(listing.assets.map((asset) => [asset.name, asset.state])).toEqual([
       ["granite-4.0-1b", "incomplete"],
       ["granite-4.0-350m", "present"],
@@ -589,7 +589,7 @@ describe("FixtureBackend run targets", () => {
     await expect(backend.addTarget("gpu-box")).rejects.toThrow("already a run target");
 
     const added = await backend.addTarget("lab-a100");
-    expect(added.at(-1)).toMatchObject({ name: "ssh:lab-a100", remoteDir: "~/.whetstone", lastCheck: null });
+    expect(added.at(-1)).toMatchObject({ name: "ssh:lab-a100", remoteDir: "~/.learnai", lastCheck: null });
 
     const events = await checkToEnd(backend, "ssh:lab-a100");
     expect(events.filter((event) => event.type === "step")).toHaveLength(5);

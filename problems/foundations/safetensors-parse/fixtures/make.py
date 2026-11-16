@@ -3,7 +3,7 @@
     uv run --project python --extra jax --extra mlx --extra models \
         python problems/foundations/safetensors-parse/fixtures/make.py
 
-Needs the small house model on disk (``ws assets fetch granite-4.0-350m``) and the
+Needs the small house model on disk (``learnai assets fetch granite-4.0-350m``) and the
 ``models`` extra. The reference implementation is the ``safetensors`` package:
 
 - ``tiny.safetensors`` is a file written by ``safetensors.numpy.save_file`` (so the
@@ -23,9 +23,9 @@ from safetensors import safe_open
 from safetensors.numpy import save_file
 from safetensors.torch import load_file
 
-from whetstone import assets
-from whetstone.kit.realmodel import SMALL
-from whetstone.problem import find_root
+from learnai import assets
+from learnai.kit.realmodel import SMALL
+from learnai.problem import find_root
 
 HERE = Path(__file__).parent
 #: Positions sampled in every tensor: fractions of the flattened length.

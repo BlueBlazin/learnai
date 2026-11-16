@@ -1,6 +1,6 @@
 import mlx.core as mx
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def jump_forward_decode(

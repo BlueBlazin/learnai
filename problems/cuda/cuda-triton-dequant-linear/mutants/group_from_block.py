@@ -1,7 +1,7 @@
 # BUG: loads one scale and one bias per block, for the group of the block's first column; right only while no block reaches into a second group.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

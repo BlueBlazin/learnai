@@ -1,7 +1,7 @@
 # BUG: the first new token gets position cache_length + 1; positions are 0-based, so a row with n cached tokens continues at n.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def rope_positions(cache_lengths: torch.Tensor, n_new: int) -> torch.Tensor:

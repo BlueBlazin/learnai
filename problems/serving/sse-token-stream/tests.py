@@ -14,7 +14,7 @@ import time
 
 import httpx
 
-from whetstone.judge import CheckFailure, case, check, iter_sse, parse_sse, read_sse
+from learnai.judge import CheckFailure, case, check, iter_sse, parse_sse, read_sse
 
 URL = "/v1/generate"
 GATE_TIMEOUT_S = 2.0  # how long a gated source waits for the test to confirm an event

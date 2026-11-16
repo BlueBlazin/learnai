@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def attend_step(

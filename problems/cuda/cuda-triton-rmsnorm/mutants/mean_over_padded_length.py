@@ -1,7 +1,7 @@
 # BUG: divides the sum of squares by the number of columns the blocks cover, padding included, instead of by n_cols.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

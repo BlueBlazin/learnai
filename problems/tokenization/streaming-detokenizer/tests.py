@@ -12,8 +12,8 @@ the one corner the statement leaves open (see its note on surrogates).
 
 import codecs
 
-from whetstone.judge import case, check
-from whetstone.kit import ToyVocab
+from learnai.judge import case, check
+from learnai.kit import ToyVocab
 
 FFFD = "�"
 TEXT = 'naïve café costs 5 €, 한국어 日本語 😀 {"a": true} '

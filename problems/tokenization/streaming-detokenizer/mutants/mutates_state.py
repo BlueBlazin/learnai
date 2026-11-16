@@ -1,7 +1,7 @@
 # BUG: the state is a bytearray that detok_step extends and trims in place, so the state object the caller still holds changes under it and continuing twice from one state goes wrong.
 from typing import Any
 
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def detok_step(state: Any, token_id: int, vocab: ToyVocab) -> tuple[Any, str]:

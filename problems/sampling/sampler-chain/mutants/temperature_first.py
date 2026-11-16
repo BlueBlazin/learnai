@@ -1,7 +1,7 @@
 # BUG: divides by the temperature before the filters (the transformers and vLLM order), so top-p and min-p measure the tempered distribution and keep a different set of tokens.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def penalize(logits: torch.Tensor, cfg: dict, history: torch.Tensor) -> torch.Tensor:

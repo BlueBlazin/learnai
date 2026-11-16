@@ -15,8 +15,8 @@ Every case drives the solution's step in a loop, as a generation loop would (one
 import mlx.core as mx
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import EvalSpy, MLXTinyLM
+from learnai.judge import case, check
+from learnai.kit import EvalSpy, MLXTinyLM
 
 FN = "step"
 MAX_LEN = 64

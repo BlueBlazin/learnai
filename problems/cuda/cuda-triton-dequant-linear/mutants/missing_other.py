@@ -1,7 +1,7 @@
 # BUG: masks the loads but gives no `other=`; the masked-off values are undefined, and they are multiplied and added into the sum like any others.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

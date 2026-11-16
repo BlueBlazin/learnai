@@ -18,7 +18,7 @@ class GrammarMatcher:
 
 This is the `TokenConstraint` protocol of `constrained-greedy-decode`, for a grammar.
 
-**The grammar.** `grammar` is a [`Grammar`](../../../python/src/whetstone/kit/grammar.py),
+**The grammar.** `grammar` is a [`Grammar`](../../../python/src/learnai/kit/grammar.py),
 parsed from GBNF, the notation of llama.cpp. Its language is the set of strings that
 the rule `root` matches. Read the grammar from `grammar.rules`:
 
@@ -41,7 +41,7 @@ rules (`x*` is `r ::= x r | (empty)`). Two precomputed sets are yours to use:
 `grammar.left_recursive`, the names of the rules that can begin with themselves.
 Every rule can finish: there is no rule from which no string can be derived.
 
-**The vocabulary.** `vocab` is a [`ToyVocab`](../../../python/src/whetstone/kit/vocab.py):
+**The vocabulary.** `vocab` is a [`ToyVocab`](../../../python/src/learnai/kit/vocab.py):
 ids `0` to `vocab.size - 1`, `vocab.bytes(t)` the byte string of token `t`. Special
 tokens have the byte string `b""`. A token may be several characters, or only some
 of the bytes of one character.
@@ -123,9 +123,9 @@ Advancing through the tokens `[`, `1`, `,`, (space), `[`, `tr`, `u`, `e`, `]`, `
 | `[1, [true]]` | (none) | yes |
 
 - After `[1` the two-character token `, ` is allowed. Its comma is the literal of
-  one rule and its space is the whole of another (`ws`); the token crosses the
+  one rule and its space is the whole of another (`learnai`); the token crosses the
   boundary.
-- After `[1,` the space is allowed and after `[1, ` it is not: `ws` is at most one
+- After `[1,` the space is allowed and after `[1, ` it is not: `learnai` is at most one
   space.
 - After `[1, [true]` the inner list is complete, and `root` has matched, but only
   the inner occurrence. The text is not a member of the language, so the state is

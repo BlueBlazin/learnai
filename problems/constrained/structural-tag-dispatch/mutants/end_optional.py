@@ -1,5 +1,5 @@
 # BUG: when the content is complete and cannot read the next byte, the tag is treated as closed without its end string: the byte is taken as free text.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class TagDispatch:

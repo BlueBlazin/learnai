@@ -1,7 +1,7 @@
 # BUG: after a fully accepted block it emits only the draft tokens and throws away the target's extra row, so every such round yields one token fewer and more target calls are needed.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def speculative_greedy(

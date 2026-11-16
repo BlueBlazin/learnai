@@ -1,5 +1,5 @@
 # BUG: the trie walk does not stop where a prefix dies: it keeps stepping the DFA from DEAD through the whole subtree, which gives the right index but exceeds the step budget.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class _Node:

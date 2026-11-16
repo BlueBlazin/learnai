@@ -1,7 +1,7 @@
 # BUG: prefills the prompt in a call of its own before the loop; when the output begins with forced tokens that call's logits are never used, and the first free step needs a second call.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def jump_forward_decode(

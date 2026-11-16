@@ -1,7 +1,7 @@
 # BUG: computes nothing: finds the checkpoint behind `weights` and runs the kit's reference model, which has a cache of its own and which the statement rules out.
 import torch
 
-from whetstone.kit import RealConfig, RealModel
+from learnai.kit import RealConfig, RealModel
 
 
 def _lm(weights: dict[str, torch.Tensor]):

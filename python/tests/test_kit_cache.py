@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from whetstone.judge import frameworks
-from whetstone.kit import KVCache, TinyLM, draft_target_pair
+from learnai.judge import frameworks
+from learnai.kit import KVCache, TinyLM, draft_target_pair
 
 PROMPT = [0, 5, 9, 33, 2, 7]
 PY = frameworks.get("python")

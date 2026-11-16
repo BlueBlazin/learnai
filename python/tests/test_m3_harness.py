@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from conftest import FIXTURES, run_harness
 
-from whetstone import assets, cli, hardware, protocol
-from whetstone import validate as gate
-from whetstone.problem import load_problem
+from learnai import assets, cli, hardware, protocol
+from learnai import validate as gate
+from learnai.problem import load_problem
 
 M3 = FIXTURES / "m3"
 MLX_SCALE = M3 / "problems" / "gpu" / "mlx-scale"
@@ -23,7 +23,7 @@ needs_mlx = pytest.mark.skipif(
 
 
 def install_asset(models: Path, problem_dir: Path = ASSET_VOCAB, *, vocab_size: int = 11) -> Path:
-    """Put the fixture problem's asset on disk the way ``ws assets fetch`` would."""
+    """Put the fixture problem's asset on disk the way ``learnai assets fetch`` would."""
     (spec,) = load_problem(problem_dir).assets
     target = models / spec.name
     target.mkdir(parents=True, exist_ok=True)
@@ -78,16 +78,16 @@ def test_run_level_metrics_keep_the_worst_value_in_either_direction():
 
 
 def test_hardware_override_and_descriptions(monkeypatch):
-    monkeypatch.setenv("WHETSTONE_HARDWARE", "cpu")
+    monkeypatch.setenv("LEARNAI_HARDWARE", "cpu")
     assert hardware.available("cpu")
     assert not hardware.available("mlx-gpu") and not hardware.available("cuda")
-    monkeypatch.setenv("WHETSTONE_HARDWARE", "cuda")
+    monkeypatch.setenv("LEARNAI_HARDWARE", "cuda")
     assert hardware.available("cuda") and hardware.available("cpu")
     assert "NVIDIA" in hardware.missing_message("cuda")
 
 
 def test_cuda_problem_without_cuda_runs_cpu_cases_and_skips_the_rest():
-    env = {"WHETSTONE_HARDWARE": "cpu"}
+    env = {"LEARNAI_HARDWARE": "cpu"}
     run = run_harness(CUDA_SCALE, CUDA_SCALE / "reference" / "torch.py", "torch", env=env)
     assert run.returncode == 0
     assert run.start["requires"] == "cuda" and run.start["requires_met"] is False
@@ -112,14 +112,14 @@ def test_cuda_problem_without_cuda_runs_cpu_cases_and_skips_the_rest():
 
 
 def test_a_failure_outranks_missing_hardware():
-    env = {"WHETSTONE_HARDWARE": "cpu"}
+    env = {"LEARNAI_HARDWARE": "cpu"}
     run = run_harness(CUDA_SCALE, CUDA_SCALE / "mutants" / "ignores_factor.py", "torch", env=env)
     assert run.end["status"] == "wrong_answer"
     assert run.statuses["hidden-2"] == "skipped"
 
 
 def test_run_mode_with_only_cpu_cases_still_reports_the_missing_hardware():
-    env = {"WHETSTONE_HARDWARE": "cpu"}
+    env = {"LEARNAI_HARDWARE": "cpu"}
     run = run_harness(
         CUDA_SCALE, CUDA_SCALE / "reference" / "torch.py", "torch", mode="run", env=env
     )
@@ -131,7 +131,7 @@ def test_run_mode_with_only_cpu_cases_still_reports_the_missing_hardware():
 def test_selecting_one_skipped_case_reports_it_without_importing_the_solution(tmp_path):
     crashing = tmp_path / "torch.py"
     crashing.write_text("raise RuntimeError('imported')\n")
-    env = {"WHETSTONE_HARDWARE": "cpu"}
+    env = {"LEARNAI_HARDWARE": "cpu"}
     run = run_harness(CUDA_SCALE, crashing, "torch", case="hidden-2", env=env)
     assert run.statuses == {"hidden-2": "skipped"}
     assert run.end["status"] == "hardware_missing" and run.end["passed"] == 0
@@ -148,7 +148,7 @@ def test_a_case_may_only_require_what_the_problem_requires(tmp_path):
 
 
 def test_case_decorator_rejects_unknown_requirements():
-    from whetstone.judge import case
+    from learnai.judge import case
 
     with pytest.raises(ValueError, match="requires= must be one of cpu, mlx-gpu, cuda"):
         case("x", requires="gpu")
@@ -194,7 +194,7 @@ def test_the_memory_limit_catches_a_float32_promotion():
 
 @needs_mlx
 def test_mlx_problem_without_a_gpu_skips_its_gpu_cases():
-    env = {"WHETSTONE_HARDWARE": "cpu"}
+    env = {"LEARNAI_HARDWARE": "cpu"}
     run = run_harness(MLX_SCALE, MLX_SCALE / "reference" / "mlx.py", "mlx", env=env)
     assert run.statuses == {
         "small": "pass", "hidden-1": "pass", "hidden-2": "skipped", "hidden-3": "skipped",
@@ -205,7 +205,7 @@ def test_mlx_problem_without_a_gpu_skips_its_gpu_cases():
 
 @needs_mlx
 def test_validate_accepts_an_mlx_only_problem_with_mlx_mutants(monkeypatch):
-    monkeypatch.setenv("WHETSTONE_ROOT", str(M3))
+    monkeypatch.setenv("LEARNAI_ROOT", str(M3))
     (report,) = gate.validate(M3, [MLX_SCALE])
     assert report.errors == [] and report.warnings == [] and report.status == "ok"
     assert "mutant promotes rejected (wrong_answer)" in report.checks
@@ -215,7 +215,7 @@ def test_validate_accepts_an_mlx_only_problem_with_mlx_mutants(monkeypatch):
 def test_validate_requires_torch_unless_the_problem_is_mlx_only(tmp_path, monkeypatch):
     root = tmp_path / "root"
     shutil.copytree(M3 / "problems" / "gpu", root / "problems" / "gpu")
-    monkeypatch.setenv("WHETSTONE_ROOT", str(root))
+    monkeypatch.setenv("LEARNAI_ROOT", str(root))
     problem = root / "problems" / "gpu" / "mlx-scale"
     toml = problem / "problem.toml"
     toml.write_text(toml.read_text().replace('["mlx"]', '["jax", "mlx"]'))
@@ -232,7 +232,7 @@ def test_new_scaffolds_an_mlx_only_problem(tmp_path, monkeypatch, capsys):
     root = tmp_path / "root"
     (root / "problems").mkdir(parents=True)
     (root / "python").mkdir()
-    monkeypatch.setenv("WHETSTONE_ROOT", str(root))
+    monkeypatch.setenv("LEARNAI_ROOT", str(root))
     assert cli.main(["new", "mlx/lazy-thing", "--frameworks", "mlx"]) == 0
     problem = load_problem(root / "problems" / "mlx" / "lazy-thing")
     assert problem.frameworks == ("mlx",) and problem.requires == "mlx-gpu"
@@ -246,8 +246,8 @@ def test_new_scaffolds_an_mlx_only_problem(tmp_path, monkeypatch, capsys):
 
 
 def test_validate_reports_cuda_cases_it_could_not_run(monkeypatch, capsys):
-    monkeypatch.setenv("WHETSTONE_ROOT", str(M3))
-    monkeypatch.setenv("WHETSTONE_HARDWARE", "cpu")
+    monkeypatch.setenv("LEARNAI_ROOT", str(M3))
+    monkeypatch.setenv("LEARNAI_HARDWARE", "cpu")
     (report,) = gate.validate(M3, [CUDA_SCALE])
     assert report.errors == [] and report.status == "ok"
     reference, mutant = report.warnings
@@ -269,8 +269,8 @@ def test_validate_reports_cuda_cases_it_could_not_run(monkeypatch, capsys):
 def test_validate_fails_a_starter_that_only_missing_hardware_holds_back(tmp_path, monkeypatch):
     root = tmp_path / "root"
     shutil.copytree(M3 / "problems" / "gpu", root / "problems" / "gpu")
-    monkeypatch.setenv("WHETSTONE_ROOT", str(root))
-    monkeypatch.setenv("WHETSTONE_HARDWARE", "cpu")
+    monkeypatch.setenv("LEARNAI_ROOT", str(root))
+    monkeypatch.setenv("LEARNAI_HARDWARE", "cpu")
     problem = root / "problems" / "gpu" / "cuda-scale"
     (problem / "starter" / "torch.py").write_text(
         "import torch\n\n\ndef scale(x, factor, device):\n    return x * factor  # same as CPU\n"
@@ -288,7 +288,7 @@ def test_validate_fails_a_starter_that_only_missing_hardware_holds_back(tmp_path
 
 
 def test_missing_asset_skips_the_cases_that_need_it(tmp_path):
-    env = {"WHETSTONE_MODELS_DIR": str(tmp_path / "models")}
+    env = {"LEARNAI_MODELS_DIR": str(tmp_path / "models")}
     run = run_harness(ASSET_VOCAB, ASSET_VOCAB / "reference" / "python.py", env=env)
     assert run.returncode == 0
     assert run.statuses == {
@@ -297,19 +297,19 @@ def test_missing_asset_skips_the_cases_that_need_it(tmp_path):
     skipped = run.case("real_config")
     assert skipped["skip"] == {"kind": "asset", "asset": "tiny-test-model"}
     assert skipped["message"] == (
-        "skipped: model asset `tiny-test-model` (whetstone-tests/tiny-test-model, about 10 kB) "
-        "is not downloaded; fetch it with `ws assets fetch tiny-test-model`"
+        "skipped: model asset `tiny-test-model` (learnai-tests/tiny-test-model, about 10 kB) "
+        "is not downloaded; fetch it with `learnai assets fetch tiny-test-model`"
     )
     end = run.end
     assert end["status"] == "assets_missing"
     assert (end["passed"], end["total"], end["skipped"]) == (2, 4, 2)
-    assert "Fetch with `ws assets fetch tiny-test-model`, then run again." in end["message"]
+    assert "Fetch with `learnai assets fetch tiny-test-model`, then run again." in end["message"]
     assert end["missing_assets"] == [
         {
             "name": "tiny-test-model",
-            "repo": "whetstone-tests/tiny-test-model",
+            "repo": "learnai-tests/tiny-test-model",
             "size_mb": 0.01,
-            "fetch_command": "ws assets fetch tiny-test-model",
+            "fetch_command": "learnai assets fetch tiny-test-model",
         }
     ]
 
@@ -317,7 +317,7 @@ def test_missing_asset_skips_the_cases_that_need_it(tmp_path):
 def test_present_asset_is_resolved_for_the_tests(tmp_path):
     models = tmp_path / "models"
     install_asset(models)
-    env = {"WHETSTONE_MODELS_DIR": str(models)}
+    env = {"LEARNAI_MODELS_DIR": str(models)}
     run = run_harness(ASSET_VOCAB, ASSET_VOCAB / "reference" / "python.py", env=env)
     assert run.end["status"] == "accepted", run.events
     assert run.end["skipped"] == 0
@@ -339,7 +339,7 @@ def test_a_stale_or_damaged_asset_counts_as_missing(tmp_path):
     (target / assets.MANIFEST).write_text(json.dumps(manifest))
     state = assets.state_of(spec, models)
     assert state.state == "incomplete" and "the catalog pins" in state.reason
-    env = {"WHETSTONE_MODELS_DIR": str(models)}
+    env = {"LEARNAI_MODELS_DIR": str(models)}
     run = run_harness(ASSET_VOCAB, ASSET_VOCAB / "reference" / "python.py", env=env)
     assert run.end["status"] == "assets_missing"
 
@@ -355,8 +355,8 @@ def test_a_malformed_assets_table_is_a_harness_error_not_a_crash(tmp_path):
 
 
 def test_validate_skips_what_needs_a_missing_asset_and_says_so(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("WHETSTONE_ROOT", str(M3))
-    monkeypatch.setenv("WHETSTONE_MODELS_DIR", str(tmp_path / "models"))
+    monkeypatch.setenv("LEARNAI_ROOT", str(M3))
+    monkeypatch.setenv("LEARNAI_MODELS_DIR", str(tmp_path / "models"))
     (report,) = gate.validate(M3, [ASSET_VOCAB])
     assert report.errors == [] and report.status == "ok"
     assert report.warnings[0].startswith(
@@ -382,8 +382,8 @@ def test_validate_reports_a_problem_of_which_nothing_could_run_as_skipped(
 ):
     root = tmp_path / "root"
     shutil.copytree(M3 / "problems" / "real", root / "problems" / "real")
-    monkeypatch.setenv("WHETSTONE_ROOT", str(root))
-    monkeypatch.setenv("WHETSTONE_MODELS_DIR", str(tmp_path / "models"))
+    monkeypatch.setenv("LEARNAI_ROOT", str(root))
+    monkeypatch.setenv("LEARNAI_MODELS_DIR", str(tmp_path / "models"))
     problem = root / "problems" / "real" / "asset-vocab"
     tests = problem / "tests.py"
     tests.write_text(tests.read_text().replace(", assets=[]", ""))  # every case needs the asset
@@ -392,8 +392,8 @@ def test_validate_reports_a_problem_of_which_nothing_could_run_as_skipped(
     assert report.skips == [
         (
             "reference (python): not validated here: model asset `tiny-test-model` "
-            "(whetstone-tests/tiny-test-model, about 10 kB) is not downloaded; fetch it with "
-            "`ws assets fetch tiny-test-model`"
+            "(learnai-tests/tiny-test-model, about 10 kB) is not downloaded; fetch it with "
+            "`learnai assets fetch tiny-test-model`"
         )
     ]
     assert cli.main(["validate", "asset-vocab"]) == 0
@@ -406,8 +406,8 @@ def test_validate_reports_a_problem_of_which_nothing_could_run_as_skipped(
 def test_fixtures_are_loaded_by_extension(tmp_path):
     import numpy as np
 
-    from whetstone.judge.context import make_context
-    from whetstone.judge.registry import Case
+    from learnai.judge.context import make_context
+    from learnai.judge.registry import Case
 
     problem = tmp_path / "problems" / "real" / "asset-vocab"
     shutil.copytree(ASSET_VOCAB, problem)

@@ -18,8 +18,8 @@ the regex subset of `regex-to-dfa`, which is tested by compiling it with the kit
 import json
 import re
 
-from whetstone.judge import case, check
-from whetstone.kit import CharDFA
+from learnai.judge import case, check
+from learnai.kit import CharDFA
 
 FN = "schema_to_regex"
 DIGITS = "0123456789"

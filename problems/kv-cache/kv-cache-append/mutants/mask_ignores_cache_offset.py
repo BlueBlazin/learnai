@@ -1,7 +1,7 @@
 # BUG: the causal mask is built as if the chunk started at position 0: new token i sees only keys 0..i of the concatenated sequence instead of 0..S+i.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def attend_step(

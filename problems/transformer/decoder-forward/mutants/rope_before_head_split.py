@@ -1,7 +1,7 @@
 # BUG: applies RoPE to the projected queries and keys before splitting them into heads, so the frequencies are spread over the full projection width instead of repeating within each head of width head_dim.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 
 def forward(params: dict[str, torch.Tensor], cfg: DecoderConfig, tokens: torch.Tensor) -> torch.Tensor:

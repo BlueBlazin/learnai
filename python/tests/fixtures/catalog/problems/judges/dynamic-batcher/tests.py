@@ -1,5 +1,5 @@
-from whetstone.judge import case, check, percentile
-from whetstone.kit import SimModel
+from learnai.judge import case, check, percentile
+from learnai.kit import SimModel
 
 
 def simulate(ctx, batcher_class, arrivals, *, max_batch_size, max_wait_s):

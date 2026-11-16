@@ -1,6 +1,6 @@
-# Whetstone curriculum
+# Learn AI curriculum
 
-The complete catalog plan: every problem Whetstone will ship, in fifteen tracks, with the
+The complete catalog plan: every problem Learn AI will ship, in fifteen tracks, with the
 milestone in which each is authored. Authors write problems from this document, five at
 a time, without further coordination; if a spec here is ambiguous, fix the spec here
 first, then write the problem.
@@ -122,7 +122,7 @@ Gemma 4 E2B/E4B (any-to-any, 5.1 B total, no sub-1B variant), LFM2.5 and LFM3
 (gated).
 
 **Rules for real-model problems.** Weights are never committed. The kit downloads them
-on demand into `.whetstone/models/` (`ws assets fetch <name>`), and a problem whose assets are
+on demand into `.learnai/models/` (`learnai assets fetch <name>`), and a problem whose assets are
 absent reports every case as `skipped` with a message naming the download command.
 Reference outputs (logits, token ids, text) are small fixture files committed inside
 the problem directory, generated once by a script the author also commits
@@ -144,7 +144,7 @@ Python inside, the solution's framework at the boundary, functional, `counters`,
 |---|---|---|
 | `KVCache.truncate` | `cache.truncate(n) -> KVCache` keeps the first `n` tokens; `cache.select(rows) -> KVCache` reorders or repeats batch rows. | `prefix-cache-reuse`, `beam-search`, `speculative-decode-loop` |
 | `draft_target_pair` | `draft_target_pair(fw, seed, agreement=0.8) -> (draft, target)`: two `TinyLM`s over one vocabulary; the draft is the target with seeded weight noise, tuned so greedy tokens agree at about the given rate. Separate counters. | `speculative-decode-loop` |
-| `ops` | `whetstone.kit.ops`: framework-native reference building blocks, one signature in all frameworks: `softmax`, `rms_norm`, `rope`, `attention(q, k, v, mask)`, `swiglu`, `top_k_filter`, `top_p_filter`, `min_p_filter`. Lets a later problem use an earlier concept without re-deriving it. | `pre-norm-block`, `sampler-chain` |
+| `ops` | `learnai.kit.ops`: framework-native reference building blocks, one signature in all frameworks: `softmax`, `rms_norm`, `rope`, `attention(q, k, v, mask)`, `swiglu`, `top_k_filter`, `top_p_filter`, `min_p_filter`. Lets a later problem use an earlier concept without re-deriving it. | `pre-norm-block`, `sampler-chain` |
 | `DecoderConfig`, `decoder_params` | `decoder_params(cfg, seed) -> dict[str, ndarray]` for a modern block layout (RMSNorm pre-norm, RoPE, GQA via `n_kv_heads`, SwiGLU, tied head), named like Hugging Face checkpoints; `decoder_forward_ref(cfg, params, tokens)` numpy oracle. | `decoder-forward`, `padded-batch-invariance` |
 | `ToyVocab` | `ToyVocab(size=64, seed)`: token id to byte string table aligned with `TinyLM` ids (single bytes, digits, JSON punctuation, multi-character and multi-byte UTF-8 pieces, named special tokens), plus a small ranked merge table. `vocab.bytes(id)`, `vocab.specials`. | `streaming-detokenizer`, `special-tokens-split`, `dfa-token-mask`, `stop-sequences` |
 | `CharDFA` | `CharDFA(transitions, start, accepting)`: `dfa.step(state, byte) -> state or DEAD`, `dfa.counters.steps`; `CharDFA.from_regex(pattern)` for tests. | `dfa-token-mask`, `dfa-token-index` |
@@ -157,9 +157,9 @@ Python inside, the solution's framework at the boundary, functional, `counters`,
 
 | name | interface | first used by |
 |---|---|---|
-| `assets` | `assets.path("granite-4.0-350m", "model.safetensors") -> Path` or raises `AssetMissing`; registry of repo id, revision hash, file list, sizes, SHA-256; CLI `ws assets fetch <name>`. As built: `[[assets]]` tables in `problem.toml`, `ctx.asset(name, file)` in tests, and cases that need a missing asset are skipped (see PROBLEM_AUTHORING section 15). | every real-model problem |
+| `assets` | `assets.path("granite-4.0-350m", "model.safetensors") -> Path` or raises `AssetMissing`; registry of repo id, revision hash, file list, sizes, SHA-256; CLI `learnai assets fetch <name>`. As built: `[[assets]]` tables in `problem.toml`, `ctx.asset(name, file)` in tests, and cases that need a missing asset are skipped (see PROBLEM_AUTHORING section 15). | every real-model problem |
 | `fixtures` | `ctx.fixture("logits.npz")` loads a file from the problem's `fixtures/` directory. | every real-model problem |
-| MLX-only oracle | `ws validate` accepts `frameworks = ["mlx"]` with `reference/mlx.py` as the oracle (today a tensor problem must list `torch`). | track `mlx` |
+| MLX-only oracle | `learnai validate` accepts `frameworks = ["mlx"]` with `reference/mlx.py` as the oracle (today a tensor problem must list `torch`). | track `mlx` |
 | `EvalSpy` | `with EvalSpy() as spy:` counts `mx.eval`, `mx.async_eval`, and implicit evaluations (`.item()`, `.tolist()`, `np.array(x)`, printing) with the call site; `spy.evals`, `spy.implicit`. | `mlx-lazy-eval-placement`, `mlx-streaming-generate` |
 | `TraceCounter` | `tc = TraceCounter(); y = tc.mark(x)` is an identity whose Python body increments `tc.count`, so the count is the number of times a compiled function was traced. | `mlx-compile-step`, `mlx-compile-shapes` |
 | `MLXTinyLM` | A `TinyLM`-shaped model written in `mlx.nn` (same call convention, plus `.parameters()`), traceable by `mx.compile`, seeded, with `layers`, `n_kv_heads`, `rope` options. | `mlx-compile-step`, `mlx-batched-generate` |
@@ -175,7 +175,7 @@ Python inside, the solution's framework at the boundary, functional, `counters`,
 | `FakeDevice` | `FakeDevice()`: `dev.sync()` and `dev.clock()` stand in for `torch.cuda.synchronize` and `time.perf_counter`; lazily "finishes" work only on `sync`, so a timer read without a sync measures zero. | `cuda-timing-sync` |
 | `OOMModel` | `OOMModel(fn, max_items)`: callable that raises `torch.OutOfMemoryError` when given a batch larger than `max_items`; counts calls. | `cuda-oom-backoff` |
 | `FakeCudaGraph` | Same surface as `torch.cuda.CUDAGraph` (`capture_begin`, `capture_end`, `replay`): records the `data_ptr()` of tensors seen during capture and recomputes from those storages on replay, so rebinding a placeholder instead of copying into it gives stale output on CPU exactly as on GPU. | `cuda-graph-replay` |
-| `tritonshim` | `from whetstone.kit import tritonshim as tl`: a numpy implementation of the subset of `triton.language` the track uses (`program_id`, `arange`, `load`, `store` with masks, `where`, `sum`, `max`, `sqrt`, `exp`), plus `launch(kernel, grid, **args)`. On a CUDA machine with Triton installed the same kernel source is compiled by real Triton. | `cuda-triton-rmsnorm` |
+| `tritonshim` | `from learnai.kit import tritonshim as tl`: a numpy implementation of the subset of `triton.language` the track uses (`program_id`, `arange`, `load`, `store` with masks, `where`, `sum`, `max`, `sqrt`, `exp`), plus `launch(kernel, grid, **args)`. On a CUDA machine with Triton installed the same kernel source is compiled by real Triton. | `cuda-triton-rmsnorm` |
 
 ### Needed by M5
 

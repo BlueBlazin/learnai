@@ -19,7 +19,7 @@ JAX compiles per shape: the cases share (8, 16), (8, 32), and (4, 8).
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 MARGIN = 0.02
 

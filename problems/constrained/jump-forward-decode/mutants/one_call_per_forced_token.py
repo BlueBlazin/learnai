@@ -1,7 +1,7 @@
 # BUG: forced tokens are taken without looking at logits, but every token is fed to the model in a call of its own as soon as it is generated, so the number of forward calls is the number of tokens, not the number of free steps.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def jump_forward_decode(

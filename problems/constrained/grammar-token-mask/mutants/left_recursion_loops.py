@@ -1,5 +1,5 @@
 # BUG: a pushdown automaton that expands the rule at the top of each stack recursively; on a left-recursive rule the expansion puts the same rule on top again and never reaches a character, so it recurses until Python gives up.
-from whetstone.kit import Chars, Grammar, Ref, ToyVocab
+from learnai.kit import Chars, Grammar, Ref, ToyVocab
 
 
 def _code_points(data: bytes) -> tuple[int, int] | None:

@@ -26,7 +26,7 @@ class Admission:
 
 `Admitted` and `Rejected` are given in the starter. A request `req` is an object with
 a unique hashable `id` and an int `prompt_tokens >= 1`; the tests pass
-[`SimRequest`](../../../python/src/whetstone/kit/workloads.py) objects from the kit.
+[`SimRequest`](../../../python/src/learnai/kit/workloads.py) objects from the kit.
 
 **The life of a request.** The server calls `admit(req)` when a request arrives. If
 the answer is `Admitted`, the request is *queued*. Later the server calls `start(req)`

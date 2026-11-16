@@ -127,4 +127,4 @@ const syntax = HighlightStyle.define([
   { tag: t.invalid, color: "var(--fail)" },
 ]);
 
-export const whetstoneEditorTheme: Extension = [chrome, syntaxHighlighting(syntax)];
+export const learnaiEditorTheme: Extension = [chrome, syntaxHighlighting(syntax)];

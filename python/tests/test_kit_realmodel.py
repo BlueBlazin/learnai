@@ -2,7 +2,7 @@
 the reference forward pass.
 
 Tests that need downloaded weights skip when the asset is absent
-(``ws assets fetch granite-4.0-350m``); the rest run on synthetic files."""
+(``learnai assets fetch granite-4.0-350m``); the rest run on synthetic files."""
 
 import json
 import struct
@@ -12,9 +12,9 @@ import numpy as np
 import pytest
 from conftest import FIXTURES, REPO_ROOT
 
-from whetstone import assets
-from whetstone.judge import frameworks
-from whetstone.kit import (
+from learnai import assets
+from learnai.judge import frameworks
+from learnai.kit import (
     LARGE_8BIT,
     SMALL,
     ByteLevelBPE,
@@ -25,8 +25,8 @@ from whetstone.kit import (
     dequantize,
     unpack_codes,
 )
-from whetstone.kit.bpe import GPT2_PATTERN, byte_alphabet, translate_pattern
-from whetstone.kit.realmodel import asset_toml
+from learnai.kit.bpe import GPT2_PATTERN, byte_alphabet, translate_pattern
+from learnai.kit.realmodel import asset_toml
 
 REFERENCE = FIXTURES / "realmodel" / "granite-4.0-350m.npz"
 

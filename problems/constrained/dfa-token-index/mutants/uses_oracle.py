@@ -1,5 +1,5 @@
 # BUG: takes the forbidden shortcut: prunes with the DFA's test oracle `is_live` instead of comparing the step's result with DEAD.
-from whetstone.kit import CharDFA, ToyVocab
+from learnai.kit import CharDFA, ToyVocab
 
 
 class _Node:

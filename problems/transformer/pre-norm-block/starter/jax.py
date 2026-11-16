@@ -1,6 +1,6 @@
 import jax
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def block(x: jax.Array, params: dict[str, jax.Array], mask: jax.Array) -> jax.Array:

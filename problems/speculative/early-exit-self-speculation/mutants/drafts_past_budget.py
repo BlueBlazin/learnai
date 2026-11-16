@@ -1,7 +1,7 @@
 # BUG: always drafts k tokens, also when fewer than k + 1 tokens are left to generate, and cuts the result to max_new_tokens afterwards: layers run on drafts that can never be emitted.
 import torch
 
-from whetstone.kit import LayeredLM
+from learnai.kit import LayeredLM
 
 
 def self_speculative_greedy(

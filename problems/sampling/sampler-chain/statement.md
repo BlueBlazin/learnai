@@ -73,7 +73,7 @@ its probability.
 The filters of stages 2 to 4 are in the kit, and you may use them:
 
 ```python
-from whetstone.kit import ops
+from learnai.kit import ops
 
 ops.top_k_filter(logits, k)       # k <= 0 or k >= V: unchanged
 ops.top_p_filter(logits, p)

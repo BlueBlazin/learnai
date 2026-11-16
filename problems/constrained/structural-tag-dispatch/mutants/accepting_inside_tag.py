@@ -1,5 +1,5 @@
 # BUG: is_accepting is false only inside the content; between a trigger and the end of the begin string, and inside the end string, the output is reported complete, so generation can stop with half a tag.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class TagDispatch:

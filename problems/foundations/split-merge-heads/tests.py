@@ -7,7 +7,7 @@ Reshaping does no arithmetic, so every comparison is exact.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 EXACT = {"rtol": 0.0, "atol": 0.0}
 

@@ -8,7 +8,7 @@ the numbers tells you when one is off.
 ## Specification
 
 ```python
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

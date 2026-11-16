@@ -18,8 +18,8 @@ from pathlib import Path
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import CountingFile, SafetensorsFile, bf16_to_f32
+from learnai.judge import case, check
+from learnai.kit import CountingFile, SafetensorsFile, bf16_to_f32
 
 #: safetensors dtype name -> numpy dtype of the stored elements.
 STORED = {

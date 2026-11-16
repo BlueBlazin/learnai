@@ -10,7 +10,7 @@ balance and every grant time is exactly representable: a correct solution reprod
 the times to the last bit, and the 1e-9 s tolerance is only a courtesy.
 """
 
-from whetstone.judge import CheckFailure, case, check
+from learnai.judge import CheckFailure, case, check
 
 HOPS = 4  # event-loop turns granted to an acquire() call before the next same-instant call
 TOL_S = 1e-9

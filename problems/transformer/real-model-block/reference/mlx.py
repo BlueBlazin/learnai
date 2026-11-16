@@ -1,7 +1,7 @@
 import mlx.core as mx
-from mlx import nn
 
-from whetstone.kit import ops
+from learnai.kit import ops
+from mlx import nn
 
 HEAD_DIM = 64
 NORM_EPS = 1e-5

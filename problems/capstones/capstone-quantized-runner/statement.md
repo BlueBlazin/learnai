@@ -25,7 +25,7 @@ judge built from the rules of stage 1, so a forward pass can only use what the
 format holds; stage 4 runs your own checkpoint through your own forward pass.
 
 **The model** is the kit decoder of `decoder-forward`, described by a
-[`DecoderConfig`](../../../python/src/whetstone/kit/decoder.py) `cfg` (fields
+[`DecoderConfig`](../../../python/src/learnai/kit/decoder.py) `cfg` (fields
 `vocab_size`, `d_model`, `n_layers`, `n_heads`, `n_kv_heads`, `d_mlp`, `rope_base`,
 `norm_eps`, `tie_embeddings`, and the derived `head_dim = d_model // n_heads`).
 `params` maps checkpoint names to float32 tensors. Linear weights are `(out, in)`
@@ -43,7 +43,7 @@ matrices without biases:
 | `model.norm.weight` | `(d_model,)` |
 | `lm_head.weight`, only when `cfg.tie_embeddings` is `False` | `(vocab_size, d_model)` |
 
-You may use the kit's [`ops`](../../../python/src/whetstone/kit/ops/__init__.py):
+You may use the kit's [`ops`](../../../python/src/learnai/kit/ops/__init__.py):
 `ops.rms_norm`, `ops.rope`, and `ops.attention`. Do not call the kit's forward pass
 (`decoder_forward_ref`, `decoder_block_ref`).
 

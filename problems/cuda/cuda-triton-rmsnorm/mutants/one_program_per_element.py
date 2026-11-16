@@ -1,7 +1,7 @@
 # BUG: launches one program per output element instead of one per row; every program reads its whole row again to compute the same root mean square, n_cols times the work.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

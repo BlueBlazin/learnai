@@ -5,7 +5,7 @@ counts of real checkpoints); everything else is compared with the oracle. All co
 are exact integers.
 """
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 KEYS = ("embedding", "attention", "mlp", "norm", "head", "total")
 NO_BIAS = {"attn_bias": False, "mlp_bias": False, "norm_bias": False}

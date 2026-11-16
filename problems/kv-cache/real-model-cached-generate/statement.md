@@ -15,7 +15,7 @@ def generate(weights, cfg, prompt_ids, max_new_tokens): ...  # returns a list of
 
 `weights` and `cfg` are those of `real-model-logits`: a mapping from checkpoint names
 to float32 tensors (shapes under [Shapes](#shapes); matrices are `(out, in)`, no
-biases), and a [`RealConfig`](../../../python/src/whetstone/kit/realmodel.py) with the
+biases), and a [`RealConfig`](../../../python/src/learnai/kit/realmodel.py) with the
 fields `n_layers`, `d_model`, `n_heads`, `n_kv_heads`, `head_dim`, `d_ff`,
 `vocab_size`, `norm_eps`, `rope_theta`, `attention_scale`, `embedding_multiplier`,
 `residual_multiplier`, `logits_scaling`, and `tied_embeddings`.

@@ -38,8 +38,8 @@ export interface FixtureOptions {
   now?: () => Date;
 }
 
-const ROOT = "/Users/ada/Developer/whetstone";
-const MODELS_DIR = `${ROOT}/.whetstone/models`;
+const ROOT = "/Users/ada/Developer/learnai";
+const MODELS_DIR = `${ROOT}/.learnai/models`;
 /** A simulated download takes about this long whatever its size, in steps of this many. */
 const FETCH_STEPS = 48;
 const FETCH_STEP_MS = 180;
@@ -73,7 +73,7 @@ interface ProblemState {
 }
 
 /**
- * In-memory stand-in for whetstone-core, for component work and tests. It keeps
+ * In-memory stand-in for learnai-core, for component work and tests. It keeps
  * the contract's rules (only submits are stored, solved means an accepted
  * submit, attempted means an edited file or any submit) so the UI's cache
  * invalidation is exercised for real.
@@ -808,7 +808,7 @@ export class FixtureBackend implements Backend {
             type: "done",
             ok: false,
             canceled: false,
-            message: `ws assets fetch: no asset named ${name} in the catalog (known: ${known})`,
+            message: `learnai assets fetch: no asset named ${name} in the catalog (known: ${known})`,
           });
         }
         const total = asset.totalBytes;
@@ -912,7 +912,7 @@ export class FixtureBackend implements Backend {
           kind: "ssh",
           label: host,
           host,
-          remoteDir: remoteDir?.trim() || "~/.whetstone",
+          remoteDir: remoteDir?.trim() || "~/.learnai",
           lastCheck: null,
         },
       ];

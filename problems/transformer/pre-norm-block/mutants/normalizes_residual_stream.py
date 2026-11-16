@@ -1,7 +1,7 @@
 # BUG: overwrites the stream with its normalized copy (x = norm(x); x = x + f(x)), so the residual carries the normalized values instead of the untouched input.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def attn(h: torch.Tensor, params: dict[str, torch.Tensor], mask: torch.Tensor) -> torch.Tensor:

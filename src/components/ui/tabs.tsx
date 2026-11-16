@@ -2,7 +2,7 @@ import { Tabs as TabsPrimitive } from "@base-ui/react/tabs"
 import { cn } from "cn"
 
 /**
- * Tabs in the Whetstone system are plain text with a rule under the active one;
+ * Tabs in the Learn AI system are plain text with a rule under the active one;
  * there is no pill or segmented variant.
  */
 function Tabs({ className, ...props }: TabsPrimitive.Root.Props) {

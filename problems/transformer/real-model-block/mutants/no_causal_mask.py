@@ -1,7 +1,7 @@
 # BUG: lets every token attend to every other token; the block is causal.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 HEAD_DIM = 64
 NORM_EPS = 1e-5

@@ -17,8 +17,8 @@ called directly on the solution module rather than through `ctx.call`, which wou
 copy the index on every query.
 """
 
-from whetstone.judge import case, check
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.judge import case, check
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 OBJECT = r'\{"[a-z]+": (true|false|null|-?\d+)\}'
 NUMBER = r"-?(0|[1-9][0-9]*)(\.[0-9]+)?"

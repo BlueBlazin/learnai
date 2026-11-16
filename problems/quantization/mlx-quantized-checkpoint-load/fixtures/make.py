@@ -3,7 +3,7 @@
     uv run --project python --extra jax --extra mlx --extra models \
         python problems/quantization/mlx-quantized-checkpoint-load/fixtures/make.py
 
-Needs the 8-bit house model on disk (``ws assets fetch granite-4.2-3b-mlx-8bit``, 3.9
+Needs the 8-bit house model on disk (``learnai assets fetch granite-4.2-3b-mlx-8bit``, 3.9
 GB) and the ``models`` extra. The reference implementation is MLX: ``mx.quantize`` and
 ``mx.save_safetensors`` write the small files, ``mx.load`` reads the real one, and
 ``mx.dequantize`` (on scales and biases converted to float32) gives every expected
@@ -28,9 +28,9 @@ from pathlib import Path
 import mlx.core as mx
 import numpy as np
 
-from whetstone import assets
-from whetstone.kit.realmodel import LARGE_8BIT
-from whetstone.problem import find_root
+from learnai import assets
+from learnai.kit.realmodel import LARGE_8BIT
+from learnai.problem import find_root
 
 HERE = Path(__file__).parent
 REAL_LAYERS = [

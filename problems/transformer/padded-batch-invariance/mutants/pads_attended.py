@@ -1,7 +1,7 @@
 # BUG: uses the causal mask alone: real tokens attend to the padding in front of them.
 import torch
 
-from whetstone.kit import DecoderConfig, layer_params, ops
+from learnai.kit import DecoderConfig, layer_params, ops
 
 
 def decoder_block(

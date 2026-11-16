@@ -9,7 +9,7 @@ looser tolerance of the statement.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 TIGHT = {"rtol": 1e-4, "atol": 1e-4}  # positions below 64
 LOOSE = {"rtol": 1e-3, "atol": 5e-3}  # positions below 2048

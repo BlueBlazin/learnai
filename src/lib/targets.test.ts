@@ -28,7 +28,7 @@ const target = (name: string, report: RemoteDoctor | null): TargetInfo => ({
   kind: name === "local" ? "local" : "ssh",
   label: name,
   host: hostOf(name),
-  remoteDir: name === "local" ? null : "~/.whetstone",
+  remoteDir: name === "local" ? null : "~/.learnai",
   lastCheck: report ? { ok: true, checkedAt: "2026-11-15T10:00:00.000Z", steps: [], doctor: report } : null,
 });
 

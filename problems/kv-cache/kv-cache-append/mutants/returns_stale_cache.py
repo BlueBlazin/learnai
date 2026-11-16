@@ -1,7 +1,7 @@
 # BUG: attends over the right keys and values but returns the cache it was given, without the new entries; the next step no longer sees these tokens.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def attend_step(

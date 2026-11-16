@@ -1,7 +1,7 @@
 # BUG: calls every expert, also those that no token selected, with an empty batch of rows; each of those is a wasted call.
 import torch
 
-from whetstone.kit import CountingExperts
+from learnai.kit import CountingExperts
 
 
 def moe_sparse(

@@ -227,7 +227,7 @@ def test_runtime_error_has_a_traceback_of_user_frames_only(sum_list):
     assert detail.startswith("Traceback (most recent call last):")
     assert 'File "raises_on_empty.py", line 6, in total' in detail
     assert 'File "raises_on_empty.py", line 2, in helper' in detail
-    assert "whetstone" not in detail and "tests.py" not in detail
+    assert "src/learnai" not in detail and "tests.py" not in detail
     assert detail.rstrip().endswith("IndexError: list index out of range")
     assert run.end["status"] == "runtime_error"
     assert run.returncode == 0  # the harness worked; the solution did not
@@ -272,7 +272,7 @@ def test_import_errors(sum_list, solution, message, in_detail):
     assert end["message"] == message
     for text in in_detail:
         assert text in end["detail"]
-    assert "whetstone" not in end["detail"]
+    assert "src/learnai" not in end["detail"]
     assert (end["passed"], end["total"]) == (0, 4)
     # Every case is reported, as skipped, with the one-line reason. The traceback is
     # on the `end` event only; repeating it on every case would be noise.
@@ -316,9 +316,7 @@ def test_hard_time_limit_kills_a_solution_that_swallows_the_timeout(sum_list):
 
 
 def test_import_that_never_finishes(sum_list):
-    run = run_harness(
-        sum_list, SOLUTIONS / "import_hangs.py", env={"WHETSTONE_IMPORT_LIMIT_S": "1"}
-    )
+    run = run_harness(sum_list, SOLUTIONS / "import_hangs.py", env={"LEARNAI_IMPORT_LIMIT_S": "1"})
     assert run.end["status"] == "import_error"
     assert run.end["message"] == "importing the solution did not finish within 1 s"
     assert set(run.statuses.values()) == {"skipped"}
@@ -398,7 +396,7 @@ def test_architecture_command_verbatim_from_another_directory(tmp_path):
     problem = REPO_ROOT / "problems" / "foundations" / "stable-softmax"
     command = [
         "uv", "run", "--project", str(REPO_ROOT / "python"), "--extra", "jax", "--extra", "mlx",
-        "--", "python", "-m", "whetstone.harness",
+        "--", "python", "-m", "learnai.harness",
         "--problem", str(problem), "--solution", str(problem / "reference" / "torch.py"),
         "--framework", "torch", "--mode", "submit",
     ]  # fmt: skip

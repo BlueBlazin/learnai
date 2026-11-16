@@ -1,5 +1,5 @@
 # BUG: the upper layers read the keys and values of layer 0 instead of layer share_from - 1, which is the same layer only when share_from is 1.
-from whetstone.kit import LayerCache, LayeredLM
+from learnai.kit import LayerCache, LayeredLM
 
 
 def prefill_shared(lm: LayeredLM, prompt: list[int], share_from: int) -> tuple:

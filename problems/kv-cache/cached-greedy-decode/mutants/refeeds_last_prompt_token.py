@@ -1,7 +1,7 @@
 # BUG: after prefilling the whole prompt it starts the loop by feeding the last prompt token again, so that token is in the context twice and every prediction is one position late.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def greedy_decode(

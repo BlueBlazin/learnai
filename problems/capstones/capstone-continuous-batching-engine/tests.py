@@ -15,8 +15,8 @@ examples and with the oracle's trace on seeded workloads; the costs of the polic
 
 from itertools import pairwise
 
-from whetstone.judge import case, check
-from whetstone.kit import CostModel, ProtocolViolation, SimEngine, SimRequest, workloads
+from learnai.judge import case, check
+from learnai.kit import CostModel, ProtocolViolation, SimEngine, SimRequest, workloads
 
 S1 = "1: block allocator"
 S2 = "2: continuous batching"

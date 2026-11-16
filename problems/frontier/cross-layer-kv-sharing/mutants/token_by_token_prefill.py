@@ -1,5 +1,5 @@
 # BUG: prefill feeds the prompt to the lower layers one token at a time instead of in one call: the same layer-tokens and logits, but share_from layer calls per prompt token.
-from whetstone.kit import LayerCache, LayeredLM
+from learnai.kit import LayerCache, LayeredLM
 
 
 def prefill_shared(lm: LayeredLM, prompt: list[int], share_from: int) -> tuple:

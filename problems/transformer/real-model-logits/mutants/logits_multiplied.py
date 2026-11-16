@@ -1,7 +1,7 @@
 # BUG: multiplies the logits by cfg.logits_scaling instead of dividing by it.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

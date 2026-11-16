@@ -1,5 +1,5 @@
 # BUG: special tokens are not excluded; their byte string is empty, a walk over zero bytes never fails, and so EOS and the other specials are 'allowed' in every state, also in the middle of a tag.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class TagDispatch:

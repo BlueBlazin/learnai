@@ -1,5 +1,5 @@
 # BUG: backs up at most one token: only the last token is examined, so text that the prompt spells with two tokens and the vocabulary with one (`{` then `"`) keeps its seam.
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def heal(prompt_ids: list[int], vocab: ToyVocab) -> tuple[list[int], bytes]:

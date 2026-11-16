@@ -18,8 +18,8 @@ loop that ignores its cache is told from one that uses it.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import DecoderConfig, decoder_forward_ref, decoder_params, logit_kl, ops
+from learnai.judge import case, check
+from learnai.kit import DecoderConfig, decoder_forward_ref, decoder_params, logit_kl, ops
 
 S1 = "1: quantized checkpoint"
 S2 = "2: forward pass on codes"

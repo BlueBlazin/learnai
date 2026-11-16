@@ -14,7 +14,7 @@ def load_quantized(buf, name, bits, group_size) -> np.ndarray: ...
   `buf[a:b]` returns bytes `a` to `b - 1` as a bytes-like object (`bytes` or a
   `memoryview`) that `np.frombuffer`, `bytes(...)`, and `int.from_bytes` accept. It
   may be a `bytes`, an `mmap.mmap`, or the kit's
-  [`CountingFile`](../../../python/src/whetstone/kit/mlxtools.py), a memory-mapped
+  [`CountingFile`](../../../python/src/learnai/kit/mlxtools.py), a memory-mapped
   file that counts the bytes of every slice taken from it. Use slices only.
 - `name`: the layer, as the model names it, without a suffix: for example
   `"model.layers.0.self_attn.k_proj"`.

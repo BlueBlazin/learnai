@@ -116,7 +116,7 @@ allows token 5.
   cases the test chooses the tokens; a wrong row is reported at the first call that
   produced one.
 - **Cost.** In the model-run cases your processor steers a
-  [`TinyLM`](../../../python/src/whetstone/kit/tinylm.py) by itself (the next token
+  [`TinyLM`](../../../python/src/learnai/kit/tinylm.py) by itself (the next token
   is the argmax of the row you return). The run must open the span, let at most
   `budget` thinking tokens through (reported as `thinking_tokens`), close the span
   with the complete end sequence, and keep the answer inside the mask.

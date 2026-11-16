@@ -15,8 +15,8 @@ unread is computed from the trace: tokens the engine produced minus tokens taken
 
 import bisect
 
-from whetstone.judge import case, check
-from whetstone.kit import CostModel, ProtocolViolation, SimEngine, SimRequest, workloads
+from learnai.judge import case, check
+from learnai.kit import CostModel, ProtocolViolation, SimEngine, SimRequest, workloads
 
 # A step over P prompt tokens and D decoded sequences takes 8 + 0.25 * P + D milliseconds.
 COST = CostModel(base_s=8, prefill_s_per_token=0.25, decode_s_per_seq=1)

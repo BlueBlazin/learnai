@@ -1,7 +1,7 @@
 # BUG: runs an independent cached greedy loop per row instead of one batched call per step; the tokens are right but the number of forward calls is the sum of the row lengths, not the longest row.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def batched_greedy(

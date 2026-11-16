@@ -1,7 +1,7 @@
 # BUG: takes the logits from the first row of the call instead of the last, which is the same row only when one token is fed.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 # The cache: for each layer, (keys, values) of every token read so far, each of shape
 # (n_kv_heads, length, head_dim). Keys are stored already rotated.

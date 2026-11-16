@@ -1,7 +1,7 @@
 # BUG: ignores the cache and runs the whole sequence (prompt plus everything generated) through the model at every step; the tokens are right but the cost is quadratic.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def greedy_decode(

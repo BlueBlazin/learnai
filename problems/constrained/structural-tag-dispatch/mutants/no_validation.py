@@ -1,5 +1,5 @@
 # BUG: the constructor accepts ambiguous configurations (a trigger inside another trigger, a begin without a trigger, a begin that is a prefix of another) instead of raising ValueError.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class TagDispatch:

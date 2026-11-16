@@ -9,8 +9,8 @@ statement's Constraints).
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import ops
+from learnai.judge import case, check
+from learnai.kit import ops
 
 TIGHT = {"rtol": 1e-4, "atol": 1e-4}  # positions below 64
 LOOSE = {"rtol": 1e-3, "atol": 5e-3}  # positions below 2048

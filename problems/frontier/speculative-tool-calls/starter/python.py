@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from whetstone.kit import assemble
+from learnai.kit import assemble
 
 
 async def run_agent(model, tools: dict, messages: list[dict], predictor, max_steps: int) -> list:

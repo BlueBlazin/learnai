@@ -1,7 +1,7 @@
 # BUG: adds both branches to the stream unscaled, as a plain pre-norm block does, instead of multiplying them by 0.263.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 HEAD_DIM = 64
 NORM_EPS = 1e-5

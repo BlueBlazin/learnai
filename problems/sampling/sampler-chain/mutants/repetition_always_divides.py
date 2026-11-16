@@ -1,7 +1,7 @@
 # BUG: divides the logit of every repeated token by the repetition penalty whatever its sign (the formula of the CTRL paper), which makes repeated tokens with negative logits more likely.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def penalize(logits: torch.Tensor, cfg: dict, history: torch.Tensor) -> torch.Tensor:

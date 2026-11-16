@@ -22,7 +22,7 @@ import re
 import mlx.core as mx
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "fused_silu_mul"
 # The tolerances stated in Constraints.

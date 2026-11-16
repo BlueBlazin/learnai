@@ -1,7 +1,7 @@
 # BUG: never jumps in an accepting state: when the output is complete and nothing can follow, EOS is the only permitted token, but the model is still called to 'choose' it.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def jump_forward_decode(

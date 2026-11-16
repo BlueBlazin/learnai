@@ -12,8 +12,8 @@ The matcher is built and called directly on the solution module: its states are
 opaque objects that must not be copied or converted.
 """
 
-from whetstone.judge import case, check
-from whetstone.kit import Grammar, ToyVocab
+from learnai.judge import case, check
+from learnai.kit import Grammar, ToyVocab
 
 LISTS = """
     root  ::= "[" ws (value ("," ws value)*)? "]"

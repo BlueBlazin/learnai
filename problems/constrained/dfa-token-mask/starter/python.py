@@ -1,4 +1,4 @@
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 def allowed_tokens(dfa: CharDFA, state: int, vocab: ToyVocab) -> list[int]:

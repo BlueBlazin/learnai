@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Checkpoint = dict[str, jax.Array]
 Cache = list[tuple[jax.Array, jax.Array]]  # per layer: (keys, values)

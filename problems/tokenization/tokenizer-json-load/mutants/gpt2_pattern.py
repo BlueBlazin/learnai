@@ -3,7 +3,7 @@ import re
 from collections.abc import Callable
 from itertools import pairwise
 
-from whetstone.kit.bpe import GPT2_PATTERN, translate_pattern
+from learnai.kit.bpe import GPT2_PATTERN, translate_pattern
 
 
 def byte_alphabet() -> list[str]:

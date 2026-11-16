@@ -1,5 +1,5 @@
 # BUG: allowed_tokens walks every token from the DFA's start state instead of the current state, so the mask never changes as the output grows.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 def _walk_token(dfa: CharDFA, state: int, token: int, vocab: ToyVocab) -> int:

@@ -11,9 +11,9 @@ asked to do.
 def speculative_greedy(target, draft, prompt, k, max_new_tokens, eos_id): ...
 ```
 
-`target` and `draft` are two [`TinyLM`](../../../python/src/whetstone/kit/tinylm.py)
+`target` and `draft` are two [`TinyLM`](../../../python/src/learnai/kit/tinylm.py)
 models over the same vocabulary, built by
-[`draft_target_pair`](../../../python/src/whetstone/kit/draft.py). Each is called as
+[`draft_target_pair`](../../../python/src/learnai/kit/draft.py). Each is called as
 in `cached-greedy-decode`:
 
 ```python

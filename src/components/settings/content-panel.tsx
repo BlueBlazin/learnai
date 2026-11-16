@@ -9,7 +9,7 @@ export function ContentPanel({ root, issues }: { root: string; issues: CatalogIs
       <PathField path={root} label="Content root" />
       <p className="text-xs text-muted-foreground">
         Solutions are plain files under <code className="selectable font-mono">workspace/</code>. Edit them in
-        any editor; Whetstone re-reads the open file when its window regains focus.
+        any editor; Learn AI re-reads the open file when its window regains focus.
       </p>
       <CatalogIssueList issues={issues} root={root} />
     </div>

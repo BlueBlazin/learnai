@@ -14,7 +14,7 @@ from itertools import pairwise
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 A, B, C, D = ord("a"), ord("b"), ord("c"), ord("d")
 

@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from whetstone.judge import case
+from learnai.judge import case
 
 BOTH = ("softmax", "log_softmax")
 

@@ -1,7 +1,7 @@
 # BUG: enforces the budget by refusing new checkpoints once the store is full (it drops entries from the recent end), so the store keeps stale prefixes and never learns the current conversation.
 import torch
 
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.kit import RecurrentLM, RecurrentState
 
 Store = dict[tuple[int, ...], RecurrentState]
 

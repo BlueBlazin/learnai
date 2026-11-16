@@ -1,7 +1,7 @@
 # BUG: treats the early exit as a separate draft model: verification runs all layers over the drafted positions through a cache of its own, so the early layers are evaluated twice on every position.
 import torch
 
-from whetstone.kit import LayeredLM
+from learnai.kit import LayeredLM
 
 
 def self_speculative_greedy(

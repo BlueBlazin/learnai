@@ -1,7 +1,7 @@
 # BUG: splits from the end of the prompt, so the short chunk comes first instead of last.
 import torch
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def prefill(lm: TinyLM, prompt: list[int], chunk_size: int) -> tuple[torch.Tensor, KVCache]:

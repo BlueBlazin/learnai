@@ -160,7 +160,7 @@ formed at any point.
   $d_c + d_r$ floats per token and sequence, with the shapes above.
 - `absorb` is compared with the reference and by the two identities stated above.
 - You may use `ops.rope` and `ops.softmax` from the kit
-  (`from whetstone.kit import ops`). No Python loops over tokens, heads, or batch
+  (`from learnai.kit import ops`). No Python loops over tokens, heads, or batch
   rows are needed.
 
 ## Why this matters

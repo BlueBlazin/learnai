@@ -1,7 +1,7 @@
 # BUG: pads on the right (with a correct mask and positions for that layout) but still reads the logits from the last column, which holds padding for every sequence shorter than the longest.
 import torch
 
-from whetstone.kit import DecoderConfig, layer_params, ops
+from learnai.kit import DecoderConfig, layer_params, ops
 
 
 def decoder_block(

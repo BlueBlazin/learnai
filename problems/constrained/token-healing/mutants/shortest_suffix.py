@@ -1,5 +1,5 @@
 # BUG: removes the shortest healable suffix instead of the longest: for `{` then `"` only the quote is taken back, and `{"` can never be written as one token.
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def heal(prompt_ids: list[int], vocab: ToyVocab) -> tuple[list[int], bytes]:

@@ -40,7 +40,7 @@ prefix space, and every added token has `lstrip`, `rstrip`, `single_word`, and
    them. Merges never cross a word boundary. The pattern uses `\p{L}` and `\p{N}`,
    which Python's `re` does not know, so compile it with the kit:
    `re.compile(translate_pattern(pattern))`, where `translate_pattern` comes from
-   `whetstone.kit.bpe`. Read the pattern from the file.
+   `learnai.kit.bpe`. Read the pattern from the file.
 3. **Bytes as characters.** Encode the word as UTF-8 and write every byte as one
    character of the ByteLevel alphabet, which is how the vocabulary spells tokens:
    - the 188 bytes `0x21` to `0x7E`, `0xA1` to `0xAC`, and `0xAE` to `0xFF` are written

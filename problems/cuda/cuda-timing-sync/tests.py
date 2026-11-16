@@ -21,9 +21,9 @@ import time
 
 import torch
 
-from whetstone.judge import case, check
-from whetstone.kit import FakeDevice, RealDevice
-from whetstone.kit.counters import Counters
+from learnai.judge import case, check
+from learnai.kit import FakeDevice, RealDevice
+from learnai.kit.counters import Counters
 
 FN = "time_region"
 

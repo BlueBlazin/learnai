@@ -1,7 +1,7 @@
 # BUG: accepts a checkpoint that covers the whole prompt (len(key) <= P instead of < P) and then feeds the last prompt token on top of it to get logits, so the model reads that token twice.
 import torch
 
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.kit import RecurrentLM, RecurrentState
 
 Store = dict[tuple[int, ...], RecurrentState]
 

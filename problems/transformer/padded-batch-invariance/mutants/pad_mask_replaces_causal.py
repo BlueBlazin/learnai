@@ -1,7 +1,7 @@
 # BUG: masks padding keys but drops the causal condition, so tokens attend to the real tokens after them.
 import torch
 
-from whetstone.kit import DecoderConfig, layer_params, ops
+from learnai.kit import DecoderConfig, layer_params, ops
 
 
 def decoder_block(

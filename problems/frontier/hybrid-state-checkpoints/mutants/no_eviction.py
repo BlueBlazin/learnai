@@ -1,7 +1,7 @@
 # BUG: never evicts: the store grows by every checkpoint of every request and ignores max_checkpoints.
 import torch
 
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.kit import RecurrentLM, RecurrentState
 
 Store = dict[tuple[int, ...], RecurrentState]
 

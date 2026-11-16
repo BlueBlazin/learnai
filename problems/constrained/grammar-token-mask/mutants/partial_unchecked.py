@@ -1,5 +1,5 @@
 # BUG: a token that ends inside a character is accepted whenever its bytes begin some character, without asking whether the grammar can read any such character next; half of an emoji is allowed where only a digit may follow.
-from whetstone.kit import Chars, Grammar, Ref, ToyVocab
+from learnai.kit import Chars, Grammar, Ref, ToyVocab
 
 
 def _code_points(data: bytes) -> tuple[int, int] | None:

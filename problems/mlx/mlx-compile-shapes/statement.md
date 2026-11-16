@@ -13,7 +13,7 @@ def make_sampler_step(model, state, penalty): ...  # returns step
 token = step(prompt)
 ```
 
-`model` is an [`MLXTinyLM`](../../../python/src/whetstone/kit/mlxlm.py), called on a
+`model` is an [`MLXTinyLM`](../../../python/src/learnai/kit/mlxlm.py), called on a
 whole prompt:
 
 ```python

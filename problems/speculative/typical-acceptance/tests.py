@@ -12,7 +12,7 @@ JAX compiles per shape, so the cases share (4, 4), (5, 8), and (9, 32).
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "typical_accept"
 

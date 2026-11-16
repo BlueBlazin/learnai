@@ -1,7 +1,7 @@
 # BUG: runs the target on the whole sequence in every round instead of continuing from its cache: the right tokens at a cost that grows quadratically.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def speculative_greedy(

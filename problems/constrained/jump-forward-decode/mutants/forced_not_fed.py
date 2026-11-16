@@ -1,7 +1,7 @@
 # BUG: forced tokens are appended to the output but never fed to the model: the next free step's call contains only the previous free token, so its logits are for a sequence without the forced run.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def jump_forward_decode(

@@ -1,6 +1,6 @@
 import mlx.core as mx
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def generate_with_store(

@@ -1,6 +1,6 @@
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 
 @case("a 3-4-5 triangle", public=True)

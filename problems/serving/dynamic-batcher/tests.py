@@ -10,7 +10,7 @@ checked twice: against invariants computed here from the statement, and against 
 oracle's trace.
 """
 
-from whetstone.judge import CheckFailure, case, check
+from learnai.judge import CheckFailure, case, check
 
 DONE, ARRIVAL, TIMER = 0, 1, 2  # delivery order of events that share an instant
 MAX_EVENTS = 100_000

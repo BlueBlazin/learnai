@@ -1,7 +1,7 @@
 # BUG: quantize_mixed quantizes every matrix to 4 bits, the embedding included.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

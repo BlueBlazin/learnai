@@ -1,7 +1,7 @@
 # BUG: the exit state goes into the shared head without the final norm (lm.head(h) instead of lm.head(lm.norm(h))), so the drafts are not the early exit's real predictions; the output stays correct and the rounds multiply.
 import torch
 
-from whetstone.kit import LayeredLM
+from learnai.kit import LayeredLM
 
 
 def self_speculative_greedy(

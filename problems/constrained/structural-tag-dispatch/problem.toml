@@ -12,7 +12,7 @@ entry = ["TagDispatch"]
 time_limit_s = 5
 # The statement's rule, enforced by the harness: the DFA's test oracles are off limits.
 forbidden = [
-    "whetstone.kit.dfa.CharDFA.accepts",
-    "whetstone.kit.dfa.CharDFA.accepts_prefix",
-    "whetstone.kit.dfa.CharDFA.is_live",
+    "learnai.kit.dfa.CharDFA.accepts",
+    "learnai.kit.dfa.CharDFA.accepts_prefix",
+    "learnai.kit.dfa.CharDFA.is_live",
 ]

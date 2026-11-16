@@ -13,8 +13,8 @@ the solution's row, and the test counts the thinking tokens the solution let thr
 
 import numpy as np
 
-from whetstone.judge import CheckFailure, case, check
-from whetstone.kit import TinyLM
+from learnai.judge import CheckFailure, case, check
+from learnai.kit import TinyLM
 
 FN = "budget_step"
 V = 8

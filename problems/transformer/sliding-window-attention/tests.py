@@ -8,7 +8,7 @@ have no influence on its output.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 MASK = "window_mask"
 ATTN = "sliding_window_attention"

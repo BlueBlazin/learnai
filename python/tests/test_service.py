@@ -7,7 +7,7 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from starlette.routing import Route
 
-from whetstone.judge import CheckFailure, SSEEvent, iter_sse, parse_sse, read_sse, serve
+from learnai.judge import CheckFailure, SSEEvent, iter_sse, parse_sse, read_sse, serve
 
 
 def make_app(gate: threading.Event | None = None) -> Starlette:
@@ -91,7 +91,7 @@ def test_serve_runs_the_app_on_an_ephemeral_port_and_shuts_down():
         assert client.get("/missing").status_code == 404
         assert port_is_open(port)
     assert not port_is_open(port)
-    assert not [t for t in threading.enumerate() if t.name == "whetstone-app"]
+    assert not [t for t in threading.enumerate() if t.name == "learnai-app"]
 
 
 def test_two_servers_get_different_ports():

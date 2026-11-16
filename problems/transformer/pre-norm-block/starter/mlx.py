@@ -1,6 +1,6 @@
 import mlx.core as mx
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def block(x: mx.array, params: dict[str, mx.array], mask: mx.array) -> mx.array:

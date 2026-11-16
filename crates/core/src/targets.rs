@@ -5,7 +5,7 @@
 //! is stored, because `ssh` reads those from the user's own configuration every time.
 //!
 //! A check is the bootstrap of a target, one step at a time: connect, find uv, copy
-//! `python/`, build the environment, and run `ws doctor --json`. It streams
+//! `python/`, build the environment, and run `learnai doctor --json`. It streams
 //! [`TargetCheckEvent`]s, always finishes with exactly one `done` event, and saves the
 //! result as the target's `lastCheck`.
 
@@ -41,7 +41,7 @@ const LOCAL_CHECK_SETTING: &str = "local_check";
 /// How long building the remote environment may take (a first build downloads Python
 /// and PyTorch).
 const ENVIRONMENT_LIMIT: Duration = Duration::from_secs(1800);
-/// How long `ws doctor` may take.
+/// How long `learnai doctor` may take.
 const DOCTOR_LIMIT: Duration = Duration::from_secs(180);
 
 /// An SSH target as stored in the settings table.
@@ -67,7 +67,7 @@ impl StoredTarget {
     }
 }
 
-/// `ws doctor --json` as the CLI prints it (PROBLEM_AUTHORING section 19). Keys core
+/// `learnai doctor --json` as the CLI prints it (PROBLEM_AUTHORING section 19). Keys core
 /// does not use, and keys added later, are ignored.
 #[derive(Debug, Deserialize)]
 struct WireDoctor {
@@ -98,7 +98,7 @@ struct WireHardware {
     memory_bytes: Option<u64>,
 }
 
-/// Parses the document `ws doctor --json` prints (indented over several lines).
+/// Parses the document `learnai doctor --json` prints (indented over several lines).
 /// Anything printed before it is skipped.
 pub(crate) fn parse_doctor(stdout: &str) -> Option<RemoteDoctor> {
     // The document starts at a `{` that opens a line and runs to the last `}`.
@@ -203,7 +203,7 @@ impl Targets {
     }
 
     /// `add_target`: registers the SSH host `host`, which must be an alias from the
-    /// user's SSH configuration, working in `remote_dir` (default `~/.whetstone`).
+    /// user's SSH configuration, working in `remote_dir` (default `~/.learnai`).
     pub fn add(&self, host: &str, remote_dir: Option<&str>) -> Result<Vec<TargetInfo>> {
         if !is_host_alias(host) || !self.hosts().iter().any(|known| known.alias == host) {
             return Err(CoreError::InvalidArgument(format!(
@@ -363,7 +363,7 @@ impl Targets {
                 CheckStepId::Uv,
                 "uv was not found on this computer.",
                 Some(format!(
-                    "Install it with uv's official installer, then reopen Whetstone: {}",
+                    "Install it with uv's official installer, then reopen Learn AI: {}",
                     crate::ssh::UV_INSTALL_COMMAND
                 )),
             );
@@ -373,9 +373,9 @@ impl Targets {
 
         let mut spec = uv.run_no_sync();
         spec.args
-            .extend(["ws".into(), "doctor".into(), "--json".into()]);
+            .extend(["learnai".into(), "doctor".into(), "--json".into()]);
         spec.envs
-            .push(("WHETSTONE_ROOT".into(), self.root.clone().into()));
+            .push(("LEARNAI_ROOT".into(), self.root.clone().into()));
         let process = match LocalProcess::spawn(&spec) {
             Ok(process) => process,
             Err(error) => {
@@ -465,7 +465,7 @@ impl Targets {
         }
 
         let process = match session.uv_run(&[], true).and_then(|mut command| {
-            command.extend(["ws", "doctor", "--json"].map(str::to_owned));
+            command.extend(["learnai", "doctor", "--json"].map(str::to_owned));
             session.spawn(&command)
         }) {
             Ok(process) => process,
@@ -607,7 +607,7 @@ impl<'a> CheckRun<'a> {
         self.fail(id, failure.message, failure.fix);
     }
 
-    /// Runs `ws doctor --json` (already started as `process`) and records its report.
+    /// Runs `learnai doctor --json` (already started as `process`) and records its report.
     fn doctor(&mut self, process: impl Process, fix: Option<String>) {
         let output = stream(process, DOCTOR_LIMIT, false, |line| {
             self.log(line.to_owned())
@@ -659,7 +659,7 @@ mod tests {
     const DOCTOR: &str = r#"warning: something on stdout
 {
   "schema": 1,
-  "whetstone": "0.1.0",
+  "learnai": "0.1.0",
   "python": "3.15.2",
   "executable": "/abs/path/python/.venv/bin/python3",
   "platform": {"system": "Linux", "machine": "x86_64", "release": "6.8.0"},
@@ -674,7 +674,7 @@ mod tests {
   },
   "hardware_override": null,
   "root": "/abs/content/root",
-  "models_dir": "/abs/content/root/.whetstone/models"
+  "models_dir": "/abs/content/root/.learnai/models"
 }
 "#;
 

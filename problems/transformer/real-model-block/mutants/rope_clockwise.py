@@ -1,7 +1,7 @@
 # BUG: rotates the other way: (a, b) -> (b, -a) instead of (-b, a), which reverses the sign of every relative position.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 HEAD_DIM = 64
 NORM_EPS = 1e-5

@@ -13,8 +13,8 @@ depend on the solution's `absorb`; the end-to-end cases use the solution's.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import ops
+from learnai.judge import case, check
+from learnai.kit import ops
 
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints
 

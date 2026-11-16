@@ -13,7 +13,7 @@ time_limit_s = 5
 
 [[assets]]
 name = "tiny-test-model"
-repo = "whetstone-tests/tiny-test-model"
+repo = "learnai-tests/tiny-test-model"
 revision = "0123456789abcdef0123456789abcdef01234567"
 files = ["config.json", "*.safetensors"]
 size_mb = 0.01

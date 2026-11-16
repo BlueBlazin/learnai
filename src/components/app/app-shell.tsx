@@ -51,7 +51,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         <span className="font-serif text-md font-medium tracking-tight italic">
           <AppLink to={routes.home()} tone="quiet">
-            Whetstone
+            Learn AI
           </AppLink>
         </span>
         <nav aria-label="Main" className="flex items-center gap-4">

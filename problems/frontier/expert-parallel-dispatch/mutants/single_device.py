@@ -2,7 +2,7 @@
 import numpy as np
 import torch
 
-from whetstone.kit import CountingExperts, SimDevices
+from learnai.kit import CountingExperts, SimDevices
 
 
 def ep_forward(

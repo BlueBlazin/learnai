@@ -1,5 +1,5 @@
 # BUG: tokens whose bytes are not valid UTF-8 on their own (a piece of a multi-byte character) are treated as unusable and never allowed, so characters split across tokens cannot be generated.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 def _walk_token(dfa: CharDFA, state: int, token: int, vocab: ToyVocab) -> int:

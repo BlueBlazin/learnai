@@ -11,8 +11,8 @@ The server drains 1024 prompt tokens per second and arrivals fall on a 1/1024 s 
 so every time in the simulation is exact.
 """
 
-from whetstone.judge import case, check
-from whetstone.kit import SimRequest, workloads
+from learnai.judge import case, check
+from learnai.kit import SimRequest, workloads
 
 DRAIN = 1024.0  # prompt tokens per second, a power of two
 

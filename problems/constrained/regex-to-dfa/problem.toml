@@ -12,9 +12,9 @@ entry = ["compile_regex"]
 time_limit_s = 5
 # The statement's rule, enforced by the harness: the kit's own regex compiler is off limits.
 forbidden = [
-    "whetstone.kit.dfa.CharDFA.from_regex",
-    "whetstone.kit.dfa._Parser",
-    "whetstone.kit.dfa._NFA",
-    "whetstone.kit.dfa._determinize",
-    "whetstone.kit.dfa._minimize",
+    "learnai.kit.dfa.CharDFA.from_regex",
+    "learnai.kit.dfa._Parser",
+    "learnai.kit.dfa._NFA",
+    "learnai.kit.dfa._determinize",
+    "learnai.kit.dfa._minimize",
 ]

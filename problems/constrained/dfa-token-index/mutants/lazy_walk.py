@@ -1,5 +1,5 @@
 # BUG: build_index only stores the DFA and the vocabulary; every query walks the tokens through the DFA again, so nothing is precomputed and each mask costs DFA steps.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 def build_index(dfa: CharDFA, vocab: ToyVocab):

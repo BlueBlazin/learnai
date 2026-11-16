@@ -14,7 +14,7 @@ import math
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 T, F = True, False
 THRESHOLDS = (0.0, 0.25, 0.4, 0.5, 0.7)

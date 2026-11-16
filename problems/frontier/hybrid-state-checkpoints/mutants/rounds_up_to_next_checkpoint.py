@@ -1,7 +1,7 @@
 # BUG: when a longer stored entry shares more tokens with the prompt than the deepest usable checkpoint, it resumes from the shortest such entry: the nearest state after the point where the prompts part instead of the nearest at or before it.
 import torch
 
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.kit import RecurrentLM, RecurrentState
 
 Store = dict[tuple[int, ...], RecurrentState]
 

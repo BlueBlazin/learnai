@@ -5,11 +5,11 @@ import textwrap
 import numpy as np
 import pytest
 
-from whetstone.kit import CountingFile, TraceCounter
+from learnai.kit import CountingFile, TraceCounter
 
 mx = pytest.importorskip("mlx.core")
 
-from whetstone.kit import EvalSpy, MLXTinyLM, mlx_memory
+from learnai.kit import EvalSpy, MLXTinyLM, mlx_memory
 
 SOLUTION = textwrap.dedent(
     """
@@ -312,9 +312,9 @@ def test_compare_speed_times_a_compiled_step_after_warmup(solution):
     warmup absorb the trace, force what the callable returns."""
     from conftest import fixture_problem
 
-    from whetstone.judge.context import make_context
-    from whetstone.judge.registry import Case
-    from whetstone.problem import load_problem
+    from learnai.judge.context import make_context
+    from learnai.judge.registry import Case
+    from learnai.problem import load_problem
 
     case = Case(id="unit", name="unit", public=True, fn=lambda ctx: None)
     ctx = make_context(

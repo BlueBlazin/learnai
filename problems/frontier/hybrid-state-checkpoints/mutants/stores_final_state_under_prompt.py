@@ -1,7 +1,7 @@
 # BUG: saves the end-of-prompt checkpoint after generation, when the state already contains the generated tokens: the key says 'the prompt' and the state is of a longer sequence.
 import torch
 
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.kit import RecurrentLM, RecurrentState
 
 Store = dict[tuple[int, ...], RecurrentState]
 

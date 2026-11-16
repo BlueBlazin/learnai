@@ -5,8 +5,8 @@ every prefix of every choice and on sequences that leave the trie. The trie itse
 opaque: the tests only hand it back to `allowed_next`.
 """
 
-from whetstone.judge import case, check
-from whetstone.kit import ToyVocab
+from learnai.judge import case, check
+from learnai.kit import ToyVocab
 
 # The worked example of the statement. 7 = "yes", 12 = " please", 9 = "no", 4 = "t",
 # 3 = " sure"; EOS is 10.

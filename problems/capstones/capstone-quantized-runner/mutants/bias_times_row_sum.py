@@ -1,7 +1,7 @@
 # BUG: the quantized matmul multiplies every group bias by the sum of the whole input row, not by the sum of its own group.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

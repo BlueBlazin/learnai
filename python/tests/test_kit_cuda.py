@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 
-from whetstone.kit import (
+from learnai.kit import (
     CompileCounter,
     DeviceSpy,
     FakeCudaGraph,

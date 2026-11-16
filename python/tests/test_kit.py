@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from whetstone.judge import frameworks
-from whetstone.kit import Counters, KVCache, TinyLM
+from learnai.judge import frameworks
+from learnai.kit import Counters, KVCache, TinyLM
 
 PROMPT = [0, 5, 9, 33, 2, 7]
 

@@ -1,7 +1,7 @@
 # BUG: writes an expert's outputs back to a contiguous block of rows starting at its first token, which is only right when the tokens routed to that expert are adjacent.
 import torch
 
-from whetstone.kit import CountingExperts
+from learnai.kit import CountingExperts
 
 
 def moe_sparse(

@@ -5,7 +5,7 @@ and, in the property-style sweep, with the definition itself (the answer fits, o
 more does not). All results are exact integers.
 """
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 DTYPES = ("float32", "float16", "bfloat16", "int8")
 ITEMSIZE = {"float32": 4, "float16": 2, "bfloat16": 2, "int8": 1}

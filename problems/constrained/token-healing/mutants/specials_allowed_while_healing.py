@@ -1,5 +1,5 @@
 # BUG: special tokens are not excluded while text is missing; their byte string is empty, and the empty string is a prefix of everything, so EOS is allowed before the prompt's text is restored.
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def heal(prompt_ids: list[int], vocab: ToyVocab) -> tuple[list[int], bytes]:

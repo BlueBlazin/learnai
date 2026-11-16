@@ -7,7 +7,7 @@ tens to hundreds of times slower than one batched scatter.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "apply_repetition_penalty"
 

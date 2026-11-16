@@ -1,7 +1,7 @@
 # BUG: checks whether all rows have finished only after the next forward call, so one batched call is spent after every row is done.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def batched_greedy(

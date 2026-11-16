@@ -1,7 +1,7 @@
 # BUG: the embedding lookup dequantizes a whole row with the scale and bias of its first group.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

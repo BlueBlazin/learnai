@@ -1,7 +1,7 @@
 # BUG: charges the presence penalty once per occurrence, like the frequency penalty, instead of once per distinct token.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def penalize(logits: torch.Tensor, cfg: dict, history: torch.Tensor) -> torch.Tensor:

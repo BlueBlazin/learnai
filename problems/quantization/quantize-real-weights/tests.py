@@ -24,8 +24,8 @@ import math
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import RealModel
+from learnai.judge import case, check
+from learnai.kit import RealModel
 
 ASSET = "granite-4.0-350m"
 REVISION = "bd8a1497065c0d6ba1ef19af6b0d2b14bacf71c2"
@@ -319,7 +319,7 @@ class Quantized:
 
 
 def real_kl(ctx, bits):
-    from whetstone.kit import RealLM
+    from learnai.kit import RealLM
 
     model, _, fixture = granite(ctx)
     ids = [int(t) for t in fixture["ids"]]

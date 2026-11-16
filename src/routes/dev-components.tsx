@@ -292,7 +292,7 @@ def softmax(logits: torch.Tensor, dim: int = -1) -> torch.Tensor:
 `;
 
 const TRACEBACK = `Traceback (most recent call last):
-  File "whetstone/harness/runner.py", line 212, in run_case
+  File "learnai/harness/runner.py", line 212, in run_case
     outcome = case.check(solution)
   File "workspace/scaled-dot-product-attention/torch.py", line 9, in attention
     weights = scores.softmax(dim=-1) @ v
@@ -358,7 +358,7 @@ const SKIPPED_FOR_ASSET = [
       status: "skipped",
       durationMs: 0,
       message:
-        "skipped: model asset `granite-4.2-3b-mlx-8bit` (lmstudio-community/granite-4.2-3b-MLX-8bit, about 3.9 GB) is not downloaded; fetch it with `ws assets fetch granite-4.2-3b-mlx-8bit`",
+        "skipped: model asset `granite-4.2-3b-mlx-8bit` (lmstudio-community/granite-4.2-3b-MLX-8bit, about 3.9 GB) is not downloaded; fetch it with `learnai assets fetch granite-4.2-3b-mlx-8bit`",
       skip: { kind: "asset", asset: "granite-4.2-3b-mlx-8bit" },
     }),
   },
@@ -374,7 +374,7 @@ const SKIPPED_FOR_ASSET = [
       status: "skipped",
       durationMs: 0,
       message:
-        "skipped: model asset `granite-4.2-3b-mlx-8bit` (lmstudio-community/granite-4.2-3b-MLX-8bit, about 3.9 GB) is not downloaded; fetch it with `ws assets fetch granite-4.2-3b-mlx-8bit`",
+        "skipped: model asset `granite-4.2-3b-mlx-8bit` (lmstudio-community/granite-4.2-3b-MLX-8bit, about 3.9 GB) is not downloaded; fetch it with `learnai assets fetch granite-4.2-3b-mlx-8bit`",
       skip: { kind: "asset", asset: "granite-4.2-3b-mlx-8bit" },
     }),
   },
@@ -485,7 +485,7 @@ const RUN_STATES: { name: string; state: RunState }[] = [
         },
       ],
       message:
-        "2 of 2 cases that could run passed; 2 of 4 cases were skipped because a model asset is not downloaded: `granite-4.2-3b-mlx-8bit` (lmstudio-community/granite-4.2-3b-MLX-8bit, about 3.9 GB). Fetch with `ws assets fetch granite-4.2-3b-mlx-8bit`, then run again.",
+        "2 of 2 cases that could run passed; 2 of 4 cases were skipped because a model asset is not downloaded: `granite-4.2-3b-mlx-8bit` (lmstudio-community/granite-4.2-3b-MLX-8bit, about 3.9 GB). Fetch with `learnai assets fetch granite-4.2-3b-mlx-8bit`, then run again.",
     }),
   },
   {
@@ -685,7 +685,7 @@ const STAGED_SUBMISSION: SubmissionDetail = {
 };
 
 const MODELS: AssetList = {
-  modelsDir: "/Users/ada/Developer/whetstone/.whetstone/models",
+  modelsDir: "/Users/ada/Developer/learnai/.learnai/models",
   assets: [
     {
       name: "granite-4.0-1b",
@@ -695,7 +695,7 @@ const MODELS: AssetList = {
       sizeMb: 1630,
       state: "incomplete",
       reason: "not downloaded yet: model.safetensors",
-      path: "/Users/ada/Developer/whetstone/.whetstone/models/granite-4.0-1b",
+      path: "/Users/ada/Developer/learnai/.learnai/models/granite-4.0-1b",
       bytesOnDisk: 7_156_949,
       problems: ["c"],
     },
@@ -707,7 +707,7 @@ const MODELS: AssetList = {
       sizeMb: 712,
       state: "present",
       reason: null,
-      path: "/Users/ada/Developer/whetstone/.whetstone/models/granite-4.0-350m",
+      path: "/Users/ada/Developer/learnai/.learnai/models/granite-4.0-350m",
       bytesOnDisk: 711_966_212,
       problems: ["a", "scaled-dot-product-attention"],
     },
@@ -719,7 +719,7 @@ const MODELS: AssetList = {
       sizeMb: 3900,
       state: "missing",
       reason: null,
-      path: "/Users/ada/Developer/whetstone/.whetstone/models/granite-4.2-3b-mlx-8bit",
+      path: "/Users/ada/Developer/learnai/.learnai/models/granite-4.2-3b-mlx-8bit",
       bytesOnDisk: 0,
       problems: ["d"],
     },
@@ -770,14 +770,14 @@ const TARGET_NEW: TargetInfo = {
   kind: "ssh",
   label: "lab-a100",
   host: "lab-a100",
-  remoteDir: "~/.whetstone",
+  remoteDir: "~/.learnai",
   lastCheck: null,
 };
 const CHECK_RUNNING: TargetCheckState = {
   running: true,
   steps: (TARGET_HEALTHY.lastCheck?.steps ?? []).slice(0, 3),
   log: [
-    "$ /home/ada/.local/bin/uv sync --inexact --project /home/ada/.whetstone/root/python",
+    "$ /home/ada/.local/bin/uv sync --inexact --project /home/ada/.learnai/root/python",
     "Resolved 61 packages in 12ms",
   ],
   result: null,
@@ -971,10 +971,10 @@ function DevComponentsScreen() {
         <Specimen name="ThemePicker, PathField, ContentPanel">
           <div className="flex max-w-measure flex-col gap-3">
             <ThemePicker value={theme} onChange={setTheme} />
-            <ContentPanel root="/Users/ada/Developer/whetstone" issues={[]} />
+            <ContentPanel root="/Users/ada/Developer/learnai" issues={[]} />
             <PathField
               label="Content root"
-              path="/Users/ada/Developer/whetstone/a/very/long/path/that/keeps/going/and/going/until/it/truncates"
+              path="/Users/ada/Developer/learnai/a/very/long/path/that/keeps/going/and/going/until/it/truncates"
             />
           </div>
         </Specimen>
@@ -1412,7 +1412,7 @@ function DevComponentsScreen() {
               env={{
                 uv: "0.13.8",
                 python: "3.15.2",
-                root: "/Users/ada/Developer/whetstone",
+                root: "/Users/ada/Developer/learnai",
                 frameworks: [
                   { framework: "torch", installed: true, version: "2.15.0" },
                   { framework: "mlx", installed: false, version: null },
@@ -1430,7 +1430,7 @@ function DevComponentsScreen() {
               env={{
                 uv: null,
                 python: null,
-                root: "/Users/ada/Developer/whetstone",
+                root: "/Users/ada/Developer/learnai",
                 frameworks: [{ framework: "jax", installed: false, version: null }],
               }}
               install={{
@@ -1832,14 +1832,14 @@ function DevComponentsScreen() {
         <Specimen name="CatalogIssueList: closed by default; nothing when the catalog is clean">
           <div className="max-w-measure">
             <CatalogIssueList
-              root="/Users/ada/Developer/whetstone"
+              root="/Users/ada/Developer/learnai"
               issues={[
                 {
-                  path: "/Users/ada/Developer/whetstone/problems/sampling/min-p-draft/problem.toml",
+                  path: "/Users/ada/Developer/learnai/problems/sampling/min-p-draft/problem.toml",
                   message: "missing starter/torch.py",
                 },
                 {
-                  path: "/Users/ada/Developer/whetstone/problems/serving/track.toml",
+                  path: "/Users/ada/Developer/learnai/problems/serving/track.toml",
                   message: "missing field `title`",
                 },
               ]}
@@ -1887,7 +1887,7 @@ function DevComponentsScreen() {
             <ScreenMessage>
               <ErrorState
                 title="There is no such screen"
-                error="The address does not match any part of Whetstone."
+                error="The address does not match any part of Learn AI."
               />
             </ScreenMessage>
           </div>

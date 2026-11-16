@@ -9,8 +9,8 @@ import re
 import numpy as np
 import pytest
 
-from whetstone.judge import SimClock, frameworks, percentile
-from whetstone.kit import (
+from learnai.judge import SimClock, frameworks, percentile
+from learnai.kit import (
     Chars,
     ChatProtocolError,
     ClusterError,

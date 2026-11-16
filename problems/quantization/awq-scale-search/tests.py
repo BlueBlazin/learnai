@@ -14,7 +14,7 @@ layouts.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 GAP = 1.02
 AWQ_GRID = (np.arange(20) / 20).astype(np.float32)  # 0, 0.05, ..., 0.95

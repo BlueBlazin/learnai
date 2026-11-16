@@ -1,7 +1,7 @@
 # BUG: saves checkpoints only while reading the prompt; the states the model passes through while generating are thrown away, so a follow-up turn has to re-read the whole reply.
 import torch
 
-from whetstone.kit import RecurrentLM, RecurrentState
+from learnai.kit import RecurrentLM, RecurrentState
 
 Store = dict[tuple[int, ...], RecurrentState]
 

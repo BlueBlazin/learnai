@@ -23,7 +23,7 @@ import mlx.core as mx
 import numpy as np
 from mlx.utils import tree_flatten
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 MIB = 2**20
 KEYS = {"result", "peak_bytes", "active_bytes", "cache_bytes"}

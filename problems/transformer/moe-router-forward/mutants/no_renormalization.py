@@ -1,7 +1,7 @@
 # BUG: keeps the top-k softmax probabilities as they are, without dividing by their sum, so the weights of a token add up to less than 1.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def moe(

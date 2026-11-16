@@ -1,7 +1,7 @@
 # BUG: uses the gain of input_layernorm for both sublayers; the MLP must read the stream through post_attention_layernorm.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def attn(h: torch.Tensor, params: dict[str, torch.Tensor], mask: torch.Tensor) -> torch.Tensor:

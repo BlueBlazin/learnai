@@ -6,11 +6,11 @@ import numpy as np
 import pytest
 from conftest import fixture_problem
 
-from whetstone.judge import CheckFailure, frameworks
-from whetstone.judge.context import make_context
-from whetstone.judge.registry import Case, load_cases
-from whetstone.kit import TinyLM
-from whetstone.problem import load_problem
+from learnai.judge import CheckFailure, frameworks
+from learnai.judge.context import make_context
+from learnai.judge.registry import Case, load_cases
+from learnai.kit import TinyLM
+from learnai.problem import load_problem
 
 
 def context_for(problem_name, framework, solution=None, case_id="unit"):
@@ -144,7 +144,7 @@ def test_deferred_cleanups_run_in_reverse_and_never_raise():
 def test_case_registration_rules(tmp_path):
     tests = tmp_path / "tests.py"
     tests.write_text(
-        "from whetstone.judge import case\n"
+        "from learnai.judge import case\n"
         "@case('first', public=True)\n"
         "def b(ctx): pass\n"
         "@case('second', id='custom-id', time_limit_s=2.5, frameworks=['torch'])\n"
@@ -155,7 +155,7 @@ def test_case_registration_rules(tmp_path):
     assert (second.id, second.public, second.time_limit_s) == ("custom-id", False, 2.5)
     assert second.applies_to("torch") and not second.applies_to("mlx")
     tests.write_text(
-        "from whetstone.judge import case\n"
+        "from learnai.judge import case\n"
         "@case('x')\ndef same(ctx): pass\n"
         "@case('y', id='same')\ndef other(ctx): pass\n"
     )

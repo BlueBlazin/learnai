@@ -8,8 +8,8 @@ order: the returned logits (against the whole prompt in one call), the returned 
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import KVCache, TinyLM
+from learnai.judge import case, check
+from learnai.kit import KVCache, TinyLM
 
 FN = "prefill"
 

@@ -3,7 +3,7 @@
     uv run --project python --extra jax --extra mlx --extra models \
         python problems/tokenization/real-model-chat-turn/fixtures/make.py
 
-Needs the small house model on disk (``ws assets fetch granite-4.0-350m``) and the
+Needs the small house model on disk (``learnai assets fetch granite-4.0-350m``) and the
 ``models`` extra. The reference implementations are ``transformers`` (the model's own
 Jinja chat template through ``apply_chat_template``, and greedy ``generate`` in
 float32 on the CPU) and ``tokenizers``.
@@ -30,10 +30,10 @@ import torch
 from tokenizers import Tokenizer, models, pre_tokenizers, trainers
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from whetstone import assets
-from whetstone.kit import ByteLevelBPE
-from whetstone.kit.realmodel import SMALL
-from whetstone.problem import find_root
+from learnai import assets
+from learnai.kit import ByteLevelBPE
+from learnai.kit.realmodel import SMALL
+from learnai.problem import find_root
 
 HERE = Path(__file__).parent
 STOP = "<|end_of_text|>"

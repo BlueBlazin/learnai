@@ -7,8 +7,8 @@ Literal expectations are built from `vocab.encode` of the runs; everything else 
 compared with the oracle, including whether a ValueError is raised.
 """
 
-from whetstone.judge import case, check
-from whetstone.kit import ToyVocab
+from learnai.judge import case, check
+from learnai.kit import ToyVocab
 
 IM_START, IM_END, EOS, BOS, PAD = "<|im_start|>", "<|im_end|>", "<|eos|>", "<|bos|>", "<|pad|>"
 

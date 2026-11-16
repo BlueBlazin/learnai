@@ -9,7 +9,7 @@ float32 in any order of evaluation.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "moe"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints

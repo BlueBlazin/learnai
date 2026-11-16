@@ -5,7 +5,7 @@ import uuid
 from dataclasses import dataclass
 from typing import NamedTuple
 
-from whetstone.kit import DEAD, CharDFA
+from learnai.kit import DEAD, CharDFA
 
 PATH = "/v1/chat/completions"
 ROLES = ("system", "user", "assistant")

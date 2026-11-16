@@ -12,8 +12,8 @@ small integers, whose products and sums are exact in float32 in any order.
 
 import numpy as np
 
-from whetstone.judge import case, check
-from whetstone.kit import CountingExperts, TinyMoE, moe_dense_ref, moe_route_ref
+from learnai.judge import case, check
+from learnai.kit import CountingExperts, TinyMoE, moe_dense_ref, moe_route_ref
 
 FN = "moe_sparse"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints

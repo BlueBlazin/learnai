@@ -1,5 +1,5 @@
 # BUG: the next token must start with all of the remaining text; a shorter token that is a prefix of it (`t` when `tru` remains) is forbidden, so the model cannot restore the text in several tokens.
-from whetstone.kit import ToyVocab
+from learnai.kit import ToyVocab
 
 
 def heal(prompt_ids: list[int], vocab: ToyVocab) -> tuple[list[int], bytes]:

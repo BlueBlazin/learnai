@@ -1,7 +1,7 @@
 # BUG: weights the experts by their probabilities under the softmax over all experts, without rescaling the k kept ones to sum to 1.
 import torch
 
-from whetstone.kit import CountingExperts
+from learnai.kit import CountingExperts
 
 
 def moe_sparse(

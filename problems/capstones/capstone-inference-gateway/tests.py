@@ -17,8 +17,8 @@ import asyncio
 from collections import deque
 from dataclasses import dataclass, replace
 
-from whetstone.judge import case, check
-from whetstone.kit import CostModel, SimCluster, SimRequest, workloads
+from learnai.judge import case, check
+from learnai.kit import CostModel, SimCluster, SimRequest, workloads
 
 S1 = "1: admission control"
 S2 = "2: least-loaded routing"

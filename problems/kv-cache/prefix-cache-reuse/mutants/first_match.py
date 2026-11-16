@@ -1,7 +1,7 @@
 # BUG: takes the first entry that shares any prefix with the prompt instead of the one that shares the longest.
 import torch
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def common_prefix_len(a, b) -> int:

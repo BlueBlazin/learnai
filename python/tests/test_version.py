@@ -1,5 +1,5 @@
-import whetstone
+import learnai
 
 
 def test_version() -> None:
-    assert whetstone.__version__
+    assert learnai.__version__

@@ -1,7 +1,7 @@
 # BUG: runs the model before looking at what the constraint permits, so a step at which nothing is permitted still costs a forward call.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def constrained_greedy(

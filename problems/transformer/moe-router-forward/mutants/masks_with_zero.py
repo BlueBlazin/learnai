@@ -1,7 +1,7 @@
 # BUG: takes the softmax after the top-k selection but fills the unselected logits with 0 instead of -inf, so unselected experts keep a positive weight.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def moe(

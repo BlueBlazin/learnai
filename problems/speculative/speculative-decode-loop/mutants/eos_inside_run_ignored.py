@@ -1,7 +1,7 @@
 # BUG: checks only the last token of a round for EOS, so an EOS among the accepted draft tokens is emitted and generation carries on past it.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def speculative_greedy(

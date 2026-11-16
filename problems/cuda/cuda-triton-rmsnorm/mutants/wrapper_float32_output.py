@@ -1,7 +1,7 @@
 # BUG: the wrapper always allocates a float32 output; float16 activations come back at twice their size.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

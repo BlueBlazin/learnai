@@ -1,5 +1,5 @@
 # BUG: the range of code points behind a partial character is computed from the payload bits alone, without excluding overlong encodings, surrogates, and values above U+10FFFF, so byte sequences that begin no character at all are allowed inside a negated character set.
-from whetstone.kit import Chars, Grammar, Ref, ToyVocab
+from learnai.kit import Chars, Grammar, Ref, ToyVocab
 
 
 def _code_points(data: bytes) -> tuple[int, int] | None:

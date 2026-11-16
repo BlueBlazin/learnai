@@ -101,7 +101,7 @@ struct Scratch(PathBuf);
 
 impl Scratch {
     fn create(dir: &Path, suffix: &str) -> io::Result<(Self, File)> {
-        let path = dir.join(format!("whetstone-{}.{suffix}", uuid::Uuid::new_v4()));
+        let path = dir.join(format!("learnai-{}.{suffix}", uuid::Uuid::new_v4()));
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -199,14 +199,14 @@ pub(crate) struct RemoteHost {
     pub machine: String,
 }
 
-/// Reads the probe's `ws-<key>=<value>` lines; anything else is ignored.
+/// Reads the probe's `learnai-<key>=<value>` lines; anything else is ignored.
 pub(crate) fn parse_probe(stdout: &str) -> Option<RemoteHost> {
     let mut host = RemoteHost::default();
     let mut found_home = false;
     for line in stdout.lines() {
         let Some((key, value)) = line
             .trim()
-            .strip_prefix("ws-")
+            .strip_prefix("learnai-")
             .and_then(|l| l.split_once('='))
         else {
             continue;
@@ -268,7 +268,7 @@ impl<'a> Session<'a> {
                         last_line(&output.stderr).unwrap_or("it gave no reason")
                     ),
                     Some(format!(
-                        "Whetstone needs a POSIX `sh` on the remote machine. Check that \
+                        "Learn AI needs a POSIX `sh` on the remote machine. Check that \
                          `ssh {alias} sh -c true` works in a terminal."
                     )),
                 )
@@ -282,7 +282,7 @@ impl<'a> Session<'a> {
             return Err(StepFailure::new(
                 format!(
                     "The remote directory on `{alias}` resolves to `{root}`, which contains \
-                     characters Whetstone cannot pass to rsync safely."
+                     characters Learn AI cannot pass to rsync safely."
                 ),
                 Some(
                     "Remove the target and add it again with an absolute remote directory made \
@@ -394,7 +394,7 @@ impl<'a> Session<'a> {
         let dest = format!("{}/problems/{track}/{id}", self.root);
         self.mkdir(std::slice::from_ref(&dest))?;
         // The track file is not needed to judge, but it keeps the remote catalog valid
-        // for `ws` commands that scan it.
+        // for `learnai` commands that scan it.
         let track_file = problem_dir.parent().map(|dir| dir.join("track.toml"));
         if let Some(track_file) = track_file.filter(|file| file.is_file()) {
             self.rsync(
@@ -438,7 +438,7 @@ impl<'a> Session<'a> {
     }
 
     /// The local `ssh` command that runs `command` on the remote host under the
-    /// supervisor, with `WHETSTONE_ROOT` set to the remote root.
+    /// supervisor, with `LEARNAI_ROOT` set to the remote root.
     pub fn supervised(&self, command: &[String]) -> Result<CommandSpec, StepFailure> {
         let mut args = vec![self.root.clone()];
         args.extend(command.iter().cloned());
@@ -622,7 +622,7 @@ impl SshTarget {
         // this never removes what an earlier run or check installed there.
         let extras: Vec<_> = job.framework.extra().into_iter().collect();
         let mut command = session.uv_run(&extra_names(&extras), false)?;
-        command.extend(["python", "-m", "whetstone.harness"].map(str::to_owned));
+        command.extend(["python", "-m", "learnai.harness"].map(str::to_owned));
         command.extend([
             "--problem".to_owned(),
             problem,
@@ -673,8 +673,8 @@ mod tests {
     #[test]
     fn the_probe_is_read_through_noise() {
         let host = parse_probe(
-            "Welcome to Ubuntu\nws-home=/home/ada\nws-uv=/home/ada/.local/bin/uv\n\
-             ws-rsync=/usr/bin/rsync\nws-system=Linux\nws-machine=x86_64\nws-future=1\n",
+            "Welcome to Ubuntu\nlearnai-home=/home/ada\nlearnai-uv=/home/ada/.local/bin/uv\n\
+             learnai-rsync=/usr/bin/rsync\nlearnai-system=Linux\nlearnai-machine=x86_64\nlearnai-future=1\n",
         )
         .expect("probe");
         assert_eq!(
@@ -687,7 +687,7 @@ mod tests {
                 machine: "x86_64".into(),
             }
         );
-        let bare = parse_probe("ws-home=/root\nws-uv=\nws-rsync=\n").expect("probe");
+        let bare = parse_probe("learnai-home=/root\nlearnai-uv=\nlearnai-rsync=\n").expect("probe");
         assert_eq!(bare.uv, None);
         assert!(!bare.rsync);
         assert_eq!(parse_probe("command not found: sh\n"), None);

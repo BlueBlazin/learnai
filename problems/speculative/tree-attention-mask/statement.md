@@ -134,7 +134,7 @@ is accepted, and the round emits the single token 5.
 - $1 \le N \le 64$ and $1 \le P \le 64$; `parents[i] < i` always holds.
 - `tree_inputs` is compared exactly with the definition, entry by entry.
 - **Equivalence.** A small decoder with rotary position embeddings (the kit's
-  [`decoder_block_ref`](../../../python/src/whetstone/kit/decoder.py)) is run once
+  [`decoder_block_ref`](../../../python/src/learnai/kit/decoder.py)) is run once
   over the prefix and the flattened tree with your mask and position ids. The
   logits at every node must equal, within `1e-4`, the logits at the last position
   of an ordinary causal run over the prefix followed by that node's root path; the

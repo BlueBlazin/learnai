@@ -1,7 +1,7 @@
 # BUG: routes once per sequence, from the mean of its token vectors, and uses that one choice of experts and weights for every token of the sequence.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def moe(

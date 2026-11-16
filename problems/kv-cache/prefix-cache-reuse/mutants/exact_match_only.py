@@ -1,7 +1,7 @@
 # BUG: reuses a cache only when the whole prompt is a key of the store; a prompt that extends or partly matches an entry is prefilled from scratch.
 import torch
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def common_prefix_len(a, b) -> int:

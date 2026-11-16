@@ -11,8 +11,8 @@ from collections import deque
 import numpy as np
 import pytest
 
-from whetstone.judge import SimClock, percentile
-from whetstone.kit import (
+from learnai.judge import SimClock, percentile
+from learnai.kit import (
     STEP_DONE_PRIORITY,
     CostModel,
     OutOfBlocks,

@@ -6,8 +6,8 @@ reference. The property case checks the meaning of a mask: whatever allowed toke
 chosen, the text so far is a prefix of a string of the language.
 """
 
-from whetstone.judge import case, check
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.judge import case, check
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 OBJECT = r'\{"[a-z]+": (true|false|null|-?\d+)\}'
 NUMBER = r"-?(0|[1-9][0-9]*)(\.[0-9]+)?"

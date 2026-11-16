@@ -1,5 +1,5 @@
 # BUG: the partial trigger match is forgotten at every token boundary: a trigger fires only if all of its bytes arrive inside one token, so a trigger that the tokenizer splits never fires and the text after it stays unconstrained.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class TagDispatch:

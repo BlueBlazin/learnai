@@ -16,7 +16,7 @@ The kit has no pipeline object (one problem uses it), so it lives in this file.
 import asyncio
 import copy
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 
 class PipelineError(RuntimeError):

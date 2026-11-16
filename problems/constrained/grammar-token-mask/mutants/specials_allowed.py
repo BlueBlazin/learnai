@@ -1,5 +1,5 @@
 # BUG: special tokens are put into the trie like any other token; their byte string is empty, so they sit at the root, a walk of zero bytes never fails, and they are allowed in every state.
-from whetstone.kit import Chars, Grammar, Ref, ToyVocab
+from learnai.kit import Chars, Grammar, Ref, ToyVocab
 
 
 def _code_points(data: bytes) -> tuple[int, int] | None:

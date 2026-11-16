@@ -1,7 +1,7 @@
 # BUG: a group of equal values gets scale 0, so its codes are 0 / 0 and the checkpoint holds garbage for it.
 import torch
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 Cache = list[tuple[torch.Tensor, torch.Tensor]]
 

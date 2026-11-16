@@ -124,7 +124,7 @@ is wrong, so only the model's own token is kept, although `draft[2]` equals
   and second-largest logit differ by at least `1e-3`, so float32 rounding and the
   order of operations cannot change a token.
 - **End to end.** The tests also run a generation loop on the kit's
-  [`LayeredLM`](../../../python/src/whetstone/kit/layeredlm.py) in which your two
+  [`LayeredLM`](../../../python/src/learnai/kit/layeredlm.py) in which your two
   functions do the drafting and the accepting, with heads the test builds (random
   ones, and ones fitted to the model's own continuation). The generated tokens
   must be the model's greedy decode, and the number of model passes must be the

@@ -3,7 +3,7 @@ import time
 import numpy as np
 import pytest
 
-from whetstone.judge import CheckFailure, frameworks, speed
+from learnai.judge import CheckFailure, frameworks, speed
 
 
 def busy(seconds):

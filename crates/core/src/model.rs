@@ -201,7 +201,7 @@ wire_enum! {
         Jax => "jax",
         /// MLX.
         Mlx => "mlx",
-        /// Downloading model assets (`ws assets fetch`) and authoring fixtures.
+        /// Downloading model assets (`learnai assets fetch`) and authoring fixtures.
         Models => "models",
     }
 }
@@ -868,7 +868,7 @@ wire_enum! {
         Sync => "sync",
         /// Build the Python environment.
         Environment => "environment",
-        /// Run `ws doctor --json`.
+        /// Run `learnai doctor --json`.
         Doctor => "doctor",
     }
 }
@@ -887,7 +887,7 @@ pub struct CheckStep {
     pub fix: Option<String>,
 }
 
-/// What `ws doctor --json` reported on a target, reduced to what the app shows.
+/// What `learnai doctor --json` reported on a target, reduced to what the app shows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteDoctor {
@@ -1358,14 +1358,14 @@ mod tests {
             kind: TargetKind::Ssh,
             label: "gpu-box".into(),
             host: Some("gpu-box".into()),
-            remote_dir: Some("~/.whetstone".into()),
+            remote_dir: Some("~/.learnai".into()),
             last_check: Some(check.clone()),
         };
         assert_eq!(
             json!(info),
             json!({
                 "name": "ssh:gpu-box", "kind": "ssh", "label": "gpu-box", "host": "gpu-box",
-                "remoteDir": "~/.whetstone",
+                "remoteDir": "~/.learnai",
                 "lastCheck": {
                     "ok": false, "checkedAt": "2026-11-15T10:00:00.000Z",
                     "steps": [{"id": "uv", "ok": false, "message": "uv was not found",

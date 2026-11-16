@@ -19,7 +19,7 @@ Statistical checks in this file: 12 at most, each with delta = 1e-9 / 12.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 VERIFY = "verify_batch"
 ADVANCE = "advance_batch"

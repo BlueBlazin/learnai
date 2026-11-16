@@ -4,7 +4,7 @@ The worked examples are compared with literal counts; everything else with the
 oracle. All counts are exact integers.
 """
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 # https://huggingface.co/ibm-granite/granite-4.2-3b/raw/main/config.json
 GRANITE_3B = {

@@ -1,5 +1,5 @@
 # BUG: a token whose walk dies on its last byte is stored in the index with next state DEAD instead of being left out, so it shows up as allowed and advancing on it returns DEAD.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 class _Node:

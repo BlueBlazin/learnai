@@ -1,5 +1,5 @@
 # BUG: special tokens are not excluded; their byte string is empty, a walk over zero bytes never dies, and so they are allowed in every state.
-from whetstone.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, ToyVocab
 
 
 def allowed_tokens(dfa: CharDFA, state: int, vocab: ToyVocab) -> list[int]:

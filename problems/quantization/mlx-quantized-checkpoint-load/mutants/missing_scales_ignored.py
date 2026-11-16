@@ -3,7 +3,7 @@ import json
 
 import numpy as np
 
-from whetstone.kit import bf16_to_f32
+from learnai.kit import bf16_to_f32
 
 # How scales and biases may be stored. numpy has no bfloat16: read its 16-bit patterns.
 FLOAT_DTYPES = {"F32": "<f4", "F16": "<f2", "BF16": "<u2"}

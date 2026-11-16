@@ -1,6 +1,6 @@
 import mlx.core as mx
 
-from whetstone.kit import KVCache, TinyLM
+from learnai.kit import KVCache, TinyLM
 
 
 def prefill(lm: TinyLM, prompt: list[int], chunk_size: int) -> tuple[mx.array, KVCache]:

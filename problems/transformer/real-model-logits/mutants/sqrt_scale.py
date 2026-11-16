@@ -1,7 +1,7 @@
 # BUG: scales the attention scores by 1 / sqrt(head_dim), the textbook factor, instead of cfg.attention_scale.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

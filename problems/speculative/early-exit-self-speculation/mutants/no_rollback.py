@@ -1,7 +1,7 @@
 # BUG: the cache is never rolled back: rejected drafts stay in every layer's keys and values, and the next round attends to tokens that are not part of the sequence.
 import torch
 
-from whetstone.kit import LayeredLM
+from learnai.kit import LayeredLM
 
 
 def self_speculative_greedy(

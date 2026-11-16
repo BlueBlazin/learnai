@@ -33,8 +33,8 @@ time_limit_s = 30
 # the kit's own tokenizer and checkpoint reader are ruled out of the source (rejects
 # the mutant uses_kit_tokenizer).
 forbidden = [
-    "whetstone.kit.realmodel.RealLM",
-    "whetstone.kit.realmodel.RealModel",
+    "learnai.kit.realmodel.RealLM",
+    "learnai.kit.realmodel.RealModel",
     "mlx.nn.RoPE",
     "mlx.core.fast.rope",
     "torch.rand",

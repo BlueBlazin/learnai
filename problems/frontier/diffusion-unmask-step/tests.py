@@ -17,7 +17,7 @@ of 1e-10 keep the false-failure rate of a correct solution below 1e-9.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 STEP = "unmask_step"
 SAMPLE_MARGIN = 1e-4

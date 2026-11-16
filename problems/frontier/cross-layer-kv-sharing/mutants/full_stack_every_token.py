@@ -1,5 +1,5 @@
 # BUG: prefill runs the upper layers on every prompt position, although they store nothing and only the last position's output is used; the logits are right and the prefill costs L * P layer-tokens.
-from whetstone.kit import LayerCache, LayeredLM
+from learnai.kit import LayerCache, LayeredLM
 
 
 def prefill_shared(lm: LayeredLM, prompt: list[int], share_from: int) -> tuple:

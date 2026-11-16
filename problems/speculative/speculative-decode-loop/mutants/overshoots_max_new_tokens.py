@@ -1,7 +1,7 @@
 # BUG: always drafts k tokens and keeps everything a round yields, so the result can be longer than max_new_tokens.
 import torch
 
-from whetstone.kit import TinyLM
+from learnai.kit import TinyLM
 
 
 def speculative_greedy(

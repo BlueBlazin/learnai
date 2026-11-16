@@ -28,9 +28,9 @@ import numpy as np
 import torch
 from torch import nn
 
-from whetstone.judge import case, check
-from whetstone.kit import DeviceSpy, SyncSpy
-from whetstone.kit.counters import Counters
+from learnai.judge import case, check
+from learnai.kit import DeviceSpy, SyncSpy
+from learnai.kit.counters import Counters
 
 FN = "decode"
 CPU = torch.device("cpu")

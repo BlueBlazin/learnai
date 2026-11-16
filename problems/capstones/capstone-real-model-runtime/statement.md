@@ -42,7 +42,7 @@ files, `config.json`, `tokenizer.json`, and `model.safetensors`:
   UTF-8. Its cases need no download.
 - the **real model**, `ibm-granite/granite-4.0-350m` (28 layers, 352 M weights,
   705 MB), for one or two cases per stage. They are skipped until the asset is
-  fetched (`ws assets fetch granite-4.0-350m`).
+  fetched (`learnai assets fetch granite-4.0-350m`).
 
 The two configs have **different numbers** in every field, so read `config`; do not
 write Granite's constants into the code. The cases are grouped by stage, and a
@@ -51,7 +51,7 @@ stage's cases call only that stage's functions and those of earlier stages.
 **What is yours and what is given.** Write every component yourself, in float32.
 From the kit, `ops.rms_norm`, `ops.softmax`, the three sampler filters
 (`ops.top_k_filter`, `ops.top_p_filter`, `ops.min_p_filter`), and
-`whetstone.kit.bpe.translate_pattern` may be used, as in the earlier problems. Not
+`learnai.kit.bpe.translate_pattern` may be used, as in the earlier problems. Not
 allowed, and rejected by the harness: the `transformers`, `tokenizers`,
 `safetensors`, `mlx_lm`, and `jinja2` packages; the kit's `RealModel`, `RealLM`,
 `ByteLevelBPE`, and `SafetensorsFile`; MLX's built-in rotary embedding (`nn.RoPE`,

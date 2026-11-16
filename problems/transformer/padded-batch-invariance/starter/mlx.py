@@ -1,6 +1,6 @@
 import mlx.core as mx
 
-from whetstone.kit import DecoderConfig, ops
+from learnai.kit import DecoderConfig, ops
 
 
 def decoder_block(

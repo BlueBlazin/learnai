@@ -9,7 +9,7 @@ import shell from "shiki/langs/shellscript.mjs";
  * instead of colors, so one render is correct in light and dark and matches the editor.
  */
 const theme = createCssVariablesTheme({
-  name: "whetstone",
+  name: "learnai",
   variablePrefix: "--shiki-",
   fontStyle: true,
 });
@@ -49,7 +49,7 @@ export function highlight(code: string, language: string | undefined): Highlight
   if (!lang) {
     return code.split("\n").map((line) => [{ content: line, italic: false, bold: false }]);
   }
-  const { tokens } = getHighlighter().codeToTokens(code, { lang, theme: "whetstone" });
+  const { tokens } = getHighlighter().codeToTokens(code, { lang, theme: "learnai" });
   return tokens.map((line) =>
     line.map((token) => ({
       content: token.content,

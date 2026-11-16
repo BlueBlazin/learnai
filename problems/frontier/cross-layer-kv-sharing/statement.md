@@ -11,7 +11,7 @@ def prefill_shared(lm, prompt, share_from): ...  # -> (logits, cache)
 def decode_step(lm, token, cache, share_from): ...  # -> (logits, cache)
 ```
 
-`lm` is a [`LayeredLM`](../../../python/src/whetstone/kit/layeredlm.py), a decoder
+`lm` is a [`LayeredLM`](../../../python/src/learnai/kit/layeredlm.py), a decoder
 with $L$ = `lm.n_layers` layers whose stack can be run one range at a time:
 
 ```python

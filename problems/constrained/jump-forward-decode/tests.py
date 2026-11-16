@@ -10,8 +10,8 @@ the number of tokens generated before the last of them. The limits are `f` forwa
 calls and `P + L` tokens processed (0 when `f` is 0).
 """
 
-from whetstone.judge import case, check
-from whetstone.kit import CharDFA, DFAConstraint, TinyLM, ToyVocab
+from learnai.judge import case, check
+from learnai.kit import CharDFA, DFAConstraint, TinyLM, ToyVocab
 
 FN = "jump_forward_decode"
 PROMPT = [0, 17, 42, 5]

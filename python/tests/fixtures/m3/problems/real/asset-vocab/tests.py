@@ -1,6 +1,6 @@
 import json
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 
 @case("a config written in the test", public=True, assets=[])

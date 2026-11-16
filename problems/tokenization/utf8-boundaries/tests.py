@@ -6,7 +6,7 @@ valid text, feeding a decoder in chunks, and the definition of "pending" by brut
 (try every way to complete the tail).
 """
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 TEXT = "naïve café: 5 €, 日本語, 😀 ok"
 ALPHABET = ["a", " ", "é", "ß", "€", "語", "�", "😀", "𝄞", "\x00", "\x7f", "\u0080", "߿"]

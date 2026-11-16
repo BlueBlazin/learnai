@@ -13,8 +13,8 @@ The tokens that are fed come from the test (the greedy tokens of the sharing mod
 so a solution's wrong logits cannot change what it is asked next.
 """
 
-from whetstone.judge import case, check
-from whetstone.kit import LayerCache, LayeredLM
+from learnai.judge import case, check
+from learnai.kit import LayerCache, LayeredLM
 
 PROMPT = [0, 17, 42, 5]
 EXAMPLE_FIRST = 48  # the sharing model's greedy token after PROMPT (seed 3, share_from 2)

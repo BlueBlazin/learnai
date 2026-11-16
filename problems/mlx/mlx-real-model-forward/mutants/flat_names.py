@@ -1,8 +1,8 @@
 # BUG: puts the embedding, the layers, and the final norm directly on the top-level module; its parameters are `layers.0...`, not the checkpoint's `model.layers.0...`, and a strict load finds no matching name.
 import mlx.core as mx
 
+from learnai.kit import RealConfig
 from mlx import nn
-from whetstone.kit import RealConfig
 
 # Attribute names are checkpoint names: `model.layers.3.self_attn.q_proj.weight` in the
 # file is `self.layers[3].self_attn.q_proj.weight` here, so `load_weights` needs

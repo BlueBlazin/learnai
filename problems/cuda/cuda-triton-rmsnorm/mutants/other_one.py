@@ -1,7 +1,7 @@
 # BUG: masked-off elements of the first pass are loaded as 1.0 instead of 0.0, so every column the last block hangs over the row adds 1 to the sum of squares.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

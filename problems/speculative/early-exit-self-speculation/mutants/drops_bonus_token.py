@@ -1,7 +1,7 @@
 # BUG: after a fully accepted block the full model's token for the next position is thrown away instead of emitted, so that position is drafted and verified again in the next round.
 import torch
 
-from whetstone.kit import LayeredLM
+from learnai.kit import LayeredLM
 
 
 def self_speculative_greedy(

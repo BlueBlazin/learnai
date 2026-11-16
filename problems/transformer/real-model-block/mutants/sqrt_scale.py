@@ -1,7 +1,7 @@
 # BUG: scales the attention scores by 1 / sqrt(head_dim) = 1/8, the textbook factor, instead of Granite's attention multiplier 1/64.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 HEAD_DIM = 64
 NORM_EPS = 1e-5

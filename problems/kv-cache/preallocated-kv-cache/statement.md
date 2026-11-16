@@ -63,8 +63,8 @@ updated ones of the same shape (JAX arrays are immutable, so an update there ret
 a new array); both are correct, and the tests cannot tell them apart. What is not
 allowed is a buffer whose shape depends on `length`.
 
-You may use [`ops.attention`](../../../python/src/whetstone/kit/ops/__init__.py) from
-the kit (`from whetstone.kit import ops`) for the attention arithmetic.
+You may use [`ops.attention`](../../../python/src/learnai/kit/ops/__init__.py) from
+the kit (`from learnai.kit import ops`) for the attention arithmetic.
 
 ## Shapes
 

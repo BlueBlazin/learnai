@@ -298,7 +298,7 @@ mod tests {
             other => panic!("unexpected {other:?}"),
         }
 
-        let assets = r#"@@WS@@ {"event":"end","status":"assets_missing","passed":2,"total":4,"skipped":2,"duration_ms":3.0,"metrics":[{"name":"throughput","value":41.0,"unit":"tok/s","limit":20,"higher_is_better":true}],"message":"m","missing_assets":[{"name":"tiny","repo":"o/tiny","size_mb":0.01,"fetch_command":"ws assets fetch tiny"}]}"#;
+        let assets = r#"@@WS@@ {"event":"end","status":"assets_missing","passed":2,"total":4,"skipped":2,"duration_ms":3.0,"metrics":[{"name":"throughput","value":41.0,"unit":"tok/s","limit":20,"higher_is_better":true}],"message":"m","missing_assets":[{"name":"tiny","repo":"o/tiny","size_mb":0.01,"fetch_command":"learnai assets fetch tiny"}]}"#;
         match parse_stdout_line(assets) {
             StdoutLine::Event(HarnessEvent::End {
                 status,

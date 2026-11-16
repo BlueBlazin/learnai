@@ -1,7 +1,7 @@
 # BUG: adds the two branches of every block unscaled instead of multiplying them by cfg.residual_multiplier.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

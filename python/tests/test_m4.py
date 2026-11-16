@@ -1,4 +1,4 @@
-"""Milestone 4: fixes reported by milestone 3 authors, CUDA detection, `ws doctor`,
+"""Milestone 4: fixes reported by milestone 3 authors, CUDA detection, `learnai doctor`,
 the JAX compilation cache, and the small kit helpers."""
 
 import importlib.util
@@ -14,12 +14,12 @@ import numpy as np
 import pytest
 from conftest import FIXTURES, run_harness
 
-from whetstone import cli, hardware, runner
-from whetstone import validate as gate
-from whetstone.judge import frameworks
-from whetstone.kit import RealConfig, logit_kl
-from whetstone.problem import load_problem
-from whetstone.tracebacks import exception_line, hidden_error_message
+from learnai import cli, hardware, runner
+from learnai import validate as gate
+from learnai.judge import frameworks
+from learnai.kit import RealConfig, logit_kl
+from learnai.problem import load_problem
+from learnai.tracebacks import exception_line, hidden_error_message
 
 M3 = FIXTURES / "m3"
 CUDA_SCALE = M3 / "problems" / "gpu" / "cuda-scale"
@@ -115,8 +115,8 @@ def test_validate_does_not_claim_skips_when_every_case_ran(monkeypatch, capsys):
     away every case still runs. The warning must not speak of skipped cases."""
     pytest.importorskip("mlx.core")
     root = M3
-    monkeypatch.setenv("WHETSTONE_ROOT", str(root))
-    monkeypatch.setenv("WHETSTONE_HARDWARE", "cpu")
+    monkeypatch.setenv("LEARNAI_ROOT", str(root))
+    monkeypatch.setenv("LEARNAI_HARDWARE", "cpu")
     problem = load_problem(MLX_SCALE)
     command = runner.harness_command(
         MLX_SCALE, problem.reference_path("mlx"), "mlx", "submit", reveal=True
@@ -190,8 +190,8 @@ def test_validate_wording_for_runs_that_lack_only_the_required_hardware():
 
 
 def test_validate_summary_counts_problems_with_unvalidated_cases(monkeypatch, capsys):
-    monkeypatch.setenv("WHETSTONE_ROOT", str(M3))
-    monkeypatch.setenv("WHETSTONE_HARDWARE", "cpu")
+    monkeypatch.setenv("LEARNAI_ROOT", str(M3))
+    monkeypatch.setenv("LEARNAI_HARDWARE", "cpu")
     assert cli.main(["validate", "cuda-scale"]) == 0
     out = capsys.readouterr().out
     assert "(GPU cases not validated: on_cuda)" in out
@@ -251,7 +251,7 @@ def test_realconfig_round_trips_through_transformers_5(tmp_path):
 
 @pytest.fixture
 def fresh_detection(monkeypatch):
-    monkeypatch.delenv("WHETSTONE_HARDWARE", raising=False)
+    monkeypatch.delenv("LEARNAI_HARDWARE", raising=False)
     hardware._detect.cache_clear()
     yield
     hardware._detect.cache_clear()
@@ -312,13 +312,13 @@ def test_cuda_detection_survives_a_broken_driver_or_missing_torch(monkeypatch, f
 
 
 def test_the_override_wins_over_detection_but_not_in_the_report(monkeypatch, fresh_detection):
-    monkeypatch.setenv("WHETSTONE_HARDWARE", "cuda")
+    monkeypatch.setenv("LEARNAI_HARDWARE", "cuda")
     assert hardware.available("cuda") and not hardware.available("mlx-gpu")
     assert hardware.report()["cuda"]["present"] is False  # what the machine really has
 
 
 def test_cuda_problem_ends_hardware_missing_when_every_cpu_case_passes():
-    env = {"WHETSTONE_HARDWARE": "cpu"}
+    env = {"LEARNAI_HARDWARE": "cpu"}
     run = run_harness(CUDA_SCALE, CUDA_SCALE / "reference" / "torch.py", "torch", env=env)
     assert run.returncode == 0
     assert sorted(run.statuses.values()) == ["pass", "pass", "skipped"]
@@ -337,9 +337,9 @@ CUDA_KIT_TESTS = """
 import numpy as np
 import torch
 
-from whetstone.judge import case, check
-from whetstone.kit import DeviceSpy, FakeDevice, SyncSpy
-from whetstone.kit import tritonshim as tl
+from learnai.judge import case, check
+from learnai.kit import DeviceSpy, FakeDevice, SyncSpy
+from learnai.kit import tritonshim as tl
 
 
 @case("no host synchronization, no tensor without a device", public=True)
@@ -384,7 +384,7 @@ def test_the_cuda_kit_works_inside_the_harness(tmp_path):
     shutil.copytree(CUDA_SCALE, problem)
     shutil.copy(CUDA_SCALE.parent / "track.toml", problem.parent)
     (problem / "tests.py").write_text(CUDA_KIT_TESTS)
-    env = {"WHETSTONE_HARDWARE": "cpu"}
+    env = {"LEARNAI_HARDWARE": "cpu"}
     run = run_harness(problem, problem / "reference" / "torch.py", "torch", env=env)
     assert run.end["status"] == "hardware_missing", run.events
     assert (run.end["passed"], run.end["skipped"]) == (2, 1)
@@ -405,17 +405,17 @@ def test_the_cuda_kit_works_inside_the_harness(tmp_path):
     assert "line 5: read (bool)" in failed["detail"]
 
 
-# -- ws doctor ----------------------------------------------------------------------------
+# -- learnai doctor ----------------------------------------------------------------------------
 
 
 def test_doctor_json_has_the_documented_schema(capsys, monkeypatch, tmp_path):
-    monkeypatch.setenv("WHETSTONE_ROOT", str(tmp_path))
-    monkeypatch.delenv("WHETSTONE_MODELS_DIR", raising=False)
-    monkeypatch.delenv("WHETSTONE_HARDWARE", raising=False)
+    monkeypatch.setenv("LEARNAI_ROOT", str(tmp_path))
+    monkeypatch.delenv("LEARNAI_MODELS_DIR", raising=False)
+    monkeypatch.delenv("LEARNAI_HARDWARE", raising=False)
     assert cli.main(["doctor", "--json"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert list(report) == [
-        "schema", "whetstone", "python", "executable", "platform", "frameworks", "packages",
+        "schema", "learnai", "python", "executable", "platform", "frameworks", "packages",
         "hardware", "hardware_override", "root", "models_dir",
     ]  # fmt: skip
     assert report["schema"] == 1
@@ -432,23 +432,23 @@ def test_doctor_json_has_the_documented_schema(capsys, monkeypatch, tmp_path):
     assert set(report["hardware"]["mlx-gpu"]) == {"present", "name", "memory_bytes"}
     assert report["hardware_override"] is None
     assert report["root"] == str(tmp_path.resolve())
-    assert report["models_dir"] == str(tmp_path.resolve() / ".whetstone" / "models")
+    assert report["models_dir"] == str(tmp_path.resolve() / ".learnai" / "models")
 
-    monkeypatch.setenv("WHETSTONE_HARDWARE", "cuda")
-    monkeypatch.setenv("WHETSTONE_MODELS_DIR", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("LEARNAI_HARDWARE", "cuda")
+    monkeypatch.setenv("LEARNAI_MODELS_DIR", str(tmp_path / "elsewhere"))
     assert cli.main(["doctor", "--json"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["hardware_override"] == ["cpu", "cuda"]
     assert report["models_dir"] == str((tmp_path / "elsewhere").resolve())
     assert cli.main(["doctor"]) == 0
-    assert "WHETSTONE_HARDWARE pretends: cpu, cuda" in capsys.readouterr().out
+    assert "LEARNAI_HARDWARE pretends: cpu, cuda" in capsys.readouterr().out
 
 
 def test_doctor_reports_cuda_and_never_fails_on_missing_packages(capsys, monkeypatch, tmp_path):
     from importlib import metadata
 
-    monkeypatch.setenv("WHETSTONE_ROOT", str(tmp_path))
-    monkeypatch.delenv("WHETSTONE_HARDWARE", raising=False)
+    monkeypatch.setenv("LEARNAI_ROOT", str(tmp_path))
+    monkeypatch.delenv("LEARNAI_HARDWARE", raising=False)
     hardware._detect.cache_clear()
     fake_cuda(monkeypatch)
 
@@ -473,15 +473,15 @@ def test_doctor_reports_cuda_and_never_fails_on_missing_packages(capsys, monkeyp
 
 
 def test_doctor_imports_no_framework_it_does_not_need():
-    # A fresh interpreter: `ws doctor --json` must not import jax, transformers, or the kit.
+    # A fresh interpreter: `learnai doctor --json` must not import jax, transformers, or the kit.
     code = (
         "import sys, json, io, contextlib\n"
-        "from whetstone import cli\n"
+        "from learnai import cli\n"
         "out = io.StringIO()\n"
         "with contextlib.redirect_stdout(out):\n"
         "    assert cli.main(['doctor', '--json']) == 0\n"
         "json.loads(out.getvalue())\n"
-        "heavy = [m for m in ('jax', 'transformers', 'whetstone.kit', 'whetstone.judge') "
+        "heavy = [m for m in ('jax', 'transformers', 'learnai.kit', 'learnai.judge') "
         "if m in sys.modules]\n"
         "print(heavy)\n"
     )
@@ -508,21 +508,21 @@ def test_jax_cache_is_configured_tidied_and_can_be_switched_off(tmp_path, monkey
                      "jax_persistent_cache_min_entry_size_bytes")
     }  # fmt: skip
     try:
-        monkeypatch.setenv("WHETSTONE_JAX_CACHE", "off")
+        monkeypatch.setenv("LEARNAI_JAX_CACHE", "off")
         assert frameworks.use_jax_compilation_cache(directory) is False
-        monkeypatch.delenv("WHETSTONE_JAX_CACHE")
+        monkeypatch.delenv("LEARNAI_JAX_CACHE")
         assert frameworks.use_jax_compilation_cache(directory) is True
         assert jax.config.jax_compilation_cache_dir == str(directory)
         assert jax.config.jax_persistent_cache_min_compile_time_secs == 0.0
         assert sorted(p.name for p in directory.iterdir()) == ["good-cache"]
 
         other = tmp_path / "elsewhere"
-        monkeypatch.setenv("WHETSTONE_JAX_CACHE", str(other))
+        monkeypatch.setenv("LEARNAI_JAX_CACHE", str(other))
         assert frameworks.use_jax_compilation_cache(directory) is True
         assert jax.config.jax_compilation_cache_dir == str(other) and other.is_dir()
 
         # A cache the user configured is theirs.
-        monkeypatch.delenv("WHETSTONE_JAX_CACHE")
+        monkeypatch.delenv("LEARNAI_JAX_CACHE")
         monkeypatch.setenv("JAX_COMPILATION_CACHE_DIR", str(tmp_path / "mine"))
         assert frameworks.use_jax_compilation_cache(directory) is False
 
@@ -543,7 +543,7 @@ def test_a_jax_harness_run_fills_the_cache_and_the_next_run_uses_it(tmp_path):
     pytest.importorskip("jax")
     problem = FIXTURES / "catalog" / "problems" / "judges" / "unit-normalize"
     cache = tmp_path / "jax-cache"
-    env = {"WHETSTONE_JAX_CACHE": str(cache)}
+    env = {"LEARNAI_JAX_CACHE": str(cache)}
     first = run_harness(problem, problem / "reference" / "jax.py", "jax", env=env)
     assert first.end["status"] == "accepted"
     entries = sorted(p.name for p in cache.iterdir())
@@ -553,7 +553,7 @@ def test_a_jax_harness_run_fills_the_cache_and_the_next_run_uses_it(tmp_path):
     assert sorted(p.name for p in cache.iterdir()) == entries  # nothing new to compile
     assert first.statuses == second.statuses
     disabled = run_harness(
-        problem, problem / "reference" / "jax.py", "jax", env={"WHETSTONE_JAX_CACHE": "0"}
+        problem, problem / "reference" / "jax.py", "jax", env={"LEARNAI_JAX_CACHE": "0"}
     )
     assert disabled.end["status"] == "accepted"
 
@@ -581,7 +581,7 @@ def test_logit_kl_is_the_kl_divergence_of_the_two_softmaxes():
 
 def test_mlx_helpers_pending_ops_watch_load_and_lazyclock(tmp_path):
     mx = pytest.importorskip("mlx.core")
-    from whetstone.kit import LazyClock, pending_ops, watch_load
+    from learnai.kit import LazyClock, pending_ops, watch_load
 
     lazy = mx.ones(4) * 2 + 1
     assert pending_ops(lazy) > 0 and pending_ops([lazy], {"k": lazy}) > 0
@@ -620,7 +620,7 @@ def test_mlx_helpers_pending_ops_watch_load_and_lazyclock(tmp_path):
 
 
 def test_the_kit_imports_without_loading_a_framework():
-    code = "import sys, whetstone.kit; print([m for m in ('torch', 'jax') if m in sys.modules])"
+    code = "import sys, learnai.kit; print([m for m in ('torch', 'jax') if m in sys.modules])"
     proc = subprocess.run(
         [sys.executable, "-P", "-c", code], capture_output=True, text=True, check=False, timeout=120
     )

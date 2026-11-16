@@ -137,7 +137,7 @@ a fifth of the weights and more than half of the bytes.
 - **Evaluation:** 0 pending operations behind the model's parameters on return
   (counted with `mx.export_to_dot`).
 - **Size.** The parameter bytes are what the recipe implies. For the public
-  transformer case (an [`MLXTinyLM`](../../../python/src/whetstone/kit/mlxlm.py) of
+  transformer case (an [`MLXTinyLM`](../../../python/src/learnai/kit/mlxlm.py) of
   width 64 with 8 bits for `embed` and `head` and 4 bits elsewhere): at most 69,888
   bytes, down from 361,728. For that recipe on a wider model: at most 0.2 of the float
   model's bytes.

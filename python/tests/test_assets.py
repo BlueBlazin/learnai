@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from conftest import FIXTURES
 
-from whetstone import assets, cli, protocol
-from whetstone.problem import load_problem
+from learnai import assets, cli, protocol
+from learnai.problem import load_problem
 
 M3 = FIXTURES / "m3"
 REVISION = "0123456789abcdef0123456789abcdef01234567"
@@ -37,7 +37,7 @@ def test_parse_reads_a_valid_table():
     assert parsed == assets.AssetSpec(
         "tiny", "org/tiny", REVISION, ("config.json", "*.safetensors"), 1.5
     )
-    assert parsed.fetch_command == "ws assets fetch tiny"
+    assert parsed.fetch_command == "learnai assets fetch tiny"
     assert parsed.describe() == "`tiny` (org/tiny, about 2 MB)"
     assert assets.parse_assets(None) == ([], [])
 
@@ -101,9 +101,9 @@ def test_select_files_filters_and_insists_that_patterns_match():
 
 
 def test_models_dir_and_format_size(tmp_path, monkeypatch):
-    monkeypatch.delenv("WHETSTONE_MODELS_DIR", raising=False)
-    assert assets.models_dir(tmp_path) == tmp_path / ".whetstone" / "models"
-    monkeypatch.setenv("WHETSTONE_MODELS_DIR", str(tmp_path / "elsewhere"))
+    monkeypatch.delenv("LEARNAI_MODELS_DIR", raising=False)
+    assert assets.models_dir(tmp_path) == tmp_path / ".learnai" / "models"
+    monkeypatch.setenv("LEARNAI_MODELS_DIR", str(tmp_path / "elsewhere"))
     assert assets.models_dir(tmp_path) == (tmp_path / "elsewhere").resolve()
     assert [assets.format_size(n) for n in (704_786_224, 3_888_771_048, 10_000)] == [
         "705 MB", "3.89 GB", "10 kB",
@@ -180,9 +180,9 @@ def test_fetch_downloads_pinned_allowed_files_and_writes_a_manifest(tmp_path, mo
     assert target == tmp_path / "tiny"
     assert hub.revisions == [REVISION]
     assert hub.downloads == ["config.json", "model.safetensors"]
-    assert sorted(p.name for p in target.iterdir()) == [
-        "config.json", "model.safetensors", assets.MANIFEST,
-    ]  # fmt: skip
+    assert sorted(p.name for p in target.iterdir()) == sorted(
+        ["config.json", "model.safetensors", assets.MANIFEST]
+    )
     total = len(REPO["config.json"]) + len(REPO["model.safetensors"])
     assert events[0] == {
         "event": "asset_start",
@@ -280,8 +280,8 @@ def test_fetch_without_the_models_extra_says_how_to_get_it(tmp_path, monkeypatch
 
 @pytest.fixture
 def m3_root(tmp_path, monkeypatch):
-    monkeypatch.setenv("WHETSTONE_ROOT", str(M3))
-    monkeypatch.setenv("WHETSTONE_MODELS_DIR", str(tmp_path / "models"))
+    monkeypatch.setenv("LEARNAI_ROOT", str(M3))
+    monkeypatch.setenv("LEARNAI_MODELS_DIR", str(tmp_path / "models"))
     return tmp_path / "models"
 
 
@@ -293,7 +293,7 @@ def test_assets_list_json_is_one_document(m3_root, capsys):
         "assets": [
             {
                 "name": "tiny-test-model",
-                "repo": "whetstone-tests/tiny-test-model",
+                "repo": "learnai-tests/tiny-test-model",
                 "revision": REVISION,
                 "files": ["config.json", "*.safetensors"],
                 "size_mb": 0.01,
@@ -303,7 +303,7 @@ def test_assets_list_json_is_one_document(m3_root, capsys):
                 "path": str(m3_root / "tiny-test-model"),
                 "bytes_on_disk": 0,
                 "problems": ["asset-vocab"],
-                "fetch_command": "ws assets fetch tiny-test-model",
+                "fetch_command": "learnai assets fetch tiny-test-model",
             }
         ],
         "issues": [],
@@ -316,7 +316,7 @@ def test_assets_fetch_and_list_from_the_command_line(m3_root, capsys, monkeypatc
     assert cli.main(["assets", "list"]) == 0
     out = capsys.readouterr().out
     assert "tiny-test-model  missing  ~10 kB" in out
-    assert "tiny-test-model is missing: ws assets fetch tiny-test-model" in out
+    assert "tiny-test-model is missing: learnai assets fetch tiny-test-model" in out
 
     assert cli.main(["assets", "fetch", "tiny-test-model", "--json"]) == 0
     lines = capsys.readouterr().out.splitlines()
@@ -347,7 +347,7 @@ def test_assets_fetch_usage_errors_and_failures(m3_root, capsys, monkeypatch):
 
 
 def test_house_models_can_be_fetched_before_a_problem_declares_them(m3_root, capsys, monkeypatch):
-    from whetstone.kit.realmodel import HOUSE_MODELS, SMALL
+    from learnai.kit.realmodel import HOUSE_MODELS, SMALL
 
     seen: list[assets.AssetSpec] = []
     monkeypatch.setattr(assets, "fetch", lambda spec, *args, **kwargs: seen.append(spec))
@@ -372,12 +372,12 @@ def test_house_models_can_be_fetched_before_a_problem_declares_them(m3_root, cap
 def test_validate_checks_asset_declarations(tmp_path, monkeypatch):
     import shutil
 
-    from whetstone import validate as gate
+    from learnai import validate as gate
 
     root = tmp_path / "root"
     shutil.copytree(M3 / "problems" / "real", root / "problems" / "real")
-    monkeypatch.setenv("WHETSTONE_ROOT", str(root))
-    monkeypatch.setenv("WHETSTONE_MODELS_DIR", str(tmp_path / "models"))
+    monkeypatch.setenv("LEARNAI_ROOT", str(root))
+    monkeypatch.setenv("LEARNAI_MODELS_DIR", str(tmp_path / "models"))
     problem = root / "problems" / "real" / "asset-vocab"
     toml = problem / "problem.toml"
     original = toml.read_text()

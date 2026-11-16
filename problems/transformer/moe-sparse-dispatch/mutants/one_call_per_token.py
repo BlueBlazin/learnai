@@ -1,7 +1,7 @@
 # BUG: calls an expert once per token and slot with a single row, k * N calls, instead of once per expert with all of its rows.
 import torch
 
-from whetstone.kit import CountingExperts
+from learnai.kit import CountingExperts
 
 
 def moe_sparse(

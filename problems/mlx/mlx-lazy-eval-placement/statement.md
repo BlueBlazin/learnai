@@ -10,7 +10,7 @@ piles up between steps.
 def generate(model, prompt, n): ...
 ```
 
-`model` is an [`MLXTinyLM`](../../../python/src/whetstone/kit/mlxlm.py), a small seeded
+`model` is an [`MLXTinyLM`](../../../python/src/learnai/kit/mlxlm.py), a small seeded
 decoder-only transformer built from `mlx.nn`. It is called in two ways, and both return
 **lazy** arrays: a graph of operations, with no numbers behind it yet.
 

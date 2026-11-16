@@ -1,12 +1,12 @@
 [package]
-name = "whetstone-devbridge"
-description = "Dev-only HTTP bridge exposing whetstone-core to a plain browser"
+name = "learnai-devbridge"
+description = "Dev-only HTTP bridge exposing learnai-core to a plain browser"
 version.workspace = true
 edition.workspace = true
 publish = false
 
 [dependencies]
-whetstone-core.workspace = true
+learnai-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 axum.workspace = true

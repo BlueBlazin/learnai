@@ -5,7 +5,7 @@ from collections import deque
 async def run(engine, queue: asyncio.Queue, max_running: int) -> None:
     """The scheduling loop of a continuous-batching server. It never returns.
 
-    engine: a `whetstone.kit.SimEngine`. The calls you need:
+    engine: a `learnai.kit.SimEngine`. The calls you need:
         engine.admit(request)        make the request a live sequence; takes no time
         result = await engine.step(prefill=[(id, n_tokens), ...], decode=[id, ...])
                                      one forward pass; returns when it ends

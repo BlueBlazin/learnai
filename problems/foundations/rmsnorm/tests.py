@@ -3,7 +3,7 @@ what the function means without it."""
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 
 def gain(ctx, d):

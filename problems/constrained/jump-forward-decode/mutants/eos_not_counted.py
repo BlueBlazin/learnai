@@ -1,7 +1,7 @@
 # BUG: decides 'forced' from the allowed list alone: a state with one allowed token that is also accepting is jumped over, although EOS is permitted there too and the model might have stopped.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def jump_forward_decode(

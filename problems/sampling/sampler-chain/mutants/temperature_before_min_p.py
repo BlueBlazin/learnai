@@ -1,7 +1,7 @@
 # BUG: applies the temperature after top-p but before min-p, so the min-p threshold is compared with tempered probabilities.
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def penalize(logits: torch.Tensor, cfg: dict, history: torch.Tensor) -> torch.Tensor:

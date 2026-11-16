@@ -1,7 +1,7 @@
 # BUG: permits end-of-sequence at every step instead of only in an accepting state, so the output can stop in the middle of the structure.
 import torch
 
-from whetstone.kit import TinyLM, TokenConstraint
+from learnai.kit import TinyLM, TokenConstraint
 
 
 def constrained_greedy(

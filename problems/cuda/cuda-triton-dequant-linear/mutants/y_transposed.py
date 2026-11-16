@@ -1,7 +1,7 @@
 # BUG: stores y[b, o] at offset o * batch + b, the layout of an (n_out, batch) matrix; the output is the transpose, reshaped.
 import torch
 
-from whetstone.kit import tritonshim as tl
+from learnai.kit import tritonshim as tl
 
 
 @tl.jit

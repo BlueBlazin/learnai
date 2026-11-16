@@ -1,6 +1,6 @@
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def block(x: torch.Tensor, params: dict[str, torch.Tensor], mask: torch.Tensor) -> torch.Tensor:

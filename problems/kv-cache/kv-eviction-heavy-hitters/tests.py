@@ -16,7 +16,7 @@ which every step has the same shapes.
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 FN = "h2o_step"
 B, H, D = 1, 2, 4  # the sizes most cases share

@@ -1,7 +1,7 @@
 # BUG: rotates adjacent feature pairs (2i, 2i + 1), as the kit's ops.rope and the decoder-forward problem do, instead of pairing feature i with feature i + head_dim / 2.
 import torch
 
-from whetstone.kit import RealConfig, ops
+from learnai.kit import RealConfig, ops
 
 
 def granite_logits(

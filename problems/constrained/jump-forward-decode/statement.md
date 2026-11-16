@@ -12,8 +12,8 @@ output must be exactly what the ordinary constrained loop produces.
 def jump_forward_decode(lm, prompt, constraint, max_new_tokens, eos_id): ...
 ```
 
-`lm` is a [`TinyLM`](../../../python/src/whetstone/kit/tinylm.py) and `constraint` a
-[`TokenConstraint`](../../../python/src/whetstone/kit/constraint.py), both used as in
+`lm` is a [`TinyLM`](../../../python/src/learnai/kit/tinylm.py) and `constraint` a
+[`TokenConstraint`](../../../python/src/learnai/kit/constraint.py), both used as in
 `constrained-greedy-decode`:
 
 ```python

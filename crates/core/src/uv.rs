@@ -12,7 +12,7 @@ use crate::harness::CommandSpec;
 use crate::model::Extra;
 
 /// Environment variable that overrides the uv executable.
-pub const UV_ENV: &str = "WHETSTONE_UV";
+pub const UV_ENV: &str = "LEARNAI_UV";
 
 /// A uv executable bound to the `python/` project.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,7 +94,7 @@ pub fn extra_names(extras: &[Extra]) -> Vec<&'static str> {
 
 /// Finds the uv executable.
 ///
-/// Order: `WHETSTONE_UV`, then `PATH`, then the usual install locations. The fallback
+/// Order: `LEARNAI_UV`, then `PATH`, then the usual install locations. The fallback
 /// locations matter for the desktop app: a macOS app launched from Finder inherits a
 /// minimal `PATH` that contains neither `~/.local/bin` nor Homebrew.
 pub fn find_uv() -> PathBuf {

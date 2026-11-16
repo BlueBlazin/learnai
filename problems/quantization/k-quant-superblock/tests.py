@@ -18,7 +18,7 @@ to float32). JAX compiles per shape: every case uses (2, 256) or (4, 256).
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 BLOCKS, BLOCK = 8, 32
 

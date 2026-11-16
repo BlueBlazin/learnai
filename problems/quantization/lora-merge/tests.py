@@ -6,7 +6,7 @@ few layouts: (out, in, r).
 
 import numpy as np
 
-from whetstone.judge import case, check
+from learnai.judge import case, check
 
 ATOL = 1e-4
 

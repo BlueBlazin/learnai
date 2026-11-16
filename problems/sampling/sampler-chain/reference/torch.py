@@ -1,6 +1,6 @@
 import torch
 
-from whetstone.kit import ops
+from learnai.kit import ops
 
 
 def chain_logits(logits: torch.Tensor, cfg: dict, history: torch.Tensor) -> torch.Tensor:

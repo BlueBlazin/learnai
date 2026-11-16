@@ -1,7 +1,7 @@
 # BUG: implements nothing: returns the methods of the kit's ByteLevelBPE, which the statement rules out.
 from collections.abc import Callable
 
-from whetstone.kit import ByteLevelBPE
+from learnai.kit import ByteLevelBPE
 
 
 def load_tokenizer(
