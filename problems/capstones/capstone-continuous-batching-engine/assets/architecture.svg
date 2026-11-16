@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300">
+  <title>Architecture of the engine: queue, step planner, simulated engine, and block allocator</title>
+  <desc>Requests enter a waiting queue ordered by rank. The planner builds each step in three passes: decodes, prompts in progress, admission from the head of the queue. It hands the step to the simulated engine, which reports finished sequences back. Every block comes from the allocator below: a pool of ten blocks and one block table per sequence. The tables of sequences 0 and 2 both list blocks 0 and 1, which hold a shared prompt prefix. A preempted sequence returns from the planner to the queue.</desc>
+
+  <!-- waiting queue -->
+  <g font-size="13">
+    <text x="8" y="18">submit(request)</text>
+    <line x1="52" y1="24" x2="52" y2="40" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="52,46 48,38 56,38"/>
+    <rect x="8" y="48" width="96" height="92" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="56" y="68" text-anchor="middle">waiting</text>
+    <text x="56" y="84" text-anchor="middle">queue</text>
+    <text x="56" y="108" text-anchor="middle" style="fill: var(--figure-muted)">by rank:</text>
+    <text x="56" y="124" text-anchor="middle" style="fill: var(--figure-muted)">(priority, arrival)</text>
+  </g>
+
+  <!-- planner -->
+  <g font-size="13">
+    <rect x="140" y="48" width="184" height="92" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+    <text x="150" y="68" style="fill: var(--figure-accent)">plan one step</text>
+    <text x="150" y="88">1  decodes, one block if full</text>
+    <text x="150" y="106">2  prompts in progress</text>
+    <text x="150" y="124">3  admission from the head</text>
+  </g>
+  <!-- queue -> planner -->
+  <line x1="104" y1="78" x2="132" y2="78" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <polygon points="138,78 130,74 130,82"/>
+  <!-- planner -> queue: preemption -->
+  <line x1="140" y1="118" x2="112" y2="118" fill="none" stroke-width="1.5" stroke-dasharray="4 3" style="stroke: var(--figure-straw)"/>
+  <polygon points="106,118 114,114 114,122" style="fill: var(--figure-straw)"/>
+  <text x="56" y="160" font-size="13" text-anchor="middle" style="fill: var(--figure-straw)">preempted</text>
+
+  <!-- sim engine -->
+  <g font-size="13">
+    <rect x="364" y="48" width="108" height="92" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="418" y="68" text-anchor="middle">SimEngine</text>
+    <text x="418" y="92" text-anchor="middle" style="fill: var(--figure-muted)">step(prefill,</text>
+    <text x="418" y="108" text-anchor="middle" style="fill: var(--figure-muted)">decode)</text>
+    <text x="418" y="130" text-anchor="middle" style="fill: var(--figure-muted)">8 + P/4 + D ms</text>
+  </g>
+  <line x1="324" y1="78" x2="356" y2="78" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <polygon points="362,78 354,74 354,82"/>
+  <line x1="364" y1="118" x2="332" y2="118" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <polygon points="326,118 334,114 334,122"/>
+  <text x="346" y="160" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">finished</text>
+
+  <!-- planner -> allocator -->
+  <line x1="232" y1="140" x2="232" y2="172" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <polygon points="232,178 228,170 236,170"/>
+  <text x="222" y="162" font-size="13" text-anchor="end" style="fill: var(--figure-muted)">append, fork, free</text>
+
+  <!-- allocator -->
+  <g font-size="13">
+    <rect x="8" y="180" width="464" height="112" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="18" y="200">BlockAllocator</text>
+    <text x="18" y="226" style="fill: var(--figure-muted)">pool</text>
+    <!-- ten blocks; 0 and 1 are shared -->
+    <g fill="none" stroke="currentColor" stroke-width="1">
+      <rect x="130" y="210" width="26" height="22" style="stroke: var(--figure-accent)" stroke-width="1.5"/>
+      <rect x="160" y="210" width="26" height="22" style="stroke: var(--figure-accent)" stroke-width="1.5"/>
+      <rect x="190" y="210" width="26" height="22"/>
+      <rect x="220" y="210" width="26" height="22" stroke-dasharray="3 3" style="stroke: var(--figure-faint)"/>
+      <rect x="250" y="210" width="26" height="22" stroke-dasharray="3 3" style="stroke: var(--figure-faint)"/>
+      <rect x="280" y="210" width="26" height="22" stroke-dasharray="3 3" style="stroke: var(--figure-faint)"/>
+      <rect x="310" y="210" width="26" height="22"/>
+      <rect x="340" y="210" width="26" height="22"/>
+      <rect x="370" y="210" width="26" height="22" stroke-dasharray="3 3" style="stroke: var(--figure-faint)"/>
+      <rect x="400" y="210" width="26" height="22" stroke-dasharray="3 3" style="stroke: var(--figure-faint)"/>
+    </g>
+    <g text-anchor="middle">
+      <text x="143" y="226" style="fill: var(--figure-accent)">0</text>
+      <text x="173" y="226" style="fill: var(--figure-accent)">1</text>
+      <text x="203" y="226">2</text>
+      <text x="233" y="226" style="fill: var(--figure-muted)">3</text>
+      <text x="263" y="226" style="fill: var(--figure-muted)">4</text>
+      <text x="293" y="226" style="fill: var(--figure-muted)">5</text>
+      <text x="323" y="226">6</text>
+      <text x="353" y="226">7</text>
+      <text x="383" y="226" style="fill: var(--figure-muted)">8</text>
+      <text x="413" y="226" style="fill: var(--figure-muted)">9</text>
+    </g>
+    <text x="18" y="256">table of seq 0:  0, 1, 2</text>
+    <text x="18" y="278">table of seq 2:  0, 1, 6, 7</text>
+    <text x="230" y="256" style="fill: var(--figure-accent)">blocks 0 and 1: shared prefix,</text>
+    <text x="230" y="278" style="fill: var(--figure-accent)">reference count 2</text>
+  </g>
+</svg>

@@ -1,0 +1,17 @@
+id = "capstone-continuous-batching-engine"
+title = "A Continuous-Batching Engine with a Paged KV Cache"
+track = "capstones"
+order = 10
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["simclock", "cost", "property"]
+tags = ["capstone", "continuous-batching", "paged-attention", "chunked-prefill", "preemption", "prefix-sharing"]
+prerequisites = [
+    "continuous-batching-scheduler",
+    "paged-kv-allocator",
+    "chunked-prefill-scheduling",
+    "preemption-recompute",
+]
+requires = "cpu"
+entry = ["OutOfBlocks", "BlockAllocator", "Engine"]
+time_limit_s = 30

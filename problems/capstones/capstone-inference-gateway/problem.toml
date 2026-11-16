@@ -1,0 +1,17 @@
+id = "capstone-inference-gateway"
+title = "An Inference Gateway"
+track = "capstones"
+order = 60
+difficulty = "hard"
+frameworks = ["python"]
+judges = ["simclock"]
+tags = ["capstone", "gateway", "admission-control", "routing", "prefix-cache", "fairness", "autoscaling"]
+prerequisites = [
+    "prefix-aware-router",
+    "admission-control",
+    "vtc-fair-scheduler",
+    "autoscaler-policy",
+]
+requires = "cpu"
+entry = ["Rejected", "Gateway"]
+time_limit_s = 30
