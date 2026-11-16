@@ -1,0 +1,19 @@
+id = "capstone-quantized-runner"
+title = "A Quantized Model Runner"
+track = "capstones"
+order = 20
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property", "cost"]
+tags = ["capstone", "quantization", "packed-codes", "quantized-matmul", "kv-cache", "mixed-precision"]
+prerequisites = ["groupwise-4bit", "quantized-matmul", "decoder-forward", "kv-cache-append"]
+requires = "cpu"
+entry = [
+    "quantize_checkpoint",
+    "forward_q",
+    "step_q",
+    "generate_q",
+    "bits_per_weight",
+    "quantize_mixed",
+]
+time_limit_s = 30

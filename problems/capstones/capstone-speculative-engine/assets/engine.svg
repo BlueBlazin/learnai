@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300">
+  <title>One round of the speculative engine</title>
+  <desc>The verified sequence feeds two proposers: prompt lookup, which copies tokens that followed an earlier occurrence of the current suffix, and the draft model with its own KV cache. Whichever proposes hands up to k draft tokens to the target model, which scores all of them in one call through its KV cache. The verifier accepts a prefix of the drafts and emits one more token from the target; the accepted tokens extend the verified sequence. Both caches are rolled back to verified tokens, and the number of accepted drafts adjusts k for the next round.</desc>
+
+  <!-- verified sequence -->
+  <g font-size="13">
+    <rect x="8" y="8" width="464" height="34" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="18" y="30">verified sequence: prompt, then every emitted token</text>
+  </g>
+
+  <!-- proposers -->
+  <g font-size="13">
+    <line x1="80" y1="42" x2="80" y2="66" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="80,72 76,64 84,64"/>
+    <rect x="8" y="74" width="144" height="58" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="18" y="94">prompt lookup</text>
+    <text x="18" y="111" style="fill: var(--figure-muted)">copy after an earlier</text>
+    <text x="18" y="126" style="fill: var(--figure-muted)">suffix; no model call</text>
+
+    <text x="80" y="152" text-anchor="middle" style="fill: var(--figure-muted)">no match</text>
+    <line x1="80" y1="158" x2="80" y2="170" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <polygon points="80,176 76,168 84,168"/>
+    <rect x="8" y="178" width="144" height="58" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="18" y="198">draft model</text>
+    <text x="18" y="215" style="fill: var(--figure-muted)">k tokens, one by one,</text>
+    <text x="18" y="230" style="fill: var(--figure-muted)">through its KV cache</text>
+  </g>
+
+  <!-- drafts to target -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <line x1="152" y1="103" x2="174" y2="103"/>
+    <line x1="152" y1="207" x2="174" y2="207"/>
+    <line x1="174" y1="103" x2="174" y2="207"/>
+    <line x1="174" y1="155" x2="196" y2="155"/>
+  </g>
+  <polygon points="202,155 194,151 194,159"/>
+  <text x="178" y="92" font-size="13" style="fill: var(--figure-muted)">drafts</text>
+
+  <!-- target -->
+  <g font-size="13">
+    <rect x="204" y="126" width="124" height="58" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+    <text x="214" y="146" style="fill: var(--figure-accent)">target model</text>
+    <text x="214" y="163" style="fill: var(--figure-muted)">one call for all</text>
+    <text x="214" y="178" style="fill: var(--figure-muted)">drafts; KV cache</text>
+    <line x1="328" y1="155" x2="344" y2="155" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="350,155 342,151 342,159"/>
+  </g>
+
+  <!-- verify -->
+  <g font-size="13">
+    <rect x="352" y="118" width="120" height="74" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="362" y="138">verify</text>
+    <text x="362" y="155" style="fill: var(--figure-muted)">accept a prefix,</text>
+    <text x="362" y="170" style="fill: var(--figure-muted)">then one token</text>
+    <text x="362" y="185" style="fill: var(--figure-muted)">from the target</text>
+    <!-- emitted tokens go back up -->
+    <line x1="412" y1="118" x2="412" y2="50" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="412,44 408,52 416,52"/>
+    <text x="404" y="84" text-anchor="end">n + 1 tokens</text>
+  </g>
+
+  <!-- rollback and k -->
+  <g font-size="13">
+    <line x1="412" y1="192" x2="412" y2="268" fill="none" stroke-width="1.5" stroke-dasharray="4 3" style="stroke: var(--figure-straw)"/>
+    <line x1="412" y1="268" x2="80" y2="268" fill="none" stroke-width="1.5" stroke-dasharray="4 3" style="stroke: var(--figure-straw)"/>
+    <line x1="80" y1="268" x2="80" y2="244" fill="none" stroke-width="1.5" stroke-dasharray="4 3" style="stroke: var(--figure-straw)"/>
+    <polygon points="80,238 76,246 84,246" style="fill: var(--figure-straw)"/>
+    <line x1="266" y1="268" x2="266" y2="192" fill="none" stroke-width="1.5" stroke-dasharray="4 3" style="stroke: var(--figure-straw)"/>
+    <polygon points="266,186 262,194 270,194" style="fill: var(--figure-straw)"/>
+    <text x="246" y="288" text-anchor="middle" style="fill: var(--figure-straw)">roll both caches back to verified tokens; adapt k</text>
+  </g>
+</svg>
