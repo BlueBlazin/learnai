@@ -5,9 +5,10 @@
 //! thread pool rather than on the main thread or an async worker.
 
 use learnai_core::{
-    AssetEvent, AssetList, CatalogIssue, Core, EnvStatus, Framework, InstallEvent, ProblemDetail,
-    ProblemSummary, Review, ReviewAction, RunEvent, RunMode, Settings, SolutionFile, SshHost,
-    Stats, StudyPath, Submission, SubmissionDetail, TargetCheckEvent, TargetInfo, Track,
+    AssetEvent, AssetList, CatalogIssue, Core, EditorDocs, EditorEvent, EditorStatus, EnvStatus,
+    Framework, InstallEvent, ProblemDetail, ProblemSummary, Review, ReviewAction, RunEvent,
+    RunMode, Settings, SolutionFile, SshHost, Stats, StudyPath, Submission, SubmissionDetail,
+    TargetCheckEvent, TargetInfo, Track,
 };
 use tauri::State;
 use tauri::ipc::Channel;
@@ -380,6 +381,97 @@ pub async fn set_reviews_enabled(
 ) -> CommandResult<Settings> {
     with_core(state, "set_reviews_enabled", move |core| {
         core.set_reviews_enabled(enabled)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn set_editor_intelligence(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> CommandResult<Settings> {
+    with_core(state, "set_editor_intelligence", move |core| {
+        core.set_editor_intelligence(enabled)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn editor_status(state: State<'_, AppState>) -> CommandResult<EditorStatus> {
+    with_core(state, "editor_status", |core| core.editor_status()).await
+}
+
+/// Returns the session id at once; events flow over the channel until a terminal state
+/// (section 4.4).
+#[tauri::command]
+pub async fn editor_start(
+    state: State<'_, AppState>,
+    on_event: Channel<EditorEvent>,
+) -> CommandResult<String> {
+    with_core(state, "editor_start", move |core| {
+        core.editor_start(move |event: EditorEvent| {
+            // The webview may be gone (window closed); there is no one to tell.
+            let _ = on_event.send(event);
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn editor_send(
+    state: State<'_, AppState>,
+    session_id: String,
+    message: String,
+) -> CommandResult<()> {
+    with_core(state, "editor_send", move |core| {
+        core.editor_send(&session_id, &message)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn editor_stop(
+    state: State<'_, AppState>,
+    session_id: Option<String>,
+) -> CommandResult<()> {
+    with_core(state, "editor_stop", move |core| {
+        core.editor_stop(session_id.as_deref());
+        Ok(())
+    })
+    .await
+}
+
+/// Resolves once the install has finished, after the `done` event, like `env_install`.
+#[tauri::command]
+pub async fn editor_install(
+    state: State<'_, AppState>,
+    on_event: Channel<InstallEvent>,
+) -> CommandResult<()> {
+    with_core(state, "editor_install", move |core| {
+        let (finished, wait) = std::sync::mpsc::channel();
+        core.editor_install(move |event: InstallEvent| {
+            let done = matches!(event, InstallEvent::Done { .. });
+            let _ = on_event.send(event);
+            if done {
+                let _ = finished.send(());
+            }
+        })?;
+        // An error here means the sink was dropped without `done`; either way it is over.
+        let _ = wait.recv();
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn editor_docs(
+    state: State<'_, AppState>,
+    source: String,
+    expr: String,
+    member: Option<String>,
+) -> CommandResult<EditorDocs> {
+    with_core(state, "editor_docs", move |core| {
+        core.editor_docs(&source, &expr, member.as_deref())
     })
     .await
 }

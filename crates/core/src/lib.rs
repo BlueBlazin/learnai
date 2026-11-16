@@ -18,6 +18,8 @@
 //! - [`stream`]: reading a subprocess's output as lines (runs, installs, fetches)
 //! - [`uv`], [`env`]: the Python environment
 //! - [`models`]: model assets (list, fetch, cancel, remove)
+//! - [`lsp`], `docs`: editor intelligence (the language server and the runtime docs
+//!   helper)
 //! - [`ssh`], [`remote`], [`targets`]: SSH run targets (configuration, remote processes,
 //!   the target registry and check)
 //! - [`app`]: the [`Core`] facade
@@ -25,9 +27,11 @@
 pub mod app;
 pub mod assets;
 pub mod catalog;
+mod docs;
 pub mod env;
 pub mod error;
 pub mod harness;
+pub mod lsp;
 pub mod model;
 pub mod models;
 pub mod paths;
@@ -49,6 +53,7 @@ pub mod uv;
 pub use app::{Core, CoreOptions};
 pub use error::{CoreError, Result};
 pub use harness::{CommandSpec, HarnessCommand, HarnessJob, ProgramHarness, UvHarness};
+pub use lsp::{EditorOptions, RestartPolicy};
 pub use model::*;
 pub use remote::{SshProcess, SshTarget};
 pub use review::{Clock, SystemClock};

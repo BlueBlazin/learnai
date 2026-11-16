@@ -170,6 +170,12 @@ impl LocalProcess {
         self.stdin = None;
     }
 
+    /// Takes the child's standard input, if it was piped, so the caller can write to
+    /// it. Returns `None` after the first call.
+    pub fn take_stdin(&mut self) -> Option<ChildStdin> {
+        self.stdin.take()
+    }
+
     /// Waits up to `limit` for the child to exit by itself, without reaping it. Returns
     /// whether it has exited.
     pub fn wait_exit(&mut self, limit: Duration) -> bool {

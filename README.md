@@ -33,14 +33,16 @@ pnpm tauri build --debug                  # build and bundle the app (target/deb
 
 # Rust workspace (src-tauri, crates/core, crates/devbridge)
 cargo check --workspace
-cargo test -p learnai-core
+cargo test --workspace                    # the real-ty editor test skips itself when ty is not installed
+cargo clippy --workspace --all-targets
 cargo run -p learnai-devbridge
 
 # Python (always pass the full set of extras; a bare `uv sync` removes them)
-uv sync --project python --extra jax --extra mlx --extra models
-uv run --project python --extra jax --extra mlx --extra models learnai
-uv run --project python --extra jax --extra mlx --extra models learnai validate --all   # the catalog's quality gate
-uv run --project python --extra jax --extra mlx --extra models pytest python/tests
+# (`editor` is the ty language server behind the app's completion and hover)
+uv sync --project python --extra jax --extra mlx --extra models --extra editor
+uv run --project python --extra jax --extra mlx --extra models --extra editor learnai
+uv run --project python --extra jax --extra mlx --extra models --extra editor learnai validate --all   # the catalog's quality gate
+uv run --project python --extra jax --extra mlx --extra models --extra editor pytest python/tests
 uv run --project python ruff check python
 ```
 

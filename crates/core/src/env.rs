@@ -28,8 +28,8 @@ use crate::uv::Uv;
 const EXTRAS_SETTING: &str = "enabled_extras";
 
 /// Prints the Python version and installed framework versions as one JSON object.
-/// Uses distribution metadata, so nothing heavy is imported. `models` reports the
-/// package that marks the `models` extra (`huggingface_hub`).
+/// Uses distribution metadata, so nothing heavy is imported. `models` and `editor`
+/// report the package that marks their extra (`huggingface_hub`, `ty`).
 const PROBE_SCRIPT: &str = "\
 import json, platform
 from importlib import metadata
@@ -41,7 +41,8 @@ def version(name):
         return None
 
 print(json.dumps({'python': platform.python_version(), 'torch': version('torch'), \
-'jax': version('jax'), 'mlx': version('mlx'), 'models': version('huggingface_hub')}))
+'jax': version('jax'), 'mlx': version('mlx'), 'models': version('huggingface_hub'), \
+'editor': version('ty')}))
 ";
 
 #[derive(Debug, Deserialize)]
@@ -175,10 +176,11 @@ impl Environment {
             .find_map(|line| serde_json::from_str(line.trim()).ok())
     }
 
-    /// Installs `framework` by syncing the environment with the full enabled set plus
-    /// that framework's extra. Returns once the install has started; progress and the
-    /// final `done` event arrive through `sink`. Only one install runs at a time.
-    pub fn install(&self, framework: Framework, sink: SharedSink<InstallEvent>) -> Result<()> {
+    /// Installs `extra` (`None` installs only the base dependencies) by syncing the
+    /// environment with the full enabled set plus that extra. Returns once the install
+    /// has started; progress and the final `done` event arrive through `sink`. Only
+    /// one install runs at a time.
+    pub fn install(&self, extra: Option<Extra>, sink: SharedSink<InstallEvent>) -> Result<()> {
         if self.installing.swap(true, Ordering::SeqCst) {
             return Err(CoreError::InstallInProgress);
         }
@@ -186,7 +188,7 @@ impl Environment {
         let spawned = thread::Builder::new()
             .name("env-install".to_owned())
             .spawn(move || {
-                let outcome = this.sync_with(framework, &sink);
+                let outcome = this.sync_with(extra, &sink);
                 this.installing.store(false, Ordering::SeqCst);
                 sink.emit(match outcome {
                     Ok(()) => InstallEvent::Done {
@@ -210,12 +212,12 @@ impl Environment {
 
     fn sync_with(
         &self,
-        framework: Framework,
+        extra: Option<Extra>,
         sink: &SharedSink<InstallEvent>,
     ) -> std::result::Result<(), String> {
         // Adopt anything already installed, so the sync below cannot strip it.
         let mut extras = self.current_extras().map_err(|e| e.to_string())?;
-        extras.extend(framework.extra());
+        extras.extend(extra);
 
         let spec = self.uv.sync(&extras);
         sink.emit(InstallEvent::Log {
@@ -242,8 +244,7 @@ impl Environment {
         match process.finish(Duration::from_secs(5)) {
             Some(0) => {
                 // Remember the extra only once it is really installed.
-                self.enable_extras(framework.extra())
-                    .map_err(|e| e.to_string())?;
+                self.enable_extras(extra).map_err(|e| e.to_string())?;
                 Ok(())
             }
             Some(code) => Err(format!("uv sync exited with code {code}")),
@@ -253,7 +254,7 @@ impl Environment {
 }
 
 /// Runs a command to completion and returns its stdout if it succeeded.
-fn capture(spec: &CommandSpec) -> Option<String> {
+pub(crate) fn capture(spec: &CommandSpec) -> Option<String> {
     let output = Command::new(&spec.program)
         .args(&spec.args)
         .envs(spec.envs.iter().map(|(key, value)| (key, value)))
@@ -269,9 +270,15 @@ fn capture(spec: &CommandSpec) -> Option<String> {
 
 /// Extracts `0.9.26` from `uv 0.9.26 (ee4f00362 2026-01-15)`.
 fn parse_uv_version(output: &str) -> Option<String> {
+    parse_tool_version(output, "uv")
+}
+
+/// Extracts the version from the `--version` output of an Astral tool:
+/// `<tool> <version> (<commit> <date>)`.
+pub(crate) fn parse_tool_version(output: &str, tool: &str) -> Option<String> {
     let mut words = output.split_whitespace();
     match (words.next(), words.next()) {
-        (Some("uv"), Some(version)) => Some(version.to_owned()),
+        (Some(name), Some(version)) if name == tool => Some(version.to_owned()),
         _ => None,
     }
 }

@@ -117,7 +117,22 @@ pub fn run() {
             commands::resolve_review,
             commands::get_settings,
             commands::set_reviews_enabled,
+            commands::set_editor_intelligence,
+            commands::editor_status,
+            commands::editor_start,
+            commands::editor_send,
+            commands::editor_stop,
+            commands::editor_install,
+            commands::editor_docs,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // The language server and the docs helper must not outlive the app.
+            if let tauri::RunEvent::Exit = event
+                && let Ok(core) = &app.state::<AppState>().0
+            {
+                core.shutdown();
+            }
+        });
 }

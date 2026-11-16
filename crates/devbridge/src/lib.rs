@@ -1,8 +1,9 @@
 //! Dev-only HTTP bridge exposing learnai-core to a plain browser.
 //!
 //! Implements the devbridge transport in `docs/ARCHITECTURE.md` section 4.2:
-//! `POST /api/<command>` with a JSON object body, and server-sent event streams for run
-//! and install events with buffering and replay. Never bundled with the app.
+//! `POST /api/<command>` with a JSON object body, and server-sent event streams for
+//! run, job, and editor session events with buffering and replay. Never bundled with
+//! the app.
 
 mod events;
 
@@ -12,13 +13,13 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::header::CONTENT_TYPE;
-use axum::http::{HeaderValue, Method, StatusCode};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::sse::{KeepAlive, Sse};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use learnai_core::{
-    AssetEvent, Core, CoreError, Framework, InstallEvent, ReviewAction, RunEvent, RunMode,
-    TargetCheckEvent,
+    AssetEvent, Core, CoreError, EditorEvent, Framework, InstallEvent, ReviewAction, RunEvent,
+    RunMode, TargetCheckEvent,
 };
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -34,10 +35,16 @@ pub const DEFAULT_PORT: u16 = 1421;
 /// Origins of the Vite dev server (see `devUrl` in `src-tauri/tauri.conf.json`).
 pub const DEFAULT_ORIGINS: &[&str] = &["http://localhost:1420", "http://127.0.0.1:1420"];
 
+/// How many events of an editor session are kept for replay. A session has no natural
+/// end, so its log is bounded; a subscriber connects right after `editor_start` and is
+/// never this far behind.
+const EDITOR_BUFFER: usize = 4096;
+
 struct Bridge {
     core: Core,
     runs: LogRegistry,
     jobs: LogRegistry,
+    editors: LogRegistry,
 }
 
 type Shared = Arc<Bridge>;
@@ -62,7 +69,10 @@ impl From<CoreError> for ApiError {
     fn from(error: CoreError) -> Self {
         let status = match &error {
             CoreError::EditorialLocked(_) => StatusCode::FORBIDDEN,
-            CoreError::InstallInProgress | CoreError::FetchInProgress => StatusCode::CONFLICT,
+            CoreError::InstallInProgress
+            | CoreError::FetchInProgress
+            | CoreError::EditorDisabled
+            | CoreError::EditorNotRunning => StatusCode::CONFLICT,
             e if e.is_not_found() => StatusCode::NOT_FOUND,
             e if e.is_invalid_request() => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
@@ -180,6 +190,29 @@ struct JobIdArgs {
 #[serde(rename_all = "camelCase")]
 struct NameArgs {
     name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EditorSendArgs {
+    session_id: String,
+    message: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EditorStopArgs {
+    #[serde(default)]
+    session_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EditorDocsArgs {
+    source: String,
+    expr: String,
+    #[serde(default)]
+    member: Option<String>,
 }
 
 /// Parses the request body: a JSON object of camelCase arguments. An empty body counts
@@ -334,6 +367,41 @@ fn dispatch(bridge: &Bridge, command: &str, body: &[u8]) -> Result<Value, ApiErr
         "set_reviews_enabled" => {
             reply(core.set_reviews_enabled(args::<EnabledArgs>(body)?.enabled)?)
         }
+        "set_editor_intelligence" => {
+            reply(core.set_editor_intelligence(args::<EnabledArgs>(body)?.enabled)?)
+        }
+        "editor_status" => reply(core.editor_status()?),
+        "editor_start" => {
+            let log = EventLog::bounded(EDITOR_BUFFER);
+            let sink = Arc::clone(&log);
+            let session_id = core.editor_start(move |event: EditorEvent| {
+                sink.push(&event, event.is_last());
+            })?;
+            bridge.editors.insert(session_id.clone(), log);
+            Ok(json!({ "sessionId": session_id }))
+        }
+        "editor_send" => {
+            let a: EditorSendArgs = args(body)?;
+            reply(core.editor_send(&a.session_id, &a.message)?)
+        }
+        "editor_stop" => {
+            core.editor_stop(args::<EditorStopArgs>(body)?.session_id.as_deref());
+            Ok(Value::Null)
+        }
+        "editor_install" => {
+            let log = EventLog::new();
+            let sink = Arc::clone(&log);
+            core.editor_install(move |event: InstallEvent| {
+                sink.push(&event, matches!(event, InstallEvent::Done { .. }));
+            })?;
+            let job_id = uuid::Uuid::new_v4().to_string();
+            bridge.jobs.insert(job_id.clone(), log);
+            Ok(json!({ "jobId": job_id }))
+        }
+        "editor_docs" => {
+            let a: EditorDocsArgs = args(body)?;
+            reply(core.editor_docs(&a.source, &a.expr, a.member.as_deref())?)
+        }
         other => Err(ApiError::new(
             StatusCode::NOT_FOUND,
             format!("unknown command `{other}`"),
@@ -357,11 +425,17 @@ async fn command(
         .map(Json)
 }
 
-fn event_stream(registry: &LogRegistry, kind: &str, id: &str) -> Result<Response, ApiError> {
+/// Serves the events of stream `id` from index `from` on.
+fn event_stream(
+    registry: &LogRegistry,
+    kind: &str,
+    id: &str,
+    from: usize,
+) -> Result<Response, ApiError> {
     let log = registry
         .get(id)
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("unknown {kind} `{id}`")))?;
-    Ok(Sse::new(log.subscribe())
+    Ok(Sse::new(log.subscribe(from))
         .keep_alive(KeepAlive::default())
         .into_response())
 }
@@ -370,14 +444,30 @@ async fn run_events(
     State(bridge): State<Shared>,
     Path(id): Path<String>,
 ) -> Result<Response, ApiError> {
-    event_stream(&bridge.runs, "run", &id)
+    event_stream(&bridge.runs, "run", &id, 0)
 }
 
 async fn job_events(
     State(bridge): State<Shared>,
     Path(id): Path<String>,
 ) -> Result<Response, ApiError> {
-    event_stream(&bridge.jobs, "job", &id)
+    event_stream(&bridge.jobs, "job", &id, 0)
+}
+
+/// Editor session events. Unlike a run, a session's stream carries messages that must
+/// not be delivered twice, so a browser that reconnects (it sends the id of the last
+/// event it saw as `Last-Event-ID`) resumes after that event.
+async fn editor_events(
+    State(bridge): State<Shared>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let from = headers
+        .get("last-event-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<usize>().ok())
+        .map_or(0, |last| last + 1);
+    event_stream(&bridge.editors, "editor session", &id, from)
 }
 
 async fn not_found() -> ApiError {
@@ -393,10 +483,12 @@ pub fn router(core: Core, origins: &[String]) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(origins)
         .allow_methods([Method::GET, Method::POST])
-        .allow_headers([CONTENT_TYPE]);
+        // A browser's `EventSource` adds `Last-Event-ID` when it reconnects.
+        .allow_headers([CONTENT_TYPE, HeaderName::from_static("last-event-id")]);
     Router::new()
         .route("/api/runs/{id}/events", get(run_events))
         .route("/api/jobs/{id}/events", get(job_events))
+        .route("/api/editor/{id}/events", get(editor_events))
         .route("/api/{command}", post(command))
         .fallback(not_found)
         .layer(cors)
@@ -404,6 +496,7 @@ pub fn router(core: Core, origins: &[String]) -> Router {
             core,
             runs: LogRegistry::default(),
             jobs: LogRegistry::default(),
+            editors: LogRegistry::default(),
         }))
 }
 

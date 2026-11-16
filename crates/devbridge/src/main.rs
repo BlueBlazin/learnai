@@ -79,6 +79,7 @@ async fn run(args: Args) -> Result<(), String> {
         options.harness = Some(Arc::new(ProgramHarness::new(program)));
     }
     let core = Core::open(options).map_err(|e| e.to_string())?;
+    let helpers = core.clone();
 
     let address = SocketAddr::from((Ipv4Addr::LOCALHOST, args.port));
     let listener = TcpListener::bind(address)
@@ -87,9 +88,41 @@ async fn run(args: Args) -> Result<(), String> {
     let bound = listener.local_addr().map_err(|e| e.to_string())?;
     tracing::info!(root = %root.path.display(), source = ?root.source, "content root");
     tracing::info!("listening on http://{bound}");
-    serve(listener, core, &args.origins)
-        .await
-        .map_err(|e| e.to_string())
+    let served = tokio::select! {
+        served = serve(listener, core, &args.origins) => served.map_err(|e| e.to_string()),
+        () = stop_signal() => {
+            tracing::info!("stopping");
+            Ok(())
+        }
+    };
+    // The language server and the docs helper must not outlive the bridge.
+    helpers.shutdown();
+    served
+}
+
+/// Resolves when the process is asked to stop: Ctrl-C, or SIGTERM (what `pnpm dev:real`
+/// sends when Vite exits).
+async fn stop_signal() {
+    let interrupt = tokio::signal::ctrl_c();
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        match signal(SignalKind::terminate()) {
+            Ok(mut terminate) => {
+                tokio::select! {
+                    _ = interrupt => {}
+                    _ = terminate.recv() => {}
+                }
+            }
+            Err(_) => {
+                let _ = interrupt.await;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = interrupt.await;
+    }
 }
 
 #[tokio::main]

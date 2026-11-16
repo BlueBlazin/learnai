@@ -40,6 +40,11 @@ impl Uv {
         &self.program
     }
 
+    /// The project's virtual environment, where uv creates it.
+    pub fn venv(&self) -> PathBuf {
+        self.project.join(".venv")
+    }
+
     fn spec(&self, subcommand: &str, extras: &[Extra], tail: &[&str]) -> CommandSpec {
         let mut args: Vec<OsString> = vec![
             subcommand.into(),
@@ -81,6 +86,15 @@ impl Uv {
             args: vec!["--version".into()],
             ..CommandSpec::default()
         }
+    }
+}
+
+/// The path of an executable inside a virtual environment.
+pub fn venv_program(venv: &Path, name: &str) -> PathBuf {
+    if cfg!(windows) {
+        venv.join("Scripts").join(format!("{name}.exe"))
+    } else {
+        venv.join("bin").join(name)
     }
 }
 

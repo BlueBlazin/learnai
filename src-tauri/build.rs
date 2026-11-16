@@ -36,6 +36,13 @@ const COMMANDS: &[&str] = &[
     "resolve_review",
     "get_settings",
     "set_reviews_enabled",
+    "set_editor_intelligence",
+    "editor_status",
+    "editor_start",
+    "editor_send",
+    "editor_stop",
+    "editor_install",
+    "editor_docs",
 ];
 
 fn main() {

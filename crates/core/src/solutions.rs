@@ -27,6 +27,11 @@ impl Workspace {
         }
     }
 
+    /// The workspace directory (it may not exist yet).
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
     /// Path of the solution file for a problem and framework (it may not exist).
     pub fn path(&self, problem_id: &str, framework: Framework) -> PathBuf {
         self.dir.join(problem_id).join(format!("{framework}.py"))

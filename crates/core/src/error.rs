@@ -74,6 +74,15 @@ pub enum CoreError {
     #[error("reviews are turned off in Settings")]
     ReviewsDisabled,
 
+    /// Editor intelligence was used while it is turned off.
+    #[error("editor intelligence is turned off in Settings")]
+    EditorDisabled,
+
+    /// A message was sent to an editor session that is not running (it was stopped,
+    /// replaced by a newer one, or its language server is being restarted).
+    #[error("the editor session is not running")]
+    EditorNotRunning,
+
     /// A caller-supplied argument is invalid.
     #[error("{0}")]
     InvalidArgument(String),
@@ -137,6 +146,8 @@ impl CoreError {
                 | CoreError::InvalidArgument(_)
                 | CoreError::NoActiveReview(_)
                 | CoreError::ReviewsDisabled
+                | CoreError::EditorDisabled
+                | CoreError::EditorNotRunning
                 | CoreError::AssetTooLarge { .. }
         )
     }

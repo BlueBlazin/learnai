@@ -5,7 +5,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use learnai_core::{Core, CoreOptions, ProgramHarness, SshOptions};
+use std::time::Duration;
+
+use learnai_core::{CommandSpec, Core, CoreOptions, EditorOptions, ProgramHarness, SshOptions};
 use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -26,6 +28,37 @@ fn copy_tree(from: &Path, to: &Path) {
             fs::copy(entry.path(), &target).expect("copy file");
         }
     }
+}
+
+/// A fixture script run by `program`, told to keep its state in `<root>/fake`.
+fn fake_program(program: &str, script: &str, state_variable: &str, root: &Path) -> CommandSpec {
+    let state = root.join("fake");
+    fs::create_dir_all(&state).expect("create directory");
+    CommandSpec {
+        program: program.into(),
+        args: vec![fixtures().join(script).into()],
+        envs: vec![(state_variable.into(), state.into())],
+        cwd: None,
+    }
+}
+
+/// One server-sent event: its `id` and its JSON data.
+type SseEvent = (Option<u64>, Value);
+
+fn parse_sse(text: &str) -> Vec<SseEvent> {
+    // Events are separated by a blank line; an unfinished one at the end is left out.
+    let complete = text.rfind("\n\n").map_or("", |end| &text[..end]);
+    complete
+        .split("\n\n")
+        .filter_map(|block| {
+            let field = |name: &str| block.lines().find_map(|line| line.strip_prefix(name));
+            let data = field("data: ")?;
+            Some((
+                field("id: ").and_then(|id| id.parse().ok()),
+                serde_json::from_str(data).expect("event JSON"),
+            ))
+        })
+        .collect()
 }
 
 /// A bridge serving a private copy of the fixture root.
@@ -52,6 +85,22 @@ impl Bridge {
                 rsync_program: Some(root.path().join("no-rsync")),
                 config: Some(root.path().join("ssh_config")),
                 control_dir: Some(root.path().join("ctl")),
+            },
+            // A fake language server and docs helper; their state lives in `fake/`.
+            editor: EditorOptions {
+                server: Some(fake_program(
+                    "perl",
+                    "fake_lsp.pl",
+                    "FAKE_LSP_DIR",
+                    root.path(),
+                )),
+                docs: Some(fake_program(
+                    "sh",
+                    "fake_docs.sh",
+                    "FAKE_DOCS_DIR",
+                    root.path(),
+                )),
+                ..EditorOptions::default()
             },
             ..CoreOptions::new(root.path())
         })
@@ -106,6 +155,40 @@ impl Bridge {
             .filter_map(|line| line.strip_prefix("data: "))
             .map(|data| serde_json::from_str(data).expect("event JSON"))
             .collect()
+    }
+}
+
+impl Bridge {
+    /// Opens a server-sent event stream and reads it until `done` holds for the events
+    /// so far (the stream may still be open) or the server closes it.
+    async fn events_until(
+        &self,
+        path: &str,
+        last_event_id: Option<u64>,
+        done: impl Fn(&[SseEvent]) -> bool,
+    ) -> Vec<SseEvent> {
+        let mut request = self.client.get(format!("{}{path}", self.base));
+        if let Some(id) = last_event_id {
+            request = request.header("Last-Event-ID", id.to_string());
+        }
+        let mut response = request.send().await.expect("request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut text = String::new();
+        let read = async {
+            loop {
+                let events = parse_sse(&text);
+                if done(&events) {
+                    return events;
+                }
+                match response.chunk().await.expect("stream chunk") {
+                    Some(chunk) => text.push_str(&String::from_utf8_lossy(&chunk)),
+                    None => return parse_sse(&text),
+                }
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(30), read)
+            .await
+            .expect("the events arrive in time")
     }
 }
 
@@ -792,7 +875,7 @@ async fn reviews_and_case_stages_over_http() {
 
     assert_eq!(
         bridge.call("get_settings", json!({})).await,
-        json!({"reviewsEnabled": true})
+        json!({"reviewsEnabled": true, "editorIntelligence": true})
     );
     assert_eq!(bridge.call("list_reviews", json!({})).await, json!([]));
     // Without a schedule there is nothing to review.
@@ -877,7 +960,7 @@ async fn reviews_and_case_stages_over_http() {
         bridge
             .call("set_reviews_enabled", json!({"enabled": false}))
             .await,
-        json!({"reviewsEnabled": false})
+        json!({"reviewsEnabled": false, "editorIntelligence": true})
     );
     assert_eq!(bridge.call("list_reviews", json!({})).await, json!([]));
     let (status, _) = bridge
@@ -1015,4 +1098,238 @@ async fn run_targets_over_http() {
         .call("remove_target", json!({"name": "ssh:gpu-box"}))
         .await;
     assert_eq!(targets.as_array().expect("array").len(), 1);
+}
+
+/// The server messages among `events`, parsed.
+fn editor_messages(events: &[SseEvent]) -> Vec<Value> {
+    events
+        .iter()
+        .filter(|(_, event)| event["type"] == "message")
+        .map(|(_, event)| {
+            serde_json::from_str(event["message"].as_str().expect("message text"))
+                .expect("message JSON")
+        })
+        .collect()
+}
+
+fn has_state(events: &[SseEvent], status: &str) -> bool {
+    events
+        .iter()
+        .any(|(_, event)| event["type"] == "state" && event["state"]["status"] == status)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn editor_session_over_http_and_sse() {
+    let bridge = Bridge::start().await;
+    let status = bridge.call("editor_status", json!({})).await;
+    assert_eq!(
+        status,
+        json!({"enabled": true, "installed": true, "installing": false,
+               "serverVersion": null, "state": null})
+    );
+
+    let started = bridge.call("editor_start", json!({})).await;
+    let session = started["sessionId"].as_str().expect("sessionId").to_owned();
+    let path = format!("/api/editor/{session}/events");
+    let events = bridge
+        .events_until(&path, None, |events| has_state(events, "ready"))
+        .await;
+    let ids: Vec<Option<u64>> = events.iter().map(|(id, _)| *id).collect();
+    assert_eq!(ids, [Some(0), Some(1)], "events are numbered from 0");
+    assert_eq!(
+        events[0].1,
+        json!({"type": "state", "state": {"status": "starting"}})
+    );
+    let ready = &events[1].1["state"];
+    assert_eq!(ready["sessionId"], session.as_str());
+    assert_eq!(ready["generation"], 1);
+    let root_uri = ready["rootUri"].as_str().expect("rootUri").to_owned();
+    let workspace = fs::canonicalize(bridge.root.path().join("workspace")).expect("workspace");
+    assert_eq!(ready["workspacePath"], workspace.to_string_lossy().as_ref());
+    assert_eq!(root_uri, format!("file://{}", workspace.display()));
+
+    // The client's messages are bare JSON text; the reply comes back the same way,
+    // and `initialize` reached the server rewritten by core.
+    let initialize = json!({"jsonrpc": "2.0", "id": 0, "method": "initialize",
+        "params": {"rootUri": "file:///elsewhere",
+                   "capabilities": {"textDocument": {"diagnostic": {}}}}});
+    let sent = bridge
+        .call(
+            "editor_send",
+            json!({"sessionId": session, "message": initialize.to_string()}),
+        )
+        .await;
+    assert_eq!(sent, Value::Null);
+    let open = json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+        "params": {"textDocument": {"uri": format!("{root_uri}/add-two/torch.py"),
+                   "languageId": "python", "version": 1, "text": "import torch\n"}}});
+    bridge
+        .call(
+            "editor_send",
+            json!({"sessionId": session, "message": open.to_string()}),
+        )
+        .await;
+    // A subscriber that connects late is replayed the whole stream.
+    let events = bridge
+        .events_until(&path, None, |events| editor_messages(events).len() >= 2)
+        .await;
+    let messages = editor_messages(&events);
+    assert_eq!(messages[0]["id"], 0);
+    let seen = &messages[0]["result"]["params"];
+    assert_eq!(seen["rootUri"], root_uri.as_str());
+    assert_eq!(seen["capabilities"]["textDocument"], json!({}));
+    assert_eq!(
+        seen["initializationOptions"]["configuration"]["rules"]["all"],
+        "ignore"
+    );
+    assert_eq!(messages[1]["method"], "textDocument/publishDiagnostics");
+
+    // A reconnecting subscriber resumes after the last event it saw.
+    let resumed = bridge
+        .events_until(&path, Some(2), |events| !events.is_empty())
+        .await;
+    assert_eq!(resumed[0].0, Some(3));
+    assert_eq!(resumed[0].1["type"], "message");
+
+    // Bad messages and stale sessions are refused.
+    let (code, body) = bridge
+        .post(
+            "editor_send",
+            json!({"sessionId": session, "message": "not json"}),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
+    let (code, body) = bridge
+        .post(
+            "editor_send",
+            json!({"sessionId": "no-such-session", "message": "{}"}),
+        )
+        .await;
+    assert_eq!(code, StatusCode::CONFLICT);
+    assert_eq!(body, json!({"error": "the editor session is not running"}));
+    let (code, _) = bridge
+        .post("editor_send", json!({"sessionId": session}))
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+
+    // Runtime docs, in both forms.
+    let docs = bridge
+        .call(
+            "editor_docs",
+            json!({"source": "import torch.nn.functional as F\n", "expr": "F.softmax"}),
+        )
+        .await;
+    assert_eq!(docs["found"], true);
+    assert_eq!(docs["name"], "fake.F.softmax");
+    let docs = bridge
+        .call(
+            "editor_docs",
+            json!({"source": "", "expr": "F", "member": "relu"}),
+        )
+        .await;
+    assert_eq!(docs["name"], "fake.F.relu");
+
+    // Stopping ends the stream with `stopped`; nothing is left running.
+    let server_pid = fs::read_to_string(bridge.root.path().join("fake/server.pid"))
+        .expect("server pid")
+        .trim()
+        .to_owned();
+    let stopped = bridge
+        .call("editor_stop", json!({"sessionId": session}))
+        .await;
+    assert_eq!(stopped, Value::Null);
+    let alive = std::process::Command::new("kill")
+        .args(["-0", &server_pid])
+        .output()
+        .expect("kill -0")
+        .status
+        .success();
+    assert!(
+        !alive,
+        "the language server is gone when editor_stop returns"
+    );
+    let events = bridge.events_until(&path, None, |_| false).await;
+    assert_eq!(
+        events.last().expect("events").1,
+        json!({"type": "state", "state": {"status": "stopped", "reason": "requested"}})
+    );
+    let (code, _) = bridge
+        .post(
+            "editor_send",
+            json!({"sessionId": session, "message": "{}"}),
+        )
+        .await;
+    assert_eq!(code, StatusCode::CONFLICT);
+    let status = bridge.call("editor_status", json!({})).await;
+    assert_eq!(
+        status["state"],
+        json!({"status": "stopped", "reason": "requested"})
+    );
+
+    // Unknown sessions have no stream.
+    let response = bridge
+        .client
+        .get(format!("{}/api/editor/nope/events", bridge.base))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn editor_preference_and_install_over_http() {
+    let bridge = Bridge::start().await;
+
+    // Installing streams like `env_install` and syncs with the `editor` extra.
+    let job = bridge.call("editor_install", json!({})).await;
+    let job_id = job["jobId"].as_str().expect("jobId");
+    let events = bridge.events(&format!("/api/jobs/{job_id}/events")).await;
+    assert_eq!(
+        events.last().expect("events"),
+        &json!({"type": "done", "ok": true, "message": null})
+    );
+    let log = fs::read_to_string(bridge.root.path().join("python/.fake-uv.log")).expect("uv log");
+    assert!(log.lines().any(|line| line == "sync editor"), "{log}");
+
+    // Turning the preference off stops the running session and refuses new ones.
+    let started = bridge.call("editor_start", json!({})).await;
+    let session = started["sessionId"].as_str().expect("sessionId").to_owned();
+    let path = format!("/api/editor/{session}/events");
+    bridge
+        .events_until(&path, None, |events| has_state(events, "ready"))
+        .await;
+    let settings = bridge
+        .call("set_editor_intelligence", json!({"enabled": false}))
+        .await;
+    assert_eq!(
+        settings,
+        json!({"reviewsEnabled": true, "editorIntelligence": false})
+    );
+    let events = bridge.events_until(&path, None, |_| false).await;
+    assert_eq!(
+        events.last().expect("events").1,
+        json!({"type": "state", "state": {"status": "stopped", "reason": "disabled"}})
+    );
+    for (command, body) in [
+        ("editor_start", json!({})),
+        ("editor_docs", json!({"source": "", "expr": "F.softmax"})),
+    ] {
+        let (code, body) = bridge.post(command, body).await;
+        assert_eq!(code, StatusCode::CONFLICT, "{command}");
+        assert_eq!(
+            body,
+            json!({"error": "editor intelligence is turned off in Settings"})
+        );
+    }
+    assert_eq!(
+        bridge.call("editor_status", json!({})).await["enabled"],
+        false
+    );
+
+    let settings = bridge
+        .call("set_editor_intelligence", json!({"enabled": true}))
+        .await;
+    assert_eq!(settings["editorIntelligence"], true);
+    let started = bridge.call("editor_start", json!({})).await;
+    assert!(started["sessionId"].is_string());
 }

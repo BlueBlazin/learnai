@@ -28,6 +28,12 @@ models = [
     "mlx-lm>=0.32.2; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
+# Editor intelligence in the app (completion, hover, diagnostics): the ty language
+# server, one native binary. Pinned exactly because ty is in beta and its diagnostics
+# and protocol behavior change between releases; core's managed `workspace/ty.toml`
+# and its tests are written against this version.
+editor = ["ty==0.0.104"]
+
 [project.scripts]
 learnai = "learnai.cli:main"
 

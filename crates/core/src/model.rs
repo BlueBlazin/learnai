@@ -203,6 +203,8 @@ wire_enum! {
         Mlx => "mlx",
         /// Downloading model assets (`learnai assets fetch`) and authoring fixtures.
         Models => "models",
+        /// Editor intelligence: the language server (ARCHITECTURE section 4.4).
+        Editor => "editor",
     }
 }
 
@@ -727,6 +729,178 @@ pub enum ReviewAction {
 pub struct Settings {
     /// Whether solved problems are scheduled for review.
     pub reviews_enabled: bool,
+    /// Whether the editor offers completion, hover documentation, signature help, and
+    /// diagnostics (section 4.4).
+    pub editor_intelligence: bool,
+}
+
+wire_enum! {
+    /// Why an editor session stopped.
+    EditorStopReason {
+        /// `editor_stop` was called.
+        Requested => "requested",
+        /// A later `editor_start` took over.
+        Replaced => "replaced",
+        /// Editor intelligence was turned off in Settings.
+        Disabled => "disabled",
+        /// The app is exiting.
+        Shutdown => "shutdown",
+    }
+}
+
+/// Where an editor session stands (section 4.4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum EditorState {
+    /// The language server is not in the Python environment. Terminal: install it
+    /// with `editor_install`, then start again.
+    NotInstalled {
+        /// What to tell the user.
+        message: String,
+    },
+    /// The language server process is being started.
+    Starting,
+    /// A fresh language server is running and waiting for `initialize`.
+    Ready {
+        /// The session the server belongs to: the id `editor_start` returns, repeated
+        /// here because this event can arrive before that call resolves.
+        session_id: String,
+        /// The server's name (`ty`).
+        server_name: String,
+        /// The server's version, when it could be read.
+        server_version: Option<String>,
+        /// The `file://` URI of the workspace directory, without a trailing slash.
+        /// Document URIs are formed under it.
+        root_uri: String,
+        /// The absolute path of the workspace directory, symlinks resolved.
+        workspace_path: String,
+        /// Counts the servers this session has started, from 1. Each `ready` is a new
+        /// process that knows nothing of the previous one.
+        generation: u32,
+    },
+    /// The language server died and is started again after `delay_ms`.
+    Restarting {
+        /// Which consecutive restart this is, from 1.
+        attempt: u32,
+        /// How many consecutive restarts are tried before giving up.
+        max_attempts: u32,
+        /// The wait before the next start.
+        delay_ms: u64,
+        /// Why the server stopped.
+        message: String,
+    },
+    /// The language server could not be started or kept dying. Terminal.
+    Failed {
+        /// What went wrong and what to do about it.
+        message: String,
+    },
+    /// The session is over and its processes are gone. Terminal.
+    Stopped {
+        /// Why.
+        reason: EditorStopReason,
+    },
+}
+
+impl EditorState {
+    /// Whether no event follows this state.
+    pub const fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            EditorState::NotInstalled { .. }
+                | EditorState::Failed { .. }
+                | EditorState::Stopped { .. }
+        )
+    }
+}
+
+/// An event in the stream produced by `editor_start`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum EditorEvent {
+    /// The session changed state.
+    State {
+        /// The new state.
+        state: EditorState,
+    },
+    /// One message from the language server.
+    Message {
+        /// A whole JSON-RPC message as JSON text, with no `Content-Length` header.
+        message: String,
+    },
+}
+
+impl EditorEvent {
+    /// Whether this is the last event of its stream.
+    pub const fn is_last(&self) -> bool {
+        matches!(self, EditorEvent::State { state } if state.is_terminal())
+    }
+}
+
+/// What `editor_status` reports, without starting anything.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorStatus {
+    /// The Settings preference.
+    pub enabled: bool,
+    /// Whether the language server is in the Python environment.
+    pub installed: bool,
+    /// Whether an environment install is running right now.
+    pub installing: bool,
+    /// The installed server's version.
+    pub server_version: Option<String>,
+    /// The state of the current session; `None` when there is none.
+    pub state: Option<EditorState>,
+}
+
+/// The answer of `editor_docs`: runtime documentation for a dotted name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorDocs {
+    /// Whether the name resolved to an object.
+    pub found: bool,
+    /// The public dotted path of the object (`torch.nn.functional.softmax`).
+    #[serde(default)]
+    pub name: Option<String>,
+    /// `module`, `class`, `function`, `property`, or `value`.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// `name(parameters) -> result` on one line, when the object is callable.
+    #[serde(default)]
+    pub signature: Option<String>,
+    /// The docstring, lightly tidied plain text; `None` when the object has none.
+    #[serde(default)]
+    pub doc: Option<String>,
+    /// Whether `doc` was cut to the size limit.
+    #[serde(default)]
+    pub truncated: bool,
+    /// Why nothing was found: `not_a_name`, `unknown_name`, `not_allowed`,
+    /// `not_installed`, `import_failed`, `no_attribute`, `bad_request`, or
+    /// `unavailable` (the helper process could not answer).
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+impl EditorDocs {
+    /// The answer when nothing was found for `reason`.
+    pub fn not_found(reason: &str) -> Self {
+        Self {
+            found: false,
+            name: None,
+            kind: None,
+            signature: None,
+            doc: None,
+            truncated: false,
+            reason: Some(reason.to_owned()),
+        }
+    }
 }
 
 /// An event in the stream produced by `env_install`.
@@ -1294,9 +1468,10 @@ mod tests {
         }
         assert_eq!(
             json!(Settings {
-                reviews_enabled: true
+                reviews_enabled: true,
+                editor_intelligence: false,
             }),
-            json!({"reviewsEnabled": true})
+            json!({"reviewsEnabled": true, "editorIntelligence": false})
         );
 
         // A stage travels from the announcement to the stored case; without one the
@@ -1327,6 +1502,106 @@ mod tests {
         // Rows stored before stages existed still load.
         let old: StoredCase = serde_json::from_value(plain).expect("stored case");
         assert_eq!(old.stage, None);
+    }
+
+    #[test]
+    fn editor_events_match_the_contract() {
+        let ready = EditorEvent::State {
+            state: EditorState::Ready {
+                session_id: "s1".into(),
+                server_name: "ty".into(),
+                server_version: Some("0.0.104".into()),
+                root_uri: "file:///r/workspace".into(),
+                workspace_path: "/r/workspace".into(),
+                generation: 1,
+            },
+        };
+        assert_eq!(
+            json!(ready),
+            json!({"type": "state", "state": {"status": "ready", "sessionId": "s1", "serverName": "ty",
+                   "serverVersion": "0.0.104", "rootUri": "file:///r/workspace",
+                   "workspacePath": "/r/workspace", "generation": 1}})
+        );
+        assert!(!ready.is_last());
+        assert_eq!(
+            json!(EditorEvent::State {
+                state: EditorState::Starting
+            }),
+            json!({"type": "state", "state": {"status": "starting"}})
+        );
+        assert_eq!(
+            json!(EditorEvent::State {
+                state: EditorState::Restarting {
+                    attempt: 2,
+                    max_attempts: 4,
+                    delay_ms: 1000,
+                    message: "it exited with code 3".into(),
+                }
+            }),
+            json!({"type": "state", "state": {"status": "restarting", "attempt": 2,
+                   "maxAttempts": 4, "delayMs": 1000, "message": "it exited with code 3"}})
+        );
+        for (state, wire) in [
+            (
+                EditorState::NotInstalled {
+                    message: "m".into(),
+                },
+                json!({"status": "notInstalled", "message": "m"}),
+            ),
+            (
+                EditorState::Failed {
+                    message: "m".into(),
+                },
+                json!({"status": "failed", "message": "m"}),
+            ),
+            (
+                EditorState::Stopped {
+                    reason: EditorStopReason::Replaced,
+                },
+                json!({"status": "stopped", "reason": "replaced"}),
+            ),
+        ] {
+            assert_eq!(json!(state), wire);
+            assert!(EditorEvent::State { state }.is_last());
+        }
+        let message = EditorEvent::Message {
+            message: r#"{"jsonrpc":"2.0","id":1,"result":null}"#.into(),
+        };
+        assert_eq!(
+            json!(message),
+            json!({"type": "message", "message": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":null}"})
+        );
+        assert!(!message.is_last());
+
+        assert_eq!(
+            json!(EditorStatus {
+                enabled: true,
+                installed: false,
+                installing: false,
+                server_version: None,
+                state: None,
+            }),
+            json!({"enabled": true, "installed": false, "installing": false,
+                   "serverVersion": null, "state": null})
+        );
+        // The helper's answer parses as is; its extra `id` is ignored.
+        let docs: EditorDocs = serde_json::from_value(json!({
+            "id": 4, "found": true, "name": "math.sqrt", "kind": "function",
+            "signature": "sqrt(x, /)", "doc": "Return the square root of x.",
+            "truncated": false, "reason": null
+        }))
+        .expect("docs");
+        assert_eq!(
+            json!(docs),
+            json!({"found": true, "name": "math.sqrt", "kind": "function",
+                   "signature": "sqrt(x, /)", "doc": "Return the square root of x.",
+                   "truncated": false, "reason": null})
+        );
+        assert_eq!(
+            json!(EditorDocs::not_found("unavailable")),
+            json!({"found": false, "name": null, "kind": null, "signature": null,
+                   "doc": null, "truncated": false, "reason": "unavailable"})
+        );
     }
 
     #[test]

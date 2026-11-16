@@ -40,6 +40,13 @@
     "allow-write-review-solution",
     "allow-resolve-review",
     "allow-get-settings",
-    "allow-set-reviews-enabled"
+    "allow-set-reviews-enabled",
+    "allow-set-editor-intelligence",
+    "allow-editor-status",
+    "allow-editor-start",
+    "allow-editor-send",
+    "allow-editor-stop",
+    "allow-editor-install",
+    "allow-editor-docs"
   ]
 }

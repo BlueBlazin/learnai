@@ -5,14 +5,16 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::catalog::{Catalog, CatalogIssue, CatalogLoader, ProblemMeta};
+use crate::docs::DocsHelper;
 use crate::env::Environment;
 use crate::error::{CoreError, Result};
-use crate::harness::{HarnessCommand, HarnessJob, UvHarness};
+use crate::harness::{CommandSpec, HarnessCommand, HarnessJob, UvHarness};
+use crate::lsp::{self, EditorOptions, LanguageServer};
 use crate::model::{
-    AssetEvent, AssetList, Difficulty, EnvStatus, Extra, Framework, InstallEvent, PathStage,
-    ProblemDetail, ProblemStatus, ProblemSummary, Review, ReviewAction, RunEvent, RunMode,
-    Settings, SolutionFile, SshHost, Stats, StudyPath, Submission, SubmissionDetail,
-    TargetCheckEvent, TargetInfo, Track,
+    AssetEvent, AssetList, Difficulty, EditorDocs, EditorEvent, EditorStatus, EditorStopReason,
+    EnvStatus, Extra, Framework, InstallEvent, PathStage, ProblemDetail, ProblemStatus,
+    ProblemSummary, Review, ReviewAction, RunEvent, RunMode, Settings, SolutionFile, SshHost,
+    Stats, StudyPath, Submission, SubmissionDetail, TargetCheckEvent, TargetInfo, Track,
 };
 use crate::models::{ModelAssets, RemoteFetch};
 use crate::paths::load_paths;
@@ -25,7 +27,10 @@ use crate::ssh::{Ssh, SshOptions};
 use crate::store::{Store, SubmissionProgress};
 use crate::target::{LOCAL_TARGET, LocalTarget, Target};
 use crate::targets::Targets;
-use crate::uv::Uv;
+use crate::uv::{Uv, venv_program};
+
+/// The largest document `editor_docs` accepts, in bytes.
+const MAX_DOCS_SOURCE_BYTES: usize = 1024 * 1024;
 
 /// How to construct a [`Core`].
 pub struct CoreOptions {
@@ -42,6 +47,8 @@ pub struct CoreOptions {
     /// Overrides the clock that dates submissions and review schedules; `None` uses
     /// the system clock. Tests move time through this instead of sleeping.
     pub clock: Option<Arc<dyn Clock>>,
+    /// How the editor's helper processes (language server, docs helper) are run.
+    pub editor: EditorOptions,
 }
 
 impl CoreOptions {
@@ -54,6 +61,7 @@ impl CoreOptions {
             limits: RunLimits::default(),
             ssh: SshOptions::default(),
             clock: None,
+            editor: EditorOptions::default(),
         }
     }
 }
@@ -69,6 +77,8 @@ struct Inner {
     runs: Arc<RunRegistry>,
     limits: RunLimits,
     clock: Arc<dyn Clock>,
+    editor: LanguageServer,
+    docs: DocsHelper,
 }
 
 /// The application core. Cheap to clone; all clones share state.
@@ -91,6 +101,23 @@ impl Core {
             .unwrap_or_else(|| Arc::new(UvHarness::new(uv.clone())) as Arc<dyn HarnessCommand>);
         let local: Arc<dyn Target> = Arc::new(LocalTarget::new(harness));
 
+        let workspace = Workspace::new(&root);
+        let venv = options.editor.venv.clone().unwrap_or_else(|| uv.venv());
+        let docs = options.editor.docs.clone().unwrap_or_else(|| CommandSpec {
+            // Isolated mode: the working directory and the user's environment never
+            // reach `sys.path`, so nothing the learner wrote can be imported.
+            program: venv_program(&venv, "python").into(),
+            args: vec!["-I".into(), "-m".into(), "learnai.editor.docs".into()],
+            cwd: Some(root.join("python")),
+            ..CommandSpec::default()
+        });
+        let editor = LanguageServer::new(workspace.dir(), venv, &options.editor);
+        let docs = DocsHelper::new(
+            docs,
+            options.editor.docs_timeout,
+            options.editor.docs_retry_pause,
+        );
+
         let env = Environment::new(uv, Arc::clone(&store));
         let targets = Targets::new(
             &root,
@@ -102,7 +129,9 @@ impl Core {
         Ok(Self {
             inner: Arc::new(Inner {
                 catalog: Mutex::new(CatalogLoader::new(&root)),
-                workspace: Workspace::new(&root),
+                workspace,
+                editor,
+                docs,
                 models: ModelAssets::new(&root, env.clone()),
                 env,
                 store,
@@ -480,7 +509,117 @@ impl Core {
     pub fn get_settings(&self) -> Result<Settings> {
         Ok(Settings {
             reviews_enabled: review::enabled(&self.inner.store)?,
+            editor_intelligence: self.editor_enabled()?,
         })
+    }
+
+    fn editor_enabled(&self) -> Result<bool> {
+        Ok(self
+            .inner
+            .store
+            .setting::<bool>(lsp::ENABLED_SETTING)?
+            .unwrap_or(true))
+    }
+
+    /// `set_editor_intelligence`: turns editor intelligence on or off. Turning it off
+    /// stops the language server and the docs helper; nothing starts while it is off.
+    pub fn set_editor_intelligence(&self, enabled: bool) -> Result<Settings> {
+        self.inner
+            .store
+            .set_setting(lsp::ENABLED_SETTING, &enabled)?;
+        if !enabled {
+            self.inner.editor.stop(None, EditorStopReason::Disabled);
+            self.inner.docs.stop();
+        }
+        self.get_settings()
+    }
+
+    /// `editor_status`: the preference, whether the language server is installed, and
+    /// the state of the latest session. Starts nothing.
+    pub fn editor_status(&self) -> Result<EditorStatus> {
+        let editor = &self.inner.editor;
+        Ok(EditorStatus {
+            enabled: self.editor_enabled()?,
+            installed: editor.installed(),
+            installing: self.inner.env.is_installing(),
+            server_version: editor.version(),
+            state: editor.state(),
+        })
+    }
+
+    /// `editor_start`: starts a language server session and returns its id at once.
+    /// A session that is already running is stopped first.
+    ///
+    /// Events flow to `sink` from background threads and end with exactly one terminal
+    /// state (`notInstalled`, `failed`, or `stopped`). Nothing is installed or
+    /// downloaded: when the server is missing the stream is a single `notInstalled`.
+    /// Fails, with no events, while editor intelligence is turned off.
+    pub fn editor_start(&self, sink: impl EventSink<EditorEvent>) -> Result<String> {
+        if !self.editor_enabled()? {
+            return Err(CoreError::EditorDisabled);
+        }
+        self.inner.editor.start(Arc::new(sink))
+    }
+
+    /// `editor_send`: passes one JSON-RPC message (bare JSON text) from the editor's
+    /// client to the language server of session `session_id`. Core adds the framing
+    /// and rewrites `initialize` (see [`crate::lsp`]).
+    pub fn editor_send(&self, session_id: &str, message: &str) -> Result<()> {
+        self.inner.editor.send(session_id, message)
+    }
+
+    /// `editor_stop`: stops the session (any session when `session_id` is `None`) and
+    /// the docs helper, and returns once their processes are gone. Stopping a session
+    /// that was already replaced or has ended does nothing.
+    pub fn editor_stop(&self, session_id: Option<&str>) {
+        if self
+            .inner
+            .editor
+            .stop(session_id, EditorStopReason::Requested)
+            || session_id.is_none()
+        {
+            self.inner.docs.stop();
+        }
+    }
+
+    /// `editor_install`: installs the language server (the `editor` extra) the way
+    /// `env_install` installs a framework: one `uv sync` with every installed extra
+    /// plus `editor`, so nothing else is removed. Returns once the install has started;
+    /// events flow to `sink` and always finish with exactly one `done` event.
+    pub fn editor_install(&self, sink: impl EventSink<InstallEvent>) -> Result<()> {
+        if self.inner.models.is_fetching() {
+            return Err(CoreError::FetchInProgress);
+        }
+        self.inner.env.install(Some(Extra::Editor), Arc::new(sink))
+    }
+
+    /// `editor_docs`: runtime documentation for `expr` (or its attribute `member`) as
+    /// written in a file whose text is `source`. The file is never executed; see
+    /// `learnai/editor/docs.py`. A helper that cannot answer yields a result with
+    /// reason `unavailable`, not an error.
+    pub fn editor_docs(
+        &self,
+        source: &str,
+        expr: &str,
+        member: Option<&str>,
+    ) -> Result<EditorDocs> {
+        if !self.editor_enabled()? {
+            return Err(CoreError::EditorDisabled);
+        }
+        if source.len() > MAX_DOCS_SOURCE_BYTES {
+            return Err(CoreError::InvalidArgument(format!(
+                "the document is larger than {MAX_DOCS_SOURCE_BYTES} bytes"
+            )));
+        }
+        Ok(self.inner.docs.lookup(source, expr, member))
+    }
+
+    /// Stops every helper process core keeps running (the language server and the
+    /// docs helper). Shells call this when the app exits; dropping the last clone of
+    /// the core does the same.
+    pub fn shutdown(&self) {
+        self.inner.editor.stop(None, EditorStopReason::Shutdown);
+        self.inner.docs.stop();
     }
 
     /// `set_reviews_enabled`: turns reviews on or off. Turning them off keeps every
@@ -558,7 +697,7 @@ impl Core {
         if self.inner.models.is_fetching() {
             return Err(CoreError::FetchInProgress);
         }
-        self.inner.env.install(framework, Arc::new(sink))
+        self.inner.env.install(framework.extra(), Arc::new(sink))
     }
 
     /// The extras known to be installed (passed as `--extra` to every uv command).

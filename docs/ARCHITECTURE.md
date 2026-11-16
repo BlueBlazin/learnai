@@ -33,13 +33,16 @@ learnai/
 React UI  --invoke/Channel-->  src-tauri (thin)  -->  learnai-core (Rust)
                                                         |  SQLite (.learnai/state.db)
                                                         |  files (problems/, workspace/)
-                                                        '--spawns-->  uv run ... python -m learnai.harness
-                                                                         (one subprocess per run; JSONL events on stdout)
+                                                        |--spawns-->  uv run ... python -m learnai.harness
+                                                        |                (one subprocess per run; JSONL events on stdout)
+                                                        '--keeps--->  ty server, python -m learnai.editor.docs
+                                                                         (editor intelligence, section 4.4; one of each, on demand)
 ```
 
 - **learnai-core** owns: catalog loading, solution files, submissions and progress,
   environment setup, run orchestration (spawn, stream, cancel, timeout), targets
-  (local now; SSH in milestone 4), spaced re-solve (milestone 5).
+  (local now; SSH in milestone 4), spaced re-solve (milestone 5), and the editor's
+  language server and docs helper (section 4.4).
 - **src-tauri** only maps Tauri commands to core functions and forwards run events
   over a Tauri Channel. No logic lives here.
 - **devbridge** exposes the same commands over HTTP (plus a server-sent event stream for
@@ -63,9 +66,10 @@ One uv project at `python/` with ONE virtual environment.
 - Base dependencies always present: `torch` (the oracle runtime), `numpy`, `httpx`,
   `uvicorn`, `starlette`, plus judge internals.
 - Optional extras: `jax`, `mlx`, `models` (huggingface_hub, safetensors, tokenizers,
-  transformers, and mlx-lm on macOS). `models` is needed only by `learnai assets fetch` and
+  transformers, and mlx-lm on macOS), and `editor` (the ty language server, pinned to an
+  exact version; section 4.4). `models` is needed only by `learnai assets fetch` and
   by authors generating fixtures; the harness and the kit read downloaded files with
-  numpy.
+  numpy. `editor` is needed only by the app's editor.
 - The `mlx` extra and `mlx-lm` carry the marker `sys_platform == 'darwin' and
   platform_machine == 'arm64'`, so the same extras can be passed on every host; on Linux
   they install nothing and torch resolves to its normal Linux wheels. `uv.lock` is
@@ -539,7 +543,7 @@ type ReviewAction = "forgot" | "snooze" | "retire";
 | `read_review_solution` | `id, framework` | `SolutionFile` (the starter if none saved) |
 | `write_review_solution` | `id, framework, code` | |
 | `resolve_review` | `id, action` | `Review[]` |
-| `get_settings` | | `Settings` (`{ reviewsEnabled: boolean }`) |
+| `get_settings` | | `Settings` (`{ reviewsEnabled: boolean; editorIntelligence: boolean }`, section 4.4) |
 | `set_reviews_enabled` | `enabled` | `Settings` |
 
 Rules:
@@ -583,7 +587,7 @@ case with the clock stopped; `end.duration_ms` is wall time and includes it.
 
 **Tauri.** One `#[tauri::command]` per row above. JavaScript passes camelCase argument
 names (Tauri maps them to snake_case Rust parameters). Streaming commands take an extra
-argument `onEvent: Channel<RunEvent>` (or `Channel<InstallEvent>`, `Channel<AssetEvent>`, `Channel<TargetCheckEvent>`);
+argument `onEvent: Channel<RunEvent>` (or `Channel<InstallEvent>`, `Channel<AssetEvent>`, `Channel<TargetCheckEvent>`, `Channel<EditorEvent>`);
 `start_run` returns the `runId` immediately and events flow over the channel until `end`
 (`fetch_assets` likewise returns the `jobId` and streams until `done`). Errors are
 returned as a string message.
@@ -606,6 +610,240 @@ Vite dev origin.
 `InstallEvent = { type: "log"; text: string } | { type: "done"; ok: boolean; message: string | null }`.
 The Tauri `env_install` command resolves with no value once the install has finished
 (after the `done` event).
+
+### 4.4 Editor intelligence
+
+Completion, hover documentation, signature help, and quiet diagnostics in the solution
+editor come from a language server that core runs locally: **ty** (Astral, pinned in
+the `editor` extra). A second, optional process fills in docstrings ty cannot see.
+Everything below the editor lives in core (`lsp.rs`, `docs.rs`) and the `learnai`
+package (`learnai/editor/docs.py`); both shells expose it identically.
+
+**Processes.** One language server for the whole app, started on demand:
+`<root>/python/.venv/bin/ty server`, run directly (not through `uv run`: no uv startup,
+and nothing can resync the environment), with `VIRTUAL_ENV` set to the environment and
+the workspace directory as working directory. One docs helper, started on the first
+`editor_docs` call: `<root>/python/.venv/bin/python -I -m learnai.editor.docs`. Each
+leads its own process group, which is killed on stop, on replacement, when the
+preference is turned off, and when the app exits (Tauri `RunEvent::Exit`; the devbridge
+on Ctrl-C and SIGTERM; dropping the last `Core`). Both also exit by themselves when
+their stdin closes, so a killed app leaves nothing behind.
+
+**Root and files.** The server's root is always `<root>/workspace` (symlinks resolved),
+never a problem folder: with the workspace as root, a solution literally named
+`torch.py` does not shadow the real `torch` package, and nothing under `problems/`
+(reference solutions included) is indexed or offered. The client forms document URIs
+from the `rootUri` of the `ready` state, which has no trailing slash:
+
+```
+<rootUri>/<problem id>/<framework>.py            the saved solution
+<rootUri>/<problem id>/review/<framework>.py     a review attempt
+```
+
+Path segments are percent-encoded as in RFC 3986 (`encodeURIComponent` per segment;
+problem ids and framework names need no encoding today). Do not build URIs from
+`SolutionFile.path`: it is not symlink-resolved and the server reports diagnostics
+under the resolved path. The file need not exist on disk: `textDocument/didOpen`
+carries the text, and an unsaved starter gets the same completions and diagnostics.
+
+```ts
+interface Settings { reviewsEnabled: boolean; editorIntelligence: boolean; }
+
+type EditorStopReason = "requested" | "replaced" | "disabled" | "shutdown";
+type EditorState =
+  | { status: "notInstalled"; message: string }                 // terminal
+  | { status: "starting" }
+  | { status: "ready"; sessionId: string; serverName: string;   // "ty"
+      serverVersion: string | null;                             // "0.0.104"
+      rootUri: string;                                          // file:///abs/learnai/workspace
+      workspacePath: string;                                    // /abs/learnai/workspace
+      generation: number }                                      // 1, 2, ... per server process
+  | { status: "restarting"; attempt: number; maxAttempts: number; delayMs: number;
+      message: string }
+  | { status: "failed"; message: string }                       // terminal
+  | { status: "stopped"; reason: EditorStopReason };            // terminal
+type EditorEvent =
+  | { type: "state"; state: EditorState }
+  | { type: "message"; message: string };   // one JSON-RPC message from the server, as JSON text
+
+interface EditorStatus { enabled: boolean; installed: boolean; installing: boolean;
+                         serverVersion: string | null;
+                         state: EditorState | null; }   // latest state of the latest session
+
+interface EditorDocs { found: boolean; name: string | null; kind: string | null;
+                       signature: string | null; doc: string | null;
+                       truncated: boolean; reason: string | null; }
+```
+
+| command | arguments | returns |
+|---|---|---|
+| `get_settings` | | `Settings` |
+| `set_editor_intelligence` | `enabled` | `Settings`; turning it off stops the server and the docs helper before returning |
+| `editor_status` | | `EditorStatus`; starts nothing |
+| `editor_start` | event sink | `sessionId: string`; stream of `EditorEvent` |
+| `editor_send` | `sessionId, message` | nothing; `message` is one JSON-RPC message as JSON text |
+| `editor_stop` | `sessionId?` | nothing; returns once the processes are gone |
+| `editor_install` | event sink | stream of `InstallEvent`, exactly like `env_install` |
+| `editor_docs` | `source, expr, member?` | `EditorDocs` |
+
+**Session lifecycle.** `editor_start` begins a session and returns its id at once. A
+session that is already running is stopped first (its stream ends with `stopped`,
+reason `replaced`, and its server is gone before the call returns): a language server
+accepts `initialize` once, so every new client needs a new server. The stream is:
+
+```
+starting, ready(generation 1), message*, [restarting, starting, ready(generation n), message*]*, terminal
+```
+
+- Exactly one terminal state ends every stream, and it is the last event:
+  `notInstalled` (the only event, nothing was started), `failed`, or `stopped`.
+- `ready` means a fresh server process is running and waiting for `initialize`. It may
+  arrive before `editor_start` resolves, which is why it repeats the `sessionId`. Send
+  nothing before `ready`.
+- **Every `ready` is a new process that knows nothing.** On `ready` with a higher
+  `generation`, discard the LSP client and create a new one: send `initialize`,
+  `initialized`, and `textDocument/didOpen` for the open document again.
+- A server that dies (exit, kill, or output that is not framed messages) is started
+  again after `delayMs`: 500 ms, doubling, at most 8 s, at most 4 times in a row. A
+  server that ran for 60 s resets the count. Past the limit the session ends with
+  `failed`; `message` is written for the user and says what to do. Between `restarting`
+  and the next `ready`, `editor_send` fails.
+- `editor_send` fails with "the editor session is not running" when the session is not
+  the current one (stopped, replaced, failed) or its server is being restarted, and
+  with an "invalid argument" error when `message` is not one JSON object. A client
+  should treat a failed send as a lost message and wait for the next state event.
+- `editor_stop` with a `sessionId` stops only that session (a late stop from a page
+  that was replaced does nothing); without one it stops whatever runs. Stopping the
+  current session also stops the docs helper. Unknown or ended sessions are a no-op.
+- `editor_start` and `editor_docs` fail with "editor intelligence is turned off in
+  Settings" while the preference (stored setting `editor_intelligence`, default on) is
+  off. Turning it off ends a running session with `stopped`, reason `disabled`.
+
+**Messages and framing.** The transport carries bare JSON-RPC text in both directions,
+which is what `@codemirror/lsp-client` expects of a `Transport`
+(`send(message: string)`, `subscribe(handler)`): `send` maps to `editor_send`, and each
+`{ type: "message" }` event is one whole message for the handlers. Core adds
+`Content-Length` framing toward the server's stdin and removes it from its stdout
+(partial reads and several messages per read are handled; a body over 64 MiB or a bad
+header ends that server). Messages pass through unchanged and in order, including
+server-to-client requests and the client's responses to them, with one exception.
+
+**The `initialize` rewrite (in core, so both shells behave alike).** Core parses every
+client message; a request whose method is `initialize` is changed before it reaches the
+server:
+
+| field | becomes | why |
+|---|---|---|
+| `params.processId` | core's process id | the server can notice the app dying |
+| `params.rootUri`, `params.workspaceFolders` | the workspace directory | only the learner's solutions are indexed, whatever the client sends |
+| `params.rootPath` | removed | superseded by `rootUri` |
+| `params.initializationOptions` | replaced by core's settings (below) | core owns the server's configuration |
+| `params.capabilities.textDocument.diagnostic` | removed | the CodeMirror client advertises pull diagnostics and never pulls; without the capability ty pushes `textDocument/publishDiagnostics` |
+| `params.capabilities.workspace.configuration` | removed | ty then reads its settings from the initialization options instead of asking the client |
+
+Core's initialization options are ty's `diagnosticMode: "openFilesOnly"`,
+`completions.autoImport: false`, and its inline `configuration` (the content of a
+`ty.toml`, which takes precedence over any configuration file, so no file is written
+into the workspace): `environment.python` is
+the project's virtual environment, and `rules` is `all = "ignore"` plus seven rules as
+errors: `unresolved-reference`, `import-not-found`, `missing-attribute`,
+`missing-argument`, `too-many-positional-arguments`, `unknown-argument`,
+`parameter-already-assigned`. ty's defaults are too noisy for this catalog; this set
+reports nothing in any reference solution and still catches a mistyped name. Syntax
+errors are always reported (code `invalid-syntax`). Auto-import completions are off
+because they offer every name in the environment (JAX and MLX internals in a torch
+solution) and insert a working import only in a client that applies the item's
+`additionalTextEdits`; completion therefore covers names in scope and members of
+imported modules. The client's own capabilities otherwise pass through; the
+`initialize` response (including a `diagnosticProvider` the client should ignore) is
+not changed.
+
+**Installing.** The server ships as the uv extra `editor` (`ty==<pinned>`, a 14 MB
+download, 29 MB installed). Nothing is installed by `editor_start`: when the server is missing, the
+stream is the single state `notInstalled`, and `editor_status.installed` is false.
+`editor_install` is the explicit install, the same model as `env_install`: one
+`uv sync` with every installed extra plus `editor`, streamed as `InstallEvent`s ending
+in `done`. Once installed, `editor` is part of the enabled extras that every uv call
+passes, so later framework installs and runs keep it; it is adopted the same way when
+it was installed from a terminal. One install at a time, and not during a model
+download (the same errors as `env_install`). After a successful install, call
+`editor_start` again. After any `env_install`, start a new session too: ty is not
+told about packages that appear in the environment while it runs. The `editor` extra
+is not sent to SSH targets.
+
+**Runtime docs (`editor_docs`).** ty's hover has no docstring for names that only get
+one at import time (most of `torch.nn.functional`, all of `torch.linalg`). The helper
+imports the library and asks `inspect`:
+
+- `source` is the document text (at most 1 MiB), `expr` a dotted name as the file
+  spells it (`F.scaled_dot_product_attention`) or fully qualified (`torch.linalg.svd`).
+  With `member`, the lookup is for that attribute of `expr`: for a completion item, pass
+  the expression before the dot and the item's label. An empty `expr` with a `member`
+  looks up a bare name.
+- The learner's file is never imported or executed. Only its `import` and `from`
+  statements are read (with `ast`, anywhere in the file, and line by line when the file
+  does not parse) to learn what `F` or `np` refers to. Local variables and builtins are
+  not guessed at.
+- Only `torch`, `jax`, `mlx`, `numpy`, `learnai.kit`, and a fixed list of standard
+  library modules are ever imported, lazily. The process runs isolated (`python -I`), so
+  nothing in the workspace is importable.
+- Result: `found` says whether the name resolved. `name` is the public dotted path
+  (`torch.nn.functional.scaled_dot_product_attention`), `kind` is `module`, `class`,
+  `function`, `property`, or `value`, `signature` is `name(parameters) -> result` on one
+  line (from `inspect.signature`, or from the first lines of the docstring for C
+  functions) or null, and `doc` is the docstring as plain text, lightly tidied
+  (reStructuredText roles and double backticks become single-backtick code; sections,
+  directives, and math are left as written), at most 16,000 characters (`truncated`
+  says whether it was cut), or null when there is none; a `value` never has a `doc`.
+- `reason` when `found` is false: `not_a_name` (not a plain dotted name),
+  `unknown_name` (does not start at an import of the file or an allowed package),
+  `not_allowed`, `not_installed` (MLX on Linux, JAX not installed), `import_failed`,
+  `no_attribute`, `bad_request`, or `unavailable`.
+- A helper that cannot start, crashes, or does not answer within 20 s is killed and
+  the lookup returns `found: false, reason: "unavailable"` (not an error); a later
+  lookup starts a new one after 10 s. The first lookup pays the library import (about
+  0.7 s for torch); later ones take about a millisecond.
+
+The helper's own protocol (core is its only client) is line-delimited JSON: a request
+`{"id": 1, "source": "...", "expr": "F.softmax", "member": null}` per line on stdin, and
+the `EditorDocs` object plus the same `id` per line on stdout.
+
+**Transports.** Tauri: `editor_start` takes `onEvent: Channel<EditorEvent>` and
+resolves with the session id; `editor_install` takes `onEvent: Channel<InstallEvent>`
+and resolves after `done`, like `env_install`. Devbridge:
+
+- `POST /api/editor_start` returns `{"sessionId": "..."}`; events at
+  `GET /api/editor/<sessionId>/events` as server-sent events, one
+  `data: <EditorEvent JSON>` per event, replayed from the first event to a subscriber
+  that connects late, closing after the terminal state. Every event carries its index
+  as the SSE `id`; a request with `Last-Event-ID: <n>` (what an `EventSource` sends when
+  it reconnects) resumes at event `n + 1`, so no message is delivered twice. The bridge
+  keeps the latest 4096 events of a session.
+- `POST /api/editor_send` with `{"sessionId", "message"}`, `POST /api/editor_stop` with
+  `{"sessionId"?}`, `POST /api/editor_docs` with `{"source", "expr", "member"?}`,
+  `POST /api/editor_status`, and `POST /api/set_editor_intelligence` with `{"enabled"}`
+  follow the general rule (section 4.3). "Not running" and "turned off" are `409`; a
+  message that is not a JSON object is `400`.
+- `POST /api/editor_install` returns `{"jobId": "..."}`; events at
+  `GET /api/jobs/<jobId>/events`, closing after `done`.
+
+**Known limits.**
+
+- ty is in beta and pinned to an exact version; upgrading it means re-checking the
+  rule set against the catalog and the tests in `crates/core/tests/editor_real.rs`.
+- One session at a time for the whole app: a second window or browser tab that starts a
+  session ends the first one's.
+- `ready` is emitted when the process has been spawned, not when it has answered
+  anything; a server that dies at once shows up as `restarting` right after `ready`.
+- The server does not watch files. It sees a solution only through `didOpen` and
+  `didChange`, and other saved solutions as they were on disk when first read.
+- Completion offers no names that are not imported yet (auto-import is off; one line in
+  `lsp.rs` turns it on). Nothing from `problems/` is ever offered.
+- Hover and completion documentation from ty is Markdown with reStructuredText
+  remnants; `editor_docs` returns plain text. Neither is rendered reStructuredText.
+- The docs helper holds its libraries in memory while it runs (about 200 MB with torch
+  imported; the language server uses about 120 MB).
+- Windows paths are handled when forming URIs but nothing here has been run on Windows.
 
 ## 5. Front end
 

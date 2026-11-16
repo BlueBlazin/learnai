@@ -29,6 +29,11 @@ uv run --extra jax --extra mlx --extra models learnai assets fetch granite-4.0-3
 uv run --extra jax --extra mlx --extra models pytest   # also compares with transformers
 ```
 
+The `editor` extra is the ty language server (pinned exactly) that the app's editor
+uses for completion, hover, and diagnostics. Nothing in the judge needs it, but once it
+is installed, pass `--extra editor` with the others so no command removes it.
+`learnai/editor/docs.py` is the app's runtime docs helper (`ARCHITECTURE.md` section 4.4).
+
 ## Layout
 
 ```
