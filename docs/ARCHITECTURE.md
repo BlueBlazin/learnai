@@ -901,6 +901,15 @@ of the previous document are cleared. Values that arrive from outside (file chan
 disk, reset, framework switch) are ordinary transactions, so the client's change
 tracking sends them like typing.
 
+**Floating layers.** The editor sits in a clipped, resizable pane, so the suggestion
+list, its documentation panel, hover cards, signature help, and diagnostic tooltips are
+mounted on `document.body` (`tooltips({ parent })` in `CodeEditorView`; CodeMirror
+copies the theme classes to that container) and kept 8 px inside the window. The
+documentation panel is placed by `placeInfo` (`lib/editor/info-position.ts`): level
+with the list on the side away from the cursor line and no taller than the room to the
+window's edge, so a long entry scrolls inside the panel and never covers the line
+being typed.
+
 **Features** (`language/`), all on the client's request API rather than its built-in
 sources, which render Markdown as HTML and cannot take the docs fallback:
 

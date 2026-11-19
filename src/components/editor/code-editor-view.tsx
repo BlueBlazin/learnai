@@ -17,13 +17,47 @@ import {
   highlightActiveLineGutter,
   keymap,
   lineNumbers,
+  type Rect,
+  tooltips,
 } from "@codemirror/view";
 import { cn } from "cn";
 import { useEffect, useRef, useState } from "react";
 import { type EditorDocument, useEditorSession, useEditorSessionUser } from "@/lib/editor";
+import { placeInfo } from "@/lib/editor/info-position";
 import { documentKey, documentUri } from "@/lib/editor/uri";
 import { languageSupport } from "./language";
 import { learnaiEditorTheme } from "./theme";
+
+/** Where floating layers may go: the window, less a small margin so none touches its edge. */
+const WINDOW_MARGIN = 8;
+function windowSpace() {
+  return {
+    top: WINDOW_MARGIN,
+    left: WINDOW_MARGIN,
+    bottom: window.innerHeight - WINDOW_MARGIN,
+    right: window.innerWidth - WINDOW_MARGIN,
+  };
+}
+
+/**
+ * Places the documentation panel beside the suggestion list (see `placeInfo`). The
+ * list sits above the cursor when the window has no room for it below.
+ */
+function positionInfo(
+  view: EditorView,
+  list: Rect,
+  option: Rect,
+  info: Rect,
+  space: Rect,
+): { style: string; class: string } {
+  const cursor = view.coordsAtPos(view.state.selection.main.head);
+  const above = cursor !== null && list.bottom <= (cursor.top + cursor.bottom) / 2;
+  const placed = placeInfo({ list, option, info, space, above });
+  return {
+    style: `${placed.side}: ${placed.offset}px; max-width: ${placed.maxWidth}px; max-height: ${placed.maxHeight}px`,
+    class: `cm-completionInfo-${placed.where}`,
+  };
+}
 
 /** Marks transactions that come from the `value` prop so they are not echoed to `onChange`. */
 const External = Annotation.define<boolean>();
@@ -84,7 +118,11 @@ export function CodeEditorView({
           indentOnInput(),
           bracketMatching(),
           closeBrackets(),
-          autocompletion({ icons: false }),
+          autocompletion({ icons: false, positionInfo }),
+          // The editor sits in a clipped, resizable pane. Mounting the floating layers on
+          // the body lets a list or card opened near the pane's edge extend past it, and
+          // CodeMirror then flips and shifts them against the window instead.
+          tooltips({ parent: document.body, tooltipSpace: windowSpace }),
           language.of([]),
           highlightSelectionMatches(),
           python(),

@@ -67,11 +67,16 @@ export const languageTheme = EditorView.theme({
     fontStyle: "normal",
     color: "var(--muted-foreground)",
   },
+  // The panel is given a height limit where it is placed (lib/editor/info-position.ts);
+  // as a column, it passes that limit on to the card, whose prose then scrolls.
   ".cm-tooltip.cm-completionInfo": {
+    display: "flex",
+    flexDirection: "column",
     padding: "0",
     width: "26rem",
     maxWidth: "min(26rem, 45vw)",
   },
+  ".cm-completionInfo > .cm-doc-card": { minHeight: "0" },
   ".cm-completionInfo.cm-completionInfo-right": { marginLeft: "0.375rem" },
   ".cm-completionInfo.cm-completionInfo-left": { marginRight: "0.375rem" },
 
