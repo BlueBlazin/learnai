@@ -1,0 +1,17 @@
+id = "gated-delta-step"
+title = "One Step of the Gated Delta Rule"
+track = "recurrent-mixers"
+order = 10
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["gated-delta-net", "linear-attention", "recurrent-state", "delta-rule", "qwen"]
+prerequisites = []
+requires = "cpu"
+entry = ["gdn_gates", "gdn_step"]
+time_limit_s = 10
+forbidden = [
+    "learnai.kit.gdn.gdn_gates_ref",
+    "learnai.kit.gdn.gdn_step_ref",
+    "learnai.kit.ops.gated_delta_layer",
+]

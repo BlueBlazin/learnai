@@ -1,0 +1,17 @@
+id = "gated-delta-layer"
+title = "A Gated DeltaNet Layer with Its State"
+track = "recurrent-mixers"
+order = 20
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["gated-delta-net", "linear-attention", "recurrent-state", "causal-convolution", "qwen"]
+prerequisites = ["gated-delta-step"]
+requires = "cpu"
+entry = ["gdn_layer"]
+time_limit_s = 10
+forbidden = [
+    "learnai.kit.ops.gated_delta_layer",
+    "learnai.kit.gdn.gdn_layer_ref",
+    "learnai.kit.hybrid.hybrid_forward_ref",
+]

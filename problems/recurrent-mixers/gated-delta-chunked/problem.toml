@@ -1,0 +1,13 @@
+id = "gated-delta-chunked"
+title = "The Delta Rule a Chunk at a Time"
+track = "recurrent-mixers"
+order = 30
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property", "cost"]
+tags = ["gated-delta-net", "linear-attention", "chunked-prefill", "triangular-solve", "qwen"]
+prerequisites = ["gated-delta-step"]
+requires = "cpu"
+entry = ["gdn_chunked"]
+time_limit_s = 20
+forbidden_source = ["_state", "peek", "counters"]

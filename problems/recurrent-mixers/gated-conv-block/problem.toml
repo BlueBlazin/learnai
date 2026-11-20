@@ -1,0 +1,13 @@
+id = "gated-conv-block"
+title = "A Gated Convolution Block"
+track = "recurrent-mixers"
+order = 50
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["convolution", "causal-convolution", "recurrent-state", "token-mixer", "lfm"]
+prerequisites = []
+requires = "cpu"
+entry = ["conv_block"]
+time_limit_s = 10
+forbidden = ["learnai.kit.ops.causal_conv1d"]

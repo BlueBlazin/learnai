@@ -1,0 +1,12 @@
+id = "mamba2-ssd-step"
+title = "A State-Space Step and Its Attention Form"
+track = "recurrent-mixers"
+order = 40
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["mamba2", "state-space", "recurrent-state", "structured-attention", "nemotron"]
+prerequisites = []
+requires = "cpu"
+entry = ["ssd_step", "ssd_matrix"]
+time_limit_s = 10
