@@ -39,7 +39,10 @@ export function AppLink({
         "justify-start",
         truncate && "block truncate text-left whitespace-nowrap",
         tone === "quiet" && "text-foreground no-underline hover:text-primary hover:no-underline",
-        stretched && "static after:absolute after:inset-0",
+        // A stretched link must not move when pressed: a translate makes the link the
+        // containing block of its own ::after, which shrinks the hit area to the text
+        // mid-click, so the release lands outside the link and no click fires.
+        stretched && "static after:absolute after:inset-0 active:not-aria-[haspopup]:translate-none",
         className,
       )}
       render={<Link {...(to as unknown as LinkProps)} />}
