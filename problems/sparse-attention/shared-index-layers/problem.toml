@@ -1,0 +1,21 @@
+id = "shared-index-layers"
+title = "Sharing One Selection Across Layers"
+track = "sparse-attention"
+order = 40
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["sparse-attention", "indexer", "index-sharing", "layers", "glm", "cost"]
+prerequisites = ["indexer-topk-select"]
+requires = "cpu"
+entry = ["forward_shared"]
+time_limit_s = 10
+forbidden = [
+    "learnai.kit.sparse.TinyDSA.forward_ref",
+    "learnai.kit.sparse.TinyDSA.layer_ref",
+    "learnai.kit.sparse.TinyDSA.attend_ref",
+    "learnai.kit.sparse.TinyDSA.indexer_ref",
+    "learnai.kit.sparse.TinyDSA.index_scores_ref",
+    "learnai.kit.sparse.TinyDSA.with_framework",
+]
+forbidden_source = ["counters"]

@@ -1,0 +1,60 @@
+{
+  "transformers_version": "5.23.0",
+  "types": [
+    "full",
+    "full",
+    "full",
+    "shared",
+    "shared",
+    "shared",
+    "full",
+    "shared",
+    "shared",
+    "shared",
+    "full"
+  ],
+  "source": [
+    0,
+    1,
+    2,
+    2,
+    2,
+    2,
+    6,
+    6,
+    6,
+    6,
+    10
+  ],
+  "indexer_calls": 5,
+  "has_indexer": [
+    true,
+    true,
+    true,
+    false,
+    false,
+    false,
+    true,
+    false,
+    false,
+    false,
+    true
+  ],
+  "rule_types": [
+    "full",
+    "full",
+    "full",
+    "shared",
+    "shared",
+    "shared",
+    "full",
+    "shared",
+    "shared",
+    "shared",
+    "full"
+  ],
+  "error": {
+    "type": "ValueError",
+    "message": "Shared DSA layers require top-k indices from a previous full indexer layer."
+  }
+}

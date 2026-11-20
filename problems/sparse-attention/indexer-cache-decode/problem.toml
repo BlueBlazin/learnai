@@ -1,0 +1,25 @@
+id = "indexer-cache-decode"
+title = "Decoding with an Indexer Cache"
+track = "sparse-attention"
+order = 30
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property", "cost"]
+tags = ["sparse-attention", "indexer", "kv-cache", "decoding", "chunked-prefill", "dsa"]
+prerequisites = ["gathered-sparse-attention", "kv-cache-append"]
+requires = "cpu"
+entry = ["dsa_step"]
+time_limit_s = 10
+forbidden = [
+    "learnai.kit.sparse.TinyDSA.indexer",
+    "learnai.kit.sparse.TinyDSA.attend",
+    "learnai.kit.sparse.TinyDSA.indexer_ref",
+    "learnai.kit.sparse.TinyDSA.index_scores_ref",
+    "learnai.kit.sparse.TinyDSA.attend_ref",
+    "learnai.kit.sparse.TinyDSA.layer_ref",
+    "learnai.kit.sparse.TinyDSA.forward_ref",
+    "learnai.kit.sparse.CountingKV.reference",
+    "learnai.kit.sparse.CountingKV.with_framework",
+    "learnai.kit.sparse.TinyDSA.with_framework",
+]
+forbidden_source = ["counters"]

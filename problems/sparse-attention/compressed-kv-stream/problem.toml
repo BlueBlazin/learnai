@@ -1,0 +1,12 @@
+id = "compressed-kv-stream"
+title = "Compressing Keys and Values by Windows"
+track = "sparse-attention"
+order = 50
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["compressed-attention", "kv-cache", "streaming", "hca", "deepseek", "softmax-pooling"]
+prerequisites = ["kv-cache-append", "stable-softmax"]
+requires = "cpu"
+entry = ["compress", "visible_entries"]
+time_limit_s = 10

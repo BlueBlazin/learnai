@@ -1,0 +1,12 @@
+id = "indexer-topk-select"
+title = "Scoring the Past with an Indexer"
+track = "sparse-attention"
+order = 10
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["sparse-attention", "indexer", "top-k", "dsa", "glm", "deepseek"]
+prerequisites = ["causal-self-attention"]
+requires = "cpu"
+entry = ["index_scores", "topk_mask"]
+time_limit_s = 10

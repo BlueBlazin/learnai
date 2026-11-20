@@ -1,0 +1,17 @@
+id = "gathered-sparse-attention"
+title = "Attention over the Selected Tokens Only"
+track = "sparse-attention"
+order = 20
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property", "cost"]
+tags = ["sparse-attention", "gather", "top-k", "kv-cache", "dsa", "cost"]
+prerequisites = ["indexer-topk-select"]
+requires = "cpu"
+entry = ["sparse_attend"]
+time_limit_s = 10
+forbidden = [
+    "learnai.kit.sparse.CountingKV.reference",
+    "learnai.kit.sparse.CountingKV.with_framework",
+]
+forbidden_source = ["counters"]

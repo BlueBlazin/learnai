@@ -1,0 +1,9 @@
+id = "sparse-attention"
+title = "Indexed and Compressed Attention"
+description = "Attend to a chosen few: score the past with a cheap indexer, attend over the top-k only, and keep the indexer's own cache correct while decoding."
+order = 220
+core = [
+    "indexer-topk-select",
+    "gathered-sparse-attention",
+    "indexer-cache-decode",
+]
