@@ -50,12 +50,21 @@ export function parseSettingsSection(value: unknown): SettingsSection {
   return SETTINGS_SECTIONS.find((candidate) => candidate === value) ?? "general";
 }
 
+/** Development only: the areas and modules mockup. */
+export interface AreasMockupSearch {
+  /** The view to show; the list of areas when absent. */
+  view?: "area" | "module";
+  /** The module (a track id) the Module view shows. */
+  module?: string;
+}
+
 export type RouteTarget =
   | { to: "/" }
   | { to: "/paths"; search: PathsSearch }
   | { to: "/library"; search: LibrarySearch }
   | { to: "/settings"; search: SettingsSearch }
   | { to: "/dev/components" }
+  | { to: "/dev/areas-mockup"; search: AreasMockupSearch }
   | { to: "/problems/$problemId"; params: { problemId: string }; search: ProblemSearch };
 
 export const routes = {
@@ -72,6 +81,11 @@ export const routes = {
     search: section === "general" ? {} : { section },
   }),
   devComponents: (): RouteTarget => ({ to: "/dev/components" }),
+  /** The mockup at its list of areas, at the area, or at one module of it. */
+  devAreasMockup: (view?: "area" | "module", module?: string): RouteTarget => ({
+    to: "/dev/areas-mockup",
+    search: { ...(view ? { view } : {}), ...(view === "module" && module ? { module } : {}) },
+  }),
   problem: (problemId: string, search: ProblemSearch = {}): RouteTarget => ({
     to: "/problems/$problemId",
     params: { problemId },

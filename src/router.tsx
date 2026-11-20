@@ -3,6 +3,7 @@ import { ScreenMessage } from "@/components/app/page";
 import { ErrorState, LoadingLines } from "@/components/app/states";
 import { parseFilters, serializeFilters } from "@/lib/filters";
 import {
+  type AreasMockupSearch,
   type LibrarySearch,
   type PathsSearch,
   type ProblemSearch,
@@ -88,6 +89,18 @@ const devComponentsRoute = import.meta.env.DEV
     )
   : null;
 
+/** Development only: a design mockup of areas, modules, and core and further problems. */
+const devAreasMockupRoute = import.meta.env.DEV
+  ? createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/dev/areas-mockup",
+      validateSearch: (search: Record<string, unknown>): AreasMockupSearch => ({
+        ...(search.view === "area" || search.view === "module" ? { view: search.view } : {}),
+        ...(typeof search.module === "string" && search.module ? { module: search.module } : {}),
+      }),
+    }).lazy(() => import("@/routes/dev-areas-mockup").then((module) => module.Route))
+  : null;
+
 const routeTree = rootRoute.addChildren([
   homeRoute,
   pathsRoute,
@@ -95,6 +108,7 @@ const routeTree = rootRoute.addChildren([
   problemRoute,
   settingsRoute,
   ...(devComponentsRoute ? [devComponentsRoute] : []),
+  ...(devAreasMockupRoute ? [devAreasMockupRoute] : []),
 ]);
 
 export const router = createRouter({
