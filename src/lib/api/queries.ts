@@ -40,6 +40,7 @@ export const keys = {
   env: ["env"] as const,
   stats: ["stats"] as const,
   catalogIssues: ["catalogIssues"] as const,
+  areas: ["areas"] as const,
   paths: ["paths"] as const,
   asset: (id: string, path: string) => ["asset", id, path] as const,
   assets: ["assets"] as const,
@@ -132,6 +133,10 @@ export function useStats() {
 
 export function useCatalogIssues() {
   return useQuery({ queryKey: keys.catalogIssues, queryFn: () => backend.listCatalogIssues() });
+}
+
+export function useAreas() {
+  return useQuery({ queryKey: keys.areas, queryFn: () => backend.listAreas() });
 }
 
 export function usePaths() {

@@ -24,7 +24,9 @@ const problem = (
   ...over,
 });
 
-const TRACKS: Track[] = [{ id: "t", title: "T", description: "", order: 1, problemCount: 5, solvedCount: 0 }];
+const TRACKS: Track[] = [
+  { id: "t", title: "T", description: "", order: 1, problemCount: 5, solvedCount: 0, core: [] },
+];
 
 const PATH: Path = {
   id: "p",

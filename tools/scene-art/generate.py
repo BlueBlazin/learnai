@@ -1,4 +1,4 @@
-"""Regenerate one or all stage scenes from scenes.json.
+"""Regenerate one or all scenes from scenes.json.
 
 Usage:
   GEMINI_API_KEY=... python3 generate.py --out-dir RAW_DIR --ref STYLE_IMAGE [slug ...]

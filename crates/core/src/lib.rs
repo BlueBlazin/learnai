@@ -8,6 +8,7 @@
 //! - [`model`]: wire types (camelCase JSON, mirrors the TypeScript contract)
 //! - [`root`]: content root resolution
 //! - [`catalog`]: tracks and problems on disk, with a cheap incremental reload
+//! - [`areas`]: subject areas under `areas/`
 //! - [`paths`]: study paths under `paths/`
 //! - [`assets`]: statement figures served as `data:` URLs
 //! - [`solutions`]: the user's files under `workspace/`
@@ -25,6 +26,7 @@
 //! - [`app`]: the [`Core`] facade
 
 pub mod app;
+pub mod areas;
 pub mod assets;
 pub mod catalog;
 mod docs;

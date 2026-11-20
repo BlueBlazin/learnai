@@ -2,3 +2,9 @@ id = "cuda"
 title = "CUDA GPU Programming"
 description = "Using PyTorch on NVIDIA GPUs correctly for inference: device placement and asynchronous timing, mixed precision, memory and out-of-memory recovery, static caches, compilation, CUDA graphs, and custom kernels, with the logic judged on the CPU and the device behavior on a CUDA machine."
 order = 110
+scene = "trailblazer"
+color = "#a85c21"
+core = [
+    "cuda-sync-free-decode-loop",
+    "cuda-static-kv-cache",
+]

@@ -29,7 +29,7 @@ const INFERENCE_75: FixturePath = {
       title: "Numerics",
       description:
         "Float32 arithmetic and the normalizations and activations every layer is built from, with the edge cases that break naive versions.",
-      scene: "stage-01-trailhead",
+      scene: "trailhead",
       color: "#ed9b11",
       problems: [
         "stable-softmax",
@@ -45,7 +45,7 @@ const INFERENCE_75: FixturePath = {
       title: "From text to tokens",
       description:
         "How text becomes the integer ids a model sees, and how ids become text again without losing a character.",
-      scene: "stage-02-crossing",
+      scene: "crossing",
       color: "#e5691d",
       problems: [
         "Byte-Level Pre-Tokenizer",
@@ -61,7 +61,7 @@ const INFERENCE_75: FixturePath = {
       title: "Attention",
       description:
         "The inner loop of the transformer: scores, masks, and positions, then the variants that make it cheaper.",
-      scene: "stage-03-forest",
+      scene: "forest",
       color: "#2a71cc",
       problems: [
         "scaled-dot-product-attention",
@@ -79,7 +79,7 @@ const INFERENCE_75: FixturePath = {
       title: "The forward pass",
       description:
         "Assembling layers into a decoder-only model whose activations match a reference, and loading real weights into it.",
-      scene: "stage-04-meadow",
+      scene: "meadow",
       color: "#db5881",
       problems: [
         "Pre-Norm Residual Block",
@@ -95,7 +95,7 @@ const INFERENCE_75: FixturePath = {
       title: "Decoding",
       description:
         "Turning logits into tokens: greedy and stochastic samplers, the filters and penalties in front of them, and search.",
-      scene: "stage-05-lake",
+      scene: "lake",
       color: "#18978e",
       problems: [
         "Greedy Decoding with Stop Sequences",
@@ -113,7 +113,7 @@ const INFERENCE_75: FixturePath = {
       title: "The KV cache",
       description:
         "Computing each key and value once: cached decoding, the layouts a cache can take, and what it costs in memory.",
-      scene: "stage-06-terraces",
+      scene: "terraces",
       color: "#8fc30b",
       problems: [
         "kv-cache-decode",
@@ -130,7 +130,7 @@ const INFERENCE_75: FixturePath = {
       title: "Smaller and faster",
       description:
         "Spending less per token: fewer bits per weight, less memory per model, and several drafted tokens verified in one pass.",
-      scene: "stage-07-canyon",
+      scene: "canyon",
       color: "#834ccd",
       problems: [
         "int8-affine-quant",
@@ -149,7 +149,7 @@ const INFERENCE_75: FixturePath = {
       title: "Batching and serving",
       description:
         "The model as a service: sharing one accelerator between requests, then the protocol surface that streams tokens to clients.",
-      scene: "stage-08-ridge",
+      scene: "ridge",
       color: "#f4c60a",
       problems: [
         "Static Batcher with Timeout",
@@ -169,7 +169,7 @@ const INFERENCE_75: FixturePath = {
       title: "Constrained output and whole systems",
       description:
         "Holding generation to a grammar without slowing it down, then putting every earlier piece together into one engine and one server.",
-      scene: "stage-13-summit",
+      scene: "summit",
       color: "#e6b125",
       problems: [
         "Regex to DFA",

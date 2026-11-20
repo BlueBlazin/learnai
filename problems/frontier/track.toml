@@ -2,3 +2,6 @@ id = "frontier"
 title = "Frontier"
 description = "Techniques that reached production engines in 2025 and 2026: thinking-token budgets, KV shared across layers, masked-diffusion decoding, tiered KV offload, state checkpoints for recurrent layers, latent attention caches, speculative tool calls, and expert parallelism for mixture-of-experts models."
 order = 140
+scene = "cape"
+color = "#5a5fc0"
+core = []

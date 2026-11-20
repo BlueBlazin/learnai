@@ -2,3 +2,15 @@ id = "sampling"
 title = "Sampling and Decoding"
 description = "Turning logits into tokens: the filters, penalties, and samplers that sit between the model's output and the text, written the way inference engines vectorize them."
 order = 40
+scene = "meadow"
+color = "#db5881"
+core = [
+    "temperature-scaling",
+    "top-k-filtering",
+    "top-p-filtering",
+    "min-p-filtering",
+    "repetition-penalty",
+    "categorical-sample",
+    "sampler-chain",
+    "stop-sequences",
+]

@@ -2,3 +2,11 @@ id = "speculative"
 title = "Speculative and Accelerated Decoding"
 description = "Getting several tokens out of one pass of the big model without changing its output distribution: draft-and-verify schemes and the probability arguments that make them exact."
 order = 80
+scene = "ridge"
+color = "#f4c60a"
+core = [
+    "greedy-speculative-verify",
+    "speculative-sampling-step",
+    "speculative-sampling-block",
+    "speculative-decode-loop",
+]

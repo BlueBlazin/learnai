@@ -2,3 +2,13 @@ id = "foundations"
 title = "Foundations"
 description = "The numerical building blocks every inference stack is made of: stable normalization, attention, positional encoding. Small functions, exact specifications."
 order = 10
+scene = "trailhead"
+color = "#ed9b11"
+core = [
+    "stable-softmax",
+    "rmsnorm",
+    "gelu-silu-activations",
+    "attention-mask-builder",
+    "last-token-gather",
+    "sequence-log-likelihood",
+]

@@ -34,6 +34,7 @@ const track = (id: string, order: number): Track => ({
   order,
   problemCount: 0,
   solvedCount: 0,
+  core: [],
 });
 
 const problems = [

@@ -30,6 +30,21 @@ export interface Track {
   order: number;
   problemCount: number;
   solvedCount: number;
+  /** Slug of the bundled illustration, such as "trailhead". Absent when the module has none. */
+  scene?: string;
+  /** The module's color as lowercase `#rrggbb`. Absent when the module has none. */
+  color?: string;
+  /** Ids of the module's core problems, in teaching order. Its other problems are "further". */
+  core: string[];
+}
+
+/** A subject: an ordered list of modules (`areas/<id>.toml`). */
+export interface Area {
+  id: string;
+  title: string;
+  description: string;
+  /** Existing track ids only, in order. */
+  modules: string[];
 }
 
 export interface ProblemSummary {
@@ -262,7 +277,7 @@ export interface PathStage {
   title: string;
   description: string;
   problems: string[];
-  /** Slug of the bundled illustration, such as "stage-01-trailhead". */
+  /** Slug of the bundled illustration, such as "trailhead". */
   scene?: string;
   /** The stage's color as lowercase `#rrggbb`. */
   color?: string;

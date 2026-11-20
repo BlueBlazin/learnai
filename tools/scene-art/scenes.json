@@ -1,7 +1,7 @@
 [
   {
-    "stage": 1,
-    "slug": "stage-01-trailhead",
+    "order": 1,
+    "slug": "trailhead",
     "place": "The trailhead",
     "description": "a small cabin with a lit window at a trailhead, a path leaving toward distant mountains, dawn",
     "accent": {
@@ -13,8 +13,8 @@
     "prompt": "The attached image is a style reference only. Match its flat screenprint treatment, its handling of ink, its crisp cut-paper edges, and its level of simplification exactly, so this picture looks like another print from the same series. Do not copy its scene, its composition, its colors other than the shared inks, or its off-white margin.\n\nA flat screenprint travel poster illustration, in the manner of mid-century national park posters.\n\nScene: a small plain cabin with one lit window stands at a trailhead at the center of a wide valley at dawn. A single footpath leaves the cabin door and winds away toward a low range of distant mountains. Two or three pine trees near the cabin. Broad rolling valley slopes, a large calm dawn sky.\n\nInks: five flat ink colors only. Three are shared by the whole series: off-white paper (#f1ede0), deep blue-black ink (#0e1a26), and a muted grayish steel blue (#5f84a2). The fourth is the accent of this print: amber (#f0a422), printed rich, pure, and fully saturated, never dulled, never shifted toward a neighboring hue. The fifth is a lighter tint of that same accent. The accent is the dominant color of the picture and covers more area than any other ink. The sky is the light amber tint, with one long flat band of full amber low above the mountains. The valley slopes are full amber. The mountains are steel blue with a few off-white snow shapes. The cabin, the pines, and the nearest ground are blue-black; the window is amber; the path is off-white.\n\nStyle: no gradients, no airbrushing, no glow, no soft shading, no texture, no paper grain, no halftone, no outlines, no line work. Bold simplified shapes with crisp edges, layered silhouettes for depth, large calm flat areas. About five to eight big shapes in total; minimal detail; calm and confident.\n\nComposition: wide panoramic 21:9 picture. The main landmark sits at the horizontal center of the picture and the horizon runs through the middle third, so that a 4:3 crop of the center still shows the whole landmark. The left and right thirds are quiet continuations of the landscape.\n\nThe artwork fills the whole image, full bleed to all four edges: no border, no margin, no frame, no vignette, no rounded corners. No people, no animals, no birds, no text, no lettering, no numbers, no signature, no signs with writing.\n"
   },
   {
-    "stage": 2,
-    "slug": "stage-02-crossing",
+    "order": 2,
+    "slug": "crossing",
     "place": "The crossing",
     "description": "a wooden footbridge over a wide shallow river with stepping stones",
     "accent": {
@@ -26,8 +26,8 @@
     "prompt": "The attached image is a style reference only. Match its flat screenprint treatment, its handling of ink, its crisp cut-paper edges, and its level of simplification exactly, so this picture looks like another print from the same series. Do not copy its scene, its composition, its colors other than the shared inks, or its off-white margin.\n\nA flat screenprint travel poster illustration, in the manner of mid-century national park posters.\n\nScene: a simple low wooden footbridge with plain railings crosses a wide shallow river at the center of the picture, seen from the side and slightly above. A line of flat stepping stones crosses the water in front of the bridge. Broad sloping river banks on both sides and low rounded hills behind. Early morning.\n\nInks: five flat ink colors only. Three are shared by the whole series: off-white paper (#f1ede0), deep blue-black ink (#0e1a26), and a muted grayish steel blue (#5f84a2). The fourth is the accent of this print: orange (#ec6f2a), printed rich, pure, and fully saturated, never dulled, never shifted toward a neighboring hue. The fifth is a lighter tint of that same accent. The accent is the dominant color of the picture and covers more area than any other ink. Both river banks and the nearer hills are full orange; the farthest hills are the light orange tint. The river is steel blue with a few long off-white reflection shapes. The bridge and the stepping stones are blue-black silhouettes. The sky is off-white paper.\n\nStyle: no gradients, no airbrushing, no glow, no soft shading, no texture, no paper grain, no halftone, no outlines, no line work. Bold simplified shapes with crisp edges, layered silhouettes for depth, large calm flat areas. About five to eight big shapes in total; minimal detail; calm and confident.\n\nComposition: wide panoramic 21:9 picture. The main landmark sits at the horizontal center of the picture and the horizon runs through the middle third, so that a 4:3 crop of the center still shows the whole landmark. The left and right thirds are quiet continuations of the landscape.\n\nThe artwork fills the whole image, full bleed to all four edges: no border, no margin, no frame, no vignette, no rounded corners. No people, no animals, no birds, no text, no lettering, no numbers, no signature, no signs with writing.\n"
   },
   {
-    "stage": 3,
-    "slug": "stage-03-forest",
+    "order": 3,
+    "slug": "forest",
     "place": "The pine forest",
     "description": "tall straight pines in layered ranks, the path running between the trunks",
     "accent": {
@@ -45,8 +45,8 @@
     ]
   },
   {
-    "stage": 4,
-    "slug": "stage-04-meadow",
+    "order": 4,
+    "slug": "meadow",
     "place": "The meadow",
     "description": "an open meadow where the trail forks three ways at a blank wooden signpost, flowers as simple dots",
     "accent": {
@@ -64,8 +64,8 @@
     ]
   },
   {
-    "stage": 5,
-    "slug": "stage-05-lake",
+    "order": 5,
+    "slug": "lake",
     "place": "The lake",
     "description": "a still mountain lake with a small boathouse and its reflection",
     "accent": {
@@ -83,8 +83,8 @@
     ]
   },
   {
-    "stage": 6,
-    "slug": "stage-06-terraces",
+    "order": 6,
+    "slug": "terraces",
     "place": "The terraces",
     "description": "terraced hillside fields held by curving dry-stone walls",
     "accent": {
@@ -96,8 +96,8 @@
     "prompt": "The attached image is a style reference only. Match its flat screenprint treatment, its handling of ink, its crisp cut-paper edges, and its level of simplification exactly, so this picture looks like another print from the same series. Do not copy its scene, its composition, its colors other than the shared inks, or its off-white margin.\n\nA flat screenprint travel poster illustration, in the manner of mid-century national park posters.\n\nScene: a broad hillside seen from straight in front fills the lower two thirds of the picture, cut into five wide terraced fields stacked one above another like shallow steps, each a long gently arched band running the full width of the picture. Between each field and the next is the dry-stone retaining wall, drawn as a bold solid band about a third as tall as a field, arched the same way. One small plain stone hut with a pitched roof stands on the top terrace at the exact center of the picture, against the sky. No bushes, no trees. Midday.\n\nInks: five flat ink colors only. Three are shared by the whole series: off-white paper (#f1ede0), deep blue-black ink (#0e1a26), and a muted grayish steel blue (#5f84a2). The fourth is the accent of this print: lime (#96d02c), printed rich, pure, and fully saturated, never dulled, never shifted toward a neighboring hue. The fifth is a lighter tint of that same accent. The accent is the dominant color of the picture and covers more area than any other ink. The terrace fields are full lime green, alternating with a few in the light lime tint. The wall bands are solid blue-black with no lighter rim, no highlights, and no thin lines anywhere. The hut is blue-black. Use only one lime green and one light lime tint; no darker green. A distant ridge is steel blue. The sky is off-white paper.\n\nStyle: no gradients, no airbrushing, no glow, no soft shading, no texture, no paper grain, no halftone, no outlines, no line work. Bold simplified shapes with crisp edges, layered silhouettes for depth, large calm flat areas. About five to eight big shapes in total; minimal detail; calm and confident.\n\nComposition: wide panoramic 21:9 picture. The main landmark sits at the horizontal center of the picture and the horizon runs through the middle third, so that a 4:3 crop of the center still shows the whole landmark. The left and right thirds are quiet continuations of the landscape.\n\nThe artwork fills the whole image, full bleed to all four edges: no border, no margin, no frame, no vignette, no rounded corners. No people, no animals, no birds, no text, no lettering, no numbers, no signature, no signs with writing.\n"
   },
   {
-    "stage": 7,
-    "slug": "stage-07-canyon",
+    "order": 7,
+    "slug": "canyon",
     "place": "The canyon",
     "description": "a canyon of stepped rock strata with a thin river far below",
     "accent": {
@@ -115,8 +115,8 @@
     ]
   },
   {
-    "stage": 8,
-    "slug": "stage-08-ridge",
+    "order": 8,
+    "slug": "ridge",
     "place": "The ridge",
     "description": "a windswept grassy ridge with an old windmill",
     "accent": {
@@ -128,8 +128,8 @@
     "prompt": "The attached image is a style reference only. Match its flat screenprint treatment, its handling of ink, its crisp cut-paper edges, and its level of simplification exactly, so this picture looks like another print from the same series. Do not copy its scene, its composition, its colors other than the shared inks, or its off-white margin.\n\nA flat screenprint travel poster illustration, in the manner of mid-century national park posters.\n\nScene: a long windswept grassy ridge runs across the picture in early afternoon. At the center, on the crest, stands an old stone tower windmill with four plain sails. The grass is shown as a few broad sweeping bands all leaning the same way in the wind. Two long flat clouds.\n\nInks: five flat ink colors only. Three are shared by the whole series: off-white paper (#f1ede0), deep blue-black ink (#0e1a26), and a muted grayish steel blue (#5f84a2). The fourth is the accent of this print: yellow (#f8d034), printed rich, pure, and fully saturated, never dulled, never shifted toward a neighboring hue. The fifth is a lighter tint of that same accent. The accent is the dominant color of the picture and covers more area than any other ink. The accent is a clean, bright, slightly lemon-leaning yellow, lighter and cooler than gold, never orange, never amber. The ridge is full bright yellow with sweeping bands of the light yellow tint. The windmill is a blue-black silhouette. The sky is steel blue with two long flat off-white clouds. A lower slope in the foreground is blue-black.\n\nStyle: no gradients, no airbrushing, no glow, no soft shading, no texture, no paper grain, no halftone, no outlines, no line work. Bold simplified shapes with crisp edges, layered silhouettes for depth, large calm flat areas. About five to eight big shapes in total; minimal detail; calm and confident.\n\nComposition: wide panoramic 21:9 picture. The main landmark sits at the horizontal center of the picture and the horizon runs through the middle third, so that a 4:3 crop of the center still shows the whole landmark. The left and right thirds are quiet continuations of the landscape.\n\nThe artwork fills the whole image, full bleed to all four edges: no border, no margin, no frame, no vignette, no rounded corners. No people, no animals, no birds, no text, no lettering, no numbers, no signature, no signs with writing.\n"
   },
   {
-    "stage": 9,
-    "slug": "stage-09-tower",
+    "order": 9,
+    "slug": "tower",
     "place": "The survey tower",
     "description": "a stone survey tower on a high bare plateau, long shadows",
     "accent": {
@@ -141,8 +141,8 @@
     "prompt": "The attached image is a style reference only. Match its flat screenprint treatment, its handling of ink, its crisp cut-paper edges, and its level of simplification exactly, so this picture looks like another print from the same series. Do not copy its scene, its composition, its colors other than the shared inks, or its off-white margin.\n\nA flat screenprint travel poster illustration, in the manner of mid-century national park posters.\n\nScene: a high, bare, almost empty plateau in late afternoon. At the center stands a plain square stone survey tower, tall and narrow, with one small dark window. The tower and a few scattered boulders cast very long flat shadows across the ground to one side. A low range far away on the horizon.\n\nInks: five flat ink colors only. Three are shared by the whole series: off-white paper (#f1ede0), deep blue-black ink (#0e1a26), and a muted grayish steel blue (#5f84a2). The fourth is the accent of this print: red (#d63c3c), printed rich, pure, and fully saturated, never dulled, never shifted toward a neighboring hue. The fifth is a lighter tint of that same accent. The accent is the dominant color of the picture and covers more area than any other ink. The plateau ground is full red. The sky is the light red tint. The tower, the boulders, and all the long shadows are blue-black. The distant range is steel blue. One or two long flat off-white clouds low in the sky.\n\nStyle: no gradients, no airbrushing, no glow, no soft shading, no texture, no paper grain, no halftone, no outlines, no line work. Bold simplified shapes with crisp edges, layered silhouettes for depth, large calm flat areas. About five to eight big shapes in total; minimal detail; calm and confident.\n\nComposition: wide panoramic 21:9 picture. The main landmark sits at the horizontal center of the picture and the horizon runs through the middle third, so that a 4:3 crop of the center still shows the whole landmark. The left and right thirds are quiet continuations of the landscape.\n\nThe artwork fills the whole image, full bleed to all four edges: no border, no margin, no frame, no vignette, no rounded corners. No people, no animals, no birds, no text, no lettering, no numbers, no signature, no signs with writing.\n"
   },
   {
-    "stage": 10,
-    "slug": "stage-10-village",
+    "order": 10,
+    "slug": "village",
     "place": "The village",
     "description": "a mountain village of many small houses stacked up a slope, windows lit, evening",
     "accent": {
@@ -154,8 +154,8 @@
     "prompt": "The attached image is a style reference only. Match its flat screenprint treatment, its handling of ink, its crisp cut-paper edges, and its level of simplification exactly, so this picture looks like another print from the same series. Do not copy its scene, its composition, its colors other than the shared inks, or its off-white margin.\n\nA flat screenprint travel poster illustration, in the manner of mid-century national park posters.\n\nScene: a mountain village in the evening: about twenty small plain houses with pitched roofs stacked closely up a steep slope at the center of the picture, forming one rough triangle, with small square lit windows. One taller peak behind. Quiet dark slopes to the left and right.\n\nInks: five flat ink colors only. Three are shared by the whole series: off-white paper (#f1ede0), deep blue-black ink (#0e1a26), and a muted grayish steel blue (#5f84a2). The fourth is the accent of this print: cyan (#2cb6e2), printed rich, pure, and fully saturated, never dulled, never shifted toward a neighboring hue. The fifth is a lighter tint of that same accent. The accent is the dominant color of the picture and covers more area than any other ink. The evening sky is full bright cyan and covers the upper half of the picture. The lit windows are the light cyan tint. The houses are blue-black and steel blue, with off-white roofs. The slopes are blue-black. The peak behind is steel blue with off-white snow shapes.\n\nStyle: no gradients, no airbrushing, no glow, no soft shading, no texture, no paper grain, no halftone, no outlines, no line work. Bold simplified shapes with crisp edges, layered silhouettes for depth, large calm flat areas. About five to eight big shapes in total; minimal detail; calm and confident.\n\nComposition: wide panoramic 21:9 picture. The main landmark sits at the horizontal center of the picture and the horizon runs through the middle third, so that a 4:3 crop of the center still shows the whole landmark. The left and right thirds are quiet continuations of the landscape.\n\nThe artwork fills the whole image, full bleed to all four edges: no border, no margin, no frame, no vignette, no rounded corners. No people, no animals, no birds, no text, no lettering, no numbers, no signature, no signs with writing.\n"
   },
   {
-    "stage": 11,
-    "slug": "stage-11-glacier",
+    "order": 11,
+    "slug": "glacier",
     "place": "The glacier",
     "description": "a glacier with crevasses and a waterfall, flat aurora bands in the sky",
     "accent": {
@@ -167,8 +167,21 @@
     "prompt": "The attached image is a style reference only. Match its flat screenprint treatment, its handling of ink, its crisp cut-paper edges, and its level of simplification exactly, so this picture looks like another print from the same series. Do not copy its scene, its composition, its colors other than the shared inks, or its off-white margin.\n\nA flat screenprint travel poster illustration, in the manner of mid-century national park posters.\n\nScene: a broad glacier at dusk flows toward the viewer between two dark rock walls and ends at the center of the picture in an ice cliff, from which a single straight waterfall drops into a still meltwater pool. A few simple angular crevasses cut the ice. Wide flat ribbon bands of aurora cross the whole sky.\n\nInks: five flat ink colors only. Three are shared by the whole series: off-white paper (#f1ede0), deep blue-black ink (#0e1a26), and a muted grayish steel blue (#5f84a2). The fourth is the accent of this print: green (#2fa24c), printed rich, pure, and fully saturated, never dulled, never shifted toward a neighboring hue. The fifth is a lighter tint of that same accent. The accent is the dominant color of the picture and covers more area than any other ink. The aurora bands are full green and the light green tint, wide and flat with hard edges, and fill most of the sky; the meltwater pool is full green. The remaining sky and the rock walls are blue-black. The glacier and the waterfall are off-white paper; the crevasses and ice shadows are steel blue.\n\nStyle: no gradients, no airbrushing, no glow, no soft shading, no texture, no paper grain, no halftone, no outlines, no line work. Bold simplified shapes with crisp edges, layered silhouettes for depth, large calm flat areas. About five to eight big shapes in total; minimal detail; calm and confident.\n\nComposition: wide panoramic 21:9 picture. The main landmark sits at the horizontal center of the picture and the horizon runs through the middle third, so that a 4:3 crop of the center still shows the whole landmark. The left and right thirds are quiet continuations of the landscape.\n\nThe artwork fills the whole image, full bleed to all four edges: no border, no margin, no frame, no vignette, no rounded corners. No people, no animals, no birds, no text, no lettering, no numbers, no signature, no signs with writing.\n"
   },
   {
-    "stage": 12,
-    "slug": "stage-12-pass",
+    "order": 12,
+    "slug": "trailblazer",
+    "place": "The trailblazer",
+    "description": "a lone explorer on a summit rock above canyon country in the first light of morning",
+    "accent": {
+      "name": "copper",
+      "hex": "#b0622a"
+    },
+    "scene": "Jensen Huang, the founder of NVIDIA, as a heroic explorer and trailblazer, drawn respectfully and recognizably in the same flat cut-paper manner as the landscape. He wears his black leather biker jacket, zipped partway, drawn as blue-black shapes with a few steel-blue highlight shapes for the collar, zipper, and seams; a dark shirt; dark trousers. Swept-back silver-gray hair as an off-white shape; thin rectangular glasses. His expression is serious and resolute: no smile, jaw set, brow firm, eyes fixed on the far horizon. The face is built from a few flat planes of the copper tint and a darker copper shadow, enough to read the expression; no outlines. He stands on a summit rock in a strong three-quarter view, full length, weight on one leg and one boot up on a higher stone, hands at his sides, the wind lifting the hem of his jacket, looking out over the land to the right. The figure fills about three quarters of the picture height. Behind him: wide canyon country of mesas and buttes with a thin river far below, under a big calm sky, in the first light of morning. Perspective: one single consistent viewpoint for the figure and the land. The camera is low, near the ground, looking slightly up at him, so the horizon line is low in the picture, below his waist, and he rises against the sky. His feet stand firmly on the nearest foreground rock, which overlaps everything behind it. The canyon country lies far behind and far below him and is correctly small with distance, in receding layers that get paler toward the horizon. The figure is anatomically well proportioned and stands exactly at the horizontal center of the picture.",
+    "inks": "The mesas and canyon walls are full copper and the lighter copper tint in broad flat layers and are the dominant color of the picture. The sky is steel blue with off-white paper near the horizon. His hair, the brightest rock edges, and the river are off-white paper. His jacket, trousers, the foreground rock, and deep shadows are blue-black. His face and hands are the lighter copper tint with full copper shadow planes.",
+    "prompt": "The attached image is a style reference only. Match its flat screenprint treatment, its handling of ink, its crisp cut-paper edges, and its level of simplification exactly, so this picture looks like another print from the same series. Do not copy its scene, its composition, its colors other than the shared inks, or its off-white margin.\n\nA flat screenprint travel poster illustration, in the manner of mid-century national park posters.\n\nScene: Jensen Huang, the founder of NVIDIA, as a heroic explorer and trailblazer, drawn respectfully and recognizably in the same flat cut-paper manner as the landscape. He wears his black leather biker jacket, zipped partway, drawn as blue-black shapes with a few steel-blue highlight shapes for the collar, zipper, and seams; a dark shirt; dark trousers. Swept-back silver-gray hair as an off-white shape; thin rectangular glasses. His expression is serious and resolute: no smile, jaw set, brow firm, eyes fixed on the far horizon. The face is built from a few flat planes of the copper tint and a darker copper shadow, enough to read the expression; no outlines. He stands on a summit rock in a strong three-quarter view, full length, weight on one leg and one boot up on a higher stone, hands at his sides, the wind lifting the hem of his jacket, looking out over the land to the right. The figure fills about three quarters of the picture height. Behind him: wide canyon country of mesas and buttes with a thin river far below, under a big calm sky, in the first light of morning. Perspective: one single consistent viewpoint for the figure and the land. The camera is low, near the ground, looking slightly up at him, so the horizon line is low in the picture, below his waist, and he rises against the sky. His feet stand firmly on the nearest foreground rock, which overlaps everything behind it. The canyon country lies far behind and far below him and is correctly small with distance, in receding layers that get paler toward the horizon. The figure is anatomically well proportioned and stands exactly at the horizontal center of the picture.\n\nInks: five flat ink colors only. Three are shared by the whole series: off-white paper (#f1ede0), deep blue-black ink (#0e1a26), and a muted grayish steel blue (#5f84a2). The fourth is the accent of this print: copper (#b0622a), printed rich, pure, and fully saturated, never dulled, never shifted toward a neighboring hue. The fifth is a lighter tint of that same accent. The accent is the dominant color of the picture and covers more area than any other ink. The mesas and canyon walls are full copper and the lighter copper tint in broad flat layers and are the dominant color of the picture. The sky is steel blue with off-white paper near the horizon. His hair, the brightest rock edges, and the river are off-white paper. His jacket, trousers, the foreground rock, and deep shadows are blue-black. His face and hands are the lighter copper tint with full copper shadow planes.\n\nStyle: no gradients, no airbrushing, no glow, no soft shading, no texture, no paper grain, no halftone, no outlines, no line work. Bold simplified shapes with crisp edges, layered silhouettes for depth, large calm flat areas. A small number of big shapes; minimal detail; bold, heroic, and confident, like a mid-century expedition or national park poster with a hero figure.\n\nComposition: wide panoramic 21:9 picture. The main landmark sits at the horizontal center of the picture and the horizon runs through the middle third, so that a 4:3 crop of the center still shows the whole landmark. The left and right thirds are quiet continuations of the landscape.\n\nThe artwork fills the whole image, full bleed to all four edges: no border, no margin, no frame, no vignette, no rounded corners. Exactly one person as described and no one else, no animals, no birds, no text, no lettering, no numbers, no signature, no signs with writing.\n"
+  },
+  {
+    "order": 13,
+    "slug": "pass",
     "place": "The high pass",
     "description": "a high pass with a rope suspension bridge between two cliffs",
     "accent": {
@@ -180,8 +193,21 @@
     "prompt": "The attached image is a style reference only. Match its flat screenprint treatment, its handling of ink, its crisp cut-paper edges, and its level of simplification exactly, so this picture looks like another print from the same series. Do not copy its scene, its composition, its colors other than the shared inks, or its off-white margin.\n\nA flat screenprint travel poster illustration, in the manner of mid-century national park posters.\n\nScene: a high mountain pass at dusk. Two tall cliffs face each other across a deep gap at the center of the picture, and a simple rope suspension bridge with plank deck hangs in a gentle curve between them, seen from the side. Layered ridges recede behind the gap.\n\nInks: five flat ink colors only. Three are shared by the whole series: off-white paper (#f1ede0), deep blue-black ink (#0e1a26), and a muted grayish steel blue (#5f84a2). The fourth is the accent of this print: orchid magenta (#c44fbd), printed rich, pure, and fully saturated, never dulled, never shifted toward a neighboring hue. The fifth is a lighter tint of that same accent. The accent is the dominant color of the picture and covers more area than any other ink. The dusk sky is full orchid magenta and covers the upper half of the picture; the nearest receding ridge is also full orchid magenta and the one behind it the light orchid tint. The two cliffs and the bridge are blue-black silhouettes. The farthest ridge is steel blue. A few off-white snow shapes on the cliff tops.\n\nStyle: no gradients, no airbrushing, no glow, no soft shading, no texture, no paper grain, no halftone, no outlines, no line work. Bold simplified shapes with crisp edges, layered silhouettes for depth, large calm flat areas. About five to eight big shapes in total; minimal detail; calm and confident.\n\nComposition: wide panoramic 21:9 picture. The main landmark sits at the horizontal center of the picture and the horizon runs through the middle third, so that a 4:3 crop of the center still shows the whole landmark. The left and right thirds are quiet continuations of the landscape.\n\nThe artwork fills the whole image, full bleed to all four edges: no border, no margin, no frame, no vignette, no rounded corners. No people, no animals, no birds, no text, no lettering, no numbers, no signature, no signs with writing.\n"
   },
   {
-    "stage": 13,
-    "slug": "stage-13-summit",
+    "order": 14,
+    "slug": "cape",
+    "place": "The cape",
+    "description": "a lighthouse on a low rocky cape at the edge of a calm sea at deep twilight",
+    "accent": {
+      "name": "indigo",
+      "hex": "#4a3fd0"
+    },
+    "scene": "a lighthouse stands on a low rocky cape at the far edge of a wide calm sea at deep twilight, at the center of the picture. One flat wedge-shaped beam of light reaches from the lamp across the sky to the right. A simple horizon line; two or three long flat cloud bands; a small crescent of beach in the foreground.",
+    "inks": "The sea and the lower sky are full indigo and the lighter indigo tint in wide flat bands and take up most of the picture. The lighthouse tower and the light beam are off-white paper. The cape and foreground rocks are blue-black. The cloud bands are steel blue.",
+    "prompt": "The attached image is a style reference only. Match its flat screenprint treatment, its handling of ink, its crisp cut-paper edges, and its level of simplification exactly, so this picture looks like another print from the same series. Do not copy its scene, its composition, its colors other than the shared inks, or its off-white margin.\n\nA flat screenprint travel poster illustration, in the manner of mid-century national park posters.\n\nScene: a lighthouse stands on a low rocky cape at the far edge of a wide calm sea at deep twilight, at the center of the picture. One flat wedge-shaped beam of light reaches from the lamp across the sky to the right. A simple horizon line; two or three long flat cloud bands; a small crescent of beach in the foreground.\n\nInks: five flat ink colors only. Three are shared by the whole series: off-white paper (#f1ede0), deep blue-black ink (#0e1a26), and a muted grayish steel blue (#5f84a2). The fourth is the accent of this print: indigo (#4a3fd0), printed rich, pure, and fully saturated, never dulled, never shifted toward a neighboring hue. The fifth is a lighter tint of that same accent. The accent is the dominant color of the picture and covers more area than any other ink. The sea and the lower sky are full indigo and the lighter indigo tint in wide flat bands and take up most of the picture. The lighthouse tower and the light beam are off-white paper. The cape and foreground rocks are blue-black. The cloud bands are steel blue.\n\nStyle: no gradients, no airbrushing, no glow, no soft shading, no texture, no paper grain, no halftone, no outlines, no line work. Bold simplified shapes with crisp edges, layered silhouettes for depth, large calm flat areas. About five to eight big shapes in total; minimal detail; calm and confident.\n\nComposition: wide panoramic 21:9 picture. The main landmark sits at the horizontal center of the picture and the horizon runs through the middle third, so that a 4:3 crop of the center still shows the whole landmark. The left and right thirds are quiet continuations of the landscape.\n\nThe artwork fills the whole image, full bleed to all four edges: no border, no margin, no frame, no vignette, no rounded corners. No people, no animals, no birds, no text, no lettering, no numbers, no signature, no signs with writing.\n"
+  },
+  {
+    "order": 15,
+    "slug": "summit",
     "place": "The summit",
     "description": "an observatory dome on the summit at night, flat stars and a crescent moon",
     "accent": {

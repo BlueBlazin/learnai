@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use crate::areas::load_areas;
 use crate::catalog::{Catalog, CatalogIssue, CatalogLoader, ProblemMeta};
 use crate::docs::DocsHelper;
 use crate::env::Environment;
@@ -11,10 +12,10 @@ use crate::error::{CoreError, Result};
 use crate::harness::{CommandSpec, HarnessCommand, HarnessJob, UvHarness};
 use crate::lsp::{self, EditorOptions, LanguageServer};
 use crate::model::{
-    AssetEvent, AssetList, Difficulty, EditorDocs, EditorEvent, EditorStatus, EditorStopReason,
-    EnvStatus, Extra, Framework, InstallEvent, PathStage, ProblemDetail, ProblemStatus,
-    ProblemSummary, Review, ReviewAction, RunEvent, RunMode, Settings, SolutionFile, SshHost,
-    Stats, StudyPath, Submission, SubmissionDetail, TargetCheckEvent, TargetInfo, Track,
+    Area, AssetEvent, AssetList, Difficulty, EditorDocs, EditorEvent, EditorStatus,
+    EditorStopReason, EnvStatus, Extra, Framework, InstallEvent, PathStage, ProblemDetail,
+    ProblemStatus, ProblemSummary, Review, ReviewAction, RunEvent, RunMode, Settings, SolutionFile,
+    SshHost, Stats, StudyPath, Submission, SubmissionDetail, TargetCheckEvent, TargetInfo, Track,
 };
 use crate::models::{ModelAssets, RemoteFetch};
 use crate::paths::load_paths;
@@ -159,10 +160,11 @@ impl Core {
             .load()
     }
 
-    /// Malformed tracks, problems, and paths found by the latest scan.
+    /// Malformed tracks, problems, areas, and paths found by the latest scan.
     pub fn catalog_issues(&self) -> Vec<CatalogIssue> {
         let catalog = self.catalog();
         let mut issues = catalog.issues().to_vec();
+        issues.extend(load_areas(&self.inner.root, &catalog).1);
         issues.extend(load_paths(&self.inner.root, &catalog).1);
         issues
     }
@@ -312,7 +314,25 @@ impl Core {
                     order: track.order,
                     problem_count,
                     solved_count,
+                    scene: track.scene.clone(),
+                    color: track.color.clone(),
+                    core: track.core.clone(),
                 }
+            })
+            .collect())
+    }
+
+    /// `list_areas`: every valid area, sorted by file name.
+    pub fn list_areas(&self) -> Result<Vec<Area>> {
+        let catalog = self.catalog();
+        let (areas, _issues) = load_areas(&self.inner.root, &catalog);
+        Ok(areas
+            .into_iter()
+            .map(|area| Area {
+                id: area.id,
+                title: area.title,
+                description: area.description,
+                modules: area.modules,
             })
             .collect())
     }

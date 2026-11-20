@@ -44,21 +44,21 @@ export const PLANNED_AREAS: readonly { title: string; description: string }[] = 
 
 /** Scene and color per track id. A track that is not listed gets no scene and the accent color. */
 const MODULE_ART: Record<string, { scene: string; color: string }> = {
-  foundations: { scene: "stage-01-trailhead", color: "#ed9b11" },
-  tokenization: { scene: "stage-02-crossing", color: "#e5691d" },
-  transformer: { scene: "stage-03-forest", color: "#2a71cc" },
-  sampling: { scene: "stage-04-meadow", color: "#db5881" },
-  "kv-cache": { scene: "stage-05-lake", color: "#18978e" },
-  constrained: { scene: "stage-06-terraces", color: "#8fc30b" },
-  quantization: { scene: "stage-07-canyon", color: "#834ccd" },
-  speculative: { scene: "stage-08-ridge", color: "#f4c60a" },
-  sizing: { scene: "stage-09-tower", color: "#c2332f" },
-  mlx: { scene: "stage-11-glacier", color: "#22964c" },
-  cuda: { scene: "module-trailblazer", color: "#a85c21" },
-  serving: { scene: "stage-10-village", color: "#27add9" },
-  systems: { scene: "stage-12-pass", color: "#c94db5" },
-  frontier: { scene: "module-cape", color: "#5a5fc0" },
-  capstones: { scene: "stage-13-summit", color: "#e6b125" },
+  foundations: { scene: "trailhead", color: "#ed9b11" },
+  tokenization: { scene: "crossing", color: "#e5691d" },
+  transformer: { scene: "forest", color: "#2a71cc" },
+  sampling: { scene: "meadow", color: "#db5881" },
+  "kv-cache": { scene: "lake", color: "#18978e" },
+  constrained: { scene: "terraces", color: "#8fc30b" },
+  quantization: { scene: "canyon", color: "#834ccd" },
+  speculative: { scene: "ridge", color: "#f4c60a" },
+  sizing: { scene: "tower", color: "#c2332f" },
+  mlx: { scene: "glacier", color: "#22964c" },
+  cuda: { scene: "trailblazer", color: "#a85c21" },
+  serving: { scene: "village", color: "#27add9" },
+  systems: { scene: "pass", color: "#c94db5" },
+  frontier: { scene: "cape", color: "#5a5fc0" },
+  capstones: { scene: "summit", color: "#e6b125" },
 };
 
 const FALLBACK_COLOR = "var(--primary)";

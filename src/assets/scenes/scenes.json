@@ -1,54 +1,62 @@
 [
   {
-    "slug": "stage-01-trailhead",
+    "slug": "trailhead",
     "accent": "#ed9b11"
   },
   {
-    "slug": "stage-02-crossing",
+    "slug": "crossing",
     "accent": "#e5691d"
   },
   {
-    "slug": "stage-03-forest",
+    "slug": "forest",
     "accent": "#2a71cc"
   },
   {
-    "slug": "stage-04-meadow",
+    "slug": "meadow",
     "accent": "#db5881"
   },
   {
-    "slug": "stage-05-lake",
+    "slug": "lake",
     "accent": "#18978e"
   },
   {
-    "slug": "stage-06-terraces",
+    "slug": "terraces",
     "accent": "#8fc30b"
   },
   {
-    "slug": "stage-07-canyon",
+    "slug": "canyon",
     "accent": "#834ccd"
   },
   {
-    "slug": "stage-08-ridge",
+    "slug": "ridge",
     "accent": "#f4c60a"
   },
   {
-    "slug": "stage-09-tower",
+    "slug": "tower",
     "accent": "#c2332f"
   },
   {
-    "slug": "stage-10-village",
+    "slug": "village",
     "accent": "#27add9"
   },
   {
-    "slug": "stage-11-glacier",
+    "slug": "glacier",
     "accent": "#22964c"
   },
   {
-    "slug": "stage-12-pass",
+    "slug": "trailblazer",
+    "accent": "#a85c21"
+  },
+  {
+    "slug": "pass",
     "accent": "#c94db5"
   },
   {
-    "slug": "stage-13-summit",
+    "slug": "cape",
+    "accent": "#5a5fc0"
+  },
+  {
+    "slug": "summit",
     "accent": "#e6b125"
   }
 ]

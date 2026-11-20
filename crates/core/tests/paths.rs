@@ -180,14 +180,11 @@ fn deco_issues(core: &learnai_core::Core) -> Vec<String> {
 fn stage_display_fields_round_trip() {
     let root = TestRoot::new();
     let core = root.core("happy");
-    let text = one_stage("scene = \"stage-01-trailhead\"\ncolor = \"#ed9b11\"\n");
+    let text = one_stage("scene = \"trailhead\"\ncolor = \"#ed9b11\"\n");
     write_path(root.path(), "deco.toml", &text);
     assert_eq!(
         stage_fields(&core),
-        (
-            Some("stage-01-trailhead".to_owned()),
-            Some("#ed9b11".to_owned())
-        )
+        (Some("trailhead".to_owned()), Some("#ed9b11".to_owned()))
     );
     assert!(deco_issues(&core).is_empty());
 }

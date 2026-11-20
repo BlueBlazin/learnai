@@ -543,6 +543,53 @@ async fn errors_are_json_with_meaningful_statuses() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn areas_and_module_fields_over_http() {
+    let bridge = Bridge::start().await;
+    let root = bridge.root.path();
+
+    // No areas directory: an empty list, not an error.
+    assert_eq!(bridge.call("list_areas", json!({})).await, json!([]));
+    // Tracks without the new keys carry only an empty `core`.
+    let tracks = bridge.call("list_tracks", json!({})).await;
+    assert_eq!(tracks[0]["core"], json!([]));
+    assert!(tracks[0].get("scene").is_none() && tracks[0].get("color").is_none());
+
+    fs::create_dir_all(root.join("areas")).expect("mkdir");
+    fs::write(
+        root.join("areas/starter.toml"),
+        "id = \"starter\"\ntitle = \"Starter Area\"\ndescription = \"A short area.\"\n\
+         modules = [\"basics\", \"missing\", \"advanced\"]\n",
+    )
+    .expect("write");
+    fs::write(
+        root.join("problems/basics/track.toml"),
+        "id = \"basics\"\ntitle = \"Basics\"\norder = 10\nscene = \"trailhead\"\n\
+         color = \"#ED9B11\"\ncore = [\"add-two\"]\n",
+    )
+    .expect("write");
+    assert_eq!(
+        bridge.call("list_areas", json!({})).await,
+        json!([{
+            "id": "starter", "title": "Starter Area", "description": "A short area.",
+            "modules": ["basics", "advanced"]
+        }])
+    );
+    let tracks = bridge.call("list_tracks", json!({})).await;
+    assert_eq!(tracks[0]["scene"], "trailhead");
+    assert_eq!(tracks[0]["color"], "#ed9b11");
+    assert_eq!(tracks[0]["core"], json!(["add-two"]));
+    let issues = bridge.call("list_catalog_issues", json!({})).await;
+    assert!(issues.as_array().expect("array").iter().any(|i| {
+        i["path"]
+            .as_str()
+            .is_some_and(|p| p.ends_with("starter.toml"))
+            && i["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("`missing`"))
+    }));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn paths_and_assets_over_http() {
     let bridge = Bridge::start().await;
     let root = bridge.root.path();

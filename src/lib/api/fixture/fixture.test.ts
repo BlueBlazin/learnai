@@ -265,6 +265,43 @@ describe("FixtureBackend", () => {
     }
   });
 
+  it("serves tracks with a scene, a color, and a core derived from the path, and one area over all of them", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const [tracks, areas, paths, problems] = await Promise.all([
+      backend.listTracks(),
+      backend.listAreas(),
+      backend.listPaths(),
+      backend.listProblems(),
+    ]);
+    expect(areas).toHaveLength(1);
+    expect(areas[0]?.modules).toEqual(tracks.map((track) => track.id));
+    expect(tracks.map((track) => track.scene)).toEqual([
+      "trailhead",
+      "crossing",
+      "forest",
+      "meadow",
+      "lake",
+      "terraces",
+      "canyon",
+      "ridge",
+      "tower",
+      "village",
+      "glacier",
+      "trailblazer",
+      "pass",
+      "cape",
+      "summit",
+    ]);
+    for (const track of tracks) expect(track.color).toMatch(/^#[0-9a-f]{6}$/);
+    // Each core is the path's problems of that track, in path order; together they are the path.
+    const trackOf = new Map(problems.map((problem) => [problem.id, problem.track]));
+    const onPath = (paths[0]?.stages ?? []).flatMap((stage) => stage.problems);
+    for (const track of tracks) {
+      expect(track.core, track.id).toEqual(onPath.filter((id) => trackOf.get(id) === track.id));
+    }
+    expect(tracks.reduce((n, track) => n + track.core.length, 0)).toBe(75);
+  });
+
   it("serves a 75-problem path over its own catalog, in stages, with progress that follows a solve", async () => {
     const backend = new FixtureBackend({ speed: 0 });
     const [paths, problems] = await Promise.all([backend.listPaths(), backend.listProblems()]);

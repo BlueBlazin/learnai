@@ -31,6 +31,13 @@ pub struct TrackMeta {
     pub description: String,
     /// Position among tracks.
     pub order: i64,
+    /// Slug of the bundled illustration, if any. The core does not know the images.
+    pub scene: Option<String>,
+    /// The module's color as lowercase `#rrggbb`, if any.
+    pub color: Option<String>,
+    /// Ids of this track's core problems, in teaching order. Every id is a valid
+    /// problem of this track and appears once.
+    pub core: Vec<String>,
 }
 
 /// Static metadata of a valid problem.
@@ -192,6 +199,20 @@ struct TrackToml {
     description: String,
     #[serde(default)]
     order: i64,
+    #[serde(default)]
+    scene: Option<String>,
+    #[serde(default)]
+    color: Option<String>,
+    #[serde(default)]
+    core: Vec<String>,
+}
+
+/// A parsed track plus the non-fatal problems found while parsing it. Cached together
+/// so a cached track reports the same issues as a fresh one.
+#[derive(Clone)]
+struct ParsedTrack {
+    meta: TrackMeta,
+    warnings: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -247,7 +268,7 @@ struct Cached<T> {
 /// Loads the catalog and keeps per-file parse results between loads.
 pub struct CatalogLoader {
     problems_dir: PathBuf,
-    tracks: HashMap<PathBuf, Cached<TrackMeta>>,
+    tracks: HashMap<PathBuf, Cached<ParsedTrack>>,
     problems: HashMap<PathBuf, Cached<Arc<ProblemMeta>>>,
     reported: HashSet<(PathBuf, String)>,
 }
@@ -277,7 +298,15 @@ impl CatalogLoader {
                 parse_track(text, &track_dir)
             });
             let track = match parsed {
-                Ok(track) => track,
+                Ok(ParsedTrack { meta, warnings }) => {
+                    for message in warnings {
+                        catalog.issues.push(CatalogIssue {
+                            path: toml_path.clone(),
+                            message,
+                        });
+                    }
+                    meta
+                }
                 Err(message) => {
                     catalog.issues.push(CatalogIssue {
                         path: toml_path,
@@ -287,7 +316,9 @@ impl CatalogLoader {
                 }
             };
             track_order.insert(track.id.clone(), track.order);
+            let track_index = catalog.tracks.len();
             catalog.tracks.push(track);
+            let mut track_problems = HashSet::new();
 
             for problem_dir in subdirectories(&track_dir, &mut catalog.issues) {
                 let toml_path = problem_dir.join("problem.toml");
@@ -297,12 +328,37 @@ impl CatalogLoader {
                 })
                 .and_then(|problem| check_files(&problem).map(|()| problem));
                 match parsed {
-                    Ok(problem) => catalog.problems.push(problem),
+                    Ok(problem) => {
+                        track_problems.insert(problem.id.clone());
+                        catalog.problems.push(problem);
+                    }
                     Err(message) => catalog.issues.push(CatalogIssue {
                         path: toml_path,
                         message,
                     }),
                 }
+            }
+
+            let track = &mut catalog.tracks[track_index];
+            let track_toml = track_dir.join("track.toml");
+            let mut listed = HashSet::new();
+            let core = std::mem::take(&mut track.core);
+            for id in core {
+                let message = if !track_problems.contains(&id) {
+                    format!(
+                        "core lists `{id}`, which is not a problem of track `{}`; skipped",
+                        track.id
+                    )
+                } else if !listed.insert(id.clone()) {
+                    format!("core lists `{id}` again; a problem appears once in a core")
+                } else {
+                    track.core.push(id);
+                    continue;
+                };
+                catalog.issues.push(CatalogIssue {
+                    path: track_toml.clone(),
+                    message,
+                });
             }
         }
 
@@ -416,7 +472,9 @@ fn dir_name(dir: &Path) -> &str {
     dir.file_name().and_then(|n| n.to_str()).unwrap_or_default()
 }
 
-fn parse_track(text: &str, dir: &Path) -> std::result::Result<TrackMeta, String> {
+/// Parses a track. A bad `scene` or `color` is dropped with a warning; `core` is kept
+/// as written and checked against the track's problems once those are loaded.
+fn parse_track(text: &str, dir: &Path) -> std::result::Result<ParsedTrack, String> {
     let raw: TrackToml = parse_toml(text)?;
     if raw.id != dir_name(dir) {
         return Err(format!(
@@ -428,12 +486,45 @@ fn parse_track(text: &str, dir: &Path) -> std::result::Result<TrackMeta, String>
     if raw.title.trim().is_empty() {
         return Err("title is empty".to_owned());
     }
-    Ok(TrackMeta {
-        id: raw.id,
-        title: raw.title,
-        description: raw.description,
-        order: raw.order,
+    let mut warnings = Vec::new();
+    let scene = raw.scene.filter(|scene| {
+        let ok = is_slug(scene);
+        if !ok {
+            warnings.push(format!(
+                "scene `{scene}` must use only a-z, 0-9, `-`, and `_`; ignored"
+            ));
+        }
+        ok
+    });
+    let color = raw.color.and_then(|color| {
+        let normalized = normalize_hex_color(&color);
+        if normalized.is_none() {
+            warnings.push(format!(
+                "color `{color}` must be `#` and six hex digits; ignored"
+            ));
+        }
+        normalized
+    });
+    Ok(ParsedTrack {
+        meta: TrackMeta {
+            id: raw.id,
+            title: raw.title,
+            description: raw.description,
+            order: raw.order,
+            scene,
+            color,
+            core: raw.core,
+        },
+        warnings,
     })
+}
+
+/// `#` followed by exactly six hex digits, in either case, returned in lowercase.
+pub(crate) fn normalize_hex_color(value: &str) -> Option<String> {
+    value
+        .strip_prefix('#')
+        .is_some_and(|hex| hex.len() == 6 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| value.to_ascii_lowercase())
 }
 
 /// Whether `id` is a valid identifier: only a-z, 0-9, `-`, and `_`.

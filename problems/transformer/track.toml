@@ -2,3 +2,17 @@ id = "transformer"
 title = "Transformer Forward Pass"
 description = "The pieces of a decoder-only transformer's forward pass, written from the formulas: attention, masking, and positional encoding, each with the bugs that silently corrupt generation."
 order = 30
+scene = "forest"
+color = "#2a71cc"
+core = [
+    "causal-self-attention",
+    "rope",
+    "swiglu-mlp",
+    "grouped-query-attention",
+    "pre-norm-block",
+    "decoder-forward",
+    "padded-batch-invariance",
+    "moe-router-forward",
+    "real-model-block",
+    "real-model-logits",
+]

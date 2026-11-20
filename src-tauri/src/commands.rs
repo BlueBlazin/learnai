@@ -5,10 +5,10 @@
 //! thread pool rather than on the main thread or an async worker.
 
 use learnai_core::{
-    AssetEvent, AssetList, CatalogIssue, Core, EditorDocs, EditorEvent, EditorStatus, EnvStatus,
-    Framework, InstallEvent, ProblemDetail, ProblemSummary, Review, ReviewAction, RunEvent,
-    RunMode, Settings, SolutionFile, SshHost, Stats, StudyPath, Submission, SubmissionDetail,
-    TargetCheckEvent, TargetInfo, Track,
+    Area, AssetEvent, AssetList, CatalogIssue, Core, EditorDocs, EditorEvent, EditorStatus,
+    EnvStatus, Framework, InstallEvent, ProblemDetail, ProblemSummary, Review, ReviewAction,
+    RunEvent, RunMode, Settings, SolutionFile, SshHost, Stats, StudyPath, Submission,
+    SubmissionDetail, TargetCheckEvent, TargetInfo, Track,
 };
 use tauri::State;
 use tauri::ipc::Channel;
@@ -211,6 +211,11 @@ pub async fn list_catalog_issues(state: State<'_, AppState>) -> CommandResult<Ve
         Ok(core.list_catalog_issues())
     })
     .await
+}
+
+#[tauri::command]
+pub async fn list_areas(state: State<'_, AppState>) -> CommandResult<Vec<Area>> {
+    with_core(state, "list_areas", |core| core.list_areas()).await
 }
 
 #[tauri::command]

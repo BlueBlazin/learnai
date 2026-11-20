@@ -1,4 +1,5 @@
 import type {
+  Area,
   AssetEvent,
   AssetList,
   CatalogIssue,
@@ -71,8 +72,11 @@ export interface Backend {
 
   getStats(): Promise<Stats>;
 
-  /** Malformed tracks, problems, and paths the catalog skipped. Empty when everything loaded. */
+  /** Malformed tracks, problems, areas, and paths the catalog skipped. Empty when everything loaded. */
   listCatalogIssues(): Promise<CatalogIssue[]>;
+
+  /** Areas, in file-name order. Each lists existing track ids only. */
+  listAreas(): Promise<Area[]>;
 
   /** Study paths, in file-name order, with progress. */
   listPaths(): Promise<Path[]>;

@@ -4,6 +4,10 @@ export interface FixtureTrack {
   title: string;
   description: string;
   order: number;
+  /** Slug of the bundled illustration. */
+  scene: string;
+  /** The module's color as lowercase `#rrggbb`. */
+  color: string;
   /** Titles of generated (non-authored) problems that fill the track out. */
   filler: string[];
 }
@@ -14,6 +18,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Numerical Foundations",
     description: "Float32 arithmetic, stable reductions, and the normalizations every layer depends on.",
     order: 1,
+    scene: "trailhead",
+    color: "#ed9b11",
     filler: [
       "RMS Normalization",
       "Layer Normalization from Scratch",
@@ -34,6 +40,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Tokenization",
     description: "From bytes to ids and back, fast and without losing a character.",
     order: 2,
+    scene: "crossing",
+    color: "#e5691d",
     filler: [
       "Byte-Level Pre-Tokenizer",
       "BPE Encode with a Merge Table",
@@ -54,6 +62,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Attention",
     description: "The inner loop of the transformer: scores, masks, positions, and their fast paths.",
     order: 3,
+    scene: "forest",
+    color: "#2a71cc",
     filler: [
       "Multi-Head Split and Merge",
       "Grouped-Query Attention",
@@ -74,6 +84,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Transformer Blocks",
     description: "Assembling layers into a model that matches reference activations bit for bit.",
     order: 4,
+    scene: "meadow",
+    color: "#db5881",
     filler: [
       "Pre-Norm Residual Block",
       "Tied Embedding and Unembedding",
@@ -95,6 +107,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Decoding and Sampling",
     description: "Turning logits into tokens: deterministic, stochastic, and constrained.",
     order: 5,
+    scene: "lake",
+    color: "#18978e",
     filler: [
       "Greedy Decoding with Stop Sequences",
       "Inverse-CDF Categorical Sampling",
@@ -116,6 +130,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "KV Caching",
     description: "Never compute the same key twice: caches, their layouts, and their invalidation.",
     order: 6,
+    scene: "terraces",
+    color: "#8fc30b",
     filler: [
       "Cache Append Without Reallocation",
       "Batched Cache with Ragged Lengths",
@@ -136,6 +152,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Quantization",
     description: "Fewer bits per weight, with error you can bound and measure.",
     order: 7,
+    scene: "canyon",
+    color: "#834ccd",
     filler: [
       "Symmetric Per-Channel Quantization",
       "Dynamic Range Calibration",
@@ -157,6 +175,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Batching and Scheduling",
     description: "Throughput, fairness, and tail latency when requests share one accelerator.",
     order: 8,
+    scene: "ridge",
+    color: "#f4c60a",
     filler: [
       "Static Batcher with Timeout",
       "Length-Bucketed Batching",
@@ -177,6 +197,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Serving",
     description: "The protocol surface of a model server: streaming, cancellation, limits, health.",
     order: 9,
+    scene: "tower",
+    color: "#c2332f",
     filler: [
       "Completions Endpoint",
       "Chat Completions with Roles",
@@ -198,6 +220,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Memory and Paging",
     description: "Fitting models and caches into the memory you have.",
     order: 10,
+    scene: "village",
+    color: "#27add9",
     filler: [
       "Peak Memory Estimator",
       "Memory-Mapped Weight Loading",
@@ -218,6 +242,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Speculative and Assisted Decoding",
     description: "Spend cheap compute to save expensive compute, without changing the distribution.",
     order: 11,
+    scene: "glacier",
+    color: "#22964c",
     filler: [
       "Speculative Sampling Acceptance Rule",
       "Draft-and-Verify Loop",
@@ -238,6 +264,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Structured Output",
     description: "Constrain generation to a grammar and keep it fast.",
     order: 12,
+    scene: "trailblazer",
+    color: "#a85c21",
     filler: [
       "Regex to DFA",
       "Token-Level DFA Masks",
@@ -259,6 +287,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Apple GPU with MLX",
     description: "Lazy evaluation, unified memory, and compiled graphs on Apple silicon.",
     order: 13,
+    scene: "pass",
+    color: "#c94db5",
     filler: [
       "Lazy Evaluation and Explicit Eval",
       "Compile a Decode Step",
@@ -279,6 +309,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Parallelism and Sharding",
     description: "When one device is not enough: splitting layers, tensors, and requests.",
     order: 14,
+    scene: "cape",
+    color: "#5a5fc0",
     filler: [
       "Pipeline Parallel Layer Split",
       "Tensor Parallel Linear",
@@ -299,6 +331,8 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     title: "Capstones",
     description: "Whole systems, judged end to end.",
     order: 15,
+    scene: "summit",
+    color: "#e6b125",
     filler: [
       "Tiny Inference Engine",
       "OpenAI-Compatible Server",

@@ -2,3 +2,15 @@ id = "constrained"
 title = "Constrained Generation"
 description = "Forcing output to follow a format: token masks, choice tries, regular-expression automata over a real vocabulary, and grammar-driven decoding, the machinery behind JSON mode and tool calls."
 order = 60
+scene = "terraces"
+color = "#8fc30b"
+core = [
+    "token-mask-apply",
+    "dfa-token-mask",
+    "dfa-token-index",
+    "constrained-greedy-decode",
+    "regex-to-dfa",
+    "json-schema-regex",
+    "json-pushdown-validator",
+    "tool-call-stream-parser",
+]

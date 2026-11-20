@@ -100,7 +100,7 @@ checkable in every framework.
 ### 3.3 Problem directory
 
 ```
-problems/<track>/track.toml          id, title, description, order
+problems/<track>/track.toml          id, title, description, order; optional scene, color, core
 problems/<track>/<id>/
   problem.toml
   statement.md                        Markdown + KaTeX ($...$, $$...$$) + fenced code
@@ -158,7 +158,41 @@ Optional `assets/` directory: figures for the statement (SVG preferred, PNG allo
 referenced from Markdown as `![caption](assets/<file>)`. SVG figures must read well in
 both light and dark themes (use `currentColor`, no fixed backgrounds).
 
-**Paths.** A path is a curated, ordered study plan stored at `paths/<id>.toml` in the
+**Track display keys and core.** A track is a module of an area. Besides `id`, `title`,
+`description`, and `order`, `track.toml` may carry three optional keys:
+
+```toml
+scene = "trailhead"            # slug of an illustration bundled with the app
+color = "#ed9b11"              # #rrggbb, stored lowercase
+core = ["stable-softmax", "rmsnorm"]   # this module's core problems, in teaching order
+```
+
+`core` lists the problems every learner of the module should do, in teaching order; the
+module's other problems are "further". A `scene` that is not a slug or a `color` that is
+not a hex color is dropped and reported as a catalog issue. A `core` id that is not a
+problem of this track, or that is listed twice, is dropped and reported. The track still
+loads in every case. `Track.core` is always present (possibly empty); `scene` and `color`
+are omitted when absent. The core passes `scene` through unchanged and does not know the
+images; the front end maps it to one.
+
+**Areas.** An area is a subject: an ordered list of modules (tracks), stored at
+`areas/<id>.toml` in the content root and read on every call:
+
+```toml
+id = "inference-and-serving"      # must equal the file stem
+title = "Inference and serving"
+description = "One sentence."
+modules = ["foundations", "tokenization"]   # track ids, in order
+```
+
+Areas are listed in file-name order. A malformed file is skipped and reported as a catalog
+issue. A module id that is not a known track is dropped and reported. A track listed by
+more than one area stays with the first area in file-name order; the later listing is
+dropped and reported. An area left with no modules is dropped and reported. A missing
+`areas/` directory is not an issue and yields an empty list.
+
+**Paths.** Paths are being retired in favor of areas and module cores; they stay until the
+screens have moved over. A path is a curated, ordered study plan stored at `paths/<id>.toml` in the
 content root:
 
 ```toml
@@ -170,7 +204,7 @@ description = "One sentence."
 title = "Numerics and tensors"
 description = "One sentence."
 problems = ["stable-softmax", "rmsnorm"]
-scene = "stage-01-trailhead"            # optional display fields, see below
+scene = "trailhead"            # optional display fields, see below
 color = "#ed9b11"
 ```
 
@@ -339,7 +373,12 @@ type Verdict = "accepted" | "wrong_answer" | "runtime_error" | "time_limit"
              | "assets_missing" | "hardware_missing";
 
 interface Track { id: string; title: string; description: string; order: number;
-                  problemCount: number; solvedCount: number; }
+                  problemCount: number; solvedCount: number;
+                  scene?: string; color?: string;    // absent when none or invalid
+                  core: string[]; }                  // core problem ids, in teaching order
+
+interface Area { id: string; title: string; description: string;
+                 modules: string[]; }                // existing track ids only, in order
 
 interface ProblemSummary {
   id: string; title: string; track: string; order: number; difficulty: Difficulty;
@@ -434,9 +473,10 @@ Commands (Tauri command names are snake_case; the `Backend` interface uses camel
 | `env_install` | `framework` + event sink | stream of `{type:"log",...}` then `{type:"done", ok}` |
 | `get_stats` | | `Stats` |
 
+| `list_areas` | | `Area[]` |
 | `list_paths` | | `Path[]` |
 | `get_problem_asset` | `id, path` | `string`: a `data:` URL. `path` is relative to the problem's `assets/` directory and may not escape it; only `.svg` and `.png`, at most 1 MiB; an SVG must be UTF-8 and a PNG must have the PNG signature |
-| `list_catalog_issues` | | `{ path: string; message: string }[]` (malformed tracks, problems, and paths, and path entries that were skipped) |
+| `list_catalog_issues` | | `{ path: string; message: string }[]` (malformed tracks, problems, areas, and paths, and track, area, and path entries that were skipped) |
 | `list_assets` | | `AssetList` (runs `learnai assets list --json`) |
 | `fetch_assets` | `names: string[], target?` + event sink | `jobId: string`; stream of `AssetEvent` (runs `learnai assets fetch <names> --json` with `--extra models`) |
 | `cancel_asset_fetch` | `jobId` | |

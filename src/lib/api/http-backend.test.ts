@@ -49,6 +49,38 @@ describe("HttpBackend first load", () => {
     await expect(backend.listTracks()).resolves.toEqual([]);
   });
 
+  it("posts list_areas with no arguments", async () => {
+    const area = { id: "inference-and-serving", title: "T", description: "D.", modules: ["foundations"] };
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ok([area]));
+    vi.stubGlobal("fetch", fetchMock);
+    const backend = new HttpBackend("http://bridge");
+
+    await expect(backend.listAreas()).resolves.toEqual([area]);
+    const posts = fetchMock.mock.calls
+      .filter(([url]) => url.includes("/api/"))
+      .map(([url, init]) => [url, JSON.parse(String(init?.body))]);
+    expect(posts).toEqual([["http://bridge/api/list_areas", {}]]);
+  });
+
+  it("passes the module fields of a track through unchanged", async () => {
+    const track = {
+      id: "foundations",
+      title: "T",
+      description: "D.",
+      order: 1,
+      problemCount: 2,
+      solvedCount: 0,
+      scene: "trailhead",
+      color: "#ed9b11",
+      core: ["stable-softmax"],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ok([track])),
+    );
+    await expect(new HttpBackend("http://bridge").listTracks()).resolves.toEqual([track]);
+  });
+
   it("posts list_paths and get_problem_asset with the contract's argument names", async () => {
     const fetchMock = vi.fn(async (url: string, _init?: RequestInit) =>
       ok(url.endsWith("/get_problem_asset") ? "data:image/svg+xml;base64,PHN2Zy8+" : []),

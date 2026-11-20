@@ -1,5 +1,6 @@
 import type { Backend, StartRunArgs } from "../backend";
 import type {
+  Area,
   AssetEvent,
   AssetList,
   CatalogIssue,
@@ -29,6 +30,7 @@ import type {
   TargetInfo,
   Track,
 } from "../types";
+import { FIXTURE_AREAS } from "./areas";
 import { FIXTURE_HARDWARE, type FixtureAsset, fixtureAssets } from "./assets";
 import { buildCatalog, type FixtureProblem, hash, renderTemplate } from "./catalog";
 import { FixtureEditor } from "./editor";
@@ -400,6 +402,12 @@ export class FixtureBackend implements Backend {
           order: track.order,
           problemCount: problems.length,
           solvedCount: problems.filter((p) => this.stateOf(p.meta.id).status === "solved").length,
+          scene: track.scene,
+          color: track.color,
+          // The track's problems that the fixture path lists, in path order.
+          core: FIXTURE_PATHS.flatMap((path) => path.stages.flatMap((stage) => stage.problems)).filter(
+            (id) => this.problems.get(id)?.meta.track === track.id,
+          ),
         };
       }),
     );
@@ -749,6 +757,15 @@ export class FixtureBackend implements Backend {
         message: "missing starter/torch.py",
       },
     ]);
+
+  /** The fixture areas, with core's rule applied: a module that is not a fixture track is dropped. */
+  listAreas = (): Promise<Area[]> =>
+    this.respond(() =>
+      FIXTURE_AREAS.map((area) => ({
+        ...area,
+        modules: area.modules.filter((id) => this.catalog.tracks.some((track) => track.id === id)),
+      })).filter((area) => area.modules.length > 0),
+    );
 
   /**
    * The fixture path, with core's rule applied: an id the catalog does not know

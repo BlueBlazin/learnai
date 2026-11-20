@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::catalog::{Catalog, CatalogIssue, is_slug};
+use crate::catalog::{Catalog, CatalogIssue, is_slug, normalize_hex_color};
 
 /// One stage of a path: a titled group of problems in study order.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,7 +100,7 @@ pub fn load_paths(root: &Path, catalog: &Catalog) -> (Vec<PathMeta>, Vec<Catalog
     (paths, issues)
 }
 
-fn issue(path: &Path, message: String) -> CatalogIssue {
+pub(crate) fn issue(path: &Path, message: String) -> CatalogIssue {
     CatalogIssue {
         path: path.to_path_buf(),
         message,
@@ -108,7 +108,7 @@ fn issue(path: &Path, message: String) -> CatalogIssue {
 }
 
 /// Lists the visible `.toml` files of `dir`, sorted by name. A missing `dir` yields nothing.
-fn path_files(dir: &Path, issues: &mut Vec<CatalogIssue>) -> Vec<PathBuf> {
+pub(crate) fn path_files(dir: &Path, issues: &mut Vec<CatalogIssue>) -> Vec<PathBuf> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
@@ -130,7 +130,7 @@ fn path_files(dir: &Path, issues: &mut Vec<CatalogIssue>) -> Vec<PathBuf> {
     files
 }
 
-fn file_stem(path: &Path) -> &str {
+pub(crate) fn file_stem(path: &Path) -> &str {
     path.file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or_default()
@@ -207,9 +207,8 @@ fn parse_path(
             ok
         });
         let color = stage.color.and_then(|color| {
-            if is_hex_color(&color) {
-                Some(color.to_ascii_lowercase())
-            } else {
+            let normalized = normalize_hex_color(&color);
+            if normalized.is_none() {
                 issues.push(issue(
                     file,
                     format!(
@@ -217,8 +216,8 @@ fn parse_path(
                         stage.title
                     ),
                 ));
-                None
             }
+            normalized
         });
         if !problems.is_empty() {
             stages.push(StageMeta {
@@ -237,11 +236,4 @@ fn parse_path(
         description: raw.description,
         stages,
     })
-}
-
-/// `#` followed by exactly six hex digits, in either case.
-fn is_hex_color(value: &str) -> bool {
-    value
-        .strip_prefix('#')
-        .is_some_and(|hex| hex.len() == 6 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
 }

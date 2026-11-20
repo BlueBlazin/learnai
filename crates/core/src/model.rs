@@ -236,6 +236,30 @@ pub struct Track {
     pub problem_count: u32,
     /// Number of those problems that are solved.
     pub solved_count: u32,
+    /// Slug of the bundled illustration; absent when none or invalid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene: Option<String>,
+    /// The module's color as lowercase `#rrggbb`; absent when none or invalid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Ids of the module's core problems, in teaching order. Its other problems are
+    /// "further".
+    #[serde(default)]
+    pub core: Vec<String>,
+}
+
+/// A subject: an ordered list of modules (tracks).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Area {
+    /// Area id.
+    pub id: String,
+    /// Display title.
+    pub title: String,
+    /// One-sentence description.
+    pub description: String,
+    /// Existing track ids only, in order.
+    pub modules: Vec<String>,
 }
 
 /// Catalog metadata of a problem plus the user's progress on it.
@@ -1395,6 +1419,52 @@ mod tests {
                 message: None
             }),
             json!({"type": "done", "ok": false, "canceled": true, "message": null})
+        );
+    }
+
+    #[test]
+    fn tracks_match_the_contract() {
+        let mut track = Track {
+            id: "foundations".into(),
+            title: "Foundations".into(),
+            description: "One sentence.".into(),
+            order: 1,
+            problem_count: 3,
+            solved_count: 1,
+            scene: None,
+            color: None,
+            core: vec![],
+        };
+        // Without the optional fields, only `core` (always present) is added.
+        assert_eq!(
+            json!(track),
+            json!({"id": "foundations", "title": "Foundations", "description": "One sentence.",
+                   "order": 1, "problemCount": 3, "solvedCount": 1, "core": []})
+        );
+        track.scene = Some("trailhead".into());
+        track.color = Some("#ed9b11".into());
+        track.core = vec!["stable-softmax".into()];
+        assert_eq!(
+            json!(track),
+            json!({"id": "foundations", "title": "Foundations", "description": "One sentence.",
+                   "order": 1, "problemCount": 3, "solvedCount": 1,
+                   "scene": "trailhead", "color": "#ed9b11", "core": ["stable-softmax"]})
+        );
+    }
+
+    #[test]
+    fn areas_match_the_contract() {
+        let area = Area {
+            id: "inference-and-serving".into(),
+            title: "Inference and serving".into(),
+            description: "One sentence.".into(),
+            modules: vec!["foundations".into(), "tokenization".into()],
+        };
+        assert_eq!(
+            json!(area),
+            json!({"id": "inference-and-serving", "title": "Inference and serving",
+                   "description": "One sentence.",
+                   "modules": ["foundations", "tokenization"]})
         );
     }
 

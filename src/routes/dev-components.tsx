@@ -291,6 +291,7 @@ const TRACKS: Track[] = [
     order: 1,
     problemCount: 14,
     solvedCount: 11,
+    core: [],
   },
   {
     id: "attention",
@@ -299,8 +300,9 @@ const TRACKS: Track[] = [
     order: 2,
     problemCount: 15,
     solvedCount: 4,
+    core: [],
   },
-  { id: "serving", title: "Serving", description: "", order: 3, problemCount: 14, solvedCount: 0 },
+  { id: "serving", title: "Serving", description: "", order: 3, problemCount: 14, solvedCount: 0, core: [] },
 ];
 
 const DETAIL: ProblemDetail = {
@@ -1539,7 +1541,7 @@ function DevComponentsScreen() {
         </Specimen>
         <Specimen name="ContinueEntry with its stage and a SceneBanner above it">
           <div style={stageColorVars(ROUTE_PATH)}>
-            <SceneBanner src={sceneUrl("stage-03-forest") ?? ""} className="mb-6" />
+            <SceneBanner src={sceneUrl("forest") ?? ""} className="mb-6" />
             <ContinueEntry
               problem={PROBLEMS[0] as ProblemSummary}
               track={TRACKS[1]}

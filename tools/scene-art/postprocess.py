@@ -95,7 +95,7 @@ def main() -> None:
         image.save(OUT_DIR / f"{slug}.webp", "WEBP", quality=QUALITY, method=6)
         accent = measure_accent(image)
         manifest.append({"slug": slug, "accent": accent})
-        finals.append((f"{scene['stage']:02d}  {slug}   {accent}", image))
+        finals.append((f"{scene['order']:02d}  {slug}   {accent}", image))
         print(slug, "asked", scene["accent"]["hex"], "printed", accent)
     (OUT_DIR / "scenes.json").write_text(json.dumps(manifest, indent=2) + "\n")
     if args.contact:
