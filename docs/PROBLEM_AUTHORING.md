@@ -5,6 +5,10 @@ format, the test API for all seven judge types, the framework adapter, the kit, 
 rules that keep judging deterministic, and the validation workflow. You should not need
 to read the judge's source to write a problem.
 
+How a batch of problems is produced (research, specs, kit work, the brief an author
+gets, every check in order, review, and commit) is in
+[`PROBLEM_PROCESS.md`](PROBLEM_PROCESS.md).
+
 The exemplar to copy is `problems/foundations/stable-softmax/`. Read it once, in full,
 before writing your first problem. Working miniature problems for the other judge types
 live under `python/tests/fixtures/catalog/problems/judges/`:
