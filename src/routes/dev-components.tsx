@@ -2,6 +2,7 @@ import { createLazyRoute } from "@tanstack/react-router";
 import { cn } from "cn";
 import { Lock, Play } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import scenes from "@/assets/scenes/scenes.json";
 import { ActionButton } from "@/components/app/action-button";
 import { AppLink } from "@/components/app/app-link";
 import { ConfirmDialog } from "@/components/app/confirm-dialog";
@@ -12,14 +13,18 @@ import { InlineButton } from "@/components/app/inline-button";
 import { MetaItem, MetaList } from "@/components/app/meta-list";
 import { Notice } from "@/components/app/notice";
 import { Page, PageHeader, ScreenMessage, Section } from "@/components/app/page";
+import { PixelIcon } from "@/components/app/pixel-icon";
 import { RuledList } from "@/components/app/ruled-list";
 import { SHORTCUTS, ShortcutHint } from "@/components/app/shortcut-hint";
 import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
 import { CodeEditor } from "@/components/editor/code-editor";
+import { ActivityCalendar } from "@/components/home/activity-calendar";
 import { ContinueEntry } from "@/components/home/continue-entry";
 import { GettingStarted } from "@/components/home/getting-started";
-import { PathProgress } from "@/components/home/path-progress";
+import { HabitStrip } from "@/components/home/habit-strip";
 import { ProgressSummary } from "@/components/home/progress-summary";
+import { RouteSummary } from "@/components/home/route-summary";
+import { SceneBanner } from "@/components/home/scene-banner";
 import { TrackProgress } from "@/components/home/track-progress";
 import { FilterSelect } from "@/components/library/filter-select";
 import { LibraryFilterBar } from "@/components/library/library-filter-bar";
@@ -34,6 +39,9 @@ import { ModelsPanel } from "@/components/models/models-panel";
 import { PathEntryList } from "@/components/path/path-entry-list";
 import { PathStage } from "@/components/path/path-stage";
 import { PathSummary } from "@/components/path/path-summary";
+import { StagePlates } from "@/components/path/stage-plates";
+import { StageProgressBar } from "@/components/path/stage-progress-bar";
+import { StageSwatch } from "@/components/path/stage-swatch";
 import { DifficultyMark } from "@/components/problem/difficulty-mark";
 import { EditorialPanel } from "@/components/problem/editorial-panel";
 import { FrameworkList } from "@/components/problem/framework-list";
@@ -68,6 +76,7 @@ import { UpcomingReviews } from "@/components/review/upcoming-reviews";
 import { CatalogIssueList } from "@/components/settings/catalog-issue-list";
 import { ContentPanel } from "@/components/settings/content-panel";
 import { EnvironmentPanel } from "@/components/settings/environment-panel";
+import { GoalSetting } from "@/components/settings/goal-setting";
 import { InstallButton, UvGuideButton } from "@/components/settings/install-actions";
 import { PathField } from "@/components/settings/path-field";
 import { ReviewSetting } from "@/components/settings/review-setting";
@@ -87,6 +96,7 @@ import { HardwareNotice } from "@/components/workbench/hardware-notice";
 import { PaneToolbar } from "@/components/workbench/pane-toolbar";
 import { SaveIndicator } from "@/components/workbench/save-indicator";
 import { SuggestionsStatus } from "@/components/workbench/suggestions-status";
+import { activityByDay, dayKey } from "@/lib/activity";
 import {
   type AssetList,
   type CaseResult,
@@ -116,6 +126,8 @@ import { EMPTY_FILTERS, type LibraryFilters } from "@/lib/filters";
 import { nextOnPath, pathEntries, unmetPrerequisites } from "@/lib/paths";
 import { dueReviews, reviewEntries } from "@/lib/reviews";
 import { routes } from "@/lib/routes";
+import { sceneUrl } from "@/lib/scenes";
+import { stageColorVars } from "@/lib/stage-colors";
 import type { ThemePreference } from "@/stores/theme";
 
 /** Sample data. Kept inline so this page has no dependency on any backend. */
@@ -191,6 +203,62 @@ const PATH: Path = {
 };
 const PATH_ENTRIES = pathEntries(PATH, PATH_PROBLEMS);
 const PATH_NEXT = nextOnPath(PATH_ENTRIES);
+
+/**
+ * A path with a scene and a color on every stage (thirteen, so the last plate spans three
+ * columns), the first thirteen problems solved, and one extra stage with neither.
+ */
+const ROUTE_PROBLEMS: ProblemSummary[] = Array.from({ length: 40 }, (_, index) =>
+  summary({
+    id: `route-${index}`,
+    title: `Route problem ${index + 1}`,
+    status: index < 14 ? "solved" : "todo",
+  }),
+);
+const ROUTE_STAGES: Path["stages"] = scenes.map((scene, index) => ({
+  title:
+    ["Numerics", "Tokens", "The forward pass", "Attention", "Caching", "Batching"][index] ??
+    `Stage ${index + 1}`,
+  description: "What this stage covers, in a sentence.",
+  place: scene.place,
+  scene: scene.slug,
+  color: scene.accent,
+  problems: ROUTE_PROBLEMS.slice(index * 3, index * 3 + 3).map((problem) => problem.id),
+}));
+const ROUTE_PATH: Path = {
+  id: "route",
+  title: "Sample route",
+  description: "",
+  stages: ROUTE_STAGES,
+  problemCount: 39,
+  solvedCount: 14,
+};
+const ROUTE_ENTRIES = pathEntries(ROUTE_PATH, ROUTE_PROBLEMS);
+/** Four stages, the last with no scene and no color: it shows a flat block and falls back to the accent. */
+const PLAIN_PATH: Path = {
+  ...ROUTE_PATH,
+  stages: [
+    ...ROUTE_STAGES.slice(0, 3),
+    {
+      title: "No scene",
+      description: "",
+      problems: ROUTE_PROBLEMS.slice(9, 12).map((problem) => problem.id),
+    },
+  ],
+};
+const PLAIN_ENTRIES = pathEntries(PLAIN_PATH, ROUTE_PROBLEMS);
+
+/** Activity over the last fifteen weeks, as a fixed pattern, ending on a fixed Thursday. */
+const ACTIVITY_NOW = new Date("2026-11-19T12:00:00");
+const ACTIVITY = (() => {
+  const byDay = new Map<string, number>();
+  for (let back = 0; back < 105; back++) {
+    const level = (back * 7 + (back % 5) * 3) % 11;
+    if (level < 4) continue;
+    byDay.set(dayKey(new Date(2026, 10, 19 - back)), Math.min(4, level - 3));
+  }
+  return byDay;
+})();
 const PATH_UNMET = unmetPrerequisites(PATH_PROBLEMS);
 
 /** A small figure in the authoring conventions: currentColor ink, the palette through style, text at 13 units on a 480-unit drawing. */
@@ -818,6 +886,7 @@ function DevComponentsScreen() {
   const [judge, setJudge] = useState<JudgeKind | null>(null);
   const [pickedTarget, setPickedTarget] = useState("local");
   const [reviewsOn, setReviewsOn] = useState(true);
+  const [goal, setGoal] = useState(5);
 
   return (
     <Page>
@@ -1431,10 +1500,27 @@ function DevComponentsScreen() {
             <PathEntryList entries={PATH_ENTRIES[0] ?? []} label="Sample entries" />
           </div>
         </Specimen>
-        <Specimen name="PathProgress (Home): under way, finished">
-          <div className="grid grid-cols-2 gap-10">
-            <PathProgress path={PATH} next={PATH_NEXT} />
-            <PathProgress path={{ ...PATH, solvedCount: 4 }} next={null} />
+        <Specimen name="StageProgressBar: under way (a pale color, a deep blue), plain stages">
+          <div className="flex max-w-measure flex-col gap-6" style={stageColorVars(ROUTE_PATH)}>
+            <StageProgressBar title={ROUTE_PATH.title} entries={ROUTE_ENTRIES} />
+          </div>
+          <div className="mt-6 flex max-w-measure flex-col gap-6" style={stageColorVars(PLAIN_PATH)}>
+            <StageProgressBar title={PLAIN_PATH.title} entries={PLAIN_ENTRIES} />
+          </div>
+        </Specimen>
+        <Specimen name="StagePlates: thirteen stages (the last spans three columns); a stage with no scene or color">
+          <div className="flex flex-col gap-10" style={stageColorVars(ROUTE_PATH)}>
+            <StagePlates path={ROUTE_PATH} entries={ROUTE_ENTRIES} onOpen={noop} />
+          </div>
+          <div className="mt-10 flex flex-col gap-10" style={stageColorVars(PLAIN_PATH)}>
+            <StagePlates path={PLAIN_PATH} entries={PLAIN_ENTRIES} onOpen={noop} />
+          </div>
+        </Specimen>
+        <Specimen name="StageSwatch: each stage's mark color">
+          <div className="flex gap-3" style={stageColorVars(ROUTE_PATH)}>
+            {ROUTE_STAGES.map((stage, index) => (
+              <StageSwatch key={stage.title} color={`var(--stage-${index + 1}-mark)`} />
+            ))}
           </div>
         </Specimen>
       </Section>
@@ -1461,6 +1547,82 @@ function DevComponentsScreen() {
             onOpen={() => {}}
           />
           <ContinueEntry problem={PROBLEMS[1] as ProblemSummary} track={TRACKS[1]} onOpen={() => {}} />
+        </Specimen>
+        <Specimen name="ContinueEntry with its stage and a SceneBanner above it">
+          <div style={stageColorVars(ROUTE_PATH)}>
+            <SceneBanner src={sceneUrl("stage-03-forest") ?? ""} className="mb-6" />
+            <ContinueEntry
+              problem={PROBLEMS[0] as ProblemSummary}
+              track={TRACKS[1]}
+              onPath={{ path: PATH, position: 1 }}
+              stage={{ index: 2, title: "The forward pass", place: "The pine forest" }}
+              onOpen={() => {}}
+            />
+          </div>
+        </Specimen>
+        <Specimen name="HabitStrip: streak running, goal met with reviews due; no streak, quiet reviews; reviews off; many a week">
+          <div className="flex flex-col gap-2">
+            <HabitStrip
+              streakDays={6}
+              week={[true, true, true, false, false, false, false]}
+              solvedThisWeek={2}
+              goal={5}
+              reviews={{ due: 2, firstDueProblemId: "a", upcoming: null }}
+            />
+            <HabitStrip
+              streakDays={1}
+              week={[false, false, true, true, true, false, false]}
+              solvedThisWeek={5}
+              goal={5}
+              reviews={{
+                due: 0,
+                firstDueProblemId: null,
+                upcoming: "3 reviews scheduled; the next is due tomorrow.",
+              }}
+            />
+            <HabitStrip
+              streakDays={0}
+              week={[false, false, false, false, false, false, false]}
+              solvedThisWeek={0}
+              goal={3}
+              reviews={{ due: 0, firstDueProblemId: null, upcoming: null }}
+            />
+            <HabitStrip
+              streakDays={12}
+              week={[true, true, true, true, false, false, false]}
+              solvedThisWeek={9}
+              goal={14}
+              reviews={null}
+            />
+          </div>
+        </Specimen>
+        <Specimen name="ActivityCalendar: fifteen weeks of activity; too little history (renders nothing)">
+          <div className="max-w-md">
+            <ActivityCalendar byDay={ACTIVITY} now={ACTIVITY_NOW} />
+            <ActivityCalendar byDay={activityByDay([])} now={ACTIVITY_NOW} />
+            <ActivityCalendar byDay={new Map([["2026-11-15", 1]])} now={ACTIVITY_NOW} />
+          </div>
+        </Specimen>
+        <Specimen name="RouteSummary: under way, not started, finished">
+          <div className="flex flex-col gap-3">
+            <RouteSummary path={ROUTE_PATH} />
+            <RouteSummary path={{ ...ROUTE_PATH, solvedCount: 0 }} />
+            <RouteSummary path={{ ...ROUTE_PATH, solvedCount: 39 }} />
+          </div>
+        </Specimen>
+        <Specimen name="PixelIcon: flame and star at each scale">
+          <div className="flex items-end gap-4">
+            <PixelIcon name="flame" scale={1} />
+            <PixelIcon name="flame" scale={2} />
+            <PixelIcon name="star" scale={1} />
+            <PixelIcon name="star" scale={2} />
+          </div>
+        </Specimen>
+        <Specimen name="GoalSetting (Settings): a listed goal, and one saved from elsewhere">
+          <div className="flex flex-col gap-4">
+            <GoalSetting value={goal} onChange={setGoal} />
+            <GoalSetting value={8} onChange={noop} />
+          </div>
         </Specimen>
         <Specimen name="ProgressSummary: in progress, and empty">
           <div className="grid grid-cols-2 gap-10">

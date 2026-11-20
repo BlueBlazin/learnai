@@ -338,6 +338,15 @@ export class FixtureBackend implements Backend {
       const entry = solved[day];
       if (entry) entry.at = today - day * DAY_MS - 5_400_000 - day * 600_000;
     }
+    // Earlier practice, ten or twelve weeks back: a solved problem revisited on a quiet day. The
+    // last six days stay the only ones in the streak; these all fall before them.
+    for (const entry of solved) {
+      const id = entry.problem.meta.id;
+      if (hash(`${id}:old`) < 0.35) continue;
+      const age = 26 + Math.floor(hash(`${id}:old-age`) * 58);
+      const at = today - age * DAY_MS - hash(`${id}:old-t`) * 8 * 3_600_000;
+      seeded.push({ problem: entry.problem, framework: entry.framework, accepted: true, at });
+    }
     seeded.sort((a, b) => a.at - b.at);
     for (const { problem, framework, accepted, at } of seeded) {
       const code = renderTemplate(

@@ -5,6 +5,7 @@ import { ErrorState, LoadingLines } from "@/components/app/states";
 import { ModelsPanel } from "@/components/models/models-panel";
 import { ContentPanel } from "@/components/settings/content-panel";
 import { EnvironmentPanel } from "@/components/settings/environment-panel";
+import { GoalSetting } from "@/components/settings/goal-setting";
 import { ReviewSetting } from "@/components/settings/review-setting";
 import { SuggestionsPanel } from "@/components/settings/suggestions-panel";
 import { ThemePicker } from "@/components/settings/theme-picker";
@@ -30,6 +31,7 @@ import { useEditorInstall } from "@/lib/api/use-editor-install";
 import { useEnvInstall } from "@/lib/api/use-env-install";
 import { useTargetCheck } from "@/lib/api/use-target-check";
 import { editorSession, useEditorSession } from "@/lib/editor";
+import { usePreferences } from "@/stores/preferences";
 import { useThemeStore } from "@/stores/theme";
 
 const BACKEND_NOTE = {
@@ -53,6 +55,8 @@ function SettingsScreen() {
   const removeTarget = useRemoveTarget();
   const { checks, check } = useTargetCheck();
   const settings = useSettings();
+  const weeklyGoal = usePreferences((state) => state.weeklyGoal);
+  const setWeeklyGoal = usePreferences((state) => state.setWeeklyGoal);
   const setReviews = useSetReviewsEnabled();
   const editorStatus = useEditorStatus();
   const setSuggestions = useSetEditorIntelligence();
@@ -176,6 +180,10 @@ function SettingsScreen() {
             />
           </div>
         )}
+      </Section>
+
+      <Section title="Goal" aside="How many problems you aim to solve each week.">
+        <GoalSetting value={weeklyGoal} onChange={setWeeklyGoal} />
       </Section>
 
       <Section title="Editor" aside="Suggestions and documentation while you write a solution.">

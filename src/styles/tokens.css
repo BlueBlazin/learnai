@@ -169,6 +169,9 @@
   --figure-serif: var(--font-serif);
   --figure-mono: var(--font-mono);
 
+  /* The streak's flame: one warm orange, a touch darker on light paper. */
+  --flame: light-dark(color-mix(in oklch, #ec6f2a, black 4%), #ec6f2a);
+
   color-scheme: light;
 }
 

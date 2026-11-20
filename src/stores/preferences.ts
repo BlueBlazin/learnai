@@ -29,6 +29,20 @@ interface PreferencesStore {
   /** Records real work in a framework: an edit, a run, or a submit. */
   markFrameworkUsed: (problemId: string, framework: Framework) => void;
   revealHint: (problemId: string, count: number) => void;
+  /** How many problems the learner aims to solve each week. */
+  weeklyGoal: number;
+  /** Sets the weekly goal, kept to a whole number from 1 through 21. */
+  setWeeklyGoal: (goal: number) => void;
+}
+
+export const MIN_WEEKLY_GOAL = 1;
+export const MAX_WEEKLY_GOAL = 21;
+export const DEFAULT_WEEKLY_GOAL = 5;
+
+/** A goal as a whole number within the allowed range; a value that is not a number gives the default. */
+export function clampWeeklyGoal(goal: number): number {
+  if (!Number.isFinite(goal)) return DEFAULT_WEEKLY_GOAL;
+  return Math.min(MAX_WEEKLY_GOAL, Math.max(MIN_WEEKLY_GOAL, Math.round(goal)));
 }
 
 /** Per-user UI state that should survive a restart. Not progress: that lives in the core. */
@@ -57,10 +71,12 @@ export const usePreferences = create<PreferencesStore>()(
       },
       revealHint: (problemId, count) =>
         set((state) => ({ hintsRevealed: { ...state.hintsRevealed, [problemId]: count } })),
+      weeklyGoal: DEFAULT_WEEKLY_GOAL,
+      setWeeklyGoal: (goal) => set({ weeklyGoal: clampWeeklyGoal(goal) }),
     }),
     {
       name: "learnai.preferences",
-      // `panelSizes` was added without a new version: a stored state that lacks it keeps
+      // `panelSizes` and `weeklyGoal` were added without a new version: a stored state that lacks them keeps
       // the default above, and a version bump would run `migrate` and forget `lastFramework`.
       version: 1,
       // Version 0 set `lastFramework` on every switch, so one look at another framework

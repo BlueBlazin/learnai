@@ -76,13 +76,6 @@ const devComponentsRoute = import.meta.env.DEV
     )
   : null;
 
-/** Development only: a design proposal for Home on static sample data. Dropped from production builds. */
-const devHomeMockupRoute = import.meta.env.DEV
-  ? createRoute({ getParentRoute: () => rootRoute, path: "/dev/home-mockup" }).lazy(() =>
-      import("@/routes/dev-home-mockup").then((module) => module.Route),
-    )
-  : null;
-
 const routeTree = rootRoute.addChildren([
   homeRoute,
   pathsRoute,
@@ -90,7 +83,6 @@ const routeTree = rootRoute.addChildren([
   problemRoute,
   settingsRoute,
   ...(devComponentsRoute ? [devComponentsRoute] : []),
-  ...(devHomeMockupRoute ? [devHomeMockupRoute] : []),
 ]);
 
 export const router = createRouter({

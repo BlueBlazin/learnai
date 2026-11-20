@@ -1,12 +1,15 @@
 import { ArrowRight } from "lucide-react";
 import { AppLink } from "@/components/app/app-link";
+import { StageSwatch } from "@/components/path/stage-swatch";
 import { DifficultyMark } from "@/components/problem/difficulty-mark";
 import { StatusMark } from "@/components/problem/status-mark";
 import { Button } from "@/components/ui/button";
 import type { Path, ProblemSummary, Submission, Track } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/format";
 import { VERDICT_LABEL } from "@/lib/labels";
+import { romanNumeral } from "@/lib/paths";
 import { routes } from "@/lib/routes";
+import { stageMark } from "@/lib/stage-colors";
 
 /**
  * The problem to pick up next, as the opening of the home page: where you left
@@ -19,6 +22,7 @@ export function ContinueEntry({
   track,
   lastSubmission,
   onPath,
+  stage,
   firstRun = false,
   onOpen,
 }: {
@@ -26,6 +30,11 @@ export function ContinueEntry({
   track?: Track;
   /** The study path the problem is on and its place there; shown instead of the track. */
   onPath?: { path: Path; position: number };
+  /**
+   * The problem's stage on the path, for the line above the title: its swatch (colored by
+   * `stageColorVars` on an ancestor), part number and name, and the place its scene shows.
+   */
+  stage?: { index: number; title: string; place?: string };
   /** The most recent submission on this problem, when it is the reason for the suggestion. */
   lastSubmission?: Submission;
   /** Nothing has been attempted yet. */
@@ -34,8 +43,19 @@ export function ContinueEntry({
 }) {
   return (
     <section aria-label="Continue" className="pb-12">
-      <p className="text-sm text-muted-foreground">
-        {lastSubmission ? "Continue where you left off" : firstRun ? "Start here" : "Up next"}
+      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        <span className="text-muted-foreground">
+          {lastSubmission ? "Continue where you left off" : firstRun ? "Start here" : "Up next"}
+        </span>
+        {stage ? (
+          <>
+            <span className="inline-flex items-center gap-2">
+              <StageSwatch color={stageMark(stage.index)} />
+              Part {romanNumeral(stage.index + 1)}, {stage.title}
+            </span>
+            {stage.place ? <span className="ml-auto text-muted-foreground">{stage.place}</span> : null}
+          </>
+        ) : null}
       </p>
       <h1 className="selectable mt-2 max-w-measure font-serif text-3xl font-medium tracking-tight text-balance">
         <AppLink to={routes.problem(problem.id)} tone="quiet">

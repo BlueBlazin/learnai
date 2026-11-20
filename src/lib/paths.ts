@@ -35,6 +35,19 @@ export function nextOnPath(entries: PathEntry[][]): PathEntry | null {
   return null;
 }
 
+/** Per stage: how many of its entries are solved, and how many there are. */
+export function stageCounts(entries: PathEntry[][]): { solved: number; total: number }[] {
+  return entries.map((stage) => ({
+    solved: stage.filter((entry) => entry.problem.status === "solved").length,
+    total: stage.length,
+  }));
+}
+
+/** How many stages have every problem solved. A stage with no known problems does not count. */
+export function stagesFinished(entries: PathEntry[][]): number {
+  return stageCounts(entries).filter((stage) => stage.total > 0 && stage.solved === stage.total).length;
+}
+
 /** Where `problemId` sits on the path, if it is on it. */
 export function findOnPath(entries: PathEntry[][], problemId: string): PathEntry | null {
   for (const stage of entries) {
