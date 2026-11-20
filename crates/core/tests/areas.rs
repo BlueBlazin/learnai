@@ -309,21 +309,35 @@ fn track_field_issues_survive_the_parse_cache() {
 }
 
 #[test]
-fn the_shipped_content_has_one_area_of_fifteen_modules_and_no_issues() {
+fn the_shipped_content_loads_without_issues_and_every_area_module_is_dressed() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let catalog = CatalogLoader::new(&root).load();
     assert!(catalog.issues().is_empty(), "{:?}", catalog.issues());
 
     let (areas, issues) = load_areas(&root, &catalog);
     assert!(issues.is_empty(), "{issues:?}");
-    assert_eq!(areas.len(), 1);
-    assert_eq!(areas[0].id, "inference-and-serving");
-    assert_eq!(areas[0].modules.len(), 15);
+    let first = areas.first().expect("the shipped content has an area");
+    assert_eq!(first.id, "inference-and-serving");
+    assert_eq!(first.modules.len(), 15);
 
-    let core_total: usize = catalog.tracks().iter().map(|t| t.core.len()).sum();
-    assert_eq!(core_total, 84);
-    for track in catalog.tracks() {
-        assert!(track.scene.is_some(), "{} has no scene", track.id);
-        assert!(track.color.is_some(), "{} has no color", track.id);
+    // Counts of the first area are fixed; later areas grow batch by batch, so for them
+    // only the rule is checked: a module listed in an area has a scene and a color.
+    let core_of_first: usize = catalog
+        .tracks()
+        .iter()
+        .filter(|track| first.modules.contains(&track.id))
+        .map(|track| track.core.len())
+        .sum();
+    assert_eq!(core_of_first, 84);
+    for area in &areas {
+        for module in &area.modules {
+            let track = catalog
+                .tracks()
+                .iter()
+                .find(|track| &track.id == module)
+                .expect("an area lists only known tracks");
+            assert!(track.scene.is_some(), "{} has no scene", track.id);
+            assert!(track.color.is_some(), "{} has no color", track.id);
+        }
     }
 }
