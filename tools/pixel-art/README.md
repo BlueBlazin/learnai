@@ -1,7 +1,13 @@
 # Pixel-art sprites
 
-Turns a generated sprite sheet into the 24x24 transparent PNGs in
-`src/assets/pixel/`. The sheet itself is not kept in the repo.
+Turns a generated sprite sheet into 24x24 transparent PNGs. The sheet itself is
+not kept in the repo.
+
+Only two sprites from the first sheet are used by the app and kept in
+`src/assets/pixel/`: `icon-flame.png` and `icon-star.png`. The other names in
+`sprites.json` (thirteen machine-part icons and a coin) were tried and dropped,
+so a rerun should write somewhere else first (`--out some/scratch/dir`) and only
+the sprites that are wanted copied over.
 
 ## Rerun on a new sheet
 
@@ -79,18 +85,3 @@ sprite, `--pitch N` to force the source pixel size when the estimate is off,
 
 The warm colors form one ramp (red, orange, amber, yellow, cream), so each
 accent's highlight is the next color along.
-
-## Line masks
-
-`lines.py` writes a second asset beside each stage sprite,
-`stage-XX-name.lines.png`: opaque where the finished sprite has the outline
-color (the silhouette edge plus the interior line work), transparent
-elsewhere. The UI uses it as a CSS mask to draw a part that is not built yet
-as a line drawing in its stage color. It reads the finished PNGs, not the
-sheet, so rerun it whenever a stage sprite changes:
-
-```sh
-uv run --with pillow --with numpy python tools/pixel-art/lines.py
-```
-
-`--glob` chooses which sprites get a mask (default `stage-*.png`).

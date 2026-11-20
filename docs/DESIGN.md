@@ -3,7 +3,9 @@
 Learn AI is a study tool someone will spend hundreds of hours in. The design
 direction is **technical editorial**: the problem statement is set like a page
 from a well-made textbook, the editor sits beside it, and everything else gets
-out of the way.
+out of the way. Around that quiet desk the app has a character of its own: the
+study path is a route through thirteen illustrated places, each with its color,
+and Home shows where on it the learner stands.
 
 This document is the reference for anyone adding UI. The tokens live in
 `src/styles/tokens.css`; the reading surface in `src/styles/prose.css`; the
@@ -17,15 +19,25 @@ binding component rules in `docs/ARCHITECTURE.md` section 5.
 2. **Rules and whitespace, not boxes.** Structure comes from hairlines, a
    heavier ink rule above each section, and vertical rhythm. There are no cards,
    no drop shadows on resting surfaces, and no badges. The only filled blocks
-   are code listings and program output.
+   are code listings, program output, and the scenes.
 3. **Words over ornaments.** Judges, frameworks, verdicts, and counts are
    written out ("Numeric, Property", "5 of 7 cases passed"). A mark appears only
    where it encodes something a word cannot at a glance: status, difficulty,
    verdict.
-4. **Color means outcome, and never alone.** Hue is reserved for pass, fail,
-   and warn, and each use also carries a distinct shape and a word.
-5. **Honest and quiet.** Progress is a sentence and plain counts. No rings,
-   confetti, or percentages in display type.
+4. **Hue has two jobs, kept apart.** Outcome colors (pass, fail, warn) say how
+   something went, and each use also carries a distinct shape and a word. Stage
+   colors say where on the path something belongs, and are never used for an
+   outcome. Nothing else is colored.
+5. **Calm at the desk, character around it.** The workspace (statement, editor,
+   results) stays as quiet as a page. Home and the Path screen are where the
+   app shows warmth: the scenes, the stage color bar, the streak and the weekly
+   goal. Progress is still honest: a sentence and plain counts, a pip per
+   problem. No rings, confetti, percentages in display type, levels, or locks.
+6. **Pictures set a mood; they do not explain.** A scene is a place on the
+   route, not a diagram of the stage's topic. Icons that tried to depict a KV
+   cache or a GPU were tried and dropped: illustration of abstract technical
+   ideas reads as clip art. Teaching figures belong in statements, drawn by
+   authors (`Figure`).
 
 What this deliberately is not: an untouched shadcn neutral theme, Inter or
 Geist everywhere, gradients, glass or blur, emoji as icons, card grids, pill
@@ -139,6 +151,37 @@ The listing surface is exposed to Tailwind as `listing`, not `code`: `text-code`
 is the code type size, and a color token of the same name would make that one
 utility set the text to the color of its own block.
 
+### Stage colors
+
+Each stage of a study path may carry a color (`color` in the path file, see
+`docs/ARCHITECTURE.md` section 3.3). It is the dominant ink of that stage's
+scene, so the picture and the color are one identity. `src/lib/stage-colors.ts`
+turns a path's colors into custom properties on the screen's root
+(`stageColorVars`): `--stage-N` is the color at full saturation, for the fills
+of the stage progress bar on both themes; `--stage-N-mark` is the same color
+for small marks (pips, swatches), darkened on the light theme until it holds
+3:1 against paper. A stage name is never set in its color (yellow and lime
+cannot reach text contrast); a square `StageSwatch` sits beside ordinary ink
+instead. A stage with no color falls back to the accent.
+
+### Scenes and pixel icons
+
+- **Scenes** (`src/assets/scenes/`, looked up by slug through
+  `src/lib/scenes.ts`) are flat screenprint landscapes in the manner of
+  mid-century travel posters: five flat inks, no gradients, no texture, no
+  outlines. Every scene shares off-white paper, blue-black ink, and steel blue,
+  and adds one saturated ink of its own. The thirteen of Inference 75 run from
+  a trailhead at dawn to a summit observatory at night. They were generated
+  from one style reference; `tools/scene-art/` holds the prompts and scripts,
+  and its README says how to add or redo one so that it stays in the series.
+- A scene is shown whole and unfiltered: no overlay text, no dimming for stages
+  not yet reached, no grayscale. Color is there from the first day; progress is
+  shown by pips and marks beside the picture.
+- **Pixel icons** (`PixelIcon`, `src/assets/pixel/`): a flame for the streak
+  and a star for a goal met, 24x24 sprites drawn at whole multiples with
+  `image-rendering: pixelated`. They are generic game symbols, not concept
+  art, and there are only these two.
+
 Syntax uses four inks shared by the editor and static listings
 (`--syntax-*`): keywords in temper blue, strings in green, numbers and
 constants in violet, comments in italic gray. Definitions are bold body ink.
@@ -236,7 +279,7 @@ Composed components, by area (all shown in their states at
 
 | Area | Components |
 |---|---|
-| `app/` | `AppShell`, `CommandPalette`, `AppLink`, `InlineButton`, `IconButton`, `ActionButton`, `CopyButton`, `ConfirmDialog`, `ShortcutHint`, `Page`, `PageHeader`, `Section`, `ScreenMessage`, `MetaList` / `MetaItem`, `RuledList`, `DisclosureChevron`, `Notice`, `EmptyState`, `ErrorState`, `LoadingLines` |
+| `app/` | `AppShell`, `CommandPalette`, `AppLink`, `InlineButton`, `IconButton`, `ActionButton`, `CopyButton`, `ConfirmDialog`, `ShortcutHint`, `Page`, `PageHeader`, `Section`, `ScreenMessage`, `MetaList` / `MetaItem`, `RuledList`, `DisclosureChevron`, `Notice`, `EmptyState`, `ErrorState`, `LoadingLines`, `PixelIcon` |
 | `prose/` | `Prose`, `CodeBlock` (both lazy; `CodeFrame` is the block they share with their fallbacks), `Figure`, `SvgFigureBody`, `ProblemFigures` |
 | `editor/` | `CodeEditor` (with the completion list, documentation card, signature help, and diagnostics it draws; see below) |
 | `problem/` | `DifficultyMark`, `StatusMark`, `JudgeList`, `FrameworkList`, `FrameworkSwitcher`, `ProgressRule`, `ProblemTable`, `ProblemHeader`, `PrerequisiteList`, `PrerequisiteNote`, `HintList`, `EditorialPanel`, `SubmissionList`, `SubmissionView` |
@@ -245,9 +288,9 @@ Composed components, by area (all shown in their states at
 | `workbench/` | `StatementPane`, `EditorPane`, `PaneToolbar`, `EnvironmentNotice`, `HardwareNotice`, `SaveIndicator`, `SuggestionsStatus` |
 | `models/` | `ModelsPanel`, `AssetRow`, `AssetStateMark`, `AssetProgress`, `AssetNotice` / `AssetNoticeList`, `AssetDownloadButton`, `RemoveAssetButton` |
 | `targets/` | `TargetsPanel`, `TargetRow`, `TargetSummary`, `CheckStepList`, `CheckStepMark`, `FixText`, `AddTargetForm`, `TargetPicker` |
-| `path/` | `PathSummary`, `PathStage`, `PathEntryList` |
-| `home/` | `ContinueEntry`, `GettingStarted`, `ProgressSummary`, `PathProgress`, `TrackProgress` |
-| `settings/` | `EnvironmentPanel`, `InstallButton`, `UvGuideButton`, `ThemePicker`, `ContentPanel`, `PathField`, `CatalogIssueList`, `SettingSwitch`, `ReviewSetting`, `SuggestionsPanel`, `InstallLog` |
+| `path/` | `PathSummary`, `PathStage`, `PathEntryList`, `StageProgressBar`, `StagePlates`, `StageSwatch` |
+| `home/` | `SceneBanner`, `ContinueEntry`, `HabitStrip`, `RouteSummary`, `ActivityCalendar`, `GettingStarted`, `ProgressSummary`, `TrackProgress` |
+| `settings/` | `EnvironmentPanel`, `InstallButton`, `UvGuideButton`, `ThemePicker`, `ContentPanel`, `PathField`, `CatalogIssueList`, `SettingSwitch`, `ReviewSetting`, `GoalSetting`, `SuggestionsPanel`, `InstallLog` |
 
 Patterns that recur, and the one component that owns each:
 
@@ -268,10 +311,33 @@ Patterns that recur, and the one component that owns each:
 - Copy to the clipboard: `CopyButton`. A row that opens: `Collapsible` with
   `DisclosureChevron`.
 
-Home has two states. Until anything has been attempted it is a title page:
-the first problem, how a problem works (`GettingStarted`), and what the tracks
-cover (`TrackProgress` as contents). After that it reports progress and recent
-submissions. It never shows a page of zeros.
+Home opens on the scene of the stage the learner has reached (`SceneBanner`),
+with the suggested problem under it (`ContinueEntry`, which names the stage
+with its swatch and the place). Then, top to bottom:
+
+- `HabitStrip`: three facts under an ink rule, divided by hairlines. The streak
+  with this week's seven days; the weekly goal (distinct problems solved since
+  Monday against a number the learner sets under Settings, `GoalSetting`; the
+  star appears when it is met); and reviews due, with a link that starts the
+  first one. The reviews column is left out while reviews are turned off.
+- "Due for review", when anything is due.
+- "The route": a sentence of progress (`RouteSummary`), the `StageProgressBar`
+  (one segment per stage, as wide as its share of the problems, filled in the
+  stage's color in whole-problem steps over a tinted track), and `StagePlates`:
+  every stage's scene in five columns with a pip per problem, its roman numeral,
+  and its name. The last stage spans whatever columns remain, so the grid closes
+  without a hole. A finished stage carries the solved mark; the stage under way
+  has its name in a heavier weight. A plate opens the Path screen at that part.
+- "Progress" (`ActivityCalendar`, then the counts by difficulty) beside "Recent
+  submissions". The calendar shows accepted submits per day and appears only
+  once the first of them is two weeks old, so a new learner is not shown an
+  empty grid.
+
+Until anything has been attempted, Home is a title page instead: the banner and
+the first problem, the route, how a problem works (`GettingStarted`), and what
+the tracks cover (`TrackProgress` as contents). It never shows a page of zeros,
+and it has no habit strip yet. The activity math (local days, Monday weeks) is
+in `src/lib/activity.ts`.
 
 The suggestion at the top of Home follows the study path (the first path the
 content root defines). Unfinished submitted work comes first ("Continue where
@@ -302,6 +368,13 @@ mark, the running number along the whole path, the title in the reading serif
 (wrapping, never truncated), and the difficulty mark. The whole line opens the
 problem. Stages are numbered in roman numerals so they are never confused
 with the running problem numbers.
+
+The header's bar is the `StageProgressBar` Home uses, shown from the start so
+its tinted tracks introduce the stages' colors. A stage that has a scene shows
+it as a plate at the top of its margin column, with the place name as a caption
+and the stage's swatch before "Part II". A `part` search parameter
+(`routes.paths(id, part)`) opens the screen scrolled to that part; Home's plates
+use it.
 
 What it deliberately is not: a roadmap. There are no nodes and connectors, no
 locked steps, no percentages, no badges for finishing a part. The next problem
