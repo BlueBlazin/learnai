@@ -154,9 +154,9 @@ export function CommandPalette() {
               <House />
               Home
             </CommandItem>
-            <CommandItem onSelect={() => navigate(routes.paths())}>
+            <CommandItem onSelect={() => navigate(routes.curriculum())}>
               <ListOrdered />
-              Path
+              Curriculum
             </CommandItem>
             <CommandItem onSelect={() => navigate(routes.library())}>
               <BookOpen />

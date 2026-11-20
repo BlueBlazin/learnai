@@ -8,7 +8,13 @@ export interface LibraryFilters {
   status: ProblemStatus[];
   framework: Framework | null;
   judge: JudgeKind | null;
+  /** Core problems only, further problems only, or both (null). */
+  core: CoreFilter | null;
 }
+
+/** The two kinds of problem in a module. */
+export type CoreFilter = "core" | "further";
+export const CORE_FILTERS: readonly CoreFilter[] = ["core", "further"];
 
 export const EMPTY_FILTERS: LibraryFilters = {
   q: "",
@@ -17,6 +23,7 @@ export const EMPTY_FILTERS: LibraryFilters = {
   status: [],
   framework: null,
   judge: null,
+  core: null,
 };
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | null {
@@ -37,6 +44,7 @@ export function parseFilters(search: Record<string, unknown>): LibraryFilters {
     status: listOf(search.status, STATUSES),
     framework: oneOf(search.framework, FRAMEWORKS),
     judge: oneOf(search.judge, JUDGES),
+    core: oneOf(search.core, CORE_FILTERS),
   };
 }
 
@@ -49,6 +57,7 @@ export function serializeFilters(filters: LibraryFilters): Record<string, string
   if (filters.status.length) search.status = filters.status.join(",");
   if (filters.framework) search.framework = filters.framework;
   if (filters.judge) search.judge = filters.judge;
+  if (filters.core) search.core = filters.core;
   return search;
 }
 
@@ -59,7 +68,8 @@ export function activeFilterCount(filters: LibraryFilters): number {
     (filters.difficulty.length ? 1 : 0) +
     (filters.status.length ? 1 : 0) +
     (filters.framework ? 1 : 0) +
-    (filters.judge ? 1 : 0)
+    (filters.judge ? 1 : 0) +
+    (filters.core ? 1 : 0)
   );
 }
 
@@ -69,8 +79,21 @@ function matchesText(problem: ProblemSummary, terms: string[]): boolean {
   return terms.every((term) => haystack.includes(term));
 }
 
-/** Applies every filter. Text search requires all whitespace-separated terms to match title, id, or tags. */
-export function filterProblems(problems: ProblemSummary[], filters: LibraryFilters): ProblemSummary[] {
+/** The ids of every module's core problems. */
+export function coreProblemIds(tracks: Track[]): Set<string> {
+  return new Set(tracks.flatMap((track) => track.core));
+}
+
+/**
+ * Applies every filter. Text search requires all whitespace-separated terms to
+ * match title, id, or tags. `core` holds the ids of the core problems
+ * (`coreProblemIds`); the core filter needs it.
+ */
+export function filterProblems(
+  problems: ProblemSummary[],
+  filters: LibraryFilters,
+  core: ReadonlySet<string> = new Set(),
+): ProblemSummary[] {
   const terms = filters.q.toLowerCase().split(/\s+/).filter(Boolean);
   return problems.filter(
     (problem) =>
@@ -79,6 +102,7 @@ export function filterProblems(problems: ProblemSummary[], filters: LibraryFilte
       (filters.status.length === 0 || filters.status.includes(problem.status)) &&
       (filters.framework === null || problem.frameworks.includes(filters.framework)) &&
       (filters.judge === null || problem.judges.includes(filters.judge)) &&
+      (filters.core === null || core.has(problem.id) === (filters.core === "core")) &&
       matchesText(problem, terms),
   );
 }

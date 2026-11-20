@@ -1,30 +1,31 @@
+import { cn } from "cn";
 import { AppLink } from "@/components/app/app-link";
 import { RuledList } from "@/components/app/ruled-list";
-import { DifficultyMark } from "@/components/problem/difficulty-mark";
-import { PrerequisiteNote } from "@/components/problem/prerequisite-note";
-import { StatusMark } from "@/components/problem/status-mark";
 import type { ProblemSummary } from "@/lib/api";
-import type { PathEntry } from "@/lib/paths";
 import { routes } from "@/lib/routes";
+import { DifficultyMark } from "./difficulty-mark";
+import { PrerequisiteNote } from "./prerequisite-note";
+import { StatusMark } from "./status-mark";
 
 /**
- * The problems of one stage as lines of a table of contents: status, the
- * running number along the path, the title (which wraps rather than truncates),
- * and the difficulty. The whole line opens the problem. The suggested next
- * problem is marked with the words "Up next" and nothing else.
+ * Problems in a reading order, as lines of a table of contents: status, the
+ * number, the title (which wraps rather than truncates), and the difficulty.
+ * The whole line opens the problem. The suggested next problem is marked with
+ * the words "Up next" and nothing else.
  */
-export function PathEntryList({
+export function ProblemRowList({
   entries,
   nextId,
   unmet,
   label,
 }: {
-  entries: PathEntry[];
-  /** The id of the next unsolved problem on the path, if it is in this list. */
+  /** Each problem with the number its line carries. */
+  entries: { problem: ProblemSummary; position: number }[];
+  /** The id of the problem to study next, if it is in this list. */
   nextId?: string | null;
   /** Unsolved prerequisites by problem id (`unmetPrerequisites`). */
   unmet?: Map<string, ProblemSummary[]>;
-  /** Accessible name, for example "Part I problems". */
+  /** Accessible name, for example "Module III core problems". */
   label: string;
 }) {
   return (
@@ -47,7 +48,8 @@ export function PathEntryList({
                 to={routes.problem(problem.id)}
                 tone="quiet"
                 stretched
-                className={isNext ? "font-medium" : undefined}
+                // The base button does not shrink; a long title has to, so that it wraps.
+                className={cn("min-w-0 shrink text-left", isNext && "font-medium")}
               >
                 {problem.title}
               </AppLink>

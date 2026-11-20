@@ -1,12 +1,12 @@
 import { AppLink } from "@/components/app/app-link";
-import { SceneBanner } from "@/components/home/scene-banner";
-import { StageSwatch } from "@/components/path/stage-swatch";
+import type { CurriculumModule } from "@/lib/curriculum";
 import { routes } from "@/lib/routes";
-import { stageMark } from "@/lib/stage-colors";
-import type { Module } from "./model";
+import { ModuleSwatch } from "./module-swatch";
+import { SceneBanner } from "./scene-banner";
 
 /** How far along the module is, in one line: the core as a count solved, the further problems as a size. */
-function progressLine({ core, further, coreSolved, furtherSolved }: Module): string {
+export function moduleProgress({ core, further, coreSolved, solved }: CurriculumModule): string {
+  const furtherSolved = solved - coreSolved;
   const furtherPart =
     further.length === 0
       ? null
@@ -25,18 +25,18 @@ function progressLine({ core, further, coreSolved, furtherSolved }: Module): str
 /**
  * The top of a module's page: its scene as the banner, then its swatch and
  * number with the way back to the area, its title, what it covers, and one
- * line of progress. The colors come from `moduleColorVars` on an ancestor.
+ * line of progress. A module outside every area has no number.
  */
-export function ModuleHeader({ module, areaTitle }: { module: Module; areaTitle: string }) {
+export function ModuleHeader({ module, areaTitle }: { module: CurriculumModule; areaTitle: string }) {
   return (
     <header className="pb-10">
-      {module.scene ? <SceneBanner src={module.scene} className="mb-6" /> : null}
+      {module.scene ? <SceneBanner src={module.scene} focus={module.sceneFocus} className="mb-6" /> : null}
       <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <span className="inline-flex items-center gap-2">
-          <StageSwatch color={stageMark(module.index)} />
-          Module {module.numeral}
+          <ModuleSwatch color={module.color} />
+          {module.loose ? "Module" : `Module ${module.numeral}`}
         </span>
-        <AppLink to={routes.devAreasMockup("area")} tone="quiet" className="text-muted-foreground">
+        <AppLink to={routes.area(module.areaId)} tone="quiet" className="text-muted-foreground">
           {areaTitle}
         </AppLink>
       </p>
@@ -48,7 +48,7 @@ export function ModuleHeader({ module, areaTitle }: { module: Module; areaTitle:
           {module.track.description}
         </p>
       ) : null}
-      <p className="tabular mt-3 text-sm text-muted-foreground">{progressLine(module)}</p>
+      <p className="tabular mt-3 text-sm text-muted-foreground">{moduleProgress(module)}</p>
     </header>
   );
 }

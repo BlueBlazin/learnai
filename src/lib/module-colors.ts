@@ -1,15 +1,15 @@
 import type { CSSProperties } from "react";
-import type { Path, PathStage } from "@/lib/api";
+import type { Track } from "@/lib/api";
 
-/** The color a stage with none of its own falls back to. */
+/** The color a module with none of its own falls back to. */
 const FALLBACK = "var(--primary)";
 
 /** Small marks (pips, swatches) must reach this contrast against white on the light theme. */
 const MARK_CONTRAST = 3;
 
-/** The stage's color as `#rrggbb`, or null when it has none. */
-export function stageColor(stage: PathStage): string | null {
-  return stage.color && /^#[0-9a-f]{6}$/i.test(stage.color) ? stage.color : null;
+/** The module's color as `#rrggbb`, or null when the track has none or it is malformed. */
+export function moduleColor(track: Pick<Track, "color">): string | null {
+  return track.color && /^#[0-9a-f]{6}$/i.test(track.color) ? track.color : null;
 }
 
 function parseHex(hex: string): [number, number, number] {
@@ -60,28 +60,33 @@ export function markColor(hex: string): string {
   return `light-dark(#000000, ${hex})`;
 }
 
+/** The small-mark color for a module's own color: `markColor`, or the accent when it has none. */
+export function swatchColor(color: string | null): string {
+  return color ? markColor(color) : FALLBACK;
+}
+
 /**
- * Custom properties for the element that wraps a screen showing the path's
- * stages, for stage N (1-based, the part number): `--stage-N` is the color at
- * full saturation, for bar fills on both themes, and `--stage-N-mark` is
- * `markColor`, for pips and swatches. A stage with no color gets the accent.
+ * Custom properties for the element that wraps a screen showing an area's
+ * modules, for module N (its 1-based number): `--module-N` is the color at
+ * full saturation, for bar fills and flat plates on both themes, and
+ * `--module-N-mark` is `markColor`, for pips. A module with no color gets the
+ * accent.
  */
-export function stageColorVars(path: Path): CSSProperties {
+export function moduleColorVars(modules: { number: number; color: string | null }[]): CSSProperties {
   const vars: Record<string, string> = {};
-  path.stages.forEach((stage, index) => {
-    const hex = stageColor(stage);
-    vars[`--stage-${index + 1}`] = hex ?? FALLBACK;
-    vars[`--stage-${index + 1}-mark`] = hex ? markColor(hex) : FALLBACK;
-  });
+  for (const module of modules) {
+    vars[`--module-${module.number}`] = module.color ?? FALLBACK;
+    vars[`--module-${module.number}-mark`] = swatchColor(module.color);
+  }
   return vars as CSSProperties;
 }
 
-/** The fill color of the stage at `index` (0-based), as a reference to the variable `stageColorVars` sets. */
-export function stageFill(index: number): string {
-  return `var(--stage-${index + 1})`;
+/** The fill color of module `number` (1-based), as a reference to the variable `moduleColorVars` sets. */
+export function moduleFill(number: number): string {
+  return `var(--module-${number})`;
 }
 
-/** The small-mark color of the stage at `index` (0-based). */
-export function stageMark(index: number): string {
-  return `var(--stage-${index + 1}-mark)`;
+/** The small-mark color of module `number` (1-based). */
+export function moduleMark(number: number): string {
+  return `var(--module-${number}-mark)`;
 }

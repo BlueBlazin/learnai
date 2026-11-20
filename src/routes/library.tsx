@@ -11,6 +11,7 @@ import { useScrollMemory } from "@/hooks/use-scroll-memory";
 import { useProblems, useTracks } from "@/lib/api/queries";
 import {
   activeFilterCount,
+  coreProblemIds,
   EMPTY_FILTERS,
   filterProblems,
   groupByTrack,
@@ -19,7 +20,7 @@ import {
   serializeFilters,
 } from "@/lib/filters";
 import { pluralize } from "@/lib/format";
-import { unmetPrerequisites } from "@/lib/paths";
+import { unmetPrerequisites } from "@/lib/prerequisites";
 import { routes } from "@/lib/routes";
 
 const route = getRouteApi("/library");
@@ -36,7 +37,11 @@ function LibraryScreen() {
   const filters = useMemo(() => parseFilters({ ...search }), [search]);
   const setFilters = (next: LibraryFilters) => go(routes.library(serializeFilters(next)), { replace: true });
 
-  const matches = useMemo(() => filterProblems(problems.data ?? [], filters), [problems.data, filters]);
+  const core = useMemo(() => coreProblemIds(tracks.data ?? []), [tracks.data]);
+  const matches = useMemo(
+    () => filterProblems(problems.data ?? [], filters, core),
+    [problems.data, filters, core],
+  );
   const groups = useMemo(() => groupByTrack(matches, tracks.data ?? []), [matches, tracks.data]);
   // Computed over the whole catalog: a prerequisite hidden by a filter still counts.
   const unmet = useMemo(() => unmetPrerequisites(problems.data ?? []), [problems.data]);

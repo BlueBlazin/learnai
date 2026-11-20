@@ -1,59 +1,55 @@
-import type { Path, ProblemSummary, Submission, Track } from "@/lib/api";
+import type { ProblemSummary, Submission, Track } from "@/lib/api";
+import { type Curriculum, curriculumOrder, nextInArea, type Place, placeOf } from "@/lib/curriculum";
 import { nextUnsolved } from "@/lib/filters";
-import { findOnPath, nextOnPath, pathEntries } from "@/lib/paths";
 
 export interface ContinueTarget {
   problem: ProblemSummary;
-  /** Present when the suggestion is based on recent work rather than on the path or catalog order. */
+  /** Present when the suggestion is based on recent work rather than on the route or catalog order. */
   lastSubmission?: Submission;
-  /** Present when the problem is on the study path: which path, and where on it. */
-  onPath?: { path: Path; position: number };
+  /** Where the problem sits in the curriculum, when it is in it. */
+  place?: Place;
 }
 
 /**
  * What to open next. Prefers the most recently submitted problem that is still
- * unsolved (unfinished work comes first); otherwise the next unsolved problem
- * on the study path; otherwise, when there is no path or it is finished, a
- * problem already attempted, then the first unsolved problem in catalog order.
- * Null when everything is solved.
- *
- * `path` is the learner's study path (the first one the content root defines).
+ * unsolved (unfinished work comes first); otherwise it follows the first area:
+ * the next unsolved core problem on its route, and once the core is finished
+ * the next unsolved further problem in module order. When the area has nothing
+ * left, the first unsolved problem in catalog order. Null when everything is
+ * solved.
  */
 export function pickContinue(
   problems: ProblemSummary[],
   tracks: Track[],
   submissions: Submission[],
-  path?: Path | null,
+  curriculum: Curriculum,
 ): ContinueTarget | null {
-  const entries = path ? pathEntries(path, problems) : [];
-  const withPath = (target: ContinueTarget): ContinueTarget => {
-    const entry = path ? findOnPath(entries, target.problem.id) : null;
-    return path && entry ? { ...target, onPath: { path, position: entry.position } } : target;
+  const placed = (target: ContinueTarget): ContinueTarget => {
+    const place = placeOf(curriculum, target.problem.id);
+    return place ? { ...target, place } : target;
   };
 
   const byId = new Map(problems.map((problem) => [problem.id, problem]));
   for (const submission of submissions) {
     const problem = byId.get(submission.problemId);
-    if (problem && problem.status !== "solved") return withPath({ problem, lastSubmission: submission });
+    if (problem && problem.status !== "solved") return placed({ problem, lastSubmission: submission });
   }
-  const onPath = nextOnPath(entries);
-  if (onPath) return withPath({ problem: onPath.problem });
-  const attempted = problems.find((problem) => problem.status === "attempted");
-  if (attempted) return { problem: attempted };
+  const area = curriculum.areas[0];
+  const inArea = area ? nextInArea(area) : null;
+  if (inArea) return placed({ problem: inArea.problem });
   const next = nextUnsolved(problems, tracks);
-  return next ? { problem: next } : null;
+  return next ? placed({ problem: next }) : null;
 }
 
-/** The problems before and after `id` in catalog order (track order, then problem order). */
+/**
+ * The problems before and after `id` in the curriculum's reading order: within
+ * an area a module's core, then its further problems, then the next module.
+ */
 export function neighbors(
-  problems: ProblemSummary[],
-  tracks: Track[],
+  curriculum: Curriculum,
   id: string,
 ): { previous: ProblemSummary | null; next: ProblemSummary | null } {
-  const trackOrder = new Map(tracks.map((track) => [track.id, track.order]));
-  const ordered = [...problems].sort(
-    (a, b) => (trackOrder.get(a.track) ?? 0) - (trackOrder.get(b.track) ?? 0) || a.order - b.order,
-  );
+  const ordered = curriculumOrder(curriculum);
   const index = ordered.findIndex((problem) => problem.id === id);
   if (index === -1) return { previous: null, next: null };
   return { previous: ordered[index - 1] ?? null, next: ordered[index + 1] ?? null };

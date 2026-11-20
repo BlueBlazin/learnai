@@ -58,11 +58,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           <NavLink to={routes.home()} exact>
             Home
           </NavLink>
-          <NavLink to={routes.paths()}>Path</NavLink>
+          <NavLink to={routes.curriculum()}>Curriculum</NavLink>
           <NavLink to={routes.library()}>Library</NavLink>
           <NavLink to={routes.settings()}>Settings</NavLink>
           {import.meta.env.DEV ? <NavLink to={routes.devComponents()}>Components</NavLink> : null}
-          {import.meta.env.DEV ? <NavLink to={routes.devAreasMockup()}>Mockup</NavLink> : null}
         </nav>
         <Button
           variant="outline"

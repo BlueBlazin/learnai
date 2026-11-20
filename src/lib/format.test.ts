@@ -10,6 +10,7 @@ import {
   metricLabel,
   metricLimitPhrase,
   pluralize,
+  romanNumeral,
 } from "./format";
 import { describeEnv, notJudgedReason, summarizeRun } from "./run-summary";
 
@@ -124,5 +125,22 @@ describe("run summary", () => {
       "Python 3.15.2, torch 2.15.0, mps",
     );
     expect(describeEnv({})).toBe("");
+  });
+});
+
+describe("romanNumeral", () => {
+  it("numbers modules", () => {
+    expect([1, 2, 3, 4, 5, 9, 10, 14, 15, 40].map(romanNumeral)).toEqual([
+      "I",
+      "II",
+      "III",
+      "IV",
+      "V",
+      "IX",
+      "X",
+      "XIV",
+      "XV",
+      "XL",
+    ]);
   });
 });

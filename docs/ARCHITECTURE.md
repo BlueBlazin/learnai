@@ -191,8 +191,9 @@ more than one area stays with the first area in file-name order; the later listi
 dropped and reported. An area left with no modules is dropped and reported. A missing
 `areas/` directory is not an issue and yields an empty list.
 
-**Paths.** Paths are being retired in favor of areas and module cores; they stay until the
-screens have moved over. A path is a curated, ordered study plan stored at `paths/<id>.toml` in the
+**Paths.** Paths are being retired in favor of areas and module cores. The screens have
+moved over: the front end no longer reads paths, and what remains here is the core's side
+until it is deleted. A path is a curated, ordered study plan stored at `paths/<id>.toml` in the
 content root:
 
 ```toml

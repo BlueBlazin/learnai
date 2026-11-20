@@ -4,8 +4,9 @@ Learn AI is a study tool someone will spend hundreds of hours in. The design
 direction is **technical editorial**: the problem statement is set like a page
 from a well-made textbook, the editor sits beside it, and everything else gets
 out of the way. Around that quiet desk the app has a character of its own: the
-study path is a route through thirteen illustrated places, each with its color,
-and Home shows where on it the learner stands.
+curriculum is organized as areas (subjects) made of modules, each module an
+illustrated place with its color, and Home shows where on the route through
+them the learner stands.
 
 This document is the reference for anyone adding UI. The tokens live in
 `src/styles/tokens.css`; the reading surface in `src/styles/prose.css`; the
@@ -25,16 +26,16 @@ binding component rules in `docs/ARCHITECTURE.md` section 5.
    where it encodes something a word cannot at a glance: status, difficulty,
    verdict.
 4. **Hue has two jobs, kept apart.** Outcome colors (pass, fail, warn) say how
-   something went, and each use also carries a distinct shape and a word. Stage
-   colors say where on the path something belongs, and are never used for an
+   something went, and each use also carries a distinct shape and a word. Module
+   colors say which module something belongs to, and are never used for an
    outcome. Nothing else is colored.
 5. **Calm at the desk, character around it.** The workspace (statement, editor,
-   results) stays as quiet as a page. Home and the Path screen are where the
-   app shows warmth: the scenes, the stage color bar, the streak and the weekly
-   goal. Progress is still honest: a sentence and plain counts, a pip per
-   problem. No rings, confetti, percentages in display type, levels, or locks.
+   results) stays as quiet as a page. Home and the Curriculum screens are where
+   the app shows warmth: the scenes, the module color bar, the streak and the
+   weekly goal. Progress is still honest: a sentence and plain counts, a pip per
+   core problem. No rings, confetti, percentages in display type, levels, or locks.
 6. **Pictures set a mood; they do not explain.** A scene is a place on the
-   route, not a diagram of the stage's topic. Icons that tried to depict a KV
+   route, not a diagram of the module's topic. Icons that tried to depict a KV
    cache or a GPU were tried and dropped: illustration of abstract technical
    ideas reads as clip art. Teaching figures belong in statements, drawn by
    authors (`Figure`).
@@ -151,18 +152,21 @@ The listing surface is exposed to Tailwind as `listing`, not `code`: `text-code`
 is the code type size, and a color token of the same name would make that one
 utility set the text to the color of its own block.
 
-### Stage colors
+### Module colors
 
-Each stage of a study path may carry a color (`color` in the path file, see
-`docs/ARCHITECTURE.md` section 3.3). It is the dominant ink of that stage's
-scene, so the picture and the color are one identity. `src/lib/stage-colors.ts`
-turns a path's colors into custom properties on the screen's root
-(`stageColorVars`): `--stage-N` is the color at full saturation, for the fills
-of the stage progress bar on both themes; `--stage-N-mark` is the same color
-for small marks (pips, swatches), darkened on the light theme until it holds
-3:1 against paper. A stage name is never set in its color (yellow and lime
-cannot reach text contrast); a square `StageSwatch` sits beside ordinary ink
-instead. A stage with no color falls back to the accent.
+Each module (a track) may carry a color (`color` in `track.toml`, see
+`docs/ARCHITECTURE.md` section 3.3). It is the dominant ink of that module's
+scene, so the picture and the color are one identity. `src/lib/module-colors.ts`
+turns an area's modules into custom properties on the screen's root
+(`moduleColorVars`): `--module-N`, for module number N of the area, is the
+color at full saturation, for the fills of the module progress bar and the flat
+plate of a module with no scene, on both themes; `--module-N-mark` is the same
+color for pips, darkened on the light theme until it holds 3:1 against paper. A
+module name is never set in its color (yellow and lime cannot reach text
+contrast); a square `ModuleSwatch` sits beside ordinary ink instead. The swatch
+takes the module's own color and applies the same darkening, so it works
+anywhere, including the Library's track list and the workspace header, which
+have no area around them. A module with no color falls back to the accent.
 
 ### Scenes and pixel icons
 
@@ -170,15 +174,21 @@ instead. A stage with no color falls back to the accent.
   `src/lib/scenes.ts`) are flat screenprint landscapes in the manner of
   mid-century travel posters: five flat inks, no gradients, no texture, no
   outlines. Every scene shares off-white paper, blue-black ink, and steel blue,
-  and adds one saturated ink of its own. The thirteen of Inference 75 run from
-  a trailhead at dawn to a summit observatory at night. They were generated
+  and adds one saturated ink of its own. There are fifteen, one per module of
+  "Inference and serving" (`scene` in `track.toml`), running from a trailhead
+  at dawn to a summit observatory at night. Fourteen are empty landscapes; one,
+  the CUDA module's, deliberately shows a person, as an homage the owner asked
+  for. It is the exception, not a direction for the series. They were generated
   from one style reference; `tools/scene-art/` holds the prompts and scripts,
   and its README says how to add or redo one so that it stays in the series.
-- A scene is shown whole and unfiltered: no overlay text, no dimming for stages
+- A scene is shown whole and unfiltered: no overlay text, no dimming for modules
   not yet reached, no grayscale. Color is there from the first day; progress is
   shown by pips and marks beside the picture.
+- An area has no scene of its own: its banner (`AreaBanner`) is one equal
+  vertical slice of each module's scene, side by side in module order.
 - **Pixel icons** (`PixelIcon`, `src/assets/pixel/`): a flame for the streak
-  and a star for a goal met, 24x24 sprites drawn at whole multiples with
+  and a star for a goal met or a module with every problem solved, 24x24
+  sprites drawn at whole multiples with
   `image-rendering: pixelated`. They are generic game symbols, not concept
   art, and there are only these two.
 
@@ -282,14 +292,14 @@ Composed components, by area (all shown in their states at
 | `app/` | `AppShell`, `CommandPalette`, `AppLink`, `InlineButton`, `IconButton`, `ActionButton`, `CopyButton`, `ConfirmDialog`, `ShortcutHint`, `Page`, `PageHeader`, `Section`, `ScreenMessage`, `MetaList` / `MetaItem`, `RuledList`, `DisclosureChevron`, `Notice`, `EmptyState`, `ErrorState`, `LoadingLines`, `PixelIcon` |
 | `prose/` | `Prose`, `CodeBlock` (both lazy; `CodeFrame` is the block they share with their fallbacks), `Figure`, `SvgFigureBody`, `ProblemFigures` |
 | `editor/` | `CodeEditor` (with the completion list, documentation card, signature help, and diagnostics it draws; see below) |
-| `problem/` | `DifficultyMark`, `StatusMark`, `JudgeList`, `FrameworkList`, `FrameworkSwitcher`, `ProgressRule`, `ProblemTable`, `ProblemHeader`, `PrerequisiteList`, `PrerequisiteNote`, `HintList`, `EditorialPanel`, `SubmissionList`, `SubmissionView` |
+| `problem/` | `DifficultyMark`, `StatusMark`, `JudgeList`, `FrameworkList`, `FrameworkSwitcher`, `ProgressRule`, `ProblemTable`, `ProblemRowList`, `ProblemHeader`, `PrerequisiteList`, `PrerequisiteNote`, `HintList`, `EditorialPanel`, `SubmissionList`, `SubmissionView` |
 | `results/` | `ResultsPanel`, `VerdictHeader`, `VerdictMark`, `CaseMark`, `CaseList`, `MetricList`, `OutputBlock`, `RunProgress` |
 | `library/` | `LibraryFilterBar`, `FilterSelect`, `TrackList`, `TrackSection` |
 | `workbench/` | `StatementPane`, `EditorPane`, `PaneToolbar`, `EnvironmentNotice`, `HardwareNotice`, `SaveIndicator`, `SuggestionsStatus` |
 | `models/` | `ModelsPanel` and `AssetRow` (the Models pane of Settings, built on `SettingRow`), `AssetStateMark`, `AssetProgress`, `AssetNotice` / `AssetNoticeList`, `AssetDownloadButton`, `RemoveAssetButton` |
 | `targets/` | `TargetsPanel` and `TargetRow` (the Run targets pane of Settings, built on `SettingRow`), `TargetSummary`, `CheckStepList`, `CheckStepMark`, `FixText`, `AddTargetForm`, `TargetPicker` |
-| `path/` | `PathSummary`, `PathStage`, `PathEntryList`, `StageProgressBar`, `StagePlates`, `StageSwatch` |
-| `home/` | `SceneBanner`, `ContinueEntry`, `HabitStrip`, `RouteSummary`, `ActivityCalendar`, `GettingStarted`, `ProgressSummary`, `TrackProgress` |
+| `curriculum/` | `AreaEntry`, `AreaBanner`, `AreaSummary`, `ModulePlates`, `ModuleProgressBar`, `ModuleSwatch`, `ModuleHeader`, `ModuleNeighbors`, `ModuleRowList`, `SceneBanner` |
+| `home/` | `ContinueEntry`, `HabitStrip`, `ActivityCalendar`, `GettingStarted`, `ProgressSummary`, `TrackProgress` |
 | `settings/` | `SettingsNav`, `SettingList` / `SettingRow`, `RowStatus`, `SettingSwitch`, `PathRow`, `GeneralPanel`, `ThemePicker`, `GoalSetting`, `ReviewSetting`, `EnvironmentPanel`, `InstallButton`, `UvGuideButton`, `InstallLog`, `FilesPanel`, `CatalogIssueList` |
 
 Patterns that recur, and the one component that owns each:
@@ -297,6 +307,7 @@ Patterns that recur, and the one component that owns each:
 - Text that acts (a link in a sentence, a term with a tooltip): `InlineButton`;
   in-app navigation is `AppLink`, which is built on it.
 - Rows separated by hairlines (submissions, cases, tracks, hints): `RuledList`.
+- Problems in a reading order, as numbered lines that open: `ProblemRowList`.
 - A titled block under an ink rule, on a page or inside a pane: `Section`.
 - One line that needs attention, with its fix: `Notice` (tones warn, info,
   pass, fail).
@@ -315,9 +326,10 @@ Patterns that recur, and the one component that owns each:
 - Copy to the clipboard: `CopyButton`. A row that opens: `Collapsible` with
   `DisclosureChevron`.
 
-Home opens on the scene of the stage the learner has reached (`SceneBanner`),
-with the suggested problem under it (`ContinueEntry`, which names the stage
-with its swatch). Then, top to bottom:
+Home follows the first area the content defines. It opens on the scene of the
+module the learner has reached (`SceneBanner`), with the suggested problem
+under it (`ContinueEntry`, which names the module with its swatch: "Module III,
+Transformer Forward Pass"). Then, top to bottom:
 
 - `HabitStrip`: three facts under an ink rule, divided by hairlines. The streak
   with this week's seven days; the weekly goal (distinct problems solved since
@@ -325,13 +337,17 @@ with its swatch). Then, top to bottom:
   star appears when it is met); and reviews due, with a link that starts the
   first one. The reviews column is left out while reviews are turned off.
 - "Due for review", when anything is due.
-- "The route": a sentence of progress (`RouteSummary`), the `StageProgressBar`
-  (one segment per stage, as wide as its share of the problems, filled in the
-  stage's color in whole-problem steps over a tinted track), and `StagePlates`:
-  every stage's scene in five columns with a pip per problem, its roman numeral,
-  and its name. The last stage spans whatever columns remain, so the grid closes
-  without a hole. A finished stage carries the solved mark; the stage under way
-  has its name in a heavier weight. A plate opens the Path screen at that part.
+- "The route": a sentence of progress over the `ModuleProgressBar`
+  (`AreaSummary`: "2 of 84 core problems solved."; one segment per module, as
+  wide as its share of the core problems, filled in the module's color in
+  whole-problem steps over a tinted track; a module with no core has no
+  segment), and `ModulePlates` in its compact form: every module's scene in
+  five columns with a pip per core problem, its roman numeral, and its name. A
+  module whose core is complete carries the solved mark, and the star once
+  every problem in it, core and further, is solved; the module that holds the
+  next core problem says "Up next" beside its numeral and has its name in a
+  heavier weight. A plate opens the module's page. The section's aside counts
+  the modules whose core is complete.
 - "Progress" (`ActivityCalendar`, then the counts by difficulty) beside "Recent
   submissions". The calendar shows accepted submits per day and appears only
   once the first of them is two weeks old, so a new learner is not shown an
@@ -339,55 +355,80 @@ with its swatch). Then, top to bottom:
 
 Until anything has been attempted, Home is a title page instead: the banner and
 the first problem, the route, how a problem works (`GettingStarted`), and what
-the tracks cover (`TrackProgress` as contents). It never shows a page of zeros,
+the modules cover (`TrackProgress` as contents). It never shows a page of zeros,
 and it has no habit strip yet. The activity math (local days, Monday weeks) is
 in `src/lib/activity.ts`.
 
-The suggestion at the top of Home follows the study path (the first path the
-content root defines). Unfinished submitted work comes first ("Continue where
-you left off"); otherwise it is the next unsolved problem on the path, which
-for a new user is the path's first problem ("Start here") and after a solve is
-the one that follows it ("Up next"). The entry says where the problem sits
-("Inference 75, No. 2 of 12") and links to the path. Without a path, or once it
-is finished, the suggestion falls back to catalog order.
+The suggestion at the top of Home follows the route (`pickContinue` in
+`src/lib/continue.ts`). Unfinished submitted work comes first ("Continue where
+you left off"); otherwise it is the next unsolved core problem of the first
+area, module by module, which for a new user is the first module's first core
+problem ("Start here") and after a solve is the one that follows it ("Up
+next"). For a core problem the entry says where it sits on the route
+("Inference and serving, core 3 of 84") and links to the area. Once the core is
+finished the suggestion goes on to the further problems in module order, and
+after those to catalog order.
 
-### The Path screen
+### The Curriculum screens
 
-A path is its own destination in the app bar ("Path", between Home and
+The catalog has one structure, and its words are the UI's words. An **area** is
+a subject: an ordered list of modules. A **module** is a track: a scene, a
+color, and its problems. A module's **core** problems are the ones every
+learner of it should do, in teaching order; the rest are **further**. The
+recommended route through an area is its core problems, module by module. The
+model is `src/lib/curriculum.ts` (pure, built from `useAreas`, `useTracks`, and
+`useProblems` by `useCurriculum`). When the content defines no areas, every
+track forms one implicit area.
+
+The Curriculum is its own destination in the app bar (between Home and
 Library), not a section of the Library. The Library is a catalog: organized by
-track, filtered, searched, windowed for hundreds of rows. A path is a reading
-order: a few dozen problems in a sequence someone chose, cutting across
-tracks. Folding it into the Library would have meant either a second axis in
-the track column or a filter that reorders the table, and in both cases the
-sequence, which is the whole point, would be one option among filters. As a
-screen of its own it can be what it is: the table of contents of the course.
+track, filtered, searched, windowed for hundreds of rows. The Curriculum is a
+reading order, and as screens of its own it can be what it is: the table of
+contents of the course. There are three screens, all in
+`src/routes/curriculum.tsx`:
 
-It is set like one. The path's title and one-sentence description head the
-page, then a sentence of progress (`PathSummary`: "3 of 12 problems solved.
-Next is ..., in Part I."; before anything is solved it gives the length and
-the starting point instead of zeros). Each stage is a part under an ink rule
-(`PathStage`): "Part II", its title, what it covers, and its count in a margin
-column; beside it the problems as lines (`PathEntryList`) with the status
-mark, the running number along the whole path, the title in the reading serif
-(wrapping, never truncated), and the difficulty mark. The whole line opens the
-problem. Stages are numbered in roman numerals so they are never confused
-with the running problem numbers.
+- **`/curriculum`**. With exactly one area this is that area's screen, with no
+  extra hop. With several it lists them (`AreaEntry`): the sliced banner, the
+  title, one sentence, the size in plain counts ("15 modules, 213 problems, 84
+  core"), and the module bar; the whole block opens the area. Only real areas
+  are listed: nothing is shown as planned.
+- **`/curriculum/$area`**, the area. Its title and description head the page,
+  then a sentence of progress with the next core problem linked (`AreaSummary`:
+  "3 of 84 core problems solved. Next is ..., in Foundations."; before anything
+  is solved it gives the length and the starting point instead of zeros) over
+  the `ModuleProgressBar`. Under "Modules" are all of them as `ModulePlates`:
+  what Home shows, plus a line of counts under each name ("6 core, 7 further").
+  Modules that belong to no area follow under a quiet "More modules" heading as
+  plain rows (`ModuleRowList`).
+- **`/curriculum/$area/$module`**, the module's page. Its scene is the banner;
+  under it the swatch and "Module III" with the way back to the area, the
+  title, what the module covers, and one line of progress ("3 of 6 core solved,
+  7 further"; `ModuleHeader`). Then a "Core" section and a "Further" section of
+  `ProblemRowList`: the status mark, the number within the module (the further
+  problems continue the core's count), the title in the reading serif
+  (wrapping, never truncated), and the difficulty mark. The whole line opens
+  the problem. A module with no core shows only "Further", and says so in the
+  section's aside. At the foot are the previous and next modules, each with a
+  small plate (`ModuleNeighbors`).
 
-The header's bar is the `StageProgressBar` Home uses, shown from the start so
-its tinted tracks introduce the stages' colors. A stage that has a scene shows
-it as a plate at the top of its margin column,
-and the stage's swatch before "Part II". A `part` search parameter
-(`routes.paths(id, part)`) opens the screen scrolled to that part; Home's plates
-use it.
+An unknown area or module id shows the empty state with a link to the
+Curriculum.
 
 What it deliberately is not: a roadmap. There are no nodes and connectors, no
-locked steps, no percentages, no badges for finishing a part. The next problem
-is marked by the words "Up next" and a medium weight, nothing else. A
-prerequisite that is earlier on the same path gets no remark, because the
-order of the list already says so; one that is off the path gets the usual
-"best after ...". When the content root defines several paths, a row of text
-tabs above the title switches between them; with one path there is no
-switcher.
+locked steps, no percentages, no badges for finishing a module beyond the
+solved mark and the star. The next problem is marked by the words "Up next" and
+a medium weight, nothing else, on its row and on its module's plate. A
+prerequisite that comes earlier in the area's reading order gets no remark,
+because the order of the list already says so; one that comes later, or is
+outside the area, gets the usual "best after ...".
+
+The rest of the app points here. The workspace header names the problem's
+module with its swatch and links to the module's page, and says in words
+whether the problem is core ("Core 3 of 8") or further; the previous and next
+buttons follow the reading order (a module's core, then its further problems,
+then the next module). In the Library each track in the left list carries its
+module swatch, and one filter, "Core", narrows the table to core problems or to
+further ones.
 
 ### The Settings screen
 
@@ -441,6 +482,8 @@ Conventions:
   Home is its own chunk: `src/router.tsx` defines each route's path and search
   validation, and the screen's module exports the rendering half as
   `Route = createLazyRoute(path)({ component })`, loaded with `.lazy()`.
+  The three Curriculum screens share one module and one chunk; it exports a
+  lazy route for each (`Route`, `AreaRoute`, `ModuleRoute`).
 - In-app links are built from `src/lib/routes.ts` and rendered with `AppLink`.
 - User-facing strings for enums live in `src/lib/labels.ts`; number, time, and
   metric formatting in `src/lib/format.ts`.

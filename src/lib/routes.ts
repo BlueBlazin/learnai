@@ -13,6 +13,7 @@ export interface LibrarySearch {
   status?: string;
   framework?: string;
   judge?: string;
+  core?: string;
 }
 
 export interface ProblemSearch {
@@ -21,13 +22,6 @@ export interface ProblemSearch {
   submission?: number;
   /** Review mode: the editor holds the review attempt and Run and Submit judge it. */
   review?: boolean;
-}
-
-export interface PathsSearch {
-  /** The path to show; the first one when absent. */
-  path?: string;
-  /** A stage to scroll to, by its part number (1-based). */
-  part?: number;
 }
 
 /** The categories of the Settings screen, in the order its list shows them. */
@@ -50,29 +44,26 @@ export function parseSettingsSection(value: unknown): SettingsSection {
   return SETTINGS_SECTIONS.find((candidate) => candidate === value) ?? "general";
 }
 
-/** Development only: the areas and modules mockup. */
-export interface AreasMockupSearch {
-  /** The view to show; the list of areas when absent. */
-  view?: "area" | "module";
-  /** The module (a track id) the Module view shows. */
-  module?: string;
-}
-
 export type RouteTarget =
   | { to: "/" }
-  | { to: "/paths"; search: PathsSearch }
+  | { to: "/curriculum" }
+  | { to: "/curriculum/$area"; params: { area: string } }
+  | { to: "/curriculum/$area/$module"; params: { area: string; module: string } }
   | { to: "/library"; search: LibrarySearch }
   | { to: "/settings"; search: SettingsSearch }
   | { to: "/dev/components" }
-  | { to: "/dev/areas-mockup"; search: AreasMockupSearch }
   | { to: "/problems/$problemId"; params: { problemId: string }; search: ProblemSearch };
 
 export const routes = {
   home: (): RouteTarget => ({ to: "/" }),
-  /** The study path with this id (the first when no id is given), scrolled to a part when one is given. */
-  paths: (path?: string, part?: number): RouteTarget => ({
-    to: "/paths",
-    search: { ...(path ? { path } : {}), ...(part ? { part } : {}) },
+  /** The Curriculum: the one area's screen, or the list of areas when there are several. */
+  curriculum: (): RouteTarget => ({ to: "/curriculum" }),
+  /** The screen of the area with this id. */
+  area: (area: string): RouteTarget => ({ to: "/curriculum/$area", params: { area } }),
+  /** The page of a module (a track id) as the area with this id shows it. */
+  module: (area: string, module: string): RouteTarget => ({
+    to: "/curriculum/$area/$module",
+    params: { area, module },
   }),
   library: (search: LibrarySearch = {}): RouteTarget => ({ to: "/library", search }),
   /** Settings, opened at a category; General (the default) stays out of the URL. */
@@ -81,11 +72,6 @@ export const routes = {
     search: section === "general" ? {} : { section },
   }),
   devComponents: (): RouteTarget => ({ to: "/dev/components" }),
-  /** The mockup at its list of areas, at the area, or at one module of it. */
-  devAreasMockup: (view?: "area" | "module", module?: string): RouteTarget => ({
-    to: "/dev/areas-mockup",
-    search: { ...(view ? { view } : {}), ...(view === "module" && module ? { module } : {}) },
-  }),
   problem: (problemId: string, search: ProblemSearch = {}): RouteTarget => ({
     to: "/problems/$problemId",
     params: { problemId },

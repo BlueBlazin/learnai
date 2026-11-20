@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ProblemSummary, Track } from "@/lib/api";
-import { neighbors, pickContinue } from "./continue";
 import {
   activeFilterCount,
+  coreProblemIds,
   EMPTY_FILTERS,
   filterProblems,
   groupByTrack,
@@ -104,6 +104,40 @@ describe("filterProblems", () => {
   });
 });
 
+describe("the core filter", () => {
+  const core = coreProblemIds([
+    { ...track("a", 1), core: ["rope"] },
+    { ...track("b", 2), core: ["batching", "gone"] },
+  ]);
+
+  it("collects every module's core ids", () => {
+    expect([...core]).toEqual(["rope", "batching", "gone"]);
+  });
+
+  it("keeps core problems only, further problems only, or both", () => {
+    expect(ids(filterProblems(problems, { ...EMPTY_FILTERS, core: "core" }, core))).toEqual([
+      "batching",
+      "rope",
+    ]);
+    expect(ids(filterProblems(problems, { ...EMPTY_FILTERS, core: "further" }, core))).toEqual([
+      "softmax",
+      "top-p",
+    ]);
+    expect(filterProblems(problems, EMPTY_FILTERS, core)).toHaveLength(problems.length);
+    expect(ids(filterProblems(problems, { ...EMPTY_FILTERS, core: "core", track: "a" }, core))).toEqual([
+      "rope",
+    ]);
+  });
+
+  it("round-trips through the URL, counts as a filter, and drops unknown values", () => {
+    const filters = { ...EMPTY_FILTERS, core: "further" as const };
+    expect(serializeFilters(filters)).toEqual({ core: "further" });
+    expect(parseFilters({ core: "further" })).toEqual(filters);
+    expect(parseFilters({ core: "all" }).core).toBeNull();
+    expect(activeFilterCount(filters)).toBe(1);
+  });
+});
+
 describe("filter URL round trip", () => {
   it("drops unknown values and keeps known ones in canonical order", () => {
     const parsed = parseFilters({
@@ -121,6 +155,7 @@ describe("filter URL round trip", () => {
       status: ["solved"],
       framework: null,
       judge: "cost",
+      core: null,
     });
     expect(serializeFilters(parsed)).toEqual({
       q: "x",
@@ -145,46 +180,7 @@ describe("catalog order", () => {
     expect(ids(groups[1]?.problems ?? [])).toEqual(["batching", "top-p"]);
   });
 
-  it("finds the first unsolved problem and neighbors", () => {
+  it("finds the first unsolved problem", () => {
     expect(nextUnsolved(problems, tracks)?.id).toBe("rope");
-    expect(neighbors(problems, tracks, "rope")).toMatchObject({
-      previous: { id: "softmax" },
-      next: { id: "batching" },
-    });
-    expect(neighbors(problems, tracks, "softmax").previous).toBeNull();
-    expect(neighbors(problems, tracks, "missing")).toEqual({ previous: null, next: null });
-  });
-
-  it("continues with the most recent unsolved submission, then attempted work, then catalog order", () => {
-    const submission = (problemId: string) => ({
-      id: 1,
-      problemId,
-      framework: "torch" as const,
-      mode: "submit" as const,
-      verdict: "wrong_answer" as const,
-      passed: 0,
-      total: 1,
-      skipped: 0,
-      durationMs: 1,
-      target: "local",
-      createdAt: "2026-11-14T00:00:00Z",
-      review: false,
-    });
-    expect(pickContinue(problems, tracks, [submission("softmax"), submission("batching")])?.problem.id).toBe(
-      "batching",
-    );
-    expect(pickContinue(problems, tracks, [])?.problem.id).toBe("top-p");
-    const fresh = problems.map((p) => ({
-      ...p,
-      status: p.status === "attempted" ? ("todo" as const) : p.status,
-    }));
-    expect(pickContinue(fresh, tracks, [])?.problem.id).toBe("rope");
-    expect(
-      pickContinue(
-        problems.map((p) => ({ ...p, status: "solved" as const })),
-        tracks,
-        [],
-      ),
-    ).toBeNull();
   });
 });

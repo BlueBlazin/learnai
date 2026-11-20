@@ -18,6 +18,7 @@ import { PanelToggle } from "@/components/workbench/panel-toggle";
 import { StatementPane } from "@/components/workbench/statement-pane";
 import { SuggestionsStatus } from "@/components/workbench/suggestions-status";
 import { useCollapsiblePanel } from "@/hooks/use-collapsible-panel";
+import { useCurriculum } from "@/hooks/use-curriculum";
 import { useGo } from "@/hooks/use-go";
 import { usePanelShortcuts } from "@/hooks/use-panel-shortcuts";
 import { useRunShortcuts } from "@/hooks/use-run-shortcuts";
@@ -31,13 +32,13 @@ import {
   useReviews,
   useSubmissions,
   useTargets,
-  useTracks,
 } from "@/lib/api/queries";
 import { useAssetFetch } from "@/lib/api/use-asset-fetch";
 import { useEnvInstall } from "@/lib/api/use-env-install";
 import { useRun } from "@/lib/api/use-run";
 import { useSolutionEditor } from "@/lib/api/use-solution-editor";
 import { neighbors } from "@/lib/continue";
+import { placeOf } from "@/lib/curriculum";
 import { editorSession, useEditorSession } from "@/lib/editor";
 import { missingHardware } from "@/lib/hardware";
 import { IS_MAC } from "@/lib/platform";
@@ -59,7 +60,7 @@ function ProblemScreen({ problemId }: { problemId: string }) {
   const go = useGo();
   const problem = useProblem(problemId);
   const problems = useProblems();
-  const tracks = useTracks();
+  const { curriculum } = useCurriculum();
   const env = useEnvStatus();
   const { state: install, install: startInstall } = useEnvInstall();
 
@@ -276,9 +277,10 @@ function ProblemScreen({ problemId }: { problemId: string }) {
   };
 
   const around = useMemo(
-    () => neighbors(problems.data ?? [], tracks.data ?? [], problemId),
-    [problems.data, tracks.data, problemId],
+    () => (curriculum ? neighbors(curriculum, problemId) : { previous: null, next: null }),
+    [curriculum, problemId],
   );
+  const place = useMemo(() => (curriculum ? placeOf(curriculum, problemId) : null), [curriculum, problemId]);
   const prerequisites = useMemo(
     () =>
       (problem.data?.prerequisites ?? []).flatMap(
@@ -356,7 +358,7 @@ function ProblemScreen({ problemId }: { problemId: string }) {
       >
         <StatementPane
           problem={detail}
-          track={tracks.data?.find((track) => track.id === detail.track)}
+          place={place}
           prerequisites={prerequisites}
           framework={framework}
           tab={tab}

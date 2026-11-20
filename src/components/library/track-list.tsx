@@ -1,16 +1,21 @@
 import { cn } from "cn";
+import { ModuleSwatch } from "@/components/curriculum/module-swatch";
 import { ProgressRule } from "@/components/problem/progress-rule";
 import { Button } from "@/components/ui/button";
 import type { Track } from "@/lib/api";
+import { moduleColor } from "@/lib/module-colors";
 
 function TrackButton({
   title,
+  swatch,
   solved,
   total,
   active,
   onSelect,
 }: {
   title: string;
+  /** The track's module color as a swatch before its title: a hex, or null for the accent. */
+  swatch?: string | null;
   solved: number;
   total: number;
   active: boolean;
@@ -29,10 +34,11 @@ function TrackButton({
       <span className="flex items-baseline justify-between gap-3">
         <span
           className={cn(
-            "min-w-0 text-sm text-pretty whitespace-normal",
+            "flex min-w-0 items-baseline gap-2 text-sm text-pretty whitespace-normal",
             active ? "font-semibold" : "font-medium",
           )}
         >
+          {swatch !== undefined ? <ModuleSwatch color={swatch} className="relative -top-px" /> : null}
           {title}
         </span>
         <span className="tabular shrink-0 text-xs text-muted-foreground">
@@ -44,7 +50,7 @@ function TrackButton({
   );
 }
 
-/** The library's track column: every track with its solved count, plus "All tracks". */
+/** The library's track column: every track with its module swatch and solved count, plus "All tracks". */
 export function TrackList({
   tracks,
   selected,
@@ -59,7 +65,7 @@ export function TrackList({
   return (
     <nav aria-label="Tracks" className="flex flex-col gap-0.5">
       <TrackButton
-        title="All tracks"
+        title="All modules"
         solved={solved}
         total={total}
         active={selected === null}
@@ -69,6 +75,7 @@ export function TrackList({
         <TrackButton
           key={track.id}
           title={track.title}
+          swatch={moduleColor(track)}
           solved={track.solvedCount}
           total={track.problemCount}
           active={selected === track.id}

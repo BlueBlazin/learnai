@@ -4,17 +4,18 @@ import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { DIFFICULTIES, type Difficulty, FRAMEWORKS, JUDGES, STATUSES } from "@/lib/api";
-import { activeFilterCount, type LibraryFilters } from "@/lib/filters";
-import { FRAMEWORK_LABEL, JUDGE_LABEL, STATUS_LABEL } from "@/lib/labels";
+import { activeFilterCount, CORE_FILTERS, type LibraryFilters } from "@/lib/filters";
+import { CORE_FILTER_LABEL, FRAMEWORK_LABEL, JUDGE_LABEL, STATUS_LABEL } from "@/lib/labels";
 import { FilterSelect } from "./filter-select";
 
 const STATUS_OPTIONS = STATUSES.map((value) => ({ value, label: STATUS_LABEL[value] }));
 const FRAMEWORK_OPTIONS = FRAMEWORKS.map((value) => ({ value, label: FRAMEWORK_LABEL[value] }));
 const JUDGE_OPTIONS = JUDGES.map((value) => ({ value, label: JUDGE_LABEL[value] }));
+const CORE_OPTIONS = CORE_FILTERS.map((value) => ({ value, label: CORE_FILTER_LABEL[value] }));
 
 /**
- * The library's filter bar: text search, difficulty, status, framework, judge,
- * and under them one line that says how many problems match. "Clear filters"
+ * The library's filter bar: text search, difficulty, status, core or further,
+ * framework, judge, and under them one line that says how many problems match. "Clear filters"
  * lives on that line, so applying a filter never moves the controls.
  */
 export function LibraryFilterBar({
@@ -84,6 +85,13 @@ export function LibraryFilterBar({
           onChange={(status) => patch({ status: status ? [status] : [] })}
         />
         <FilterSelect
+          label="Core"
+          anyLabel="Core and further"
+          value={filters.core}
+          options={CORE_OPTIONS}
+          onChange={(core) => patch({ core })}
+        />
+        <FilterSelect
           label="Framework"
           anyLabel="Any framework"
           value={filters.framework}
@@ -108,7 +116,15 @@ export function LibraryFilterBar({
             size="xs"
             className="text-muted-foreground"
             onClick={() =>
-              onChange({ ...filters, q: "", difficulty: [], status: [], framework: null, judge: null })
+              onChange({
+                ...filters,
+                q: "",
+                difficulty: [],
+                status: [],
+                framework: null,
+                judge: null,
+                core: null,
+              })
             }
           >
             Clear filters

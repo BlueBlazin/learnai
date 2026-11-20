@@ -110,3 +110,32 @@ export function formatDateTime(iso: string): string {
 export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${formatNumber(count)} ${count === 1 ? singular : plural}`;
 }
+
+const ROMAN: [number, string][] = [
+  [1000, "M"],
+  [900, "CM"],
+  [500, "D"],
+  [400, "CD"],
+  [100, "C"],
+  [90, "XC"],
+  [50, "L"],
+  [40, "XL"],
+  [10, "X"],
+  [9, "IX"],
+  [5, "V"],
+  [4, "IV"],
+  [1, "I"],
+];
+
+/** Roman numeral for a module number, the way a textbook numbers its parts. */
+export function romanNumeral(value: number): string {
+  let rest = Math.max(0, Math.floor(value));
+  let out = "";
+  for (const [amount, symbol] of ROMAN) {
+    while (rest >= amount) {
+      out += symbol;
+      rest -= amount;
+    }
+  }
+  return out;
+}

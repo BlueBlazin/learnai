@@ -8,6 +8,7 @@ import type {
   Requires,
   Verdict,
 } from "@/lib/api";
+import type { CoreFilter } from "@/lib/filters";
 import type { SettingsSection } from "@/lib/routes";
 
 /**
@@ -37,6 +38,11 @@ export const STATUS_LABEL: Record<ProblemStatus, string> = {
   todo: "Not started",
   attempted: "Attempted",
   solved: "Solved",
+};
+
+export const CORE_FILTER_LABEL: Record<CoreFilter, string> = {
+  core: "Core only",
+  further: "Further only",
 };
 
 export const JUDGE_LABEL: Record<JudgeKind, string> = {

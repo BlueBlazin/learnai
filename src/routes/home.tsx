@@ -1,24 +1,23 @@
 import { useMemo } from "react";
 import { Page, Section } from "@/components/app/page";
 import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
+import { AreaSummary } from "@/components/curriculum/area-summary";
+import { ModulePlates } from "@/components/curriculum/module-plates";
+import { SceneBanner } from "@/components/curriculum/scene-banner";
 import { ActivityCalendar } from "@/components/home/activity-calendar";
 import { ContinueEntry } from "@/components/home/continue-entry";
 import { GettingStarted } from "@/components/home/getting-started";
 import { HabitStrip } from "@/components/home/habit-strip";
 import { ProgressSummary } from "@/components/home/progress-summary";
-import { RouteSummary } from "@/components/home/route-summary";
-import { SceneBanner } from "@/components/home/scene-banner";
 import { TrackProgress } from "@/components/home/track-progress";
-import { StagePlates } from "@/components/path/stage-plates";
-import { StageProgressBar } from "@/components/path/stage-progress-bar";
 import { SubmissionList } from "@/components/problem/submission-list";
 import { ReviewList } from "@/components/review/review-list";
 import { EnvironmentNotice } from "@/components/workbench/environment-notice";
+import { useCurriculum } from "@/hooks/use-curriculum";
 import { useGo } from "@/hooks/use-go";
 import { activityByDay, solvedThisWeek, weekDays } from "@/lib/activity";
 import {
   useEnvStatus,
-  usePaths,
   useProblems,
   useReviews,
   useSettings,
@@ -28,13 +27,12 @@ import {
 } from "@/lib/api/queries";
 import { useEnvInstall } from "@/lib/api/use-env-install";
 import { pickContinue } from "@/lib/continue";
+import { coresComplete, nextCore } from "@/lib/curriculum";
 import { environmentProblem } from "@/lib/environment";
 import { pluralize } from "@/lib/format";
-import { findOnPath, nextOnPath, pathEntries, stagesFinished } from "@/lib/paths";
+import { moduleColorVars } from "@/lib/module-colors";
 import { dueReviews, reviewEntries, upcomingSummary } from "@/lib/reviews";
 import { routes } from "@/lib/routes";
-import { sceneUrl } from "@/lib/scenes";
-import { stageColorVars } from "@/lib/stage-colors";
 import { usePreferences } from "@/stores/preferences";
 
 const RECENT_COUNT = 8;
@@ -45,7 +43,7 @@ export function HomeScreen() {
   const tracks = useTracks();
   const problems = useProblems();
   const submissions = useSubmissions();
-  const paths = usePaths();
+  const { curriculum } = useCurriculum();
   const env = useEnvStatus();
   const { state: install, install: startInstall } = useEnvInstall();
   // Reviews never block Home: while they load, fail, or are turned off, nothing about them shows.
@@ -61,38 +59,27 @@ export function HomeScreen() {
     () => new Map((problems.data ?? []).map((problem) => [problem.id, problem.title])),
     [problems.data],
   );
-  // The study path is the first one the content root defines. A path that fails to
-  // load never blocks Home: the suggestion falls back to catalog order.
-  const path = paths.data?.[0] ?? null;
-  const pathsSettled = paths.data !== undefined || paths.isError;
+  // Home follows the first area. The suggestion waits for the curriculum, so it never
+  // shows one problem and then another.
+  const area = curriculum?.areas[0] ?? null;
   const target = useMemo(
     () =>
-      problems.data && tracks.data && submissions.data && pathsSettled
-        ? pickContinue(problems.data, tracks.data, submissions.data, path)
+      problems.data && tracks.data && submissions.data && curriculum
+        ? pickContinue(problems.data, tracks.data, submissions.data, curriculum)
         : undefined,
-    [problems.data, tracks.data, submissions.data, pathsSettled, path],
+    [problems.data, tracks.data, submissions.data, curriculum],
   );
-  const entries = useMemo(
-    () => (path && problems.data ? pathEntries(path, problems.data) : null),
-    [path, problems.data],
-  );
-  const nextStep = useMemo(() => (entries ? nextOnPath(entries) : null), [entries]);
+  const nextStep = useMemo(() => (area ? nextCore(area) : null), [area]);
   const byDay = useMemo(() => activityByDay(submissions.data ?? []), [submissions.data]);
   const now = new Date();
-  // The stage the suggestion sits in, when it is on the path: its scene heads the page.
-  const targetStage = useMemo(() => {
-    const index = target?.onPath && entries ? findOnPath(entries, target.problem.id)?.stage : undefined;
-    const stage = index === undefined ? undefined : path?.stages[index];
-    return index === undefined || !stage
-      ? undefined
-      : { index, title: stage.title, scene: sceneUrl(stage.scene) };
-  }, [target, entries, path]);
-  // The banner for a finished path is the last stage's.
-  const lastScene = nextStep || !path ? null : sceneUrl(path.stages[path.stages.length - 1]?.scene);
-  // The page always opens on the place the learner has reached: the suggestion's stage
-  // when it is on the path, otherwise the stage the path is at.
-  const bannerScene =
-    targetStage?.scene ?? (nextStep ? sceneUrl(path?.stages[nextStep.stage]?.scene) : lastScene);
+  // The banner for an area whose core is finished is its last module's.
+  const lastModule = area?.modules[area.modules.length - 1] ?? null;
+  const lastScene = lastModule?.scene ?? null;
+  // The page always opens on the place the learner has reached: the module that holds
+  // the suggestion, otherwise the module the route is at.
+  const bannerModule =
+    [target?.place?.module, nextStep?.module, lastModule].find((module) => module?.scene) ?? null;
+  const bannerScene = bannerModule?.scene ?? null;
   // Reviews never block Home and can be switched off: while unknown or off, their column is left out.
   const reviewsFact =
     settings.data?.reviewsEnabled && reviews.data
@@ -111,6 +98,7 @@ export function HomeScreen() {
       : undefined;
   const setup = environmentProblem(env.data, null);
   const error = stats.error ?? tracks.error ?? problems.error ?? submissions.error;
+  const cores = area ? coresComplete(area.modules) : null;
 
   if (error) {
     return (
@@ -126,17 +114,16 @@ export function HomeScreen() {
     );
   }
 
-  const finished = entries ? stagesFinished(entries) : 0;
-  const stageCount = path?.stages.length ?? 0;
-
   return (
     <Page>
-      <div style={path ? stageColorVars(path) : undefined}>
+      <div style={area ? moduleColorVars(area.modules) : undefined}>
         {target === undefined ? (
           <LoadingLines lines={3} className="pb-12" />
         ) : target === null ? (
           <>
-            {lastScene ? <SceneBanner src={lastScene} className="mb-6" /> : null}
+            {lastScene ? (
+              <SceneBanner src={lastScene} focus={lastModule?.sceneFocus} className="mb-6" />
+            ) : null}
             <EmptyState title="Every problem is solved" className="pb-12">
               Nothing is left to pick up. Revisit a track in the library to solve it again in another
               framework.
@@ -144,13 +131,14 @@ export function HomeScreen() {
           </>
         ) : (
           <>
-            {bannerScene ? <SceneBanner src={bannerScene} className="mb-6" /> : null}
+            {bannerScene ? (
+              <SceneBanner src={bannerScene} focus={bannerModule?.sceneFocus} className="mb-6" />
+            ) : null}
             <ContinueEntry
               problem={target.problem}
               track={tracks.data?.find((track) => track.id === target.problem.track)}
               lastSubmission={target.lastSubmission}
-              onPath={target.onPath}
-              stage={targetStage}
+              place={target.place}
               firstRun={firstRun}
               onOpen={() => go(routes.problem(target.problem.id))}
             />
@@ -187,28 +175,28 @@ export function HomeScreen() {
           </Section>
         ) : null}
 
-        {path && entries ? (
+        {area && cores ? (
           <Section
             title="The route"
             aside={
-              finished === stageCount
-                ? `All ${stageCount} stages finished`
-                : finished > 0
-                  ? `${finished} of ${stageCount} stages finished`
-                  : path.solvedCount > 0
-                    ? `The first of ${stageCount} stages is under way`
-                    : `${pluralize(stageCount, "stage")}, ${pluralize(path.problemCount, "problem")}`
+              cores.withCore === 0
+                ? `${pluralize(area.modules.length, "module")}, ${pluralize(area.problemCount, "problem")}`
+                : cores.complete === cores.withCore
+                  ? `Core finished in all ${pluralize(cores.withCore, "module")}`
+                  : cores.complete > 0
+                    ? `Core finished in ${cores.complete} of ${pluralize(cores.withCore, "module")}`
+                    : area.coreSolved > 0
+                      ? `The first of ${pluralize(area.modules.length, "module")} is under way`
+                      : `${pluralize(area.modules.length, "module")}, ${pluralize(area.coreCount, "core problem")}`
             }
           >
             <div className="flex flex-col gap-8">
-              <div className="flex flex-col gap-4">
-                <RouteSummary path={path} />
-                <StageProgressBar title={path.title} entries={entries} />
-              </div>
-              <StagePlates
-                path={path}
-                entries={entries}
-                onOpen={(number) => go(routes.paths(path.id, number))}
+              <AreaSummary area={area} />
+              <ModulePlates
+                compact
+                modules={area.modules}
+                currentId={nextStep?.module.track.id}
+                onOpen={(module) => go(routes.module(area.id, module.track.id))}
               />
             </div>
           </Section>
@@ -225,7 +213,7 @@ export function HomeScreen() {
               <Section title="How a problem works">
                 <GettingStarted />
               </Section>
-              <Section title="What the tracks cover">
+              <Section title="What the modules cover">
                 {tracks.data ? <TrackProgress tracks={tracks.data} variant="contents" /> : <LoadingLines />}
               </Section>
             </>

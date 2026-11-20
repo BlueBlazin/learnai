@@ -3,9 +3,7 @@ import { ScreenMessage } from "@/components/app/page";
 import { ErrorState, LoadingLines } from "@/components/app/states";
 import { parseFilters, serializeFilters } from "@/lib/filters";
 import {
-  type AreasMockupSearch,
   type LibrarySearch,
-  type PathsSearch,
   type ProblemSearch,
   parseSettingsSection,
   type SettingsSearch,
@@ -44,17 +42,19 @@ const libraryRoute = createRoute({
   validateSearch: (search: Record<string, unknown>): LibrarySearch => serializeFilters(parseFilters(search)),
 }).lazy(() => import("@/routes/library").then((module) => module.Route));
 
-const pathsRoute = createRoute({
+// The three Curriculum screens share one chunk: `routes/curriculum.tsx` exports a lazy half for each.
+const curriculumRoute = createRoute({ getParentRoute: () => rootRoute, path: "/curriculum" }).lazy(() =>
+  import("@/routes/curriculum").then((module) => module.Route),
+);
+
+const areaRoute = createRoute({ getParentRoute: () => rootRoute, path: "/curriculum/$area" }).lazy(() =>
+  import("@/routes/curriculum").then((module) => module.AreaRoute),
+);
+
+const moduleRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/paths",
-  validateSearch: (search: Record<string, unknown>): PathsSearch => {
-    const part = Number(search.part);
-    return {
-      ...(typeof search.path === "string" && search.path ? { path: search.path } : {}),
-      ...(Number.isInteger(part) && part > 0 ? { part } : {}),
-    };
-  },
-}).lazy(() => import("@/routes/paths").then((module) => module.Route));
+  path: "/curriculum/$area/$module",
+}).lazy(() => import("@/routes/curriculum").then((module) => module.ModuleRoute));
 
 const problemRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -89,26 +89,15 @@ const devComponentsRoute = import.meta.env.DEV
     )
   : null;
 
-/** Development only: a design mockup of areas, modules, and core and further problems. */
-const devAreasMockupRoute = import.meta.env.DEV
-  ? createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/dev/areas-mockup",
-      validateSearch: (search: Record<string, unknown>): AreasMockupSearch => ({
-        ...(search.view === "area" || search.view === "module" ? { view: search.view } : {}),
-        ...(typeof search.module === "string" && search.module ? { module: search.module } : {}),
-      }),
-    }).lazy(() => import("@/routes/dev-areas-mockup").then((module) => module.Route))
-  : null;
-
 const routeTree = rootRoute.addChildren([
   homeRoute,
-  pathsRoute,
+  curriculumRoute,
+  areaRoute,
+  moduleRoute,
   libraryRoute,
   problemRoute,
   settingsRoute,
   ...(devComponentsRoute ? [devComponentsRoute] : []),
-  ...(devAreasMockupRoute ? [devAreasMockupRoute] : []),
 ]);
 
 export const router = createRouter({

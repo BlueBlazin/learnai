@@ -1,56 +1,55 @@
 import { ArrowRight } from "lucide-react";
 import { AppLink } from "@/components/app/app-link";
-import { StageSwatch } from "@/components/path/stage-swatch";
+import { ModuleSwatch } from "@/components/curriculum/module-swatch";
 import { DifficultyMark } from "@/components/problem/difficulty-mark";
 import { StatusMark } from "@/components/problem/status-mark";
 import { Button } from "@/components/ui/button";
-import type { Path, ProblemSummary, Submission, Track } from "@/lib/api";
+import type { ProblemSummary, Submission, Track } from "@/lib/api";
+import type { Place } from "@/lib/curriculum";
 import { formatRelativeTime } from "@/lib/format";
 import { VERDICT_LABEL } from "@/lib/labels";
-import { romanNumeral } from "@/lib/paths";
 import { routes } from "@/lib/routes";
-import { stageMark } from "@/lib/stage-colors";
 
 /**
  * The problem to pick up next, as the opening of the home page: where you left
- * off if there is recent work, otherwise the next unsolved problem on the study
- * path (or in the catalog, when there is no path). For someone who has not
- * started (`firstRun`) it is the invitation to begin.
+ * off if there is recent work, otherwise the next unsolved core problem of the
+ * first area. It names the problem's module, with its swatch, and for a core
+ * problem its place on the area's route. For someone who has not started
+ * (`firstRun`) it is the invitation to begin.
  */
 export function ContinueEntry({
   problem,
   track,
   lastSubmission,
-  onPath,
-  stage,
+  place,
   firstRun = false,
   onOpen,
 }: {
   problem: ProblemSummary;
+  /** Named instead of the module while the curriculum does not place the problem. */
   track?: Track;
-  /** The study path the problem is on and its place there; shown instead of the track. */
-  onPath?: { path: Path; position: number };
-  /**
-   * The problem's stage on the path, for the line above the title: its swatch (colored by
-   * `stageColorVars` on an ancestor), and part number and name.
-   */
-  stage?: { index: number; title: string };
+  /** Where the problem sits in the curriculum: its module, its area, and its place on the route. */
+  place?: Place | null;
   /** The most recent submission on this problem, when it is the reason for the suggestion. */
   lastSubmission?: Submission;
   /** Nothing has been attempted yet. */
   firstRun?: boolean;
   onOpen: () => void;
 }) {
+  const module = place?.module;
+  const area = place?.area;
   return (
     <section aria-label="Continue" className="pb-12">
       <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <span className="text-muted-foreground">
           {lastSubmission ? "Continue where you left off" : firstRun ? "Start here" : "Up next"}
         </span>
-        {stage ? (
+        {module ? (
           <span className="inline-flex items-center gap-2">
-            <StageSwatch color={stageMark(stage.index)} />
-            Part {romanNumeral(stage.index + 1)}, {stage.title}
+            <ModuleSwatch color={module.color} />
+            <AppLink to={routes.module(module.areaId, module.track.id)} tone="quiet">
+              {module.loose ? module.track.title : `Module ${module.numeral}, ${module.track.title}`}
+            </AppLink>
           </span>
         ) : null}
       </p>
@@ -60,14 +59,16 @@ export function ContinueEntry({
         </AppLink>
       </h1>
       <p className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-muted-foreground">
-        {onPath ? (
+        {area ? (
           <span>
-            <AppLink to={routes.paths(onPath.path.id)} tone="quiet" className="text-muted-foreground">
-              {onPath.path.title}
+            <AppLink to={routes.area(area.id)} tone="quiet" className="text-muted-foreground">
+              {area.title}
             </AppLink>
-            , No. {onPath.position} of {onPath.path.problemCount}
+            {place.routePosition === null
+              ? ", further"
+              : `, core ${place.routePosition} of ${area.coreCount}`}
           </span>
-        ) : (
+        ) : module ? null : (
           <span>
             {track?.title ?? problem.track}, No. {problem.order}
           </span>
@@ -89,7 +90,7 @@ export function ContinueEntry({
         </Button>
         {firstRun ? (
           <span className="flex gap-5 text-sm">
-            {onPath ? <AppLink to={routes.paths(onPath.path.id)}>See the whole path</AppLink> : null}
+            <AppLink to={routes.curriculum()}>See the curriculum</AppLink>
             <AppLink to={routes.library()}>Browse the library</AppLink>
           </span>
         ) : null}

@@ -17,14 +17,22 @@ import { PixelIcon } from "@/components/app/pixel-icon";
 import { RuledList } from "@/components/app/ruled-list";
 import { SHORTCUTS, ShortcutHint } from "@/components/app/shortcut-hint";
 import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
+import { AreaBanner } from "@/components/curriculum/area-banner";
+import { AreaEntry } from "@/components/curriculum/area-entry";
+import { AreaSummary } from "@/components/curriculum/area-summary";
+import { ModuleHeader } from "@/components/curriculum/module-header";
+import { ModuleNeighbors } from "@/components/curriculum/module-neighbors";
+import { ModulePlates } from "@/components/curriculum/module-plates";
+import { ModuleProgressBar } from "@/components/curriculum/module-progress-bar";
+import { ModuleRowList } from "@/components/curriculum/module-row-list";
+import { ModuleSwatch } from "@/components/curriculum/module-swatch";
+import { SceneBanner } from "@/components/curriculum/scene-banner";
 import { CodeEditor } from "@/components/editor/code-editor";
 import { ActivityCalendar } from "@/components/home/activity-calendar";
 import { ContinueEntry } from "@/components/home/continue-entry";
 import { GettingStarted } from "@/components/home/getting-started";
 import { HabitStrip } from "@/components/home/habit-strip";
 import { ProgressSummary } from "@/components/home/progress-summary";
-import { RouteSummary } from "@/components/home/route-summary";
-import { SceneBanner } from "@/components/home/scene-banner";
 import { TrackProgress } from "@/components/home/track-progress";
 import { FilterSelect } from "@/components/library/filter-select";
 import { LibraryFilterBar } from "@/components/library/library-filter-bar";
@@ -36,12 +44,6 @@ import { AssetProgress } from "@/components/models/asset-progress";
 import { AssetRow } from "@/components/models/asset-row";
 import { AssetStateMark } from "@/components/models/asset-state-mark";
 import { ModelsPanel } from "@/components/models/models-panel";
-import { PathEntryList } from "@/components/path/path-entry-list";
-import { PathStage } from "@/components/path/path-stage";
-import { PathSummary } from "@/components/path/path-summary";
-import { StagePlates } from "@/components/path/stage-plates";
-import { StageProgressBar } from "@/components/path/stage-progress-bar";
-import { StageSwatch } from "@/components/path/stage-swatch";
 import { DifficultyMark } from "@/components/problem/difficulty-mark";
 import { EditorialPanel } from "@/components/problem/editorial-panel";
 import { FrameworkList } from "@/components/problem/framework-list";
@@ -51,6 +53,7 @@ import { JudgeList } from "@/components/problem/judge-list";
 import { PrerequisiteList } from "@/components/problem/prerequisite-list";
 import { PrerequisiteNote } from "@/components/problem/prerequisite-note";
 import { ProblemHeader } from "@/components/problem/problem-header";
+import { ProblemRowList } from "@/components/problem/problem-row-list";
 import { ProblemTable } from "@/components/problem/problem-table";
 import { ProgressRule } from "@/components/problem/progress-rule";
 import { StatusMark } from "@/components/problem/status-mark";
@@ -108,7 +111,6 @@ import {
   type EditorStatus,
   type Framework,
   type JudgeKind,
-  type Path,
   type ProblemDetail,
   type ProblemSummary,
   type Review,
@@ -126,12 +128,18 @@ import { stepProgress, type TargetCheckState } from "@/lib/api/target-check-stat
 import type { AssetFetchController } from "@/lib/api/use-asset-fetch";
 import type { EditorInstallState } from "@/lib/api/use-editor-install";
 import type { InstallState } from "@/lib/api/use-env-install";
+import {
+  buildCurriculum,
+  type CurriculumArea,
+  type CurriculumModule,
+  nextCore,
+  placeOf,
+} from "@/lib/curriculum";
 import { EMPTY_FILTERS, type LibraryFilters } from "@/lib/filters";
-import { nextOnPath, pathEntries, unmetPrerequisites } from "@/lib/paths";
+import { moduleColorVars } from "@/lib/module-colors";
+import { unmetPrerequisites } from "@/lib/prerequisites";
 import { dueReviews, reviewEntries } from "@/lib/reviews";
 import { routes } from "@/lib/routes";
-import { sceneUrl } from "@/lib/scenes";
-import { stageColorVars } from "@/lib/stage-colors";
 import type { ThemePreference } from "@/stores/theme";
 
 /** Sample data. Kept inline so this page has no dependency on any backend. */
@@ -179,77 +187,86 @@ const PROBLEMS: ProblemSummary[] = [
   }),
 ];
 
-/** A short path over the sample problems: one solved, one up next, one that builds on an unsolved problem. */
-const PATH_PROBLEMS: ProblemSummary[] = [
+/** Sample problems where one builds on an unsolved problem, for the "best after" remark. */
+const PREREQUISITE_PROBLEMS: ProblemSummary[] = [
   PROBLEMS[0] as ProblemSummary,
   PROBLEMS[1] as ProblemSummary,
   { ...(PROBLEMS[2] as ProblemSummary), prerequisites: ["scaled-dot-product-attention"] },
   PROBLEMS[3] as ProblemSummary,
 ];
-const PATH: Path = {
-  id: "inference-75",
-  title: "Inference 75",
-  description: "The shortest route through LLM inference, from one layer's arithmetic to serving many users.",
-  stages: [
-    {
-      title: "Numerics and the forward pass",
-      description: "The functions a decoder runs for every token, written from their formulas.",
-      problems: ["a", "scaled-dot-product-attention", "c"],
-    },
-    {
-      title: "Serving many requests",
-      description: "The model as a service: batching under a latency budget and streaming tokens.",
-      problems: ["d"],
-    },
-  ],
-  problemCount: 4,
-  solvedCount: 1,
-};
-const PATH_ENTRIES = pathEntries(PATH, PATH_PROBLEMS);
-const PATH_NEXT = nextOnPath(PATH_ENTRIES);
 
 /**
- * A path with a scene and a color on every stage (thirteen, so the last plate spans three
- * columns), the first thirteen problems solved, and one extra stage with neither.
+ * A sample area: one module per bundled scene (fifteen), each with three core
+ * and two further problems, plus one track outside the area with no scene, no
+ * color, and no core. `status` decides what is solved.
  */
-const ROUTE_PROBLEMS: ProblemSummary[] = Array.from({ length: 40 }, (_, index) =>
-  summary({
-    id: `route-${index}`,
-    title: `Route problem ${index + 1}`,
-    status: index < 14 ? "solved" : "todo",
-  }),
-);
-const ROUTE_STAGES: Path["stages"] = scenes.map((scene, index) => ({
-  title:
-    ["Numerics", "Tokens", "The forward pass", "Attention", "Caching", "Batching"][index] ??
-    `Stage ${index + 1}`,
-  description: "What this stage covers, in a sentence.",
+const MODULE_TITLES = [
+  "Foundations",
+  "Tokenization",
+  "Transformer Forward Pass",
+  "Sampling and Decoding",
+  "KV Cache and Attention Memory",
+];
+const MODULE_TRACKS: Track[] = scenes.map((scene, index) => ({
+  id: `module-${index + 1}`,
+  title: MODULE_TITLES[index] ?? `Module ${index + 1}`,
+  description: "What this module covers, in a sentence.",
+  order: index + 1,
+  problemCount: 5,
+  solvedCount: 0,
   scene: scene.slug,
   color: scene.accent,
-  problems: ROUTE_PROBLEMS.slice(index * 3, index * 3 + 3).map((problem) => problem.id),
+  core: [1, 2, 3].map((problem) => `module-${index + 1}-${problem}`),
 }));
-const ROUTE_PATH: Path = {
-  id: "route",
-  title: "Sample route",
-  description: "",
-  stages: ROUTE_STAGES,
-  problemCount: 39,
-  solvedCount: 14,
+const PLAIN_TRACK: Track = {
+  id: "plain",
+  title: "No scene",
+  description: "A module with no scene, no color, and no core.",
+  order: 99,
+  problemCount: 2,
+  solvedCount: 0,
+  core: [],
 };
-const ROUTE_ENTRIES = pathEntries(ROUTE_PATH, ROUTE_PROBLEMS);
-/** Four stages, the last with no scene and no color: it shows a flat block and falls back to the accent. */
-const PLAIN_PATH: Path = {
-  ...ROUTE_PATH,
-  stages: [
-    ...ROUTE_STAGES.slice(0, 3),
-    {
-      title: "No scene",
-      description: "",
-      problems: ROUTE_PROBLEMS.slice(9, 12).map((problem) => problem.id),
-    },
-  ],
-};
-const PLAIN_ENTRIES = pathEntries(PLAIN_PATH, ROUTE_PROBLEMS);
+type SampleStatus = (module: number, problem: number) => ProblemSummary["status"];
+function sampleCurriculum(status: SampleStatus, modules = MODULE_TRACKS.map((track) => track.id)) {
+  const problems = [...MODULE_TRACKS, PLAIN_TRACK].flatMap((track, index) =>
+    Array.from({ length: track.problemCount }, (_, problem) =>
+      summary({
+        id: `${track.id}-${problem + 1}`,
+        title: `${track.title}, problem ${problem + 1}`,
+        track: track.id,
+        order: (problem + 1) * 10,
+        status: status(index + 1, problem + 1),
+      }),
+    ),
+  );
+  return buildCurriculum(
+    [
+      {
+        id: "sample",
+        title: "Inference and serving",
+        description:
+          "Everything between trained weights and a served answer: tokenizing, the forward pass, sampling, caching, quantization, and serving.",
+        modules,
+      },
+    ],
+    [...MODULE_TRACKS, PLAIN_TRACK],
+    problems,
+  );
+}
+/** Module I has its core solved, module II every problem, and module III is under way. */
+const UNDER_WAY: SampleStatus = (module, problem) =>
+  (module === 1 && problem <= 3) || module === 2 || (module === 3 && problem === 1) ? "solved" : "todo";
+const SAMPLE = sampleCurriculum(UNDER_WAY);
+const SAMPLE_AREA = SAMPLE.areas[0] as CurriculumArea;
+const SAMPLE_NEXT = nextCore(SAMPLE_AREA);
+const FRESH_AREA = sampleCurriculum(() => "todo").areas[0] as CurriculumArea;
+const CORE_DONE_AREA = sampleCurriculum((_, problem) => (problem <= 3 ? "solved" : "todo"))
+  .areas[0] as CurriculumArea;
+/** Four modules, the last with no scene, no color, and no core: a flat block in the accent, and no segment. */
+const PLAIN_AREA = sampleCurriculum(UNDER_WAY, ["module-1", "module-2", "module-3", "plain"])
+  .areas[0] as CurriculumArea;
+const sampleModule = (area: CurriculumArea, number: number) => area.modules[number - 1] as CurriculumModule;
 
 /** Activity over the last fifteen weeks, as a fixed pattern, ending on a fixed Thursday. */
 const ACTIVITY_NOW = new Date("2026-11-19T12:00:00");
@@ -262,7 +279,7 @@ const ACTIVITY = (() => {
   }
   return byDay;
 })();
-const PATH_UNMET = unmetPrerequisites(PATH_PROBLEMS);
+const SAMPLE_UNMET = unmetPrerequisites(PREREQUISITE_PROBLEMS);
 
 /** A small figure in the authoring conventions: currentColor ink, the palette through style, text at 13 units on a 480-unit drawing. */
 const SAMPLE_FIGURE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 96">
@@ -291,6 +308,7 @@ const TRACKS: Track[] = [
     order: 1,
     problemCount: 14,
     solvedCount: 11,
+    color: "#ed9b11",
     core: [],
   },
   {
@@ -300,6 +318,7 @@ const TRACKS: Track[] = [
     order: 2,
     problemCount: 15,
     solvedCount: 4,
+    color: "#2a71cc",
     core: [],
   },
   { id: "serving", title: "Serving", description: "", order: 3, problemCount: 14, solvedCount: 0, core: [] },
@@ -1053,7 +1072,7 @@ function DevComponentsScreen() {
             <UvGuideButton />
           </div>
         </Specimen>
-        <Specimen name="LibraryFilterBar, FilterSelect">
+        <Specimen name="LibraryFilterBar (search, difficulty, status, core or further, framework, judge), FilterSelect">
           <div className="flex flex-col gap-3">
             <LibraryFilterBar filters={filters} onChange={setFilters} summary="12 of 196 problems" />
             <FilterSelect
@@ -1065,7 +1084,7 @@ function DevComponentsScreen() {
             />
           </div>
         </Specimen>
-        <Specimen name="TrackList">
+        <Specimen name="TrackList: each track with its module swatch (the accent for a track with no color)">
           <div className="w-64">
             <TrackList tracks={TRACKS} selected={track} onSelect={setTrack} />
           </div>
@@ -1152,9 +1171,15 @@ function DevComponentsScreen() {
       </Section>
 
       <Section title="Problem" aside="problem/">
-        <Specimen name="ProblemHeader">
+        <Specimen name="ProblemHeader: a core problem of its module, with prerequisites; a further problem; its place not known yet">
           <div className="@container">
-            <ProblemHeader problem={DETAIL} track={TRACKS[1]} prerequisites={PROBLEMS.slice(0, 1)} />
+            <ProblemHeader
+              problem={DETAIL}
+              place={placeOf(SAMPLE, "module-3-2")}
+              prerequisites={PROBLEMS.slice(0, 1)}
+            />
+            <ProblemHeader problem={DETAIL} place={placeOf(SAMPLE, "module-3-5")} />
+            <ProblemHeader problem={{ ...DETAIL, status: "todo" }} />
           </div>
         </Specimen>
         <Specimen name="ProblemTable: solved, not started, attempted, long title">
@@ -1162,9 +1187,9 @@ function DevComponentsScreen() {
         </Specimen>
         <Specimen name="ProblemTable with unmet prerequisites noted beside the title">
           <ProblemTable
-            problems={PATH_PROBLEMS}
+            problems={PREREQUISITE_PROBLEMS}
             label="Sample problems with prerequisites"
-            unmet={PATH_UNMET}
+            unmet={SAMPLE_UNMET}
           />
         </Specimen>
         <Specimen name="PrerequisiteList (problem header); PrerequisiteNote: one, several, none">
@@ -1449,79 +1474,97 @@ function DevComponentsScreen() {
         </Specimen>
       </Section>
 
-      <Section title="Path" aside="path/, home/">
-        <Specimen name="PathSummary: under way, not started, finished">
-          <PathSummary path={PATH} entries={PATH_ENTRIES} next={PATH_NEXT} />
-          <PathSummary
-            path={{ ...PATH, solvedCount: 0 }}
-            entries={pathEntries(
-              PATH,
-              PATH_PROBLEMS.map((problem) => ({ ...problem, status: "todo" })),
-            )}
-            next={PATH_ENTRIES[0]?.[0] ?? null}
-          />
-          <PathSummary path={{ ...PATH, solvedCount: 4 }} entries={PATH_ENTRIES} next={null} />
+      <Section title="Curriculum" aside="curriculum/, problem/">
+        <Specimen name="AreaEntry (the list of areas): banner, title, description, counts, and the module bar">
+          <AreaEntry area={SAMPLE_AREA} />
         </Specimen>
-        <Specimen name="PathStage: a part with the next problem and an unmet prerequisite; a part not begun; a part with a scene and a color">
-          <PathStage
-            number={1}
-            stage={PATH.stages[0] as Path["stages"][number]}
-            entries={PATH_ENTRIES[0] ?? []}
-            nextId={PATH_NEXT?.problem.id}
-            unmet={PATH_UNMET}
-          />
-          <PathStage
-            number={2}
-            stage={PATH.stages[1] as Path["stages"][number]}
-            entries={PATH_ENTRIES[1] ?? []}
-            nextId={PATH_NEXT?.problem.id}
-            unmet={PATH_UNMET}
-          />
-          <div style={stageColorVars(ROUTE_PATH)}>
-            <PathStage
-              number={4}
-              stage={ROUTE_STAGES[3] as Path["stages"][number]}
-              entries={ROUTE_ENTRIES[3] ?? []}
-              nextId={null}
+        <Specimen name="AreaBanner: a module with no scene contributes a flat slice">
+          <div style={moduleColorVars(PLAIN_AREA.modules)}>
+            <AreaBanner modules={PLAIN_AREA.modules} />
+          </div>
+        </Specimen>
+        <Specimen name="AreaSummary: under way with the next problem, not started, core finished; without the next problem (Home)">
+          <div className="flex flex-col gap-8" style={moduleColorVars(SAMPLE_AREA.modules)}>
+            <AreaSummary area={SAMPLE_AREA} next={SAMPLE_NEXT} />
+            <AreaSummary area={FRESH_AREA} next={nextCore(FRESH_AREA)} />
+            <AreaSummary area={CORE_DONE_AREA} next={null} />
+            <AreaSummary area={SAMPLE_AREA} />
+          </div>
+        </Specimen>
+        <Specimen name="ModuleProgressBar: under way; a module with no color (the accent) and one with no core (no segment)">
+          <div className="max-w-measure" style={moduleColorVars(SAMPLE_AREA.modules)}>
+            <ModuleProgressBar title={SAMPLE_AREA.title} modules={SAMPLE_AREA.modules} />
+          </div>
+          <div className="mt-6 max-w-measure" style={moduleColorVars(PLAIN_AREA.modules)}>
+            <ModuleProgressBar title={PLAIN_AREA.title} modules={PLAIN_AREA.modules} />
+          </div>
+        </Specimen>
+        <Specimen name="ModulePlates: fifteen modules; I has the solved mark (core complete), II the mark and the star (every problem solved), III is up next">
+          <div style={moduleColorVars(SAMPLE_AREA.modules)}>
+            <ModulePlates
+              modules={SAMPLE_AREA.modules}
+              currentId={SAMPLE_NEXT?.module.track.id}
+              onOpen={noop}
             />
           </div>
         </Specimen>
-        <Specimen name="PathEntryList on its own">
-          <div className="flex max-w-measure">
-            <PathEntryList entries={PATH_ENTRIES[0] ?? []} label="Sample entries" />
+        <Specimen name="ModulePlates, compact (Home): no line of counts; a module with no scene, color, or core">
+          <div style={moduleColorVars(PLAIN_AREA.modules)}>
+            <ModulePlates
+              compact
+              modules={PLAIN_AREA.modules}
+              currentId={SAMPLE_NEXT?.module.track.id}
+              onOpen={noop}
+            />
           </div>
         </Specimen>
-        <Specimen name="StageProgressBar: under way (a pale color, a deep blue), plain stages">
-          <div className="flex max-w-measure flex-col gap-6" style={stageColorVars(ROUTE_PATH)}>
-            <StageProgressBar title={ROUTE_PATH.title} entries={ROUTE_ENTRIES} />
-          </div>
-          <div className="mt-6 flex max-w-measure flex-col gap-6" style={stageColorVars(PLAIN_PATH)}>
-            <StageProgressBar title={PLAIN_PATH.title} entries={PLAIN_ENTRIES} />
+        <Specimen name="ModuleHeader: a module under way; a module outside every area, with no scene and no number">
+          <ModuleHeader module={sampleModule(SAMPLE_AREA, 3)} areaTitle={SAMPLE_AREA.title} />
+          {SAMPLE.loose[0] ? <ModuleHeader module={SAMPLE.loose[0]} areaTitle={SAMPLE_AREA.title} /> : null}
+        </Specimen>
+        <Specimen name="ProblemRowList: a module's core with the next problem; rows with an unmet prerequisite and a long title">
+          <div className="flex max-w-measure flex-col gap-8">
+            <ProblemRowList
+              entries={sampleModule(SAMPLE_AREA, 3).core}
+              nextId={SAMPLE_NEXT?.problem.id}
+              label="Sample core problems"
+            />
+            <ProblemRowList
+              entries={PREREQUISITE_PROBLEMS.map((problem, index) => ({ problem, position: index + 1 }))}
+              unmet={SAMPLE_UNMET}
+              label="Sample problems"
+            />
           </div>
         </Specimen>
-        <Specimen name="StagePlates: thirteen stages (the last spans three columns); a stage with no scene or color">
-          <div className="flex flex-col gap-10" style={stageColorVars(ROUTE_PATH)}>
-            <StagePlates path={ROUTE_PATH} entries={ROUTE_ENTRIES} onOpen={noop} />
-          </div>
-          <div className="mt-10 flex flex-col gap-10" style={stageColorVars(PLAIN_PATH)}>
-            <StagePlates path={PLAIN_PATH} entries={PLAIN_ENTRIES} onOpen={noop} />
+        <Specimen name="ModuleNeighbors: both, the first module, the last module, a module with no scene">
+          <div className="flex flex-col gap-8" style={moduleColorVars(PLAIN_AREA.modules)}>
+            <ModuleNeighbors previous={sampleModule(SAMPLE_AREA, 2)} next={sampleModule(SAMPLE_AREA, 4)} />
+            <ModuleNeighbors next={sampleModule(SAMPLE_AREA, 2)} />
+            <ModuleNeighbors previous={sampleModule(SAMPLE_AREA, 14)} />
+            <ModuleNeighbors previous={sampleModule(PLAIN_AREA, 3)} next={sampleModule(PLAIN_AREA, 4)} />
           </div>
         </Specimen>
-        <Specimen name="StageSwatch: each stage's mark color">
-          <div className="flex gap-3" style={stageColorVars(ROUTE_PATH)}>
-            {ROUTE_STAGES.map((stage, index) => (
-              <StageSwatch key={stage.title} color={`var(--stage-${index + 1}-mark)`} />
+        <Specimen name="ModuleRowList (More modules: those outside every area)">
+          <ModuleRowList
+            modules={[...SAMPLE.loose, { ...sampleModule(SAMPLE_AREA, 5), loose: true }]}
+            label="Sample modules"
+          />
+        </Specimen>
+        <Specimen name="ModuleSwatch: each module's mark color, and the accent for a module with none">
+          <div className="flex gap-3">
+            {SAMPLE_AREA.modules.map((module) => (
+              <ModuleSwatch key={module.track.id} color={module.color} />
             ))}
+            <ModuleSwatch color={null} />
           </div>
         </Specimen>
       </Section>
 
       <Section title="Home and settings" aside="home/, settings/">
-        <Specimen name="ContinueEntry: first run on a path, first run without one, resuming, and up next">
+        <Specimen name="ContinueEntry: first run on a core problem, first run with no place known, resuming a further problem, and up next">
           <ContinueEntry
             problem={PROBLEMS[0] as ProblemSummary}
-            track={TRACKS[1]}
-            onPath={{ path: PATH, position: 1 }}
+            place={placeOf(SAMPLE, "module-1-1")}
             firstRun
             onOpen={() => {}}
           />
@@ -1533,23 +1576,23 @@ function DevComponentsScreen() {
           />
           <ContinueEntry
             problem={PROBLEMS[2] as ProblemSummary}
-            track={TRACKS[1]}
+            place={placeOf(SAMPLE, "module-3-4")}
             lastSubmission={SUBMISSIONS[1]}
             onOpen={() => {}}
           />
-          <ContinueEntry problem={PROBLEMS[1] as ProblemSummary} track={TRACKS[1]} onOpen={() => {}} />
+          <ContinueEntry
+            problem={PROBLEMS[1] as ProblemSummary}
+            place={placeOf(SAMPLE, "module-3-2")}
+            onOpen={() => {}}
+          />
         </Specimen>
-        <Specimen name="ContinueEntry with its stage and a SceneBanner above it">
-          <div style={stageColorVars(ROUTE_PATH)}>
-            <SceneBanner src={sceneUrl("forest") ?? ""} className="mb-6" />
-            <ContinueEntry
-              problem={PROBLEMS[0] as ProblemSummary}
-              track={TRACKS[1]}
-              onPath={{ path: PATH, position: 1 }}
-              stage={{ index: 2, title: "The forward pass" }}
-              onOpen={() => {}}
-            />
-          </div>
+        <Specimen name="ContinueEntry with its module's SceneBanner above it">
+          <SceneBanner src={sampleModule(SAMPLE_AREA, 3).scene ?? ""} className="mb-6" />
+          <ContinueEntry
+            problem={PROBLEMS[0] as ProblemSummary}
+            place={placeOf(SAMPLE, "module-3-2")}
+            onOpen={() => {}}
+          />
         </Specimen>
         <Specimen name="HabitStrip: streak running, goal met with reviews due; no streak, quiet reviews; reviews off; many a week">
           <div className="flex flex-col gap-2">
@@ -1592,13 +1635,6 @@ function DevComponentsScreen() {
             <ActivityCalendar byDay={ACTIVITY} now={ACTIVITY_NOW} />
             <ActivityCalendar byDay={activityByDay([])} now={ACTIVITY_NOW} />
             <ActivityCalendar byDay={new Map([["2026-11-15", 1]])} now={ACTIVITY_NOW} />
-          </div>
-        </Specimen>
-        <Specimen name="RouteSummary: under way, not started, finished">
-          <div className="flex flex-col gap-3">
-            <RouteSummary path={ROUTE_PATH} />
-            <RouteSummary path={{ ...ROUTE_PATH, solvedCount: 0 }} />
-            <RouteSummary path={{ ...ROUTE_PATH, solvedCount: 39 }} />
           </div>
         </Specimen>
         <Specimen name="PixelIcon: flame and star at each scale">

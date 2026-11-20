@@ -11,8 +11,9 @@ import { Prose } from "@/components/prose/prose";
 import { ReviewHidden } from "@/components/review/review-hidden";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { Framework, ProblemDetail, ProblemSummary, Track } from "@/lib/api";
+import type { Framework, ProblemDetail, ProblemSummary } from "@/lib/api";
 import { useReference, useSubmission, useSubmissions, useUnlockEditorial } from "@/lib/api/queries";
+import type { Place } from "@/lib/curriculum";
 import type { StatementTab } from "@/lib/routes";
 import { usePreferences } from "@/stores/preferences";
 import { PaneToolbar } from "./pane-toolbar";
@@ -36,7 +37,7 @@ function PageScroll({ children }: { children: React.ReactNode }) {
  */
 export function StatementPane({
   problem,
-  track,
+  place,
   prerequisites,
   framework,
   tab,
@@ -51,7 +52,8 @@ export function StatementPane({
   /** A review of this problem is in progress. */
   reviewing?: boolean;
   problem: ProblemDetail;
-  track?: Track;
+  /** Where the problem sits in the curriculum, for the header. */
+  place?: Place | null;
   prerequisites: ProblemSummary[];
   framework: Framework | null;
   tab: StatementTab;
@@ -110,7 +112,7 @@ export function StatementPane({
 
         <TabsContent value="statement">
           <PageScroll>
-            <ProblemHeader problem={problem} track={track} prerequisites={prerequisites} />
+            <ProblemHeader problem={problem} place={place} prerequisites={prerequisites} />
             <Prose>{problem.statement}</Prose>
           </PageScroll>
         </TabsContent>
