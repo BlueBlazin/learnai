@@ -1,126 +1,172 @@
-import { CircleCheck } from "lucide-react";
 import type { ReactNode } from "react";
-import { MetaItem, MetaList } from "@/components/app/meta-list";
 import { Notice } from "@/components/app/notice";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { EnvStatus, Framework } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { EditorStatus, EnvStatus, Framework } from "@/lib/api";
+import type { EditorInstallState } from "@/lib/api/use-editor-install";
 import type { InstallState } from "@/lib/api/use-env-install";
+import type { EditorSessionView } from "@/lib/editor";
+import { suggestionsState, suggestionsVersion } from "@/lib/editor/status";
 import { FRAMEWORK_LABEL } from "@/lib/labels";
 import { InstallButton, UvGuideButton } from "./install-actions";
 import { InstallLog } from "./install-log";
+import { RowStatus } from "./row-status";
+import { SettingList, SettingRow } from "./setting-row";
 
-/** A version string, or the reason there is none with the action that fixes it. */
-function Version({ value, missing, action }: { value: string | null; missing: string; action?: ReactNode }) {
-  return value ? (
-    <span className="selectable tabular">{value}</span>
-  ) : (
-    <Notice action={action}>{missing}</Notice>
-  );
+const SESSION_WORD = { starting: "Starting", restarting: "Restarting" } as const;
+
+/** The language server behind suggestions: what the app knows about it, and how to install or restart it. */
+export interface LanguageServer {
+  /** Undefined while the stored status is not known yet. */
+  status: EditorStatus | undefined;
+  session: EditorSessionView;
+  install: EditorInstallState;
+  onInstall: () => void;
+  /** Starts the server again after it failed. */
+  onRetry: () => void;
 }
 
 /**
- * The Python environment: uv, the interpreter, and each framework with its
- * version or an Install action. An install streams its log underneath.
+ * The tools the app runs on, a row each: uv, Python, the frameworks, and ty
+ * (the language server). Each has its version or what is missing, and the
+ * action that fixes it. An install streams its log under its own row while it
+ * runs and after it failed.
  */
 export function EnvironmentPanel({
   env,
   install,
   onInstall,
+  server,
 }: {
   env: EnvStatus;
   install: InstallState;
+  /** Installs a framework; `torch` also sets up the base environment. */
   onInstall: (framework: Framework) => void;
+  server: LanguageServer;
 }) {
   const busy = install.status === "running";
-  // Without uv nothing can be installed; say so once, at the top, instead of failing per framework.
+  // Without uv nothing can be installed.
   const blocked = env.uv === null;
+  // Setting up Python is the PyTorch install: its log belongs to whichever row is still missing.
+  const logOwner = install.framework === "torch" && env.python === null ? "python" : install.framework;
+  const logFor = (row: Framework) =>
+    logOwner === row && (install.status === "running" || install.status === "failed") ? (
+      <InstallLog status={install.status} log={install.log} message={install.message} />
+    ) : null;
+  const installAction = (row: Framework, target: Framework, label: string) => (
+    <InstallButton
+      installing={busy && logOwner === row}
+      disabled={busy || blocked}
+      onClick={() => onInstall(target)}
+    >
+      {install.status === "failed" && logOwner === row ? "Try again" : label}
+    </InstallButton>
+  );
+
   return (
-    <div className="flex flex-col gap-6">
-      <MetaList layout="rows" className="text-sm">
-        <MetaItem label="uv">
-          <Version
-            value={env.uv}
-            missing="Not found. Install uv, then reopen Learn AI."
-            action={<UvGuideButton />}
-          />
-        </MetaItem>
-        <MetaItem label="Python">
-          <Version
-            value={env.python}
-            missing={
-              blocked
-                ? "Unavailable until uv is installed."
-                : "Not set up yet. The first run sets it up, or do it now."
-            }
-            action={
-              blocked ? null : (
-                <InstallButton
-                  installing={busy && install.framework === "torch"}
-                  disabled={busy}
-                  onClick={() => onInstall("torch")}
-                >
-                  Set up now
-                </InstallButton>
+    <SettingList aria-label="Environment">
+      <SettingRow
+        label="uv"
+        help={env.uv ? undefined : "Install uv, then reopen Learn AI."}
+        status={
+          env.uv ? <RowStatus tone="pass">{env.uv}</RowStatus> : <RowStatus tone="warn">Not found</RowStatus>
+        }
+      >
+        {env.uv ? null : <UvGuideButton />}
+      </SettingRow>
+      <SettingRow
+        label="Python"
+        help={env.python || blocked ? undefined : "The first run sets it up, or do it now."}
+        status={
+          env.python ? (
+            <RowStatus tone="pass">{env.python}</RowStatus>
+          ) : (
+            <RowStatus tone={blocked ? "idle" : "warn"}>{blocked ? "Needs uv" : "Not set up"}</RowStatus>
+          )
+        }
+        body={logFor("python")}
+      >
+        {env.python || blocked ? null : installAction("python", "torch", "Set up")}
+      </SettingRow>
+      {env.frameworks.map((entry) =>
+        // Python has its own row above; it comes with the environment, not as an install.
+        entry.framework === "python" ? null : (
+          <SettingRow
+            key={entry.framework}
+            label={FRAMEWORK_LABEL[entry.framework]}
+            status={
+              entry.installed ? (
+                <RowStatus tone="pass">{entry.version ?? "Installed"}</RowStatus>
+              ) : (
+                <RowStatus tone="idle">Not installed</RowStatus>
               )
             }
-          />
-        </MetaItem>
-      </MetaList>
+            body={logFor(entry.framework)}
+          >
+            {entry.installed ? null : installAction(entry.framework, entry.framework, "Install")}
+          </SettingRow>
+        ),
+      )}
+      <LanguageServerRow server={server} />
+    </SettingList>
+  );
+}
 
-      <Table>
-        <TableHeader>
-          <TableRow className="border-rule hover:bg-transparent">
-            <TableHead className="pl-0">Framework</TableHead>
-            <TableHead>Version</TableHead>
-            <TableHead className="pr-0 text-right">
-              <span className="sr-only">Action</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {env.frameworks.map((entry) => {
-            const installing = busy && install.framework === entry.framework;
-            return (
-              <TableRow key={entry.framework} className="hover:bg-transparent">
-                <TableCell className="w-48 pl-0 font-medium">{FRAMEWORK_LABEL[entry.framework]}</TableCell>
-                <TableCell>
-                  {entry.installed ? (
-                    <span className="flex items-center gap-2">
-                      <CircleCheck className="size-3.5 text-pass" aria-hidden />
-                      <span className="selectable tabular">{entry.version ?? "Installed"}</span>
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">Not installed</span>
-                  )}
-                </TableCell>
-                <TableCell className="pr-0 text-right">
-                  {/* Python comes with the environment itself; there is nothing separate to install. */}
-                  {entry.installed || entry.framework === "python" ? null : (
-                    <InstallButton
-                      size="sm"
-                      installing={installing}
-                      disabled={busy || blocked}
-                      onClick={() => onInstall(entry.framework)}
-                    >
-                      Install {FRAMEWORK_LABEL[entry.framework]}
-                    </InstallButton>
-                  )}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-
-      {install.framework ? (
-        <InstallLog
-          label={`Install log, ${FRAMEWORK_LABEL[install.framework]}`}
-          status={install.status}
-          log={install.log}
-          message={install.message}
-          succeeded={`${FRAMEWORK_LABEL[install.framework]} installed.`}
-        />
-      ) : null}
-    </div>
+function LanguageServerRow({
+  server: { status, session, install, onInstall, onRetry },
+}: {
+  server: LanguageServer;
+}) {
+  const help = "The language server behind suggestions and docs.";
+  if (!status) {
+    return <SettingRow label="ty" help={help} status={<Skeleton className="h-3.5 w-16" />} />;
+  }
+  const installing = install.status === "running" || status.installing;
+  const version = suggestionsVersion(status, session);
+  // While suggestions are off the session has nothing to say; the row still says whether ty is there.
+  const state = status.enabled ? suggestionsState(status, session) : null;
+  let mark: ReactNode;
+  let action: ReactNode = null;
+  let failure: ReactNode = null;
+  if (!status.installed) {
+    mark = <RowStatus tone="idle">Not installed</RowStatus>;
+    action = (
+      <InstallButton installing={installing} disabled={installing} onClick={onInstall}>
+        {install.status === "failed" ? "Try again" : "Install"}
+      </InstallButton>
+    );
+  } else if (state?.kind === "failed") {
+    mark = <RowStatus tone="fail">Stopped</RowStatus>;
+    action = (
+      <Button variant="outline" size="xs" onClick={onRetry}>
+        Try again
+      </Button>
+    );
+    failure = <Notice tone="fail">{state.message}</Notice>;
+  } else if (state?.kind === "starting" || state?.kind === "restarting") {
+    mark = <RowStatus tone="busy">{SESSION_WORD[state.kind]}</RowStatus>;
+  } else {
+    mark = <RowStatus tone="pass">{version ?? "Installed"}</RowStatus>;
+  }
+  const log =
+    install.status === "running" || install.status === "failed" ? (
+      <InstallLog status={install.status} log={install.log} message={install.message} />
+    ) : null;
+  return (
+    <SettingRow
+      label="ty"
+      help={status.installed ? help : `${help} About 14 MB.`}
+      status={mark}
+      body={
+        log || failure ? (
+          <>
+            {log}
+            {failure}
+          </>
+        ) : null
+      }
+    >
+      {action}
+    </SettingRow>
   );
 }

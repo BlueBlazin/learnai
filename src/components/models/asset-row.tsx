@@ -2,26 +2,31 @@ import { AppLink } from "@/components/app/app-link";
 import { CopyButton } from "@/components/app/copy-button";
 import { MetaItem, MetaList } from "@/components/app/meta-list";
 import { Notice } from "@/components/app/notice";
+import { RowStatus } from "@/components/settings/row-status";
+import { SettingRow } from "@/components/settings/setting-row";
 import type { ModelAsset } from "@/lib/api";
 import { type AssetDownload, isInFlight } from "@/lib/api/asset-fetch-state";
-import { formatBytes, formatSizeMb } from "@/lib/format";
+import { formatBytes, formatSizeMb, pluralize } from "@/lib/format";
 import { routes } from "@/lib/routes";
 import { AssetDownloadButton, RemoveAssetButton } from "./asset-actions";
 import { AssetProgress } from "./asset-progress";
 import { AssetStateMark } from "./asset-state-mark";
 
-/** What is on disk against what a download brings: "712 MB", "about 712 MB", "214 MB of about 712 MB". */
+/** What is on disk against what a download brings: "712 MB", "About 712 MB", "214 MB of about 712 MB". */
 function sizeText(asset: ModelAsset): string {
   if (asset.state === "present") return formatBytes(asset.bytesOnDisk);
-  const declared = `about ${formatSizeMb(asset.sizeMb)}`;
-  return asset.bytesOnDisk > 0 ? `${formatBytes(asset.bytesOnDisk)} of ${declared}` : declared;
+  const declared = formatSizeMb(asset.sizeMb);
+  return asset.bytesOnDisk > 0
+    ? `${formatBytes(asset.bytesOnDisk)} of about ${declared}`
+    : `About ${declared}`;
 }
 
 /**
- * One model in Settings: its name and state, where it comes from, how large it
- * is, which problems use it, and where it is on disk; with Download, Cancel
- * (and live progress), or Remove. A failed download says why in one line and
- * offers another try.
+ * One model in Settings, on one line: its name, its size and how many problems
+ * use it, whether it is on disk, and Download, Cancel, or Remove. Progress
+ * runs under the line while it downloads; a download that failed or stopped
+ * short says why there. Behind the name: where it comes from, where it is on
+ * disk, and the problems that use it.
  */
 export function AssetRow({
   asset,
@@ -51,74 +56,75 @@ export function AssetRow({
   const inFlight = isInFlight(download);
   // Between the judge reporting an asset complete and the listing being read again.
   const state = download?.phase === "finished" ? "present" : asset.state;
-  const onDisk = state !== "missing" || asset.bytesOnDisk > 0;
+  const failed = download?.phase === "failed";
+  const users = asset.problems.length;
   return (
-    <li className="flex flex-col gap-2.5 py-4">
-      <div className="flex items-start justify-between gap-6">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="selectable text-sm font-medium">{asset.name}</span>
-            {inFlight ? null : <AssetStateMark state={state} />}
+    <SettingRow
+      label={asset.name}
+      help={users > 0 ? `${sizeText(asset)}, used by ${pluralize(users, "problem")}` : sizeText(asset)}
+      status={
+        inFlight ? (
+          <RowStatus tone="busy">{canceling ? "Canceling" : "Downloading"}</RowStatus>
+        ) : (
+          <AssetStateMark state={state} />
+        )
+      }
+      body={
+        inFlight ? (
+          <AssetProgress name={asset.name} download={download} canceling={canceling} />
+        ) : failed ? (
+          <Notice tone="fail">{download.message}</Notice>
+        ) : state === "incomplete" ? (
+          <p className="selectable text-xs text-muted-foreground">
+            {asset.reason
+              ? `The download did not finish (${asset.reason}). Resuming keeps the files that are complete.`
+              : "The download did not finish. Resuming keeps the files that are complete."}
           </p>
-          <MetaList>
-            <MetaItem label="From">
-              <span className="selectable font-mono">{asset.repo}</span>
+        ) : null
+      }
+      details={
+        <MetaList layout="rows">
+          <MetaItem label="From">
+            <span className="selectable font-mono">{asset.repo}</span>
+          </MetaItem>
+          <MetaItem label="On disk">
+            <span className="flex items-center gap-1">
+              <code className="selectable min-w-0 truncate font-mono" title={asset.path}>
+                {asset.path}
+              </code>
+              <CopyButton text={asset.path} label="Copy path" />
+            </span>
+          </MetaItem>
+          {users > 0 ? (
+            <MetaItem label="Used by">
+              <ul className="flex flex-col gap-1">
+                {asset.problems.map((id) => (
+                  <li key={id}>
+                    <AppLink to={routes.problem(id)}>{titles?.get(id) ?? id}</AppLink>
+                  </li>
+                ))}
+              </ul>
             </MetaItem>
-            <MetaItem label="Size">
-              <span className="selectable tabular">{sizeText(asset)}</span>
-            </MetaItem>
-            {asset.problems.length > 0 ? (
-              <MetaItem label="Used by">
-                <ul className="flex flex-wrap gap-x-4 gap-y-1">
-                  {asset.problems.map((id) => (
-                    <li key={id}>
-                      <AppLink to={routes.problem(id)}>{titles?.get(id) ?? id}</AppLink>
-                    </li>
-                  ))}
-                </ul>
-              </MetaItem>
-            ) : null}
-          </MetaList>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <AssetDownloadButton
-            state={state}
-            download={download}
-            busy={busy || removing}
-            canceling={canceling}
-            onDownload={onDownload}
-            onCancel={onCancel}
-          />
-          {state === "present" && !inFlight ? (
-            <RemoveAssetButton
-              name={asset.name}
-              size={formatBytes(asset.bytesOnDisk)}
-              disabled={busy || removing}
-              onRemove={onRemove}
-            />
           ) : null}
-        </div>
-      </div>
-
-      {isInFlight(download) ? (
-        <AssetProgress name={asset.name} download={download} canceling={canceling} />
+        </MetaList>
+      }
+    >
+      <AssetDownloadButton
+        state={state}
+        download={download}
+        busy={busy || removing}
+        canceling={canceling}
+        onDownload={onDownload}
+        onCancel={onCancel}
+      />
+      {state === "present" && !inFlight ? (
+        <RemoveAssetButton
+          name={asset.name}
+          size={formatBytes(asset.bytesOnDisk)}
+          disabled={busy || removing}
+          onRemove={onRemove}
+        />
       ) : null}
-      {download?.phase === "failed" ? <Notice tone="fail">{download.message}</Notice> : null}
-      {state === "incomplete" && !inFlight && download?.phase !== "failed" ? (
-        <p className="selectable text-xs text-muted-foreground">
-          {asset.reason
-            ? `The download did not finish (${asset.reason}). Resuming keeps the files that are complete.`
-            : "The download did not finish. Resuming keeps the files that are complete."}
-        </p>
-      ) : null}
-      {onDisk && !inFlight ? (
-        <p className="flex items-center gap-1 text-xs text-muted-foreground">
-          <code className="selectable min-w-0 truncate font-mono" title={asset.path}>
-            {asset.path}
-          </code>
-          <CopyButton text={asset.path} label="Copy path" />
-        </p>
-      ) : null}
-    </li>
+    </SettingRow>
   );
 }

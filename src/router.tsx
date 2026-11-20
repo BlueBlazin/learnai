@@ -6,6 +6,8 @@ import {
   type LibrarySearch,
   type PathsSearch,
   type ProblemSearch,
+  parseSettingsSection,
+  type SettingsSearch,
   STATEMENT_TABS,
   type StatementTab,
 } from "@/lib/routes";
@@ -67,9 +69,14 @@ const problemRoute = createRoute({
   },
 }).lazy(() => import("@/routes/problem").then((module) => module.Route));
 
-const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings" }).lazy(() =>
-  import("@/routes/settings").then((module) => module.Route),
-);
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  validateSearch: (search: Record<string, unknown>): SettingsSearch => {
+    const section = parseSettingsSection(search.section);
+    return section === "general" ? {} : { section };
+  },
+}).lazy(() => import("@/routes/settings").then((module) => module.Route));
 
 /**
  * Development only: every composed component in its states. The whole route,

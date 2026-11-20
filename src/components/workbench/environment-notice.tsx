@@ -42,7 +42,7 @@ export function EnvironmentNotice({
       layout={layout}
       action={
         <>
-          {failed ? <AppLink to={routes.settings()}>See the log in Settings</AppLink> : null}
+          {failed ? <AppLink to={routes.settings("environment")}>See the log in Settings</AppLink> : null}
           <InstallButton installing={installing} disabled={installing} onClick={() => onInstall(target)}>
             {failed ? "Try again" : label}
           </InstallButton>

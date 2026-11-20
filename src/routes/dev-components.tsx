@@ -73,14 +73,18 @@ import { ReviewList } from "@/components/review/review-list";
 import { ReviewOutcomeNote } from "@/components/review/review-outcome";
 import { ReviewStrip } from "@/components/review/review-strip";
 import { UpcomingReviews } from "@/components/review/upcoming-reviews";
-import { CatalogIssueList } from "@/components/settings/catalog-issue-list";
-import { ContentPanel } from "@/components/settings/content-panel";
-import { EnvironmentPanel } from "@/components/settings/environment-panel";
+import { EnvironmentPanel, type LanguageServer } from "@/components/settings/environment-panel";
+import { FilesPanel } from "@/components/settings/files-panel";
+import { GeneralPanel } from "@/components/settings/general-panel";
 import { GoalSetting } from "@/components/settings/goal-setting";
 import { InstallButton, UvGuideButton } from "@/components/settings/install-actions";
-import { PathField } from "@/components/settings/path-field";
+import { InstallLog } from "@/components/settings/install-log";
+import { PathRow } from "@/components/settings/path-row";
 import { ReviewSetting } from "@/components/settings/review-setting";
-import { SuggestionsPanel } from "@/components/settings/suggestions-panel";
+import { RowStatus } from "@/components/settings/row-status";
+import { SettingList, SettingRow } from "@/components/settings/setting-row";
+import { SettingSwitch } from "@/components/settings/setting-switch";
+import { SettingsNav } from "@/components/settings/settings-nav";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { AddTargetForm } from "@/components/targets/add-target-form";
 import { CheckStepList } from "@/components/targets/check-step-list";
@@ -361,6 +365,13 @@ const EDITOR_STATUS: EditorStatus = {
   state: null,
 };
 const IDLE_EDITOR_INSTALL: EditorInstallState = { status: "idle", log: [], message: null };
+const LANGUAGE_SERVER: LanguageServer = {
+  status: EDITOR_STATUS,
+  session: { status: "idle" },
+  install: IDLE_EDITOR_INSTALL,
+  onInstall: () => {},
+  onRetry: () => {},
+};
 
 const SAMPLE_CODE = `import torch
 
@@ -835,6 +846,17 @@ const NO_DOWNLOADS: AssetFetchController = {
 };
 const noop = () => {};
 
+const CATALOG_ISSUES = [
+  {
+    path: "/Users/ada/Developer/learnai/problems/sampling/min-p-draft/problem.toml",
+    message: "missing starter/torch.py",
+  },
+  {
+    path: "/Users/ada/Developer/learnai/problems/serving/track.toml",
+    message: "missing field `title`",
+  },
+];
+
 const SUBMISSION_DETAIL: SubmissionDetail = {
   ...(SUBMISSIONS[1] as Submission),
   code: SAMPLE_CODE,
@@ -1050,15 +1072,8 @@ function DevComponentsScreen() {
           <TrackSection track={TRACKS[1] as Track} problems={PROBLEMS} filtered={false} />
           <TrackSection track={TRACKS[0] as Track} problems={PROBLEMS.slice(0, 1)} filtered />
         </Specimen>
-        <Specimen name="ThemePicker, PathField, ContentPanel">
-          <div className="flex max-w-measure flex-col gap-3">
-            <ThemePicker value={theme} onChange={setTheme} />
-            <ContentPanel root="/Users/ada/Developer/learnai" issues={[]} />
-            <PathField
-              label="Content root"
-              path="/Users/ada/Developer/learnai/a/very/long/path/that/keeps/going/and/going/until/it/truncates"
-            />
-          </div>
+        <Specimen name="ThemePicker">
+          <ThemePicker value={theme} onChange={setTheme} />
         </Specimen>
       </Section>
 
@@ -1423,52 +1438,12 @@ function DevComponentsScreen() {
             />
           </div>
         </Specimen>
-        <Specimen name="SuggestionsPanel (Settings): starting; not installed, install running; stopped; off">
-          <div className="flex flex-col gap-10">
-            <SuggestionsPanel
-              status={EDITOR_STATUS}
-              session={{ status: "starting" }}
-              onToggle={noop}
-              install={IDLE_EDITOR_INSTALL}
-              onInstall={noop}
-              onRetry={noop}
-            />
-            <SuggestionsPanel
-              status={{ ...EDITOR_STATUS, installed: false, serverVersion: null }}
-              session={{ status: "notInstalled", message: "The language server is not installed." }}
-              onToggle={noop}
-              install={{
-                status: "running",
-                log: ["$ uv sync --project python --extra torch --extra editor", "Downloading ty (14.1MiB)"],
-                message: null,
-              }}
-              onInstall={noop}
-              onRetry={noop}
-            />
-            <SuggestionsPanel
-              status={EDITOR_STATUS}
-              session={{ status: "failed", message: "The language server keeps stopping. Try again." }}
-              onToggle={noop}
-              install={IDLE_EDITOR_INSTALL}
-              onInstall={noop}
-              onRetry={noop}
-            />
-            <SuggestionsPanel
-              status={{ ...EDITOR_STATUS, enabled: false }}
-              session={{ status: "off" }}
-              onToggle={noop}
-              install={IDLE_EDITOR_INSTALL}
-              onInstall={noop}
-              onRetry={noop}
-            />
-          </div>
-        </Specimen>
-        <Specimen name="ReviewSetting (Settings): on, off, saving">
-          <div className="flex flex-col gap-6">
+        <Specimen name="ReviewSetting (Settings): on, off (the line says what became of the schedules), saving">
+          <SettingList className="max-w-measure">
             <ReviewSetting enabled={reviewsOn} onChange={setReviewsOn} />
             <ReviewSetting enabled={false} onChange={noop} />
             <ReviewSetting enabled disabled onChange={noop} />
-          </div>
+          </SettingList>
         </Specimen>
       </Section>
 
@@ -1633,10 +1608,10 @@ function DevComponentsScreen() {
           </div>
         </Specimen>
         <Specimen name="GoalSetting (Settings): a listed goal, and one saved from elsewhere">
-          <div className="flex flex-col gap-4">
+          <SettingList className="max-w-measure">
             <GoalSetting value={goal} onChange={setGoal} />
             <GoalSetting value={8} onChange={noop} />
-          </div>
+          </SettingList>
         </Specimen>
         <Specimen name="ProgressSummary: in progress, and empty">
           <div className="grid grid-cols-2 gap-10">
@@ -1671,8 +1646,72 @@ function DevComponentsScreen() {
             <GettingStarted />
           </div>
         </Specimen>
-        <Specimen name="EnvironmentPanel: one framework missing, install running; uv missing, install failed">
-          <div className="flex flex-col gap-10">
+      </Section>
+
+      <Section title="Settings" aside="settings/">
+        <Specimen name="SettingsNav: the current category, and marks on the ones that need the user">
+          <SettingsNav current="environment" attention={new Set(["models", "files"])} className="w-44" />
+        </Specimen>
+        <Specimen name="SettingList and SettingRow: a name alone; help and a control; status and an action; a body under the line; details behind the name (statuses and controls share columns down the list)">
+          <SettingList className="max-w-measure">
+            <SettingRow label="A name alone" />
+            <SettingRow label="A control" help="One short line of help, only where the name is not enough.">
+              <Button variant="outline" size="xs">
+                Action
+              </Button>
+            </SettingRow>
+            <SettingRow label="A status" status={<RowStatus tone="pass">1.4.2</RowStatus>} />
+            <SettingRow
+              label="A status and an action"
+              status={<RowStatus tone="idle">Not installed</RowStatus>}
+              body={<Notice tone="fail">What went wrong sits under the line.</Notice>}
+            >
+              <Button variant="outline" size="xs">
+                Try again
+              </Button>
+            </SettingRow>
+            <SettingRow
+              label="Details behind the name"
+              help="The name opens and closes them."
+              status={<RowStatus tone="warn">2 issues</RowStatus>}
+              details={<p className="text-xs text-muted-foreground">Detail on demand.</p>}
+            />
+          </SettingList>
+        </Specimen>
+        <Specimen name="RowStatus: in place, not there, needs the user, failed, under way">
+          <div className="flex flex-wrap items-center gap-6">
+            <RowStatus tone="pass">2.15.0</RowStatus>
+            <RowStatus tone="idle">Not installed</RowStatus>
+            <RowStatus tone="warn">Not found</RowStatus>
+            <RowStatus tone="fail">Check failed yesterday</RowStatus>
+            <RowStatus tone="busy">Checking</RowStatus>
+          </div>
+        </Specimen>
+        <Specimen name="SettingSwitch: on, saving, value not read yet; PathRow: a path that truncates">
+          <SettingList className="max-w-measure">
+            <SettingSwitch label="A preference" help="What it does, in one line." checked onChange={noop} />
+            <SettingSwitch label="A preference being saved" checked={false} disabled onChange={noop} />
+            <SettingSwitch label="A preference not read yet" checked={undefined} onChange={noop} />
+            <PathRow
+              label="Content root"
+              path="/Users/ada/Developer/learnai/a/very/long/path/that/keeps/going/and/going/until/it/truncates/at/the/edge"
+            />
+          </SettingList>
+        </Specimen>
+        <Specimen name="GeneralPanel">
+          <div className="max-w-measure">
+            <GeneralPanel
+              theme={theme}
+              onThemeChange={setTheme}
+              weeklyGoal={goal}
+              onWeeklyGoalChange={setGoal}
+              reviews={{ value: reviewsOn, onChange: setReviewsOn }}
+              suggestions={{ value: true, onChange: noop }}
+            />
+          </div>
+        </Specimen>
+        <Specimen name="EnvironmentPanel: MLX installing with its log under its row, ty starting; uv missing, a JAX install that failed, ty not installed and installing; Python not set up, ty stopped; ty status not read yet">
+          <div className="flex max-w-measure flex-col gap-10">
             <EnvironmentPanel
               env={{
                 uv: "0.13.8",
@@ -1680,6 +1719,7 @@ function DevComponentsScreen() {
                 root: "/Users/ada/Developer/learnai",
                 frameworks: [
                   { framework: "torch", installed: true, version: "2.15.0" },
+                  { framework: "jax", installed: false, version: null },
                   { framework: "mlx", installed: false, version: null },
                 ],
               }}
@@ -1689,7 +1729,8 @@ function DevComponentsScreen() {
                 log: ["$ uv sync --extra mlx", "Resolved 61 packages in 4ms"],
                 message: null,
               }}
-              onInstall={() => {}}
+              onInstall={noop}
+              server={{ ...LANGUAGE_SERVER, session: { status: "starting" } }}
             />
             <EnvironmentPanel
               env={{
@@ -1704,8 +1745,59 @@ function DevComponentsScreen() {
                 log: ["error: failed to spawn `uv`"],
                 message: "uv was not found on your PATH.",
               }}
-              onInstall={() => {}}
+              onInstall={noop}
+              server={{
+                ...LANGUAGE_SERVER,
+                status: { ...EDITOR_STATUS, installed: false, serverVersion: null },
+                session: { status: "notInstalled", message: "The language server is not installed." },
+                install: {
+                  status: "running",
+                  log: [
+                    "$ uv sync --project python --extra torch --extra editor",
+                    "Downloading ty (14.1MiB)",
+                  ],
+                  message: null,
+                },
+              }}
             />
+            <EnvironmentPanel
+              env={{
+                uv: "0.13.8",
+                python: null,
+                root: "/Users/ada/Developer/learnai",
+                frameworks: [{ framework: "torch", installed: false, version: null }],
+              }}
+              install={IDLE_INSTALL}
+              onInstall={noop}
+              server={{
+                ...LANGUAGE_SERVER,
+                session: { status: "failed", message: "The language server keeps stopping. Try again." },
+              }}
+            />
+            <EnvironmentPanel
+              env={{
+                uv: "0.13.8",
+                python: "3.15.2",
+                root: "/Users/ada/Developer/learnai",
+                frameworks: [{ framework: "torch", installed: true, version: "2.15.0" }],
+              }}
+              install={IDLE_INSTALL}
+              onInstall={noop}
+              server={{ ...LANGUAGE_SERVER, status: undefined }}
+            />
+          </div>
+        </Specimen>
+        <Specimen name="InstallLog: running, failed (nothing once it succeeded)">
+          <div className="flex max-w-measure flex-col gap-4">
+            <InstallLog status="running" log={["$ uv sync --extra mlx"]} message={null} />
+            <InstallLog status="failed" log={["error: failed to spawn `uv`"]} message={null} />
+            <InstallLog status="succeeded" log={["done"]} message={null} />
+          </div>
+        </Specimen>
+        <Specimen name="FilesPanel: a clean catalog; entries that could not be loaded, listed behind the Catalog row (CatalogIssueList)">
+          <div className="flex max-w-measure flex-col gap-10">
+            <FilesPanel root="/Users/ada/Developer/learnai" issues={[]} problemCount={200} />
+            <FilesPanel root="/Users/ada/Developer/learnai" issues={CATALOG_ISSUES} problemCount={198} />
           </div>
         </Specimen>
       </Section>
@@ -1757,8 +1849,8 @@ function DevComponentsScreen() {
             <RemoveAssetButton name="granite-4.0-350m" size="712 MB" onRemove={noop} />
           </div>
         </Specimen>
-        <Specimen name="AssetRow: downloaded, not downloaded, incomplete; preparing, downloading, canceling, failed, being removed">
-          <RuledList>
+        <Specimen name="AssetRow: downloaded, not downloaded, incomplete; preparing, downloading, canceling, failed, being removed (each name opens its source, path, and problems)">
+          <SettingList className="max-w-measure">
             <AssetRow
               asset={MODEL_PRESENT}
               busy={false}
@@ -1829,10 +1921,10 @@ function DevComponentsScreen() {
               onCancel={noop}
               onRemove={noop}
             />
-          </RuledList>
+          </SettingList>
         </Specimen>
         <Specimen name="ModelsPanel: three models, one downloading; a catalog that needs no model">
-          <div className="flex flex-col gap-10">
+          <div className="flex max-w-measure flex-col gap-10">
             <ModelsPanel
               listing={MODELS}
               titles={MODEL_TITLES}
@@ -1972,16 +2064,15 @@ function DevComponentsScreen() {
             <CheckStepList steps={stepProgress("local", TARGET_LOCAL.lastCheck?.steps ?? [], false)} />
           </div>
         </Specimen>
-        <Specimen name="TargetSummary: an NVIDIA machine; a Mac">
-          <div className="flex flex-col gap-3">
-            {TARGET_HEALTHY.lastCheck?.doctor ? (
-              <TargetSummary doctor={TARGET_HEALTHY.lastCheck.doctor} />
-            ) : null}
-            {TARGET_LOCAL.lastCheck?.doctor ? <TargetSummary doctor={TARGET_LOCAL.lastCheck.doctor} /> : null}
+        <Specimen name="TargetSummary: a remote NVIDIA machine with its folder; a Mac; a machine no check has read yet">
+          <div className="flex flex-col gap-5">
+            <TargetSummary doctor={TARGET_HEALTHY.lastCheck?.doctor ?? null} remoteDir="~/.learnai" />
+            <TargetSummary doctor={TARGET_LOCAL.lastCheck?.doctor ?? null} />
+            <TargetSummary doctor={null} remoteDir="~/.learnai" />
           </div>
         </Specimen>
-        <Specimen name="TargetRow: this computer, healthy, failing its check, never checked, checking, a check that could not start">
-          <RuledList>
+        <Specimen name="TargetRow: this computer, healthy, failing its check (open by itself), never checked, checking (open by itself), a check that could not start">
+          <SettingList className="max-w-measure">
             <TargetRow target={TARGET_LOCAL} onCheck={noop} />
             <TargetRow target={TARGET_HEALTHY} onCheck={noop} onRemove={noop} />
             <TargetRow target={TARGET_FAILING} onCheck={noop} onRemove={noop} />
@@ -1999,24 +2090,26 @@ function DevComponentsScreen() {
               onCheck={noop}
               onRemove={noop}
             />
-          </RuledList>
+          </SettingList>
         </Specimen>
-        <Specimen name="AddTargetForm: hosts to choose from; every host already a target; no host in the configuration">
+        <Specimen name="AddTargetForm (behind Add a machine): hosts to choose from; every host already a target; no host in the configuration">
           <div className="flex flex-col gap-6">
             <AddTargetForm hosts={FIXTURE_SSH_HOSTS} taken={["gpu-box"]} onAdd={noop} />
             <AddTargetForm hosts={FIXTURE_SSH_HOSTS.slice(0, 1)} taken={["gpu-box"]} onAdd={noop} />
             <AddTargetForm hosts={[]} taken={[]} onAdd={noop} />
           </div>
         </Specimen>
-        <Specimen name="TargetsPanel">
-          <TargetsPanel
-            targets={TARGETS}
-            hosts={FIXTURE_SSH_HOSTS}
-            checks={{}}
-            onCheck={noop}
-            onAdd={noop}
-            onRemove={noop}
-          />
+        <Specimen name="TargetsPanel: Add a machine opens the form">
+          <div className="max-w-measure">
+            <TargetsPanel
+              targets={TARGETS}
+              hosts={FIXTURE_SSH_HOSTS}
+              checks={{}}
+              onCheck={noop}
+              onAdd={noop}
+              onRemove={noop}
+            />
+          </div>
         </Specimen>
         <Specimen name="TargetPicker: in a toolbar; disabled during a run; hidden with only this computer">
           <div className="flex flex-col gap-2">
@@ -2049,7 +2142,7 @@ function DevComponentsScreen() {
         </Specimen>
       </Section>
 
-      <Section title="First run and catalog health" aside="app/, workbench/, settings/">
+      <Section title="First run" aside="app/, workbench/">
         <Specimen name="Notice: inline warning with an action, information, success, failure, strip">
           <div className="flex max-w-measure flex-col gap-3">
             <Notice
@@ -2092,24 +2185,6 @@ function DevComponentsScreen() {
               install={IDLE_INSTALL}
               onInstall={() => {}}
             />
-          </div>
-        </Specimen>
-        <Specimen name="CatalogIssueList: closed by default; nothing when the catalog is clean">
-          <div className="max-w-measure">
-            <CatalogIssueList
-              root="/Users/ada/Developer/learnai"
-              issues={[
-                {
-                  path: "/Users/ada/Developer/learnai/problems/sampling/min-p-draft/problem.toml",
-                  message: "missing starter/torch.py",
-                },
-                {
-                  path: "/Users/ada/Developer/learnai/problems/serving/track.toml",
-                  message: "missing field `title`",
-                },
-              ]}
-            />
-            <CatalogIssueList issues={[]} />
           </div>
         </Specimen>
       </Section>

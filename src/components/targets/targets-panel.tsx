@@ -1,4 +1,8 @@
-import { RuledList } from "@/components/app/ruled-list";
+import { Plus } from "lucide-react";
+import { useState } from "react";
+import { SettingList } from "@/components/settings/setting-row";
+import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { SshHost, TargetInfo } from "@/lib/api";
 import type { TargetCheckState } from "@/lib/api/target-check-state";
 import { AddTargetForm } from "./add-target-form";
@@ -6,8 +10,8 @@ import { TargetRow } from "./target-row";
 
 /**
  * Where the judge can run: this computer first, then the remote machines that
- * were added, each with its last check; and the form that adds another from
- * the SSH configuration.
+ * were added, a row each. "Add a machine" opens the form that adds another
+ * from the SSH configuration, and closes again once one has been added.
  */
 export function TargetsPanel({
   targets,
@@ -30,9 +34,16 @@ export function TargetsPanel({
   onAdd: (host: string) => void;
   onRemove: (name: string) => void;
 }) {
+  const [addOpen, setAddOpen] = useState(false);
+  // A machine that was just added closes the form: its row is the confirmation.
+  const [count, setCount] = useState(targets.length);
+  if (count !== targets.length) {
+    setCount(targets.length);
+    if (targets.length > count) setAddOpen(false);
+  }
   return (
-    <div className="flex flex-col gap-5">
-      <RuledList aria-label="Run targets">
+    <div className="flex flex-col gap-4">
+      <SettingList aria-label="Run targets">
         {targets.map((target) => (
           <TargetRow
             key={target.name}
@@ -43,13 +54,21 @@ export function TargetsPanel({
             onRemove={target.kind === "ssh" ? () => onRemove(target.name) : undefined}
           />
         ))}
-      </RuledList>
-      <AddTargetForm
-        hosts={hosts}
-        taken={targets.flatMap((target) => target.host ?? [])}
-        adding={adding}
-        onAdd={onAdd}
-      />
+      </SettingList>
+      <Collapsible open={addOpen} onOpenChange={setAddOpen} className="flex flex-col items-start gap-3">
+        <CollapsibleTrigger render={<Button variant="outline" size="sm" />}>
+          <Plus data-icon="inline-start" />
+          Add a machine
+        </CollapsibleTrigger>
+        <CollapsibleContent className="w-full">
+          <AddTargetForm
+            hosts={hosts}
+            taken={targets.flatMap((target) => target.host ?? [])}
+            adding={adding}
+            onAdd={onAdd}
+          />
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }

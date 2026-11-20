@@ -8,6 +8,7 @@ import type {
   Requires,
   Verdict,
 } from "@/lib/api";
+import type { SettingsSection } from "@/lib/routes";
 
 /**
  * How an outcome is colored. Color never carries the meaning alone: every use pairs
@@ -75,6 +76,14 @@ export const ASSET_STATE_LABEL: Record<AssetState, string> = {
   present: "Downloaded",
   missing: "Not downloaded",
   incomplete: "Incomplete",
+};
+
+export const SETTINGS_SECTION_LABEL: Record<SettingsSection, string> = {
+  general: "General",
+  environment: "Environment",
+  models: "Models",
+  targets: "Run targets",
+  files: "Files",
 };
 
 export const VERDICT_LABEL: Record<Verdict, string> = {

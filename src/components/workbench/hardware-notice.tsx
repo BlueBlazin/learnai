@@ -52,7 +52,7 @@ export function HardwareNotice({
     ) : null;
   } else {
     way = " A remote machine that has it can run every case.";
-    action = <AppLink to={routes.settings()}>Add a remote machine</AppLink>;
+    action = <AppLink to={routes.settings("targets")}>Add a remote machine</AppLink>;
   }
   return (
     <Notice tone="info" layout={layout} action={action}>

@@ -286,11 +286,11 @@ Composed components, by area (all shown in their states at
 | `results/` | `ResultsPanel`, `VerdictHeader`, `VerdictMark`, `CaseMark`, `CaseList`, `MetricList`, `OutputBlock`, `RunProgress` |
 | `library/` | `LibraryFilterBar`, `FilterSelect`, `TrackList`, `TrackSection` |
 | `workbench/` | `StatementPane`, `EditorPane`, `PaneToolbar`, `EnvironmentNotice`, `HardwareNotice`, `SaveIndicator`, `SuggestionsStatus` |
-| `models/` | `ModelsPanel`, `AssetRow`, `AssetStateMark`, `AssetProgress`, `AssetNotice` / `AssetNoticeList`, `AssetDownloadButton`, `RemoveAssetButton` |
-| `targets/` | `TargetsPanel`, `TargetRow`, `TargetSummary`, `CheckStepList`, `CheckStepMark`, `FixText`, `AddTargetForm`, `TargetPicker` |
+| `models/` | `ModelsPanel` and `AssetRow` (the Models pane of Settings, built on `SettingRow`), `AssetStateMark`, `AssetProgress`, `AssetNotice` / `AssetNoticeList`, `AssetDownloadButton`, `RemoveAssetButton` |
+| `targets/` | `TargetsPanel` and `TargetRow` (the Run targets pane of Settings, built on `SettingRow`), `TargetSummary`, `CheckStepList`, `CheckStepMark`, `FixText`, `AddTargetForm`, `TargetPicker` |
 | `path/` | `PathSummary`, `PathStage`, `PathEntryList`, `StageProgressBar`, `StagePlates`, `StageSwatch` |
 | `home/` | `SceneBanner`, `ContinueEntry`, `HabitStrip`, `RouteSummary`, `ActivityCalendar`, `GettingStarted`, `ProgressSummary`, `TrackProgress` |
-| `settings/` | `EnvironmentPanel`, `InstallButton`, `UvGuideButton`, `ThemePicker`, `ContentPanel`, `PathField`, `CatalogIssueList`, `SettingSwitch`, `ReviewSetting`, `GoalSetting`, `SuggestionsPanel`, `InstallLog` |
+| `settings/` | `SettingsNav`, `SettingList` / `SettingRow`, `RowStatus`, `SettingSwitch`, `PathRow`, `GeneralPanel`, `ThemePicker`, `GoalSetting`, `ReviewSetting`, `EnvironmentPanel`, `InstallButton`, `UvGuideButton`, `InstallLog`, `FilesPanel`, `CatalogIssueList` |
 
 Patterns that recur, and the one component that owns each:
 
@@ -306,8 +306,12 @@ Patterns that recur, and the one component that owns each:
   `SvgFigureBody`. `ProblemFigures` wraps the prose of one problem so that
   `assets/...` images resolve through the backend; `Prose` itself knows nothing
   about problems.
-- A preference that is on or off, with its explanation: `SettingSwitch`. The
-  streamed log of an install and how it ended: `InstallLog`.
+- One thing in Settings on one line (its name, at most one line of help, its
+  status, its control), with what follows under it and detail behind its name:
+  `SettingRow`, inside a `SettingList`. Where such a row stands, as a shape and
+  a word: `RowStatus`. A preference that is on or off: `SettingSwitch`, which
+  is built on the row. The streamed log of an install, while it runs and after
+  it failed: `InstallLog`.
 - Copy to the clipboard: `CopyButton`. A row that opens: `Collapsible` with
   `DisclosureChevron`.
 
@@ -384,6 +388,50 @@ order of the list already says so; one that is off the path gets the usual
 "best after ...". When the content root defines several paths, a row of text
 tabs above the title switches between them; with one path there is no
 switcher.
+
+### The Settings screen
+
+Settings is a window of its own kind: a list of five categories at the left of
+the page column and one pane beside it, never a long page. The categories are
+General, Environment, Models, Run targets, and Files (`SettingsNav`). They are
+links: the category is the `section` search parameter
+(`routes.settings(section)`; General is the default and stays out of the URL;
+an unknown value shows General), so a notice elsewhere in the app opens the
+pane that fixes it. The list stays in place while a long pane scrolls, and the
+current category is marked the way the Library marks its track.
+
+A category carries a small warning mark when something in it needs the user:
+an environment that cannot run a solution or an install that failed, a model
+download that failed or stopped short, a run target whose last check failed,
+catalog entries that could not be loaded. The decision is one pure function
+(`settingsAttention` in `src/lib/settings.ts`). Things that are merely
+optional and absent (MLX, a model never downloaded) are not marked.
+
+Every pane is a `SettingList` of `SettingRow`s, and the rules are the row's:
+
+- One row per thing, and each fact once. Python is one row of Environment; the
+  language server (ty) is another, not a section of its own; the switch that
+  turns suggestions on is a preference, so it is in General.
+- A row is a name in the interface face, at most one short line of help under
+  it and only where the name is not enough, and at the right its status
+  (`RowStatus`: a shape and a word or a version) and its control. Statuses and
+  controls share columns down the list, so they line up whatever their widths.
+  Rows are divided by hairlines. A row is never a box: no background, no
+  border of its own, no shadow.
+- What is happening now goes under the row it belongs to and leaves when it is
+  over: an install's log while it runs and after it failed, a download's
+  progress, the reason a download or a check could not go on.
+- Everything else is on demand, behind the row's name, which opens it: a
+  model's source, path, and the problems that use it (the row itself says
+  "used by 11 problems"); a target's machine, frameworks, and the steps of its
+  last check. A target's details open by themselves while a check runs and
+  whenever the last one failed, and close again when a check they opened for
+  passes. "Add a machine" is one button; the form, or what to add to
+  `~/.ssh/config` when there is no host to offer, appears when it is pressed.
+- No section taglines and no paragraphs of explanation. A sentence that is
+  still worth having lives where it matters: the Reviews row says what became
+  of the schedules while reviews are off; that keys stay with SSH is said in
+  the add-machine form; what removing deletes is said in the confirmation.
 
 Conventions:
 

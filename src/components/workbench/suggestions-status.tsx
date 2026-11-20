@@ -67,13 +67,13 @@ export function SuggestionsStatus({
         </PopoverHeader>
         <div className="flex items-center gap-3 text-xs">
           {missing ? (
-            <AppLink to={routes.settings()}>Install in Settings</AppLink>
+            <AppLink to={routes.settings("environment")}>Install in Settings</AppLink>
           ) : (
             <>
               <Button variant="outline" size="xs" onClick={onRetry}>
                 Try again
               </Button>
-              <AppLink to={routes.settings()}>Open Settings</AppLink>
+              <AppLink to={routes.settings("environment")}>Open Settings</AppLink>
             </>
           )}
         </div>

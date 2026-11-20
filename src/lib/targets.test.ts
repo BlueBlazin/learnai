@@ -8,6 +8,7 @@ import {
   installedFrameworks,
   knownHardware,
   resolveTarget,
+  summarizeTarget,
   targetLabel,
   targetsWith,
 } from "./targets";
@@ -82,5 +83,22 @@ describe("doctor reports", () => {
     expect(targetsWith(targets, "mlx-gpu")).toEqual([]);
     expect(knownHardware(targets[3])).toBeNull();
     expect(knownHardware(undefined)).toBeNull();
+  });
+});
+
+describe("summarizeTarget", () => {
+  it("says where a target runs, and its chip and memory once a check has looked", () => {
+    expect(summarizeTarget(target("local", null))).toBe("Runs here");
+    expect(summarizeTarget(target("ssh:gpu-box", null))).toBe("Over SSH");
+    expect(summarizeTarget(target("ssh:gpu-box", doctor()))).toBe("Over SSH. NVIDIA GeForce RTX 4090, 24 GB");
+    expect(
+      summarizeTarget(target("local", doctor({ gpuName: "Apple M3 Max", gpuMemoryBytes: 68_719_476_736 }))),
+    ).toBe("Runs here. Apple M3 Max, 64 GB");
+  });
+
+  it("falls back to the platform when the machine has no named GPU", () => {
+    expect(
+      summarizeTarget(target("ssh:cpu", doctor({ gpuName: null, gpuMemoryBytes: null, hardware: ["cpu"] }))),
+    ).toBe("Over SSH. Linux, x86_64");
   });
 });

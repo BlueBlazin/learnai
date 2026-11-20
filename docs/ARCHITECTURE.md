@@ -952,9 +952,9 @@ sources, which render Markdown as HTML and cannot take the docs fallback:
 **Status.** `SuggestionsStatus` in the editor toolbar shows nothing while suggestions
 work, start, or are off; otherwise a mark and a few words with a popover (not
 installed, with a link to Settings; stopped, with the message and "Try again") or
-"Restarting suggestions". Settings has an "Editor" section (`SuggestionsPanel`): the
-switch, status, ty's version, and Install with the same streamed log as a framework
-install (`useEditorInstall`, `InstallLog`).
+"Restarting suggestions". In Settings the switch is a row of General, and ty is a row
+of Environment (`EnvironmentPanel`): its status, its version, and Install with the
+same streamed log as a framework install (`useEditorInstall`, `InstallLog`).
 
 **Fixture backend.** `lib/api/fixture/editor.ts` is a small language server in
 TypeScript (a few `torch` members: completion with documentation, hover, signature

@@ -29,7 +29,12 @@ export function ThemePicker({
       }}
     >
       {OPTIONS.map(({ value: option, label, icon: Icon }) => (
-        <ToggleGroupItem key={option} value={option}>
+        <ToggleGroupItem
+          key={option}
+          value={option}
+          // The choice in force reads by ink as well as by fill: the others step back.
+          className="text-muted-foreground aria-pressed:bg-accent aria-pressed:text-foreground"
+        >
           <Icon data-icon="inline-start" aria-hidden />
           {label}
         </ToggleGroupItem>

@@ -152,14 +152,17 @@ describe("review components", () => {
     ).toContain("this problem is mastered");
   });
 
-  it("ReviewSetting is a labeled switch with one sentence of explanation", () => {
+  it("ReviewSetting is a labeled switch with one line of help", () => {
     const on = renderToStaticMarkup(createElement(ReviewSetting, { enabled: true, onChange: noop }));
     expect(on).toContain('role="switch"');
     expect(on).toContain('aria-checked="true"');
-    expect(text(on)).toContain("Ask me to solve problems again");
+    expect(on).toMatch(/<label[^>]*>Reviews<\/label>/);
     expect(text(on)).toContain("after 3, 7, 21, 60, and 180 days");
     const off = renderToStaticMarkup(createElement(ReviewSetting, { enabled: false, onChange: noop }));
     expect(off).toContain('aria-checked="false"');
+    // Off, the line says what became of the schedules instead.
+    expect(text(off)).toContain("schedules are kept");
+    expect(text(off)).not.toContain("after 3, 7, 21, 60, and 180 days");
   });
 });
 

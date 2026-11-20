@@ -1,38 +1,32 @@
 import { type ReactNode, useId } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { SettingRow } from "./setting-row";
 
-/** A preference that is on or off: the switch, what it controls, and the sentence that explains it. */
+/** A preference that is on or off, as a row: its name, one line of help, and the switch. */
 export function SettingSwitch({
   label,
-  children,
+  help,
   checked,
   disabled = false,
   onChange,
 }: {
   label: string;
-  /** The explanation under the label. */
-  children: ReactNode;
-  checked: boolean;
+  help?: ReactNode;
+  /** Undefined while the stored value is not known yet. */
+  checked: boolean | undefined;
   /** True while the change is being saved. */
   disabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
   const id = useId();
   return (
-    <div className="flex max-w-measure items-start gap-3">
-      <Switch
-        id={id}
-        className="mt-0.5"
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={(next) => onChange(next)}
-      />
-      <div className="flex min-w-0 flex-col gap-1">
-        <label htmlFor={id} className="text-sm font-medium">
-          {label}
-        </label>
-        <p className="selectable text-xs text-pretty text-muted-foreground">{children}</p>
-      </div>
-    </div>
+    <SettingRow label={label} labelFor={id} help={help}>
+      {checked === undefined ? (
+        <Skeleton className="h-4.5 w-8" />
+      ) : (
+        <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={(next) => onChange(next)} />
+      )}
+    </SettingRow>
   );
 }

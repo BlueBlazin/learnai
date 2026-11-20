@@ -30,11 +30,31 @@ export interface PathsSearch {
   part?: number;
 }
 
+/** The categories of the Settings screen, in the order its list shows them. */
+export type SettingsSection = "general" | "environment" | "models" | "targets" | "files";
+export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
+  "general",
+  "environment",
+  "models",
+  "targets",
+  "files",
+];
+
+export interface SettingsSearch {
+  /** The category to show; General when absent. */
+  section?: SettingsSection;
+}
+
+/** The category a `section` search value names; anything unknown is General. */
+export function parseSettingsSection(value: unknown): SettingsSection {
+  return SETTINGS_SECTIONS.find((candidate) => candidate === value) ?? "general";
+}
+
 export type RouteTarget =
   | { to: "/" }
   | { to: "/paths"; search: PathsSearch }
   | { to: "/library"; search: LibrarySearch }
-  | { to: "/settings" }
+  | { to: "/settings"; search: SettingsSearch }
   | { to: "/dev/components" }
   | { to: "/problems/$problemId"; params: { problemId: string }; search: ProblemSearch };
 
@@ -46,7 +66,11 @@ export const routes = {
     search: { ...(path ? { path } : {}), ...(part ? { part } : {}) },
   }),
   library: (search: LibrarySearch = {}): RouteTarget => ({ to: "/library", search }),
-  settings: (): RouteTarget => ({ to: "/settings" }),
+  /** Settings, opened at a category; General (the default) stays out of the URL. */
+  settings: (section: SettingsSection = "general"): RouteTarget => ({
+    to: "/settings",
+    search: section === "general" ? {} : { section },
+  }),
   devComponents: (): RouteTarget => ({ to: "/dev/components" }),
   problem: (problemId: string, search: ProblemSearch = {}): RouteTarget => ({
     to: "/problems/$problemId",

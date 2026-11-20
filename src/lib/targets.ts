@@ -32,6 +32,18 @@ export function describeGpu(doctor: RemoteDoctor): string | null {
   return doctor.gpuMemoryBytes ? `${doctor.gpuName}, ${formatMemory(doctor.gpuMemoryBytes)}` : doctor.gpuName;
 }
 
+/**
+ * One line about a target: where it runs and, once a check has looked, its
+ * chip and memory. "Runs here. Apple M3 Max, 64 GB"; "Over SSH" before any check.
+ */
+export function summarizeTarget(target: TargetInfo): string {
+  const where = target.kind === "local" ? "Runs here" : "Over SSH";
+  const doctor = target.lastCheck?.doctor;
+  if (!doctor) return where;
+  const gpu = describeGpu(doctor);
+  return `${where}. ${gpu && gpu !== "Present" ? gpu : describeMachine(doctor)}`;
+}
+
 /** The installed tensor frameworks with their versions, in the canonical order. */
 export function installedFrameworks(doctor: RemoteDoctor): { label: string; version: string }[] {
   return (["torch", "jax", "mlx"] as const).flatMap((framework) => {

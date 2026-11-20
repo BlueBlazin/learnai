@@ -34,7 +34,8 @@ export function CheckStepList({ steps, className }: { steps: StepProgress[]; cla
               <CheckStepMark state={state} className="translate-y-0.5" />
               <span
                 className={cn(
-                  "w-40 shrink-0",
+                  // With the mark, as wide as the label column of `MetaList` rows: the two line up in a target's details.
+                  "w-32.5 shrink-0",
                   state === "pending" || state === "skipped" ? "text-muted-foreground" : "text-foreground",
                 )}
               >

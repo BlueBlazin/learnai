@@ -1,14 +1,12 @@
-import { createLazyRoute } from "@tanstack/react-router";
-import { useEffect, useMemo } from "react";
-import { Page, PageHeader, Section } from "@/components/app/page";
+import { createLazyRoute, getRouteApi } from "@tanstack/react-router";
+import { type ReactNode, useEffect, useMemo } from "react";
+import { Page, PageHeader } from "@/components/app/page";
 import { ErrorState, LoadingLines } from "@/components/app/states";
 import { ModelsPanel } from "@/components/models/models-panel";
-import { ContentPanel } from "@/components/settings/content-panel";
 import { EnvironmentPanel } from "@/components/settings/environment-panel";
-import { GoalSetting } from "@/components/settings/goal-setting";
-import { ReviewSetting } from "@/components/settings/review-setting";
-import { SuggestionsPanel } from "@/components/settings/suggestions-panel";
-import { ThemePicker } from "@/components/settings/theme-picker";
+import { FilesPanel } from "@/components/settings/files-panel";
+import { GeneralPanel } from "@/components/settings/general-panel";
+import { SettingsNav } from "@/components/settings/settings-nav";
 import { TargetsPanel } from "@/components/targets/targets-panel";
 import { backend } from "@/lib/api";
 import {
@@ -31,8 +29,13 @@ import { useEditorInstall } from "@/lib/api/use-editor-install";
 import { useEnvInstall } from "@/lib/api/use-env-install";
 import { useTargetCheck } from "@/lib/api/use-target-check";
 import { editorSession, useEditorSession } from "@/lib/editor";
+import { SETTINGS_SECTION_LABEL } from "@/lib/labels";
+import { parseSettingsSection, type SettingsSection } from "@/lib/routes";
+import { settingsAttention } from "@/lib/settings";
 import { usePreferences } from "@/stores/preferences";
 import { useThemeStore } from "@/stores/theme";
+
+const route = getRouteApi("/settings");
 
 const BACKEND_NOTE = {
   tauri: null,
@@ -40,7 +43,15 @@ const BACKEND_NOTE = {
   fixture: "Showing sample data. Nothing here touches your files.",
 } as const;
 
+/** An action that failed, as a line above the list it belongs to. */
+function Failure({ title, error }: { title: string; error: unknown }) {
+  return error ? <ErrorState title={title} error={error} className="pt-0 pb-4" /> : null;
+}
+
 function SettingsScreen() {
+  const section = parseSettingsSection(route.useSearch().section);
+  // Everything is read here, whatever category is showing: an install or a check keeps
+  // its state while the user looks at another category, and the list marks what needs them.
   const env = useEnvStatus();
   const issues = useCatalogIssues();
   const { state: install, install: startInstall } = useEnvInstall();
@@ -73,161 +84,144 @@ function SettingsScreen() {
     () => new Map((problems.data ?? []).map((problem) => [problem.id, problem.title])),
     [problems.data],
   );
+  const attention = settingsAttention({
+    env: env.data,
+    installFailed: install.status === "failed" || editorInstall.status === "failed",
+    assets: assets.data?.assets,
+    downloads: fetch.downloads,
+    targets: targets.data,
+    issues: issues.data,
+  });
 
-  return (
-    <Page>
-      <PageHeader title="Settings" description={BACKEND_NOTE[backend.kind]} />
-
-      <Section title="Environment" aside="One Python environment, managed by uv, runs every judge.">
-        {env.error ? (
-          <ErrorState
-            title="The environment could not be inspected"
-            error={env.error}
-            onRetry={() => void env.refetch()}
-          />
-        ) : !env.data ? (
-          <LoadingLines lines={5} />
-        ) : (
+  const panes: Record<SettingsSection, () => ReactNode> = {
+    general: () => (
+      <>
+        <Failure title="The settings could not be read" error={settings.error ?? editorStatus.error} />
+        <Failure title="The setting could not be saved" error={setReviews.error ?? setSuggestions.error} />
+        <GeneralPanel
+          theme={preference}
+          onThemeChange={setPreference}
+          weeklyGoal={weeklyGoal}
+          onWeeklyGoalChange={setWeeklyGoal}
+          reviews={{
+            value: settings.data?.reviewsEnabled,
+            saving: setReviews.isPending,
+            onChange: (enabled) => setReviews.mutate(enabled),
+          }}
+          suggestions={{
+            value: editorStatus.data?.enabled,
+            saving: setSuggestions.isPending,
+            onChange: (enabled) => setSuggestions.mutate(enabled),
+          }}
+        />
+      </>
+    ),
+    environment: () =>
+      env.error ? (
+        <ErrorState
+          title="The environment could not be inspected"
+          error={env.error}
+          onRetry={() => void env.refetch()}
+          className="pt-0"
+        />
+      ) : !env.data ? (
+        <LoadingLines lines={6} />
+      ) : (
+        <>
+          <Failure title="The language server could not be inspected" error={editorStatus.error} />
           <EnvironmentPanel
             env={env.data}
             install={install}
             onInstall={(framework) => void startInstall(framework)}
+            server={{
+              status: editorStatus.data,
+              session: suggestions,
+              install: editorInstall,
+              onInstall: () => void installEditor(),
+              onRetry: () => editorSession.restart(),
+            }}
           />
-        )}
-      </Section>
-
-      <Section title="Models" aside="Weights for real-model problems. Nothing downloads until you ask.">
-        {assets.error ? (
-          <ErrorState
-            title="The models could not be listed"
-            error={assets.error}
-            onRetry={() => void assets.refetch()}
+        </>
+      ),
+    models: () =>
+      assets.error ? (
+        <ErrorState
+          title="The models could not be listed"
+          error={assets.error}
+          onRetry={() => void assets.refetch()}
+          className="pt-0"
+        />
+      ) : !assets.data ? (
+        <LoadingLines lines={4} />
+      ) : (
+        <>
+          <Failure title="The model could not be removed" error={remove.error} />
+          <ModelsPanel
+            listing={assets.data}
+            fetch={fetch}
+            titles={titles}
+            removing={remove.isPending ? remove.variables : null}
+            onRemove={(name) => remove.mutate(name)}
           />
-        ) : !assets.data ? (
-          <LoadingLines lines={3} />
-        ) : (
-          <div className="flex flex-col gap-3">
-            {remove.error ? (
-              <ErrorState title="The model could not be removed" error={remove.error} className="py-0" />
-            ) : null}
-            <ModelsPanel
-              listing={assets.data}
-              fetch={fetch}
-              titles={titles}
-              removing={remove.isPending ? remove.variables : null}
-              onRemove={(name) => remove.mutate(name)}
-            />
-          </div>
-        )}
-      </Section>
-
-      <Section
-        title="Run targets"
-        aside="Where the judge runs: this computer, or a machine of yours reached over SSH."
-      >
-        {targets.error ? (
-          <ErrorState
-            title="The run targets could not be listed"
-            error={targets.error}
-            onRetry={() => void targets.refetch()}
+        </>
+      ),
+    targets: () =>
+      targets.error ? (
+        <ErrorState
+          title="The run targets could not be listed"
+          error={targets.error}
+          onRetry={() => void targets.refetch()}
+          className="pt-0"
+        />
+      ) : !targets.data ? (
+        <LoadingLines lines={4} />
+      ) : (
+        <>
+          <Failure title="The machine could not be added" error={addTarget.error} />
+          <Failure title="The target could not be removed" error={removeTarget.error} />
+          <TargetsPanel
+            targets={targets.data}
+            hosts={hosts.data ?? []}
+            checks={checks}
+            adding={addTarget.isPending}
+            removing={removeTarget.isPending ? removeTarget.variables : null}
+            onCheck={check}
+            onAdd={(host) => addTarget.mutate({ host })}
+            onRemove={(name) => removeTarget.mutate(name)}
           />
-        ) : !targets.data ? (
-          <LoadingLines lines={3} />
-        ) : (
-          <div className="flex flex-col gap-3">
-            {addTarget.error ? (
-              <ErrorState title="The machine could not be added" error={addTarget.error} className="py-0" />
-            ) : null}
-            {removeTarget.error ? (
-              <ErrorState
-                title="The target could not be removed"
-                error={removeTarget.error}
-                className="py-0"
-              />
-            ) : null}
-            <TargetsPanel
-              targets={targets.data}
-              hosts={hosts.data ?? []}
-              checks={checks}
-              adding={addTarget.isPending}
-              removing={removeTarget.isPending ? removeTarget.variables : null}
-              onCheck={check}
-              onAdd={(host) => addTarget.mutate({ host })}
-              onRemove={(name) => removeTarget.mutate(name)}
-            />
-          </div>
-        )}
-      </Section>
+        </>
+      ),
+    files: () =>
+      env.error ? (
+        <ErrorState
+          title="The content root could not be read"
+          error={env.error}
+          onRetry={() => void env.refetch()}
+          className="pt-0"
+        />
+      ) : !env.data ? (
+        <LoadingLines lines={3} />
+      ) : (
+        <FilesPanel root={env.data.root} issues={issues.data ?? []} problemCount={problems.data?.length} />
+      ),
+  };
 
-      <Section title="Review" aside="Solving a problem once is not the same as keeping it.">
-        {settings.error ? (
-          <ErrorState
-            title="The settings could not be read"
-            error={settings.error}
-            onRetry={() => void settings.refetch()}
-          />
-        ) : !settings.data ? (
-          <LoadingLines lines={2} />
-        ) : (
-          <div className="flex flex-col gap-3">
-            {setReviews.error ? (
-              <ErrorState title="The setting could not be saved" error={setReviews.error} className="py-0" />
-            ) : null}
-            <ReviewSetting
-              enabled={settings.data.reviewsEnabled}
-              disabled={setReviews.isPending}
-              onChange={(enabled) => setReviews.mutate(enabled)}
-            />
-          </div>
-        )}
-      </Section>
-
-      <Section title="Goal" aside="How many problems you aim to solve each week.">
-        <GoalSetting value={weeklyGoal} onChange={setWeeklyGoal} />
-      </Section>
-
-      <Section title="Editor" aside="Suggestions and documentation while you write a solution.">
-        {editorStatus.error ? (
-          <ErrorState
-            title="The editor settings could not be read"
-            error={editorStatus.error}
-            onRetry={() => void editorStatus.refetch()}
-          />
-        ) : !editorStatus.data ? (
-          <LoadingLines lines={3} />
-        ) : (
-          <div className="flex flex-col gap-3">
-            {setSuggestions.error ? (
-              <ErrorState
-                title="The setting could not be saved"
-                error={setSuggestions.error}
-                className="py-0"
-              />
-            ) : null}
-            <SuggestionsPanel
-              status={editorStatus.data}
-              session={suggestions}
-              saving={setSuggestions.isPending}
-              onToggle={(enabled) => setSuggestions.mutate(enabled)}
-              install={editorInstall}
-              onInstall={() => void installEditor()}
-              onRetry={() => editorSession.restart()}
-            />
-          </div>
-        )}
-      </Section>
-
-      <Section title="Appearance">
-        <ThemePicker value={preference} onChange={setPreference} />
-      </Section>
-
-      <Section title="Content" aside="Problems, your solutions, and the Python project live here.">
-        {env.data ? (
-          <ContentPanel root={env.data.root} issues={issues.data ?? []} />
-        ) : (
-          <LoadingLines lines={1} />
-        )}
-      </Section>
+  return (
+    <Page>
+      <PageHeader
+        title="Settings"
+        actions={
+          BACKEND_NOTE[backend.kind] ? (
+            <p className="text-xs text-muted-foreground">{BACKEND_NOTE[backend.kind]}</p>
+          ) : null
+        }
+      />
+      <div className="flex items-start gap-10">
+        <SettingsNav current={section} attention={attention} className="sticky top-6 w-44 shrink-0" />
+        <section aria-label={SETTINGS_SECTION_LABEL[section]} className="min-w-0 flex-1">
+          {panes[section]()}
+        </section>
+      </div>
     </Page>
   );
 }

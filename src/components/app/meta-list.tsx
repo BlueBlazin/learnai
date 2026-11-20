@@ -35,7 +35,7 @@ export function MetaList({
 export function MetaItem({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-baseline gap-2 group-data-[layout=rows]/meta:gap-6">
-      <dt className="shrink-0 text-muted-foreground group-data-[layout=rows]/meta:w-28">{label}</dt>
+      <dt className="shrink-0 text-muted-foreground group-data-[layout=rows]/meta:w-34">{label}</dt>
       <dd className="min-w-0 text-foreground">{children}</dd>
     </div>
   );
