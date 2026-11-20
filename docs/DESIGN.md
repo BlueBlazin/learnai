@@ -106,21 +106,24 @@ cool stone white (not cream), ink is blue-black, and the single accent is the
 blue that steel turns when it is tempered. A straw yellow, the first temper
 color, is used only for highlighting (bracket and search matches).
 
-All values are `oklch()`. Both themes are first-class: dark is blued steel, not
-black, with the same hues lifted.
+All values are `oklch()`. Both themes are first-class. Dark is charcoal: its
+surfaces and text are neutral grays with no hue of their own (chroma 0),
+near-black chrome under charcoal paper, so the only hue on screen is the accent
+and the outcome colors, lifted from the light theme. Body text sits near 15:1
+on paper and secondary text near 8:1.
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `background` | `0.972 0.004 255` | `0.185 0.012 260` | chrome: app bar, toolbars, sidebars |
-| `paper` | `0.993 0.002 255` | `0.212 0.013 260` | reading and writing surfaces |
-| `foreground` | `0.25 0.022 262` | `0.90 0.008 255` | ink |
-| `muted-foreground` | `0.49 0.018 258` | `0.71 0.014 258` | secondary text (at least 4.5:1 on both surfaces) |
-| `faint` | `0.66 0.012 258` | `0.52 0.014 258` | decoration only: line numbers, inactive marks |
-| `border` | `0.895 0.007 255` | `0.295 0.014 260` | hairlines |
-| `rule` | ink | `0.78 0.01 255` | section rules, booktabs rules |
-| `primary` | `0.43 0.125 262` | `0.77 0.095 262` | temper blue: the Submit button, links, caret |
-| `accent` | `0.94 0.008 258` | `0.275 0.016 260` | hover and selected rows |
-| `code` | `0.96 0.005 255` | `0.24 0.013 260` | listings and output blocks (utility `bg-listing`; see below) |
+| `background` | `0.972 0.004 255` | `0.165 0 0` | chrome: app bar, toolbars, sidebars |
+| `paper` | `0.993 0.002 255` | `0.20 0 0` | reading and writing surfaces |
+| `foreground` | `0.25 0.022 262` | `0.93 0 0` | ink |
+| `muted-foreground` | `0.49 0.018 258` | `0.74 0 0` | secondary text (at least 4.5:1 on both surfaces) |
+| `faint` | `0.66 0.012 258` | `0.55 0 0` | decoration only: line numbers, inactive marks |
+| `border` | `0.895 0.007 255` | `0.29 0 0` | hairlines |
+| `rule` | ink | `0.80 0 0` | section rules, booktabs rules |
+| `primary` | `0.43 0.125 262` | `0.78 0.10 262` | temper blue: the Submit button, links, caret |
+| `accent` | `0.94 0.008 258` | `0.27 0 0` | hover and selected rows |
+| `code` | `0.96 0.005 255` | `0.235 0 0` | listings and output blocks (utility `bg-listing`; see below) |
 | `pass` / `fail` / `warn` | `0.49 0.105 158` / `0.51 0.17 27` / `0.53 0.11 68` | `0.77 0.12 158` / `0.74 0.14 25` / `0.80 0.11 80` | outcomes only |
 | `straw` | `0.93 0.075 96` | `0.38 0.055 92` | highlight |
 

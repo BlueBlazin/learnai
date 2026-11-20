@@ -172,24 +172,26 @@
   color-scheme: light;
 }
 
-/* Dark: blued steel, not black. Same hues, lifted. */
+/* Dark: charcoal. Surfaces and text are neutral grays with no hue of their own,
+   near-black chrome under charcoal paper; only the accent and the outcome
+   colors carry hue. */
 .dark {
-  --background: oklch(0.185 0.012 260);
-  --paper: oklch(0.212 0.013 260);
-  --foreground: oklch(0.9 0.008 255);
-  --popover: oklch(0.245 0.014 260);
+  --background: oklch(0.165 0 0);
+  --paper: oklch(0.2 0 0);
+  --foreground: oklch(0.93 0 0);
+  --popover: oklch(0.235 0 0);
 
-  --primary: oklch(0.77 0.095 262);
-  --primary-foreground: oklch(0.19 0.02 262);
-  --secondary: oklch(0.265 0.014 260);
-  --muted: oklch(0.25 0.013 260);
-  --muted-foreground: oklch(0.71 0.014 258);
-  --faint: oklch(0.52 0.014 258);
-  --accent: oklch(0.275 0.016 260);
+  --primary: oklch(0.78 0.1 262);
+  --primary-foreground: oklch(0.17 0.02 262);
+  --secondary: oklch(0.26 0 0);
+  --muted: oklch(0.245 0 0);
+  --muted-foreground: oklch(0.74 0 0);
+  --faint: oklch(0.55 0 0);
+  --accent: oklch(0.27 0 0);
 
-  --border: oklch(0.295 0.014 260);
-  --rule: oklch(0.78 0.01 255);
-  --input: oklch(0.34 0.015 260);
+  --border: oklch(0.29 0 0);
+  --rule: oklch(0.8 0 0);
+  --input: oklch(0.35 0 0);
   --ring: oklch(0.68 0.11 262);
 
   --pass: oklch(0.77 0.12 158);
@@ -201,18 +203,18 @@
 
   --straw: oklch(0.38 0.055 92);
   --straw-foreground: oklch(0.87 0.09 94);
-  --code: oklch(0.24 0.013 260);
+  --code: oklch(0.235 0 0);
 
-  --syntax-keyword: oklch(0.77 0.095 262);
+  --syntax-keyword: oklch(0.78 0.1 262);
   --syntax-string: oklch(0.79 0.09 158);
   --syntax-number: oklch(0.79 0.09 318);
-  --syntax-comment: oklch(0.6 0.014 258);
-  --syntax-function: oklch(0.93 0.008 255);
-  --syntax-punctuation: oklch(0.72 0.014 258);
-  --editor-selection: oklch(0.77 0.095 262 / 22%);
-  --editor-active-line: oklch(0.9 0.008 255 / 4%);
+  --syntax-comment: oklch(0.63 0 0);
+  --syntax-function: oklch(0.95 0 0);
+  --syntax-punctuation: oklch(0.74 0 0);
+  --editor-selection: oklch(0.78 0.1 262 / 24%);
+  --editor-active-line: oklch(0.93 0 0 / 4.5%);
 
-  --shadow-float: 0 1px 2px oklch(0 0 0 / 30%), 0 10px 28px oklch(0 0 0 / 35%);
+  --shadow-float: 0 1px 2px oklch(0 0 0 / 35%), 0 10px 28px oklch(0 0 0 / 45%);
 
   --figure-straw: oklch(0.82 0.105 84);
 
