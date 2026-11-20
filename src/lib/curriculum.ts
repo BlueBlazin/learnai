@@ -1,7 +1,7 @@
 import type { Area, ProblemSummary, Track } from "@/lib/api";
 import { romanNumeral } from "@/lib/format";
 import { moduleColor } from "@/lib/module-colors";
-import { sceneFocus, sceneUrl } from "@/lib/scenes";
+import { sceneUrl } from "@/lib/scenes";
 
 /**
  * The catalog as the learner studies it: areas (subjects) made of modules
@@ -33,8 +33,6 @@ export interface CurriculumModule {
   numeral: string;
   /** The scene's image, or null when the module has none. */
   scene: string | null;
-  /** Where a wide crop of the scene should hold on to (CSS `object-position`), when not its center. */
-  sceneFocus?: string;
   /** `#rrggbb`, or null when the module has none (it falls back to the accent). */
   color: string | null;
   /** The core problems, in the order the track's `core` gives them. */
@@ -117,7 +115,6 @@ function buildModule(
     ...place,
     numeral: romanNumeral(place.number),
     scene: sceneUrl(track.scene),
-    sceneFocus: sceneFocus(track.scene),
     color: moduleColor(track),
     core,
     further,

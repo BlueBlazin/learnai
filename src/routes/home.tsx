@@ -73,13 +73,10 @@ export function HomeScreen() {
   const byDay = useMemo(() => activityByDay(submissions.data ?? []), [submissions.data]);
   const now = new Date();
   // The banner for an area whose core is finished is its last module's.
-  const lastModule = area?.modules[area.modules.length - 1] ?? null;
-  const lastScene = lastModule?.scene ?? null;
+  const lastScene = area?.modules[area.modules.length - 1]?.scene ?? null;
   // The page always opens on the place the learner has reached: the module that holds
   // the suggestion, otherwise the module the route is at.
-  const bannerModule =
-    [target?.place?.module, nextStep?.module, lastModule].find((module) => module?.scene) ?? null;
-  const bannerScene = bannerModule?.scene ?? null;
+  const bannerScene = target?.place?.module.scene ?? nextStep?.module.scene ?? lastScene;
   // Reviews never block Home and can be switched off: while unknown or off, their column is left out.
   const reviewsFact =
     settings.data?.reviewsEnabled && reviews.data
@@ -121,9 +118,7 @@ export function HomeScreen() {
           <LoadingLines lines={3} className="pb-12" />
         ) : target === null ? (
           <>
-            {lastScene ? (
-              <SceneBanner src={lastScene} focus={lastModule?.sceneFocus} className="mb-6" />
-            ) : null}
+            {lastScene ? <SceneBanner src={lastScene} className="mb-6" /> : null}
             <EmptyState title="Every problem is solved" className="pb-12">
               Nothing is left to pick up. Revisit a track in the library to solve it again in another
               framework.
@@ -131,9 +126,7 @@ export function HomeScreen() {
           </>
         ) : (
           <>
-            {bannerScene ? (
-              <SceneBanner src={bannerScene} focus={bannerModule?.sceneFocus} className="mb-6" />
-            ) : null}
+            {bannerScene ? <SceneBanner src={bannerScene} className="mb-6" /> : null}
             <ContinueEntry
               problem={target.problem}
               track={tracks.data?.find((track) => track.id === target.problem.track)}

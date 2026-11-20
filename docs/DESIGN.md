@@ -184,6 +184,10 @@ have no area around them. A module with no color falls back to the accent.
 - A scene is shown whole and unfiltered: no overlay text, no dimming for modules
   not yet reached, no grayscale. Color is there from the first day; progress is
   shown by pips and marks beside the picture.
+- As a banner (`SceneBanner`, on Home and at the top of a module's page) a scene
+  has its own proportions, 33:14, so it is never cropped. Only the small plates
+  crop it, to about 4:3 from the center, which is why every scene is composed
+  around its middle.
 - An area has no scene of its own: its banner (`AreaBanner`) is one equal
   vertical slice of each module's scene, side by side in module order.
 - **Pixel icons** (`PixelIcon`, `src/assets/pixel/`): a flame for the streak

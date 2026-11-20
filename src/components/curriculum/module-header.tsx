@@ -30,7 +30,7 @@ export function moduleProgress({ core, further, coreSolved, solved }: Curriculum
 export function ModuleHeader({ module, areaTitle }: { module: CurriculumModule; areaTitle: string }) {
   return (
     <header className="pb-10">
-      {module.scene ? <SceneBanner src={module.scene} focus={module.sceneFocus} className="mb-6" /> : null}
+      {module.scene ? <SceneBanner src={module.scene} className="mb-6" /> : null}
       <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <span className="inline-flex items-center gap-2">
           <ModuleSwatch color={module.color} />
