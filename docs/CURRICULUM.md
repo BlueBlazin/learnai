@@ -953,11 +953,13 @@ and `select`, then `CharDFA`, `TokenConstraint`, `draft_target_pair`, `SimEngine
 immediately. Within batch 15, write `continuous-batching-scheduler` first; the other
 four extend its loop and reuse its simulation helper.
 
-## 6. Inference 75
+## 6. Inference 75 (origin of the core lists)
 
-The curated path (`paths/inference-75.toml`): the 75 problems to do, in order, to cover
-what a strong inference engineer must be able to write from memory. All 75 exist as of
-milestone 5.
+This table is the origin of the core lists now kept in each `track.toml` (`core`): the 75
+problems to do, in order, to cover what a strong inference engineer must be able to write
+from memory. All 75 existed as of milestone 5. The core has since grown to 84 by adding
+prerequisites. The table is kept as a historical record; the `core` lists are the source
+of truth.
 
 | # | stage | one sentence | problems |
 |---|---|---|---|

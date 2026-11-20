@@ -81,14 +81,13 @@ describe("HttpBackend first load", () => {
     await expect(new HttpBackend("http://bridge").listTracks()).resolves.toEqual([track]);
   });
 
-  it("posts list_paths and get_problem_asset with the contract's argument names", async () => {
+  it("posts get_problem_asset with the contract's argument names", async () => {
     const fetchMock = vi.fn(async (url: string, _init?: RequestInit) =>
       ok(url.endsWith("/get_problem_asset") ? "data:image/svg+xml;base64,PHN2Zy8+" : []),
     );
     vi.stubGlobal("fetch", fetchMock);
     const backend = new HttpBackend("http://bridge");
 
-    await expect(backend.listPaths()).resolves.toEqual([]);
     await expect(backend.getProblemAsset("rope", "pair-rotation.svg")).resolves.toBe(
       "data:image/svg+xml;base64,PHN2Zy8+",
     );
@@ -96,7 +95,6 @@ describe("HttpBackend first load", () => {
       .filter(([url]) => url.includes("/api/"))
       .map(([url, init]) => [url, JSON.parse(String(init?.body))]);
     expect(posts).toEqual([
-      ["http://bridge/api/list_paths", {}],
       ["http://bridge/api/get_problem_asset", { id: "rope", path: "pair-rotation.svg" }],
     ]);
   });

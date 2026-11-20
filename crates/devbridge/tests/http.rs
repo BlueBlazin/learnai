@@ -590,52 +590,10 @@ async fn areas_and_module_fields_over_http() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn paths_and_assets_over_http() {
+async fn assets_over_http() {
     let bridge = Bridge::start().await;
     let root = bridge.root.path();
 
-    // No paths directory: an empty list, not an error.
-    assert_eq!(bridge.call("list_paths", json!({})).await, json!([]));
-
-    fs::create_dir_all(root.join("paths")).expect("mkdir");
-    fs::write(
-        root.join("paths/starter.toml"),
-        "id = \"starter\"\ntitle = \"Starter Path\"\ndescription = \"A short path.\"\n\n\
-         [[stages]]\ntitle = \"Warm-up\"\ndescription = \"First steps.\"\n\
-         problems = [\"add-two\", \"missing\", \"hard-one\"]\n",
-    )
-    .expect("write");
-    assert_eq!(
-        bridge.call("list_paths", json!({})).await,
-        json!([{
-            "id": "starter", "title": "Starter Path", "description": "A short path.",
-            "stages": [{"title": "Warm-up", "description": "First steps.",
-                        "problems": ["add-two", "hard-one"]}],
-            "problemCount": 2, "solvedCount": 0
-        }])
-    );
-    let issues = bridge.call("list_catalog_issues", json!({})).await;
-    assert!(issues.as_array().expect("array").iter().any(|i| {
-        i["path"]
-            .as_str()
-            .is_some_and(|p| p.ends_with("starter.toml"))
-            && i["message"]
-                .as_str()
-                .is_some_and(|m| m.contains("`missing`"))
-    }));
-
-    // Progress follows an accepted submit.
-    let started = bridge
-        .call("start_run", json!({"problemId": "add-two", "framework": "torch", "mode": "submit", "target": "local"}))
-        .await;
-    let run_id = started["runId"].as_str().expect("runId");
-    bridge.events(&format!("/api/runs/{run_id}/events")).await;
-    assert_eq!(
-        bridge.call("list_paths", json!({})).await[0]["solvedCount"],
-        1
-    );
-
-    // Assets.
     let assets = root.join("problems/basics/add-two/assets");
     fs::create_dir_all(&assets).expect("mkdir");
     fs::write(assets.join("figure.svg"), "<svg/>").expect("write");

@@ -308,7 +308,6 @@ fn dispatch(bridge: &Bridge, command: &str, body: &[u8]) -> Result<Value, ApiErr
         "get_stats" => reply(core.get_stats()?),
         "list_catalog_issues" => reply(core.list_catalog_issues()),
         "list_areas" => reply(core.list_areas()?),
-        "list_paths" => reply(core.list_paths()?),
         "get_problem_asset" => {
             let a: AssetArgs = args(body)?;
             reply(core.get_problem_asset(&a.id, &a.path)?)

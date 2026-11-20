@@ -41,7 +41,6 @@ export const keys = {
   stats: ["stats"] as const,
   catalogIssues: ["catalogIssues"] as const,
   areas: ["areas"] as const,
-  paths: ["paths"] as const,
   asset: (id: string, path: string) => ["asset", id, path] as const,
   assets: ["assets"] as const,
   targets: ["targets"] as const,
@@ -60,7 +59,6 @@ export function invalidateProgress(client: QueryClient, problemId: string): Prom
     client.invalidateQueries({ queryKey: keys.problem(problemId) }),
     client.invalidateQueries({ queryKey: ["submissions"] }),
     client.invalidateQueries({ queryKey: keys.stats }),
-    client.invalidateQueries({ queryKey: keys.paths }),
     // The first accepted submit schedules a review; an accepted review submit moves it on.
     client.invalidateQueries({ queryKey: keys.reviews }),
   ]);
@@ -137,10 +135,6 @@ export function useCatalogIssues() {
 
 export function useAreas() {
   return useQuery({ queryKey: keys.areas, queryFn: () => backend.listAreas() });
-}
-
-export function usePaths() {
-  return useQuery({ queryKey: keys.paths, queryFn: () => backend.listPaths() });
 }
 
 /** A statement figure as a `data:` URL. `problemId` null: the prose has no problem to resolve against. */

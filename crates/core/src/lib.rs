@@ -9,7 +9,6 @@
 //! - [`root`]: content root resolution
 //! - [`catalog`]: tracks and problems on disk, with a cheap incremental reload
 //! - [`areas`]: subject areas under `areas/`
-//! - [`paths`]: study paths under `paths/`
 //! - [`assets`]: statement figures served as `data:` URLs
 //! - [`solutions`]: the user's files under `workspace/`
 //! - [`store`]: SQLite state (submissions, editorial unlocks, settings)
@@ -36,7 +35,6 @@ pub mod harness;
 pub mod lsp;
 pub mod model;
 pub mod models;
-pub mod paths;
 pub mod progress;
 pub mod protocol;
 pub mod remote;

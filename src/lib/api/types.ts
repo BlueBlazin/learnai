@@ -272,28 +272,7 @@ export interface SubmissionDetail extends Submission {
   metrics: Metric[];
 }
 
-/** One stage of a study path. `problems` holds existing problem ids only, in study order. */
-export interface PathStage {
-  title: string;
-  description: string;
-  problems: string[];
-  /** Slug of the bundled illustration, such as "trailhead". */
-  scene?: string;
-  /** The stage's color as lowercase `#rrggbb`. */
-  color?: string;
-}
-
-/** A curated, ordered study plan (`paths/<id>.toml`) with progress. */
-export interface Path {
-  id: string;
-  title: string;
-  description: string;
-  stages: PathStage[];
-  problemCount: number;
-  solvedCount: number;
-}
-
-/** A malformed track, problem, or path that the catalog skipped. */
+/** A malformed track, problem, or area that the catalog skipped. */
 export interface CatalogIssue {
   path: string;
   message: string;

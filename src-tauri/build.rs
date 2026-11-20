@@ -19,7 +19,6 @@ const COMMANDS: &[&str] = &[
     "get_stats",
     "list_catalog_issues",
     "list_areas",
-    "list_paths",
     "get_problem_asset",
     "list_assets",
     "fetch_assets",
@@ -46,7 +45,26 @@ const COMMANDS: &[&str] = &[
     "editor_docs",
 ];
 
+/// Fails the build when a command has no grant in `capabilities/default.json`. Without
+/// this, a new command works in the browser preview (which talks to the development
+/// bridge) and is silently refused in the real app.
+fn check_capabilities() {
+    println!("cargo:rerun-if-changed=capabilities/default.json");
+    let granted = std::fs::read_to_string("capabilities/default.json")
+        .expect("capabilities/default.json is readable");
+    let missing: Vec<String> = COMMANDS
+        .iter()
+        .map(|command| format!("allow-{}", command.replace('_', "-")))
+        .filter(|permission| !granted.contains(&format!("\"{permission}\"")))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "capabilities/default.json does not grant: {missing:?}"
+    );
+}
+
 fn main() {
+    check_capabilities();
     let attributes = tauri_build::Attributes::new()
         .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS));
     tauri_build::try_build(attributes).expect("failed to run the Tauri build script");

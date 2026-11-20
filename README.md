@@ -5,8 +5,8 @@ LeetCode-style practice problems. You write solutions in PyTorch, JAX, MLX, or p
 Python, and a local judge runs them against public and hidden tests.
 
 The catalog has 213 problems in 15 tracks, from stable softmax to capstones such as a
-continuous-batching engine and a complete runtime for a real model, and a curated study
-path (Inference 75). Catalog and path: `docs/CURRICULUM.md`. Writing problems:
+continuous-batching engine and a complete runtime for a real model, with a core list of
+problems in each module. Catalog and cores: `docs/CURRICULUM.md`. Writing problems:
 `docs/PROBLEM_AUTHORING.md`.
 
 Architecture and contracts: `docs/ARCHITECTURE.md`. Dependency versions: `docs/VERSIONS.md`.

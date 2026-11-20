@@ -15,8 +15,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::catalog::{Catalog, CatalogIssue, is_slug};
-use crate::paths::{file_stem, issue, path_files};
+use crate::catalog::{Catalog, CatalogIssue, file_stem, is_slug, issue, toml_files};
 
 /// A validated area.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,7 +49,7 @@ pub fn load_areas(root: &Path, catalog: &Catalog) -> (Vec<AreaMeta>, Vec<Catalog
     // Track id to the area that owns it.
     let mut owners: HashMap<String, String> = HashMap::new();
 
-    for file in path_files(&root.join("areas"), &mut issues) {
+    for file in toml_files(&root.join("areas"), &mut issues) {
         let parsed = fs::read_to_string(&file)
             .map_err(|e| format!("unreadable: {e}"))
             .and_then(|text| parse_area(&text, &file, catalog, &mut owners, &mut issues));

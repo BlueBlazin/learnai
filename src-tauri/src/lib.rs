@@ -100,7 +100,6 @@ pub fn run() {
             commands::get_stats,
             commands::list_catalog_issues,
             commands::list_areas,
-            commands::list_paths,
             commands::get_problem_asset,
             commands::list_assets,
             commands::fetch_assets,

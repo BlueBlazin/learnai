@@ -265,12 +265,11 @@ describe("FixtureBackend", () => {
     }
   });
 
-  it("serves tracks with a scene, a color, and a core derived from the path, and one area over all of them", async () => {
+  it("serves tracks with a scene, a color, and a hard-coded core, and one area over all of them", async () => {
     const backend = new FixtureBackend({ speed: 0 });
-    const [tracks, areas, paths, problems] = await Promise.all([
+    const [tracks, areas, problems] = await Promise.all([
       backend.listTracks(),
       backend.listAreas(),
-      backend.listPaths(),
       backend.listProblems(),
     ]);
     expect(areas).toHaveLength(1);
@@ -293,53 +292,21 @@ describe("FixtureBackend", () => {
       "summit",
     ]);
     for (const track of tracks) expect(track.color).toMatch(/^#[0-9a-f]{6}$/);
-    // Each core is the path's problems of that track, in path order; together they are the path.
-    const trackOf = new Map(problems.map((problem) => [problem.id, problem.track]));
-    const onPath = (paths[0]?.stages ?? []).flatMap((stage) => stage.problems);
-    for (const track of tracks) {
-      expect(track.core, track.id).toEqual(onPath.filter((id) => trackOf.get(id) === track.id));
-    }
-    expect(tracks.reduce((n, track) => n + track.core.length, 0)).toBe(75);
-  });
-
-  it("serves a 75-problem path over its own catalog, in stages, with progress that follows a solve", async () => {
-    const backend = new FixtureBackend({ speed: 0 });
-    const [paths, problems] = await Promise.all([backend.listPaths(), backend.listProblems()]);
-    expect(paths.map((path) => path.id)).toEqual(["inference-75"]);
-    const path = paths[0];
-    if (!path) throw new Error("no path");
-
-    const ids = path.stages.flatMap((stage) => stage.problems);
-    expect(ids.length).toBe(75);
-    expect(new Set(ids).size).toBe(75);
-    expect(path.problemCount).toBe(75);
-    expect(path.stages.length).toBeGreaterThanOrEqual(6);
+    // Every core entry is a problem of its own track, listed once, and no prerequisite follows
+    // the problem that needs it.
     const byId = new Map(problems.map((problem) => [problem.id, problem]));
-    for (const stage of path.stages) {
-      expect(stage.title).not.toBe("");
-      expect(stage.description).toMatch(/\.$/);
+    const all = tracks.flatMap((track) => track.core);
+    expect(new Set(all).size).toBe(all.length);
+    for (const track of tracks) {
+      for (const id of track.core) expect(byId.get(id)?.track, id).toBe(track.id);
     }
-    // Every entry exists, and nothing comes before one of its prerequisites.
-    ids.forEach((id, position) => {
-      const problem = byId.get(id);
-      expect(problem, id).toBeDefined();
-      for (const prerequisite of problem?.prerequisites ?? []) {
-        const at = ids.indexOf(prerequisite);
+    all.forEach((id, position) => {
+      for (const prerequisite of byId.get(id)?.prerequisites ?? []) {
+        const at = all.indexOf(prerequisite);
         if (at !== -1) expect(at, `${prerequisite} before ${id}`).toBeLessThan(position);
       }
     });
-    expect(path.solvedCount).toBe(ids.filter((id) => byId.get(id)?.status === "solved").length);
-    expect(path.solvedCount).toBeGreaterThan(0);
-    expect(path.solvedCount).toBeLessThan(75);
-
-    const target = ids.find((id) => {
-      const problem = byId.get(id);
-      return problem?.status === "todo" && problem.frameworks.includes("torch");
-    });
-    if (!target) throw new Error("nothing left to solve");
-    await backend.writeSolution(target, "torch", "def solution(x): return x\n");
-    expect((await runToEnd(backend, target, "submit")).at(-1)).toMatchObject({ verdict: "accepted" });
-    expect((await backend.listPaths())[0]?.solvedCount).toBe(path.solvedCount + 1);
+    expect(all).toHaveLength(75);
   });
 
   it("serves statement figures as data URLs and refuses anything else", async () => {

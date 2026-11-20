@@ -64,7 +64,6 @@ export class TauriBackend implements Backend {
   listCatalogIssues = () => call<Awaited<ReturnType<Backend["listCatalogIssues"]>>>("list_catalog_issues");
 
   listAreas = () => call<Awaited<ReturnType<Backend["listAreas"]>>>("list_areas");
-  listPaths = () => call<Awaited<ReturnType<Backend["listPaths"]>>>("list_paths");
   getProblemAsset = (id: string, path: string) => call<string>("get_problem_asset", { id, path });
 
   listAssets = () => call<Awaited<ReturnType<Backend["listAssets"]>>>("list_assets");

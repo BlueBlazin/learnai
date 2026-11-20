@@ -535,6 +535,43 @@ pub(crate) fn is_slug(id: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
 }
 
+/// A [`CatalogIssue`] for `path`.
+pub(crate) fn issue(path: &Path, message: String) -> CatalogIssue {
+    CatalogIssue {
+        path: path.to_path_buf(),
+        message,
+    }
+}
+
+/// Lists the visible `.toml` files of `dir`, sorted by name. A missing `dir` yields nothing.
+pub(crate) fn toml_files(dir: &Path, issues: &mut Vec<CatalogIssue>) -> Vec<PathBuf> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => {
+            issues.push(issue(dir, format!("unreadable: {e}")));
+            return Vec::new();
+        }
+    };
+    let mut files: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path.extension().is_some_and(|ext| ext == "toml")
+                && !file_stem(path).starts_with(['.', '_'])
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+pub(crate) fn file_stem(path: &Path) -> &str {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or_default()
+}
+
 fn parse_problem(text: &str, dir: &Path) -> std::result::Result<ProblemMeta, String> {
     let raw: ProblemToml = parse_toml(text)?;
     let track = dir.parent().map(dir_name).unwrap_or_default();

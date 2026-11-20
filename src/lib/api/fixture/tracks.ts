@@ -8,6 +8,8 @@ export interface FixtureTrack {
   scene: string;
   /** The module's color as lowercase `#rrggbb`. */
   color: string;
+  /** Ids of the module's core problems, in study order. */
+  core: string[];
   /** Titles of generated (non-authored) problems that fill the track out. */
   filler: string[];
 }
@@ -20,6 +22,15 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 1,
     scene: "trailhead",
     color: "#ed9b11",
+    core: [
+      "stable-softmax",
+      "log-sum-exp",
+      "rms-normalization",
+      "layer-normalization-from-scratch",
+      "cross-entropy-from-logits",
+      "gelu-exact-and-tanh-approximation",
+      "swiglu-feed-forward",
+    ],
     filler: [
       "RMS Normalization",
       "Layer Normalization from Scratch",
@@ -42,6 +53,15 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 2,
     scene: "crossing",
     color: "#e5691d",
+    core: [
+      "byte-level-pre-tokenizer",
+      "bpe-merge",
+      "bpe-encode-with-a-merge-table",
+      "bpe-decode-and-utf-8-repair",
+      "special-tokens-and-added-vocabulary",
+      "incremental-detokenization",
+      "chat-template-renderer",
+    ],
     filler: [
       "Byte-Level Pre-Tokenizer",
       "BPE Encode with a Merge Table",
@@ -64,6 +84,17 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 3,
     scene: "forest",
     color: "#2a71cc",
+    core: [
+      "scaled-dot-product-attention",
+      "causal-mask",
+      "multi-head-split-and-merge",
+      "sinusoidal-position-table",
+      "rotary-embeddings",
+      "grouped-query-attention",
+      "sliding-window-attention",
+      "padding-aware-batched-attention",
+      "chunked-attention-under-a-memory-cap",
+    ],
     filler: [
       "Multi-Head Split and Merge",
       "Grouped-Query Attention",
@@ -86,6 +117,15 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 4,
     scene: "meadow",
     color: "#db5881",
+    core: [
+      "pre-norm-residual-block",
+      "tied-embedding-and-unembedding",
+      "final-norm-and-head",
+      "decoder-only-forward-pass",
+      "loading-weights-by-name",
+      "parameter-count-audit",
+      "activation-checkpoint-diff",
+    ],
     filler: [
       "Pre-Norm Residual Block",
       "Tied Embedding and Unembedding",
@@ -109,6 +149,17 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 5,
     scene: "lake",
     color: "#18978e",
+    core: [
+      "greedy-decoding-with-stop-sequences",
+      "temperature-top-k",
+      "inverse-cdf-categorical-sampling",
+      "top-p-sampling",
+      "min-p-sampling",
+      "repetition-and-frequency-penalties",
+      "logit-bias-and-banned-tokens",
+      "sampler-chains",
+      "beam-search-with-length-penalty",
+    ],
     filler: [
       "Greedy Decoding with Stop Sequences",
       "Inverse-CDF Categorical Sampling",
@@ -132,6 +183,16 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 6,
     scene: "terraces",
     color: "#8fc30b",
+    core: [
+      "kv-cache-decode",
+      "cache-append-without-reallocation",
+      "rotary-positions-with-a-cache",
+      "batched-cache-with-ragged-lengths",
+      "prefix-cache-reuse-across-requests",
+      "cache-truncation-and-rollback",
+      "paged-cache-blocks",
+      "cache-memory-accounting",
+    ],
     filler: [
       "Cache Append Without Reallocation",
       "Batched Cache with Ragged Lengths",
@@ -154,6 +215,13 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 7,
     scene: "canyon",
     color: "#834ccd",
+    core: [
+      "int8-affine-quant",
+      "symmetric-per-channel-quantization",
+      "dynamic-range-calibration",
+      "four-bit-group-quantization",
+      "quantized-matmul-with-integer-accumulation",
+    ],
     filler: [
       "Symmetric Per-Channel Quantization",
       "Dynamic Range Calibration",
@@ -177,6 +245,13 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 8,
     scene: "ridge",
     color: "#f4c60a",
+    core: [
+      "static-batcher-with-timeout",
+      "length-bucketed-batching",
+      "continuous-batching",
+      "token-budget-admission-control",
+      "chunked-prefill",
+    ],
     filler: [
       "Static Batcher with Timeout",
       "Length-Bucketed Batching",
@@ -199,6 +274,14 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 9,
     scene: "tower",
     color: "#c2332f",
+    core: [
+      "completions-endpoint",
+      "sse-token-stream",
+      "client-disconnect-cancellation",
+      "stop-sequences-across-chunk-boundaries",
+      "token-bucket-rate-limiter",
+      "metrics-time-to-first-token",
+    ],
     filler: [
       "Completions Endpoint",
       "Chat Completions with Roles",
@@ -222,6 +305,7 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 10,
     scene: "village",
     color: "#27add9",
+    core: ["peak-memory-estimator", "memory-mapped-weight-loading"],
     filler: [
       "Peak Memory Estimator",
       "Memory-Mapped Weight Loading",
@@ -244,6 +328,7 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 11,
     scene: "glacier",
     color: "#22964c",
+    core: ["speculative-sampling-acceptance-rule", "draft-and-verify-loop", "cache-rollback-after-rejection"],
     filler: [
       "Speculative Sampling Acceptance Rule",
       "Draft-and-Verify Loop",
@@ -266,6 +351,13 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 12,
     scene: "trailblazer",
     color: "#a85c21",
+    core: [
+      "regex-to-dfa",
+      "token-level-dfa-masks",
+      "json-schema-to-grammar",
+      "constrained-sampling-renormalization",
+      "streaming-structured-output",
+    ],
     filler: [
       "Regex to DFA",
       "Token-Level DFA Masks",
@@ -289,6 +381,7 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 13,
     scene: "pass",
     color: "#c94db5",
+    core: [],
     filler: [
       "Lazy Evaluation and Explicit Eval",
       "Compile a Decode Step",
@@ -311,6 +404,7 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 14,
     scene: "cape",
     color: "#5a5fc0",
+    core: [],
     filler: [
       "Pipeline Parallel Layer Split",
       "Tensor Parallel Linear",
@@ -333,6 +427,7 @@ export const FIXTURE_TRACKS: FixtureTrack[] = [
     order: 15,
     scene: "summit",
     color: "#e6b125",
+    core: ["tiny-inference-engine", "openai-compatible-server"],
     filler: [
       "Tiny Inference Engine",
       "OpenAI-Compatible Server",

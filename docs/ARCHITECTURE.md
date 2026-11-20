@@ -191,34 +191,6 @@ more than one area stays with the first area in file-name order; the later listi
 dropped and reported. An area left with no modules is dropped and reported. A missing
 `areas/` directory is not an issue and yields an empty list.
 
-**Paths.** Paths are being retired in favor of areas and module cores. The screens have
-moved over: the front end no longer reads paths, and what remains here is the core's side
-until it is deleted. A path is a curated, ordered study plan stored at `paths/<id>.toml` in the
-content root:
-
-```toml
-id = "inference-75"
-title = "Inference 75"
-description = "One sentence."
-
-[[stages]]
-title = "Numerics and tensors"
-description = "One sentence."
-problems = ["stable-softmax", "rmsnorm"]
-scene = "trailhead"            # optional display fields, see below
-color = "#ed9b11"
-```
-
-A problem id that does not exist in the catalog is skipped and reported as a catalog
-issue; it never breaks the path. Paths are listed in file-name order; the first is the
-learner's study path.
-
-A stage may also carry two optional display keys: `scene` (the slug of an illustration
-bundled with the app) and `color` (`#rrggbb`, stored lowercase). A `scene` that is not a slug or a
-`color` that is not a hex color is dropped and reported as a catalog issue; the stage and
-the path still load. The core passes the two through unchanged and does not know the
-images; the front end maps `scene` to one.
-
 ### 3.4 Judge types
 
 | judge | checks | determinism rule |
@@ -429,10 +401,6 @@ interface Submission { id: number; problemId: string; framework: Framework; mode
 interface StoredCase extends CaseResult { name: string; public: boolean; }
 interface SubmissionDetail extends Submission { code: string; cases: StoredCase[]; metrics: Metric[]; }
 
-interface PathStage { title: string; description: string; problems: string[]; }  // existing ids only
-interface Path { id: string; title: string; description: string; stages: PathStage[];
-                 problemCount: number; solvedCount: number; }
-
 interface FrameworkEnv { framework: Framework; installed: boolean; version: string | null; }
 interface EnvStatus { uv: string | null; python: string | null; frameworks: FrameworkEnv[];
                       root: string; }
@@ -475,9 +443,8 @@ Commands (Tauri command names are snake_case; the `Backend` interface uses camel
 | `get_stats` | | `Stats` |
 
 | `list_areas` | | `Area[]` |
-| `list_paths` | | `Path[]` |
 | `get_problem_asset` | `id, path` | `string`: a `data:` URL. `path` is relative to the problem's `assets/` directory and may not escape it; only `.svg` and `.png`, at most 1 MiB; an SVG must be UTF-8 and a PNG must have the PNG signature |
-| `list_catalog_issues` | | `{ path: string; message: string }[]` (malformed tracks, problems, areas, and paths, and track, area, and path entries that were skipped) |
+| `list_catalog_issues` | | `{ path: string; message: string }[]` (malformed tracks, problems, and areas, and track, area, and core entries that were skipped) |
 | `list_assets` | | `AssetList` (runs `learnai assets list --json`) |
 | `fetch_assets` | `names: string[], target?` + event sink | `jobId: string`; stream of `AssetEvent` (runs `learnai assets fetch <names> --json` with `--extra models`) |
 | `cancel_asset_fetch` | `jobId` | |
@@ -1007,7 +974,7 @@ session; `FixtureOptions.editorInstalled: false` starts without the server.
 ## 6. Milestones
 
 1. Vertical slice: judge, CLI, app, local runs, 12 problems covering all seven judges.
-2. Core tracks to about 80 problems; curated "Inference 75" path.
+2. Core tracks to about 80 problems; a core list in each module.
 3. MLX GPU track; real-model assets (current open models up to 4B parameters,
    safetensors; 8-bit at the 4B size).
 4. SSH target; CUDA track (unit-tested only until an NVIDIA GPU is available).

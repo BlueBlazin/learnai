@@ -182,7 +182,14 @@ fn malformed_area_files_are_reported_and_never_break_the_others() {
         "id = \"untitled\"\ntitle = \" \"\nmodules = [\"basics\"]\n",
     );
     write_area(root.path(), "README.md", "notes\n");
+    write_area(
+        root.path(),
+        "Bad Name.toml",
+        "id = \"Bad Name\"\ntitle = \"T\"\nmodules = [\"basics\"]\n",
+    );
     write_area(root.path(), "_draft.toml", "not even toml [");
+    // A directory named like a file is not an area file.
+    fs::create_dir_all(root.path().join("areas").join("nested.toml")).expect("mkdir");
 
     let areas = core.list_areas().expect("areas");
     assert_eq!(
@@ -201,11 +208,10 @@ fn malformed_area_files_are_reported_and_never_break_the_others() {
     assert!(!message("broken.toml").is_empty());
     assert!(message("misnamed.toml").contains("does not equal the file name"));
     assert!(message("untitled.toml").contains("title is empty"));
-    assert!(
-        !issues
-            .iter()
-            .any(|i| i.path.ends_with("README.md") || i.path.ends_with("_draft.toml"))
-    );
+    assert!(message("Bad Name.toml").contains("must use only"));
+    assert!(!issues.iter().any(|i| i.path.ends_with("README.md")
+        || i.path.ends_with("_draft.toml")
+        || i.path.ends_with("nested.toml")));
 }
 
 #[test]
@@ -320,7 +326,4 @@ fn the_shipped_content_has_one_area_of_fifteen_modules_and_no_issues() {
         assert!(track.scene.is_some(), "{} has no scene", track.id);
         assert!(track.color.is_some(), "{} has no color", track.id);
     }
-
-    let (_paths, issues) = learnai_core::paths::load_paths(&root, &catalog);
-    assert!(issues.is_empty(), "{issues:?}");
 }

@@ -13,7 +13,6 @@ import type {
   InstallEvent,
   MissingAsset,
   ModelAsset,
-  Path,
   ProblemDetail,
   ProblemStatus,
   ProblemSummary,
@@ -34,7 +33,6 @@ import { FIXTURE_AREAS } from "./areas";
 import { FIXTURE_HARDWARE, type FixtureAsset, fixtureAssets } from "./assets";
 import { buildCatalog, type FixtureProblem, hash, renderTemplate } from "./catalog";
 import { FixtureEditor } from "./editor";
-import { FIXTURE_PATHS } from "./paths";
 import { buildPlan, type RunContext, simulateRun, verdictOf } from "./runs";
 import { FIXTURE_SSH_HOSTS, fixtureCheckScript, fixtureTargets } from "./targets";
 
@@ -404,10 +402,7 @@ export class FixtureBackend implements Backend {
           solvedCount: problems.filter((p) => this.stateOf(p.meta.id).status === "solved").length,
           scene: track.scene,
           color: track.color,
-          // The track's problems that the fixture path lists, in path order.
-          core: FIXTURE_PATHS.flatMap((path) => path.stages.flatMap((stage) => stage.problems)).filter(
-            (id) => this.problems.get(id)?.meta.track === track.id,
-          ),
+          core: track.core,
         };
       }),
     );
@@ -767,29 +762,7 @@ export class FixtureBackend implements Backend {
       })).filter((area) => area.modules.length > 0),
     );
 
-  /**
-   * The fixture path, with core's rule applied: an id the catalog does not know
-   * is dropped, and a stage left empty is not listed.
-   */
-  listPaths = (): Promise<Path[]> =>
-    this.respond(() =>
-      FIXTURE_PATHS.map((path) => {
-        const stages = path.stages
-          .map((stage) => ({ ...stage, problems: stage.problems.filter((id) => this.problems.has(id)) }))
-          .filter((stage) => stage.problems.length > 0);
-        const ids = stages.flatMap((stage) => stage.problems);
-        return {
-          id: path.id,
-          title: path.title,
-          description: path.description,
-          stages,
-          problemCount: ids.length,
-          solvedCount: ids.filter((id) => this.stateOf(id).status === "solved").length,
-        };
-      }),
-    );
-
-  /** Serves the figures bundled with authored fixture statements, with core's path rules. */
+  /** Serves the figures bundled with authored fixture statements, with core's asset rules. */
   getProblemAsset = (id: string, path: string): Promise<string> =>
     this.respond(() => {
       const problem = this.problem(id);

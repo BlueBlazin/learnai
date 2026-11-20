@@ -23,7 +23,7 @@
     "allow-env-install",
     "allow-get-stats",
     "allow-list-catalog-issues",
-    "allow-list-paths",
+    "allow-list-areas",
     "allow-get-problem-asset",
     "allow-list-assets",
     "allow-fetch-assets",
