@@ -4,6 +4,8 @@ import {
   ListOrdered,
   Monitor,
   Moon,
+  PanelBottom,
+  PanelLeft,
   Play,
   RotateCw,
   Send,
@@ -46,8 +48,8 @@ function matchAllTerms(value: string, search: string): number {
 
 /**
  * The command palette (Mod-K): jump to any problem, move between screens,
- * switch theme, run or submit when a problem is open, and start the next
- * review when one is due.
+ * switch theme, run or submit and show or hide the statement and the results
+ * when a problem is open, and start the next review when one is due.
  */
 export function CommandPalette() {
   const { open, setOpen } = useCommandPalette();
@@ -115,6 +117,20 @@ export function CommandPalette() {
                 Submit against all cases
                 <CommandShortcut>
                   <ShortcutHint keys={SHORTCUTS.submit} />
+                </CommandShortcut>
+              </CommandItem>
+              <CommandItem onSelect={() => act(workspace.toggleStatement)}>
+                <PanelLeft />
+                {workspace.statementCollapsed ? "Show statement" : "Hide statement"}
+                <CommandShortcut>
+                  <ShortcutHint keys={SHORTCUTS.toggleStatement} />
+                </CommandShortcut>
+              </CommandItem>
+              <CommandItem onSelect={() => act(workspace.toggleResults)}>
+                <PanelBottom />
+                {workspace.resultsCollapsed ? "Show results" : "Hide results"}
+                <CommandShortcut>
+                  <ShortcutHint keys={SHORTCUTS.toggleResults} />
                 </CommandShortcut>
               </CommandItem>
             </CommandGroup>

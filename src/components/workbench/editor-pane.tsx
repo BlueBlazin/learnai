@@ -7,6 +7,7 @@ import { SHORTCUTS } from "@/components/app/shortcut-hint";
 import { ErrorState, LoadingLines } from "@/components/app/states";
 import { CodeEditor } from "@/components/editor/code-editor";
 import { FrameworkSwitcher } from "@/components/problem/framework-switcher";
+import { Separator } from "@/components/ui/separator";
 import type { EnvStatus, Framework } from "@/lib/api";
 import type { InstallState } from "@/lib/api/use-env-install";
 import type { SolutionEditor } from "@/lib/api/use-solution-editor";
@@ -17,8 +18,10 @@ import { PaneToolbar } from "./pane-toolbar";
 import { SaveIndicator } from "./save-indicator";
 
 /**
- * The right-hand top panel: a toolbar (framework, save state, reset, where to
- * run, Run, Submit) over the code editor. When the environment cannot run the chosen
+ * The right-hand top panel: a toolbar (layout controls, framework, save state,
+ * reset, where to run, Run, Submit) over the code editor. This pane is the one
+ * that is always showing, so `layoutControls` (the toggles that show and hide
+ * the panels around it) sit at the start of its toolbar, apart from the run controls. When the environment cannot run the chosen
  * framework, a notice under the toolbar says why and offers the fix; `notices`
  * adds what else stands between a run and an accepted verdict. In a review
  * the same pane edits and judges the review attempt. The editor gets
@@ -40,6 +43,7 @@ export function EditorPane({
   onSubmit,
   notices,
   suggestions,
+  layoutControls,
   targetPicker,
   remote = false,
   review = false,
@@ -67,6 +71,8 @@ export function EditorPane({
   notices?: ReactNode;
   /** The state of suggestions and documentation, shown only when it needs attention. */
   suggestions?: ReactNode;
+  /** The toggles that show and hide the statement and the results. */
+  layoutControls?: ReactNode;
   /** The control that chooses where runs execute, when there is a choice. */
   targetPicker?: ReactNode;
   /** True when runs go to a remote machine: the local environment then does not matter. */
@@ -77,6 +83,12 @@ export function EditorPane({
   return (
     <div className="flex h-full flex-col">
       <PaneToolbar>
+        {layoutControls ? (
+          <>
+            <div className="-ml-1.5 flex items-center">{layoutControls}</div>
+            <Separator orientation="vertical" className="my-2.5" />
+          </>
+        ) : null}
         <FrameworkSwitcher
           frameworks={frameworks}
           value={framework}

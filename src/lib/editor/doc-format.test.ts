@@ -3,6 +3,7 @@ import {
   type DocBlock,
   formatDoc,
   inlineText,
+  isPlaceholderType,
   isUnknownSignature,
   looksLikeTex,
   parseHover,
@@ -90,6 +91,10 @@ describe("parseHover", () => {
     expect(isUnknownSignature(parseHover("```python\nUnknown\n```").signature)).toBe(true);
     expect(isUnknownSignature(null)).toBe(true);
     expect(isUnknownSignature("Tensor")).toBe(false);
+    expect(isPlaceholderType("Unknown")).toBe(true);
+    expect(isPlaceholderType(" Never\n")).toBe(true);
+    expect(isPlaceholderType(null)).toBe(false);
+    expect(isPlaceholderType("Unknown | None")).toBe(false);
   });
 });
 

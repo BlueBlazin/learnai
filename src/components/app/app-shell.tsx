@@ -49,7 +49,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           inset ? "pl-24" : "pl-4",
         )}
       >
-        <span className="font-serif text-md font-medium tracking-tight italic">
+        <span className="font-wordmark text-md font-bold tracking-tight">
           <AppLink to={routes.home()} tone="quiet">
             Learn AI
           </AppLink>

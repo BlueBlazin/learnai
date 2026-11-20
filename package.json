@@ -30,6 +30,7 @@
     "@codemirror/view": "6.43.15",
     "@fontsource-variable/ibm-plex-sans": "5.3.0",
     "@fontsource-variable/literata": "5.3.0",
+    "@fontsource/google-sans": "5.3.2",
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@lezer/highlight": "1.2.5",
     "@tailwindcss/vite": "^4.3.5",

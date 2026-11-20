@@ -33,7 +33,7 @@ badges, or one large radius on everything.
 
 ## 2. Typography
 
-Three families, each with one job. All are self-hosted through Fontsource and
+Three families, each with one job, and a fourth for the wordmark. All are self-hosted through Fontsource and
 bundled by Vite; the app makes no network requests for type.
 
 | Role | Family | Why |
@@ -41,6 +41,9 @@ bundled by Vite; the app makes no network requests for type.
 | Reading and titles | **Literata** (variable, optical size axis, roman and italic) | Designed for long-form reading on screens. Sturdy at 17px, and its optical sizes give titles finer detail without a second display face. |
 | Interface | **IBM Plex Sans** (variable) | An engineered grotesque that is legible at 12 to 13px, has true tabular figures, and recedes next to a serif. |
 | Code and output | **IBM Plex Mono** (400, 400 italic, 500, 600) | Same design family as the interface face, so chrome and code share proportions; its italic makes comments distinct without color. |
+
+The wordmark in the title bar is the one exception: "Learn AI" is set in
+**Google Sans** bold (700, Latin only), which is used nowhere else.
 
 Math is set by KaTeX in its own faces, scaled (`1.04em`) to sit with Literata's
 x-height.

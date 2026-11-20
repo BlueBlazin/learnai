@@ -3,6 +3,7 @@ import {
   type DocBlock,
   formatDoc,
   type HoverParts,
+  isPlaceholderType,
   isUnknownSignature,
   plainSignature,
   withoutLeadingSignature,
@@ -26,6 +27,32 @@ export function hasDocContent(content: DocCardContent): boolean {
 }
 
 /**
+ * True when a hover from the server leaves the documentation to the docs
+ * helper: it has no docstring, or only the one of a placeholder type.
+ */
+export function hoverNeedsDocs(hover: HoverParts): boolean {
+  return needsDocsFallback(hover.doc) || isPlaceholderType(hover.signature);
+}
+
+/** What the language server said about one completion item. */
+export interface ServerItemDocs {
+  /** The item's type or signature. */
+  detail: string | null;
+  documentation: string | null;
+}
+
+/**
+ * A completion item's detail and documentation, without an answer that only
+ * says the server does not know. For a name it cannot type (`torch.special.erf`,
+ * bound at import time), the server sends the detail `Unknown` and, as the
+ * documentation, the docstring of the `Unknown` type itself. Neither is about
+ * the name, so both are dropped and the docs helper is asked instead.
+ */
+export function serverItemDocs(detail: string | null, documentation: string | null): ServerItemDocs {
+  return isPlaceholderType(detail) ? { detail: null, documentation: null } : { detail, documentation };
+}
+
+/**
  * The hover card, from the language server's hover and the docs helper's
  * answer (either may be missing). The server's signature and documentation
  * win when it has them; the helper fills in what is missing, and adds the
@@ -33,7 +60,7 @@ export function hasDocContent(content: DocCardContent): boolean {
  */
 export function hoverContent(hover: HoverParts | null, docs: EditorDocs | null): DocCardContent {
   const known = hover && !isUnknownSignature(hover.signature) ? hover.signature : null;
-  const serverDoc = hover && !needsDocsFallback(hover.doc) ? hover.doc : null;
+  const serverDoc = hover && hoverNeedsDocs(hover) ? null : (hover?.doc ?? null);
   return {
     signature: known ? plainSignature(known) : (docs?.signature ?? null),
     caption: docs?.name ?? null,
@@ -47,10 +74,11 @@ export function hoverContent(hover: HoverParts | null, docs: EditorDocs | null):
  * documentation, the docs helper's when the server sent none.
  */
 export function completionContent(
-  detail: string | null,
-  documentation: string | null,
+  serverDetail: string | null,
+  serverDocumentation: string | null,
   docs: EditorDocs | null,
 ): DocCardContent {
+  const { detail, documentation } = serverItemDocs(serverDetail, serverDocumentation);
   const signature = detail ? plainSignature(detail) : null;
   if (!needsDocsFallback(documentation)) {
     return { signature, blocks: formatDoc(withoutLeadingSignature(documentation ?? "")) };

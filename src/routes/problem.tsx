@@ -1,6 +1,6 @@
 import { createLazyRoute, getRouteApi } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useDefaultLayout } from "react-resizable-panels";
+import { type Layout, type LayoutChangedMeta, useDefaultLayout } from "react-resizable-panels";
 import { AppLink } from "@/components/app/app-link";
 import { ScreenMessage } from "@/components/app/page";
 import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
@@ -14,9 +14,12 @@ import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { EditorPane } from "@/components/workbench/editor-pane";
 import { HardwareNotice } from "@/components/workbench/hardware-notice";
+import { PanelToggle } from "@/components/workbench/panel-toggle";
 import { StatementPane } from "@/components/workbench/statement-pane";
 import { SuggestionsStatus } from "@/components/workbench/suggestions-status";
+import { useCollapsiblePanel } from "@/hooks/use-collapsible-panel";
 import { useGo } from "@/hooks/use-go";
+import { usePanelShortcuts } from "@/hooks/use-panel-shortcuts";
 import { useRunShortcuts } from "@/hooks/use-run-shortcuts";
 import type { Review, ReviewAction, RunMode } from "@/lib/api";
 import {
@@ -41,10 +44,15 @@ import { IS_MAC } from "@/lib/platform";
 import { reviewOutcome } from "@/lib/reviews";
 import { type ProblemSearch, routes, type StatementTab } from "@/lib/routes";
 import { hostOf, knownHardware, LOCAL, resolveTarget, targetsWith } from "@/lib/targets";
+import { isCollapsedSize, withPanelExpanded } from "@/lib/workspace-layout";
 import { preferredFramework, usePreferences } from "@/stores/preferences";
 import { useWorkspaceActions } from "@/stores/workspace-actions";
 
 const route = getRouteApi("/problems/$problemId");
+
+/** The share (percent) of the workspace each collapsible panel takes until the user resizes it. */
+const STATEMENT_SIZE = 46;
+const RESULTS_SIZE = 40;
 
 function ProblemScreen({ problemId }: { problemId: string }) {
   const search = route.useSearch();
@@ -100,36 +108,122 @@ function ProblemScreen({ problemId }: { problemId: string }) {
   const columns = useDefaultLayout({ id: "learnai.workspace.columns" });
   const rows = useDefaultLayout({ id: "learnai.workspace.rows" });
 
+  // The statement and the results collapse to nothing; the editor between them never does.
+  // A collapsed panel is a zero in the saved layout, so it stays collapsed across a restart.
+  const panelSizes = usePreferences((state) => state.panelSizes);
+  const setPanelSize = usePreferences((state) => state.setPanelSize);
+  // An address that opens a stored submission asks for the statement side: arrive with it showing.
+  const [openingColumns] = useState(() =>
+    search.submission === undefined
+      ? columns.defaultLayout
+      : withPanelExpanded(columns.defaultLayout, "statement", panelSizes.statement ?? STATEMENT_SIZE),
+  );
+  const editorPanel = useRef<HTMLDivElement | null>(null);
+  /** Collapsing a panel that held the focus hands it to the editor rather than dropping it. */
+  const focusEditor = useCallback(
+    () => editorPanel.current?.querySelector<HTMLElement>("[role=textbox]")?.focus(),
+    [],
+  );
+  const statementPanel = useCollapsiblePanel({
+    initiallyCollapsed: isCollapsedSize(openingColumns?.statement),
+    restoreSize: panelSizes.statement,
+    onFocusLost: focusEditor,
+  });
+  const resultsPanel = useCollapsiblePanel({
+    initiallyCollapsed: isCollapsedSize(rows.defaultLayout?.results),
+    restoreSize: panelSizes.results,
+    onFocusLost: focusEditor,
+  });
+  const { expand: showStatement, toggle: toggleStatement } = statementPanel;
+  const { expand: showResults, toggle: toggleResults } = resultsPanel;
+  usePanelShortcuts(toggleStatement, toggleResults);
+  // Save each layout, and remember the size a panel showed at for when it reopens.
+  const { onLayoutChanged: saveColumns } = columns;
+  const onColumnsChanged = useCallback(
+    (layout: Layout, meta: LayoutChangedMeta) => {
+      saveColumns(layout, meta);
+      setPanelSize("statement", layout.statement);
+    },
+    [saveColumns, setPanelSize],
+  );
+  const { onLayoutChanged: saveRows } = rows;
+  const onRowsChanged = useCallback(
+    (layout: Layout, meta: LayoutChangedMeta) => {
+      saveRows(layout, meta);
+      setPanelSize("results", layout.results);
+    },
+    [saveRows, setPanelSize],
+  );
+
   const { flush } = editor;
   const { start: startRun, active } = run;
   const start = useCallback(
     async (mode: RunMode) => {
       if (!framework || active) return;
+      // A run reports into the results panel: show it.
+      showResults();
       markFrameworkUsed(problemId, framework);
       setReviewed(reviewing && mode === "submit" ? review : null);
       // The judge reads the file on disk: save before running.
       await flush();
       await startRun(framework, mode, target, reviewing);
     },
-    [active, flush, framework, markFrameworkUsed, problemId, review, reviewing, startRun, target],
+    [
+      active,
+      flush,
+      framework,
+      markFrameworkUsed,
+      problemId,
+      review,
+      reviewing,
+      showResults,
+      startRun,
+      target,
+    ],
   );
   const onRun = useCallback(() => void start("run"), [start]);
   const onSubmit = useCallback(() => void start("submit"), [start]);
   useRunShortcuts(onRun, onSubmit);
 
-  // Offer Run and Submit in the command palette while this workspace is open.
+  // Offer Run, Submit, and the panel toggles in the command palette while this workspace is open.
   const title = problem.data?.title;
   const setActions = useWorkspaceActions((state) => state.setActions);
+  const statementCollapsed = statementPanel.collapsed;
+  const resultsCollapsed = resultsPanel.collapsed;
   useEffect(() => {
     if (!title) return;
-    setActions({ problemTitle: title, run: onRun, submit: onSubmit, busy: active });
+    setActions({
+      problemTitle: title,
+      run: onRun,
+      submit: onSubmit,
+      busy: active,
+      statementCollapsed,
+      resultsCollapsed,
+      toggleStatement,
+      toggleResults,
+    });
     return () => setActions(null);
-  }, [title, onRun, onSubmit, active, setActions]);
+  }, [
+    title,
+    onRun,
+    onSubmit,
+    active,
+    statementCollapsed,
+    resultsCollapsed,
+    toggleStatement,
+    toggleResults,
+    setActions,
+  ]);
 
   const tab: StatementTab = search.tab ?? "statement";
-  /** Moves within the workspace (tab, open submission) without leaving review mode. */
-  const setSearch = (next: ProblemSearch) =>
+  /**
+   * Moves within the workspace (tab, open submission) without leaving review mode.
+   * Where it leads is on the statement side, so the statement is shown.
+   */
+  const setSearch = (next: ProblemSearch) => {
+    showStatement();
     go(routes.problem(problemId, reviewing ? { ...next, review: true } : next), { replace: true });
+  };
   const { tab: searchTab, submission: searchSubmission, review: searchReview } = search;
   const setReviewMode = useCallback(
     (on: boolean) => {
@@ -251,10 +345,15 @@ function ProblemScreen({ problemId }: { problemId: string }) {
   return (
     <ResizablePanelGroup
       orientation="horizontal"
-      defaultLayout={columns.defaultLayout}
-      onLayoutChanged={columns.onLayoutChanged}
+      defaultLayout={openingColumns}
+      onLayoutChanged={onColumnsChanged}
     >
-      <ResizablePanel id="statement" defaultSize="46%" minSize="30%">
+      <ResizablePanel
+        id="statement"
+        defaultSize={`${STATEMENT_SIZE}%`}
+        minSize="30%"
+        {...statementPanel.panelProps}
+      >
         <StatementPane
           problem={detail}
           track={tracks.data?.find((track) => track.id === detail.track)}
@@ -273,15 +372,30 @@ function ProblemScreen({ problemId }: { problemId: string }) {
         />
       </ResizablePanel>
       <ResizableHandle />
-      <ResizablePanel id="work" defaultSize="54%" minSize="34%">
+      <ResizablePanel id="work" defaultSize={`${100 - STATEMENT_SIZE}%`} minSize="34%">
         <ResizablePanelGroup
           orientation="vertical"
           defaultLayout={rows.defaultLayout}
-          onLayoutChanged={rows.onLayoutChanged}
+          onLayoutChanged={onRowsChanged}
         >
-          <ResizablePanel id="editor" defaultSize="60%" minSize="25%">
+          <ResizablePanel
+            id="editor"
+            defaultSize={`${100 - RESULTS_SIZE}%`}
+            minSize="25%"
+            elementRef={editorPanel}
+          >
             <EditorPane
               problemId={problemId}
+              layoutControls={
+                <>
+                  <PanelToggle
+                    panel="statement"
+                    collapsed={statementPanel.collapsed}
+                    onToggle={toggleStatement}
+                  />
+                  <PanelToggle panel="results" collapsed={resultsPanel.collapsed} onToggle={toggleResults} />
+                </>
+              }
               suggestions={
                 <SuggestionsStatus session={suggestions} onRetry={() => editorSession.restart()} />
               }
@@ -337,7 +451,12 @@ function ProblemScreen({ problemId }: { problemId: string }) {
             />
           </ResizablePanel>
           <ResizableHandle />
-          <ResizablePanel id="results" defaultSize="40%" minSize="15%">
+          <ResizablePanel
+            id="results"
+            defaultSize={`${RESULTS_SIZE}%`}
+            minSize="15%"
+            {...resultsPanel.panelProps}
+          >
             <ResultsPanel
               run={run.state}
               onCancel={run.cancel}

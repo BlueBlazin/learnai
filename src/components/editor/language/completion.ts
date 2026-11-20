@@ -12,7 +12,7 @@ import { LSPPlugin } from "@codemirror/lsp-client";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { completionSortKey, completionValidity, kindWord, markupText } from "@/lib/editor/completion";
-import { completionContent, type DocCardContent, hasDocContent } from "@/lib/editor/doc-card";
+import { completionContent, type DocCardContent, hasDocContent, serverItemDocs } from "@/lib/editor/doc-card";
 import { type DocsLookup, mayBeLibraryName, needsDocsFallback } from "@/lib/editor/docs-lookup";
 import { receiverBefore } from "@/lib/editor/expression";
 import { docCard } from "./doc-view";
@@ -54,14 +54,13 @@ function toCompletion(
   const text = item.textEdit?.newText || item.textEditText || item.insertText || item.label;
   const format = item.insertTextFormat ?? list.itemDefaults?.insertTextFormat;
   const label = item.filterText || item.label;
-  const detail = item.detail ?? null;
   const completion: Completion = {
     label,
     displayLabel: item.label,
     detail: kindWord(item.kind),
     sortText: completionSortKey(item.label),
     info: () => {
-      const documentation = markupText(item.documentation);
+      const { detail, documentation } = serverItemDocs(item.detail ?? null, markupText(item.documentation));
       const source = view.state.doc.toString();
       const name = receiver ? `${receiver}.${item.label}` : item.label;
       if (!needsDocsFallback(documentation) || receiver === null || !mayBeLibraryName(source, name)) {

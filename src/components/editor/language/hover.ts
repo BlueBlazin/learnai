@@ -3,9 +3,9 @@ import type { Extension } from "@codemirror/state";
 import { type EditorView, hoverTooltip, type Tooltip } from "@codemirror/view";
 import type { EditorDocs } from "@/lib/api/types";
 import { markupText } from "@/lib/editor/completion";
-import { hasDocContent, hoverContent } from "@/lib/editor/doc-card";
+import { hasDocContent, hoverContent, hoverNeedsDocs } from "@/lib/editor/doc-card";
 import { isUnknownSignature, parseHover } from "@/lib/editor/doc-format";
-import { type DocsLookup, mayBeLibraryName, needsDocsFallback } from "@/lib/editor/docs-lookup";
+import { type DocsLookup, mayBeLibraryName } from "@/lib/editor/docs-lookup";
 import { dottedNameAt } from "@/lib/editor/expression";
 import { docCard, fillDocCard } from "./doc-view";
 
@@ -44,7 +44,7 @@ function hoverSource(docs: DocsLookup) {
     let docsAnswer: EditorDocs | null = null;
     let pending: Promise<EditorDocs | null> | null = null;
     const source = view.state.doc.toString();
-    if ((!hover || needsDocsFallback(hover.doc)) && mayBeLibraryName(source, expression)) {
+    if ((!hover || hoverNeedsDocs(hover)) && mayBeLibraryName(source, expression)) {
       const lookup = docs.lookup(source, expression);
       const nothingYet = !hover || isUnknownSignature(hover.signature);
       const early = await Promise.race([

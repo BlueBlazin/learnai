@@ -47,6 +47,9 @@ importers:
       '@fontsource-variable/literata':
         specifier: 5.3.0
         version: 5.3.0
+      '@fontsource/google-sans':
+        specifier: 5.3.2
+        version: 5.3.2
       '@fontsource/ibm-plex-mono':
         specifier: 5.3.0
         version: 5.3.0
@@ -450,6 +453,9 @@ packages:
 
   '@fontsource-variable/literata@5.3.0':
     resolution: {integrity: sha512-1Jw7xvOcoGyB83lxB2nG4bfNbqtX2/TTbdh9sHAOmU064SvmSdulDtA5RBu5JYWf64fdaKX7xU+z3GO1T2bCHA==}
+
+  '@fontsource/google-sans@5.3.2':
+    resolution: {integrity: sha512-IwR9hZgU1LUi0RAkhlqb+mCflPi/dU3ZJRUfznUW9TwgGXS2mEOeCptvVKVy/jRqhCJgwHYWvKHM9DU3/N4xsQ==}
 
   '@fontsource/ibm-plex-mono@5.3.0':
     resolution: {integrity: sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q==}
@@ -3125,6 +3131,8 @@ snapshots:
   '@fontsource-variable/ibm-plex-sans@5.3.0': {}
 
   '@fontsource-variable/literata@5.3.0': {}
+
+  '@fontsource/google-sans@5.3.2': {}
 
   '@fontsource/ibm-plex-mono@5.3.0': {}
 

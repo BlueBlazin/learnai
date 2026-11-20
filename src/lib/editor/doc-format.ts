@@ -78,9 +78,19 @@ export function parseHover(markdown: string): HoverParts {
   return { signature: signature === "" ? null : signature, doc: rest };
 }
 
+/**
+ * True when the server answered with a placeholder type instead of what the
+ * name is. Whatever documentation comes with such an answer describes the
+ * placeholder ("Unknown is a dynamic type inferred due to missing type
+ * information"), not the name.
+ */
+export function isPlaceholderType(signature: string | null): boolean {
+  return signature !== null && /^(Unknown|Never|Todo|@Todo)$/.test(signature.trim());
+}
+
 /** True when the server could not say what a name is; such a hover is not worth showing. */
 export function isUnknownSignature(signature: string | null): boolean {
-  return signature === null || /^(Unknown|Never|Todo|@Todo)$/.test(signature.trim());
+  return signature === null || isPlaceholderType(signature);
 }
 
 /** A signature this short is set on one line; a longer one keeps one parameter per line. */

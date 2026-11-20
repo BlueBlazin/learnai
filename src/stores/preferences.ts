@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { FRAMEWORKS, type Framework } from "@/lib/api";
+import { isCollapsedSize, type WorkspacePanel } from "@/lib/workspace-layout";
 
 interface PreferencesStore {
   /** The framework each problem was last open in. */
@@ -16,6 +17,13 @@ interface PreferencesStore {
   /** The run target last chosen in a workspace: "local" or an SSH target's name. */
   target: string;
   setTarget: (target: string) => void;
+  /**
+   * The size (percent of its group) each collapsible workspace panel last showed
+   * at: what it reopens to. Whether it is collapsed is in the saved panel layout.
+   */
+  panelSizes: Partial<Record<WorkspacePanel, number>>;
+  /** Remembers a panel's size while it is showing; a collapsed size is ignored. */
+  setPanelSize: (panel: WorkspacePanel, size: number | undefined) => void;
   /** Remembers the framework a problem is open in. */
   setFramework: (problemId: string, framework: Framework) => void;
   /** Records real work in a framework: an edit, a run, or a submit. */
@@ -32,6 +40,11 @@ export const usePreferences = create<PreferencesStore>()(
       hintsRevealed: {},
       target: "local",
       setTarget: (target) => set({ target }),
+      panelSizes: {},
+      setPanelSize: (panel, size) => {
+        if (size === undefined || isCollapsedSize(size) || get().panelSizes[panel] === size) return;
+        set((state) => ({ panelSizes: { ...state.panelSizes, [panel]: size } }));
+      },
       setFramework: (problemId, framework) =>
         set((state) => ({ frameworkByProblem: { ...state.frameworkByProblem, [problemId]: framework } })),
       markFrameworkUsed: (problemId, framework) => {
@@ -47,6 +60,8 @@ export const usePreferences = create<PreferencesStore>()(
     }),
     {
       name: "learnai.preferences",
+      // `panelSizes` was added without a new version: a stored state that lacks it keeps
+      // the default above, and a version bump would run `migrate` and forget `lastFramework`.
       version: 1,
       // Version 0 set `lastFramework` on every switch, so one look at another framework
       // became the default everywhere. Drop that value; it is re-learned from real work.

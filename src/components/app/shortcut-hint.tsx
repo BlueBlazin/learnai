@@ -10,6 +10,8 @@ export const SHORTCUTS = {
   run: ["mod", "enter"],
   submit: ["shift", "mod", "enter"],
   palette: ["mod", "K"],
+  toggleStatement: ["mod", "B"],
+  toggleResults: ["mod", "J"],
 } satisfies Record<string, ShortcutKey[]>;
 
 /** A keyboard shortcut rendered as key caps, optionally with the action it performs. */
