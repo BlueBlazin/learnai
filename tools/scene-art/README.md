@@ -6,7 +6,7 @@ observatory at night. The places set a mood and a color for each stage; they do
 not depict the stage's topic.
 
 The shipped files are in `src/assets/scenes/`: `<slug>.webp` (1584x672, 21:9)
-and `scenes.json`, an array in stage order of `{ slug, place, accent }`, where
+and `scenes.json`, an array in stage order of `{ slug, accent }`, where
 `accent` is the color measured from the finished image.
 
 ## Files

@@ -207,7 +207,6 @@ impl Core {
                             title: stage.title,
                             description: stage.description,
                             problems: stage.problems,
-                            place: stage.place,
                             scene: stage.scene,
                             color: stage.color,
                         })

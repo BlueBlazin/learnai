@@ -16,7 +16,7 @@ export function stageSectionId(number: number): string {
  * rule, the part's number, title, and what it covers in the margin column, and
  * its problems beside them. A part with nothing solved states its length, not
  * a count of zero. A stage with a scene opens its margin column with the scene
- * as a plate and the place name under it; the stage color is a swatch before
+ * as a plate; the stage color is a swatch before
  * the part number. The colors come from `stageColorVars` on an ancestor.
  */
 export function PathStage({
@@ -46,17 +46,12 @@ export function PathStage({
     >
       <header className="w-60 shrink-0 pt-2">
         {scene ? (
-          <figure className="mb-4">
-            <img
-              src={scene}
-              alt=""
-              draggable={false}
-              className="aspect-3/2 w-full rounded-sm object-cover object-center"
-            />
-            {stage.place ? (
-              <figcaption className="mt-1.5 text-xs text-muted-foreground">{stage.place}</figcaption>
-            ) : null}
-          </figure>
+          <img
+            src={scene}
+            alt=""
+            draggable={false}
+            className="mb-4 aspect-3/2 w-full rounded-sm object-cover object-center"
+          />
         ) : null}
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           {color ? <StageSwatch color={stageMark(number - 1)} /> : null}

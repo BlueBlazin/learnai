@@ -170,8 +170,7 @@ description = "One sentence."
 title = "Numerics and tensors"
 description = "One sentence."
 problems = ["stable-softmax", "rmsnorm"]
-place = "The trailhead"            # optional display fields, see below
-scene = "stage-01-trailhead"
+scene = "stage-01-trailhead"            # optional display fields, see below
 color = "#ed9b11"
 ```
 
@@ -179,11 +178,10 @@ A problem id that does not exist in the catalog is skipped and reported as a cat
 issue; it never breaks the path. Paths are listed in file-name order; the first is the
 learner's study path.
 
-A stage may also carry three optional display keys: `place` (a short name for its
-illustration; blank counts as absent), `scene` (the slug of an illustration bundled with
-the app), and `color` (`#rrggbb`, stored lowercase). A `scene` that is not a slug or a
+A stage may also carry two optional display keys: `scene` (the slug of an illustration
+bundled with the app) and `color` (`#rrggbb`, stored lowercase). A `scene` that is not a slug or a
 `color` that is not a hex color is dropped and reported as a catalog issue; the stage and
-the path still load. The core passes the three through unchanged and does not know the
+the path still load. The core passes the two through unchanged and does not know the
 images; the front end maps `scene` to one.
 
 ### 3.4 Judge types

@@ -94,7 +94,7 @@ def main() -> None:
         image = finish(Image.open(args.raw_dir / f"{slug}.jpg"), scene.get("crop"))
         image.save(OUT_DIR / f"{slug}.webp", "WEBP", quality=QUALITY, method=6)
         accent = measure_accent(image)
-        manifest.append({"slug": slug, "place": scene["place"], "accent": accent})
+        manifest.append({"slug": slug, "accent": accent})
         finals.append((f"{scene['stage']:02d}  {slug}   {accent}", image))
         print(slug, "asked", scene["accent"]["hex"], "printed", accent)
     (OUT_DIR / "scenes.json").write_text(json.dumps(manifest, indent=2) + "\n")

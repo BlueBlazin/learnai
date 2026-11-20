@@ -160,16 +160,12 @@ fn one_stage(extra: &str) -> String {
     )
 }
 
-fn stage_fields(core: &learnai_core::Core) -> (Option<String>, Option<String>, Option<String>) {
+fn stage_fields(core: &learnai_core::Core) -> (Option<String>, Option<String>) {
     let paths = core.list_paths().expect("paths");
     assert_eq!(paths.len(), 1);
     assert_eq!(paths[0].stages.len(), 1);
     let stage = &paths[0].stages[0];
-    (
-        stage.place.clone(),
-        stage.scene.clone(),
-        stage.color.clone(),
-    )
+    (stage.scene.clone(), stage.color.clone())
 }
 
 fn deco_issues(core: &learnai_core::Core) -> Vec<String> {
@@ -184,14 +180,11 @@ fn deco_issues(core: &learnai_core::Core) -> Vec<String> {
 fn stage_display_fields_round_trip() {
     let root = TestRoot::new();
     let core = root.core("happy");
-    let text = one_stage(
-        "place = \"  The trailhead \"\nscene = \"stage-01-trailhead\"\ncolor = \"#ed9b11\"\n",
-    );
+    let text = one_stage("scene = \"stage-01-trailhead\"\ncolor = \"#ed9b11\"\n");
     write_path(root.path(), "deco.toml", &text);
     assert_eq!(
         stage_fields(&core),
         (
-            Some("The trailhead".to_owned()),
             Some("stage-01-trailhead".to_owned()),
             Some("#ed9b11".to_owned())
         )
@@ -200,18 +193,15 @@ fn stage_display_fields_round_trip() {
 }
 
 #[test]
-fn stage_color_is_lowercased_and_blank_place_is_absent() {
+fn stage_color_is_lowercased() {
     let root = TestRoot::new();
     let core = root.core("happy");
     write_path(
         root.path(),
         "deco.toml",
-        &one_stage("place = \"   \"\ncolor = \"#ED9B1F\"\n"),
+        &one_stage("color = \"#ED9B1F\"\n"),
     );
-    assert_eq!(
-        stage_fields(&core),
-        (None, None, Some("#ed9b1f".to_owned()))
-    );
+    assert_eq!(stage_fields(&core), (None, Some("#ed9b1f".to_owned())));
     assert!(deco_issues(&core).is_empty());
 }
 
@@ -222,9 +212,9 @@ fn a_bad_scene_or_color_is_dropped_with_one_issue_and_the_stage_stays() {
     write_path(
         root.path(),
         "deco.toml",
-        &one_stage("place = \"Here\"\nscene = \"Not A Slug\"\ncolor = \"#12345g\"\n"),
+        &one_stage("scene = \"Not A Slug\"\ncolor = \"#12345g\"\n"),
     );
-    assert_eq!(stage_fields(&core), (Some("Here".to_owned()), None, None));
+    assert_eq!(stage_fields(&core), (None, None));
     let issues = deco_issues(&core);
     assert_eq!(issues.len(), 2, "{issues:?}");
     assert!(issues[0].contains("stage `S`") && issues[0].contains("`Not A Slug`"));
@@ -232,7 +222,7 @@ fn a_bad_scene_or_color_is_dropped_with_one_issue_and_the_stage_stays() {
 
     // A short color is bad too; issues are recomputed on each load.
     write_path(root.path(), "deco.toml", &one_stage("color = \"#fff\"\n"));
-    assert_eq!(stage_fields(&core), (None, None, None));
+    assert_eq!(stage_fields(&core), (None, None));
     assert_eq!(deco_issues(&core).len(), 1);
 }
 
@@ -241,7 +231,7 @@ fn a_stage_without_display_fields_is_unchanged() {
     let root = TestRoot::new();
     let core = root.core("happy");
     write_path(root.path(), "deco.toml", &one_stage(""));
-    assert_eq!(stage_fields(&core), (None, None, None));
+    assert_eq!(stage_fields(&core), (None, None));
     assert!(deco_issues(&core).is_empty());
 }
 

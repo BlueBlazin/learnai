@@ -79,13 +79,13 @@ export function HomeScreen() {
   const nextStep = useMemo(() => (entries ? nextOnPath(entries) : null), [entries]);
   const byDay = useMemo(() => activityByDay(submissions.data ?? []), [submissions.data]);
   const now = new Date();
-  // The stage the suggestion sits in, when it is on the path: its place and scene head the page.
+  // The stage the suggestion sits in, when it is on the path: its scene heads the page.
   const targetStage = useMemo(() => {
     const index = target?.onPath && entries ? findOnPath(entries, target.problem.id)?.stage : undefined;
     const stage = index === undefined ? undefined : path?.stages[index];
     return index === undefined || !stage
       ? undefined
-      : { index, title: stage.title, place: stage.place, scene: sceneUrl(stage.scene) };
+      : { index, title: stage.title, scene: sceneUrl(stage.scene) };
   }, [target, entries, path]);
   // The banner for a finished path is the last stage's.
   const lastScene = nextStep || !path ? null : sceneUrl(path.stages[path.stages.length - 1]?.scene);

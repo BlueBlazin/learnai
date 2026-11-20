@@ -7,7 +7,6 @@ description = "The shortest route through LLM inference: from the arithmetic ins
 [[stages]]
 title = "Numerics and tensors"
 description = "Stable arithmetic and the indexing that every later problem assumes."
-place = "The trailhead"
 scene = "stage-01-trailhead"
 color = "#ed9b11"
 problems = ["stable-softmax", "rmsnorm", "attention-mask-builder", "last-token-gather", "sequence-log-likelihood"]
@@ -15,7 +14,6 @@ problems = ["stable-softmax", "rmsnorm", "attention-mask-builder", "last-token-g
 [[stages]]
 title = "Text to tokens and back"
 description = "Encode, decode, and template text exactly as a production tokenizer does."
-place = "The crossing"
 scene = "stage-02-crossing"
 color = "#e5691d"
 problems = ["bpe-encode", "special-tokens-split", "streaming-detokenizer", "chat-template-render", "tokenizer-json-load"]
@@ -23,7 +21,6 @@ problems = ["bpe-encode", "special-tokens-split", "streaming-detokenizer", "chat
 [[stages]]
 title = "The forward pass"
 description = "Build a current decoder-only model piece by piece, then match a real one."
-place = "The pine forest"
 scene = "stage-03-forest"
 color = "#2a71cc"
 problems = ["causal-self-attention", "rope", "swiglu-mlp", "grouped-query-attention", "decoder-forward", "padded-batch-invariance", "moe-router-forward", "real-model-logits"]
@@ -31,7 +28,6 @@ problems = ["causal-self-attention", "rope", "swiglu-mlp", "grouped-query-attent
 [[stages]]
 title = "Choosing the next token"
 description = "The samplers engines ship, composed in the right order, and when to stop."
-place = "The meadow"
 scene = "stage-04-meadow"
 color = "#db5881"
 problems = ["temperature-scaling", "top-k-filtering", "top-p-filtering", "min-p-filtering", "repetition-penalty", "categorical-sample", "sampler-chain", "stop-sequences"]
@@ -39,7 +35,6 @@ problems = ["temperature-scaling", "top-k-filtering", "top-p-filtering", "min-p-
 [[stages]]
 title = "The KV cache"
 description = "Compute each token once, then share, page, and index the memory."
-place = "The lake"
 scene = "stage-05-lake"
 color = "#18978e"
 problems = ["kv-cache-append", "cached-greedy-decode", "cached-rope-offsets", "preallocated-kv-cache", "batched-cached-decode", "prefix-cache-reuse", "paged-kv-allocator", "radix-prefix-cache"]
@@ -47,7 +42,6 @@ problems = ["kv-cache-append", "cached-greedy-decode", "cached-rope-offsets", "p
 [[stages]]
 title = "Structured output"
 description = "Turn a regex or schema into per-step token masks and decode under them."
-place = "The terraces"
 scene = "stage-06-terraces"
 color = "#8fc30b"
 problems = ["token-mask-apply", "dfa-token-mask", "dfa-token-index", "constrained-greedy-decode", "json-schema-regex"]
@@ -55,7 +49,6 @@ problems = ["token-mask-apply", "dfa-token-mask", "dfa-token-index", "constraine
 [[stages]]
 title = "Quantization"
 description = "Shrink weights, compute on the codes, and measure what was lost."
-place = "The canyon"
 scene = "stage-07-canyon"
 color = "#834ccd"
 problems = ["affine-int8", "symmetric-per-channel", "groupwise-4bit", "quantized-matmul", "lora-merge", "gptq-column-update"]
@@ -63,7 +56,6 @@ problems = ["affine-int8", "symmetric-per-channel", "groupwise-4bit", "quantized
 [[stages]]
 title = "Speculative decoding"
 description = "Draft cheaply and verify exactly, first for one token, then in a loop."
-place = "The ridge"
 scene = "stage-08-ridge"
 color = "#f4c60a"
 problems = ["greedy-speculative-verify", "speculative-sampling-step", "speculative-sampling-block", "speculative-decode-loop"]
@@ -71,7 +63,6 @@ problems = ["greedy-speculative-verify", "speculative-sampling-step", "speculati
 [[stages]]
 title = "Sizing and measurement"
 description = "Predict memory and speed from a config, and measure latency correctly."
-place = "The survey tower"
 scene = "stage-09-tower"
 color = "#c2332f"
 problems = ["param-count", "kv-cache-bytes", "memory-bandwidth-bound", "latency-metrics", "latency-percentiles", "goodput-slo"]
@@ -79,7 +70,6 @@ problems = ["param-count", "kv-cache-bytes", "memory-bandwidth-bound", "latency-
 [[stages]]
 title = "Serving"
 description = "Batch, admit, schedule, cancel, and stream under load."
-place = "The village"
 scene = "stage-10-village"
 color = "#27add9"
 problems = ["dynamic-batcher", "sse-token-stream", "token-bucket-limiter", "admission-control", "continuous-batching-scheduler", "chunked-prefill-scheduling", "deadline-cancellation", "vtc-fair-scheduler", "openai-chat-endpoint", "preemption-recompute", "prefix-aware-router"]
@@ -87,7 +77,6 @@ problems = ["dynamic-batcher", "sse-token-stream", "token-bucket-limiter", "admi
 [[stages]]
 title = "On the GPU"
 description = "Lazy evaluation, compilation, and static caches on MLX and CUDA."
-place = "The glacier"
 scene = "stage-11-glacier"
 color = "#22964c"
 problems = ["mlx-lazy-eval-placement", "mlx-compile-step", "mlx-streaming-generate", "cuda-sync-free-decode-loop", "cuda-static-kv-cache"]
@@ -95,7 +84,6 @@ problems = ["mlx-lazy-eval-placement", "mlx-compile-step", "mlx-streaming-genera
 [[stages]]
 title = "Around the model"
 description = "Place a model across devices and drive it from an application loop."
-place = "The high pass"
 scene = "stage-12-pass"
 color = "#c94db5"
 problems = ["device-map-solver", "tool-call-loop"]
@@ -103,7 +91,6 @@ problems = ["device-map-solver", "tool-call-loop"]
 [[stages]]
 title = "Capstones"
 description = "Put it together: an engine and a complete runtime for a real model."
-place = "The summit"
 scene = "stage-13-summit"
 color = "#e6b125"
 problems = ["capstone-continuous-batching-engine", "capstone-real-model-runtime"]

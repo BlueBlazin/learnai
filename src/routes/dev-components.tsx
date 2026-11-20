@@ -220,7 +220,6 @@ const ROUTE_STAGES: Path["stages"] = scenes.map((scene, index) => ({
     ["Numerics", "Tokens", "The forward pass", "Attention", "Caching", "Batching"][index] ??
     `Stage ${index + 1}`,
   description: "What this stage covers, in a sentence.",
-  place: scene.place,
   scene: scene.slug,
   color: scene.accent,
   problems: ROUTE_PROBLEMS.slice(index * 3, index * 3 + 3).map((problem) => problem.id),
@@ -1570,7 +1569,7 @@ function DevComponentsScreen() {
               problem={PROBLEMS[0] as ProblemSummary}
               track={TRACKS[1]}
               onPath={{ path: PATH, position: 1 }}
-              stage={{ index: 2, title: "The forward pass", place: "The pine forest" }}
+              stage={{ index: 2, title: "The forward pass" }}
               onOpen={() => {}}
             />
           </div>

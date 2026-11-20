@@ -262,8 +262,6 @@ export interface PathStage {
   title: string;
   description: string;
   problems: string[];
-  /** Short name of the stage's illustration, such as "The trailhead". */
-  place?: string;
   /** Slug of the bundled illustration, such as "stage-01-trailhead". */
   scene?: string;
   /** The stage's color as lowercase `#rrggbb`. */

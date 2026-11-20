@@ -32,9 +32,9 @@ export function ContinueEntry({
   onPath?: { path: Path; position: number };
   /**
    * The problem's stage on the path, for the line above the title: its swatch (colored by
-   * `stageColorVars` on an ancestor), part number and name, and the place its scene shows.
+   * `stageColorVars` on an ancestor), and part number and name.
    */
-  stage?: { index: number; title: string; place?: string };
+  stage?: { index: number; title: string };
   /** The most recent submission on this problem, when it is the reason for the suggestion. */
   lastSubmission?: Submission;
   /** Nothing has been attempted yet. */
@@ -48,13 +48,10 @@ export function ContinueEntry({
           {lastSubmission ? "Continue where you left off" : firstRun ? "Start here" : "Up next"}
         </span>
         {stage ? (
-          <>
-            <span className="inline-flex items-center gap-2">
-              <StageSwatch color={stageMark(stage.index)} />
-              Part {romanNumeral(stage.index + 1)}, {stage.title}
-            </span>
-            {stage.place ? <span className="ml-auto text-muted-foreground">{stage.place}</span> : null}
-          </>
+          <span className="inline-flex items-center gap-2">
+            <StageSwatch color={stageMark(stage.index)} />
+            Part {romanNumeral(stage.index + 1)}, {stage.title}
+          </span>
         ) : null}
       </p>
       <h1 className="selectable mt-2 max-w-measure font-serif text-3xl font-medium tracking-tight text-balance">

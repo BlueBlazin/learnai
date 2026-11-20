@@ -57,7 +57,6 @@ export function StagePlates({
         const last = index === count - 1;
         const wide = last && lastSpan > 1;
         const scene = sceneUrl(stage.scene);
-        const summary = [stage.place, stage.description].filter(Boolean).join(". ");
         return (
           <li
             key={stage.title}
@@ -90,7 +89,7 @@ export function StagePlates({
                   />
                 ) : null}
               </TooltipTrigger>
-              {summary ? <TooltipContent side="top">{summary}</TooltipContent> : null}
+              {stage.description ? <TooltipContent side="top">{stage.description}</TooltipContent> : null}
             </Tooltip>
             <span className="mt-3 flex h-1.5 items-center">
               <Pips index={index} total={total} solved={solved} />

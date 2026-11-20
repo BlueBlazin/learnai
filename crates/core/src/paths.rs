@@ -24,8 +24,6 @@ pub struct StageMeta {
     pub description: String,
     /// Ids of problems that exist in the catalog, in study order.
     pub problems: Vec<String>,
-    /// Short name of the stage's illustration, if any.
-    pub place: Option<String>,
     /// Slug of the bundled illustration, if any. The core does not know the images.
     pub scene: Option<String>,
     /// The stage's color as lowercase `#rrggbb`, if any.
@@ -71,8 +69,6 @@ struct StageToml {
     description: String,
     #[serde(default)]
     problems: Vec<String>,
-    #[serde(default)]
-    place: Option<String>,
     #[serde(default)]
     scene: Option<String>,
     #[serde(default)]
@@ -197,10 +193,6 @@ fn parse_path(
                 problems.push(id);
             }
         }
-        let place = stage
-            .place
-            .map(|place| place.trim().to_owned())
-            .filter(|place| !place.is_empty());
         let scene = stage.scene.filter(|scene| {
             let ok = is_slug(scene);
             if !ok {
@@ -233,7 +225,6 @@ fn parse_path(
                 title: stage.title,
                 description: stage.description,
                 problems,
-                place,
                 scene,
                 color,
             });

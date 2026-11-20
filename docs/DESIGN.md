@@ -313,7 +313,7 @@ Patterns that recur, and the one component that owns each:
 
 Home opens on the scene of the stage the learner has reached (`SceneBanner`),
 with the suggested problem under it (`ContinueEntry`, which names the stage
-with its swatch and the place). Then, top to bottom:
+with its swatch). Then, top to bottom:
 
 - `HabitStrip`: three facts under an ink rule, divided by hairlines. The streak
   with this week's seven days; the weekly goal (distinct problems solved since
@@ -371,7 +371,7 @@ with the running problem numbers.
 
 The header's bar is the `StageProgressBar` Home uses, shown from the start so
 its tinted tracks introduce the stages' colors. A stage that has a scene shows
-it as a plate at the top of its margin column, with the place name as a caption
+it as a plate at the top of its margin column,
 and the stage's swatch before "Part II". A `part` search parameter
 (`routes.paths(id, part)`) opens the screen scrolled to that part; Home's plates
 use it.
