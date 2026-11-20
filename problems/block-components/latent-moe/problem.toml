@@ -1,0 +1,12 @@
+id = "latent-moe"
+title = "Experts in a Narrower Space"
+track = "block-components"
+order = 50
+difficulty = "easy"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["mixture-of-experts", "latent", "low-rank", "routing", "kimi"]
+prerequisites = ["sigmoid-router-shared-expert", "moe-sparse-dispatch"]
+requires = "cpu"
+entry = ["latent_moe", "expert_params"]
+time_limit_s = 10

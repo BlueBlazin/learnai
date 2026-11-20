@@ -1,0 +1,12 @@
+id = "yarn-frequencies"
+title = "YaRN: Rescaling Rotary Frequencies"
+track = "block-components"
+order = 20
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["rope", "yarn", "context-extension", "positional-encoding", "gpt-oss"]
+prerequisites = ["rope"]
+requires = "cpu"
+entry = ["yarn_inv_freq", "yarn_tables"]
+time_limit_s = 10

@@ -1,0 +1,12 @@
+id = "shared-kv-rotation"
+title = "One Tensor as Key and Value"
+track = "block-components"
+order = 30
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["attention", "rope", "kv-cache", "shared-kv", "deepseek"]
+prerequisites = ["partial-rope", "causal-self-attention"]
+requires = "cpu"
+entry = ["shared_kv_attention"]
+time_limit_s = 10

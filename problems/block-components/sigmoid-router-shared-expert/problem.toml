@@ -1,0 +1,12 @@
+id = "sigmoid-router-shared-expert"
+title = "Sigmoid Routing with a Shared Expert"
+track = "block-components"
+order = 40
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["mixture-of-experts", "routing", "sigmoid", "shared-expert", "deepseek", "glm"]
+prerequisites = ["moe-router-forward"]
+requires = "cpu"
+entry = ["route", "moe_shared"]
+time_limit_s = 10

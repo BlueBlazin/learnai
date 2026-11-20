@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 246">
+  <title>Which channels of a 16-wide head rotate under the two meanings of a partial rotary factor of 0.5</title>
+  <desc>Two rows of 16 numbered channels. In the first row, the default convention, channels 0 to 7 are rotated and channel i is paired with channel i + 4; channels 8 to 15 pass through. In the second row, the proportional convention, channels 0 to 3 and 8 to 11 are rotated and channel i is paired with channel i + 8; channels 4 to 7 and 12 to 15 pass through.</desc>
+  <!-- Each cell is 26 wide; an arc joins the two members of a rotated pair. -->
+  <!-- partial_rope: r = 8, pairs (i, i + 4) -->
+  <g>
+    <text x="32" y="12" font-size="13">partial_rope: the first 8 channels</text>
+    <text x="448" y="12" font-size="13" text-anchor="end" style="font-family: var(--figure-serif); fill: var(--figure-muted)">θᵢ = base^(−2i ∕ 8)</text>
+    <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+      <path d="M45 62 C45 28 149 28 149 62"/>
+      <path d="M71 62 C71 28 175 28 175 62"/>
+      <path d="M97 62 C97 28 201 28 201 62"/>
+      <path d="M123 62 C123 28 227 28 227 62"/>
+    </g>
+    <rect x="32" y="62" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="58" y="62" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="84" y="62" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="110" y="62" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="136" y="62" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="162" y="62" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="188" y="62" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="214" y="62" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="240" y="62" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="266" y="62" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="292" y="62" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="318" y="62" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="344" y="62" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="370" y="62" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="396" y="62" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="422" y="62" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <g font-size="13" text-anchor="middle">
+      <text x="45" y="79">0</text>
+      <text x="71" y="79">1</text>
+      <text x="97" y="79">2</text>
+      <text x="123" y="79">3</text>
+      <text x="149" y="79">4</text>
+      <text x="175" y="79">5</text>
+      <text x="201" y="79">6</text>
+      <text x="227" y="79">7</text>
+      <text x="253" y="79" style="fill: var(--figure-muted)">8</text>
+      <text x="279" y="79" style="fill: var(--figure-muted)">9</text>
+      <text x="305" y="79" style="fill: var(--figure-muted)">10</text>
+      <text x="331" y="79" style="fill: var(--figure-muted)">11</text>
+      <text x="357" y="79" style="fill: var(--figure-muted)">12</text>
+      <text x="383" y="79" style="fill: var(--figure-muted)">13</text>
+      <text x="409" y="79" style="fill: var(--figure-muted)">14</text>
+      <text x="435" y="79" style="fill: var(--figure-muted)">15</text>
+    </g>
+  </g>
+  <!-- proportional_rope: 4 pairs (i, i + 8) -->
+  <g>
+    <text x="32" y="118" font-size="13">proportional_rope: 4 of the 8 pairs</text>
+    <text x="448" y="118" font-size="13" text-anchor="end" style="font-family: var(--figure-serif); fill: var(--figure-muted)">θᵢ = base^(−2i ∕ 16)</text>
+    <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+      <path d="M45 178 C45 134 253 134 253 178"/>
+      <path d="M71 178 C71 134 279 134 279 178"/>
+      <path d="M97 178 C97 134 305 134 305 178"/>
+      <path d="M123 178 C123 134 331 134 331 178"/>
+    </g>
+    <rect x="32" y="178" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="58" y="178" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="84" y="178" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="110" y="178" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="136" y="178" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="162" y="178" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="188" y="178" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="214" y="178" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="240" y="178" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="266" y="178" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="292" y="178" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="318" y="178" width="26" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <rect x="344" y="178" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="370" y="178" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="396" y="178" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <rect x="422" y="178" width="26" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <g font-size="13" text-anchor="middle">
+      <text x="45" y="195">0</text>
+      <text x="71" y="195">1</text>
+      <text x="97" y="195">2</text>
+      <text x="123" y="195">3</text>
+      <text x="149" y="195" style="fill: var(--figure-muted)">4</text>
+      <text x="175" y="195" style="fill: var(--figure-muted)">5</text>
+      <text x="201" y="195" style="fill: var(--figure-muted)">6</text>
+      <text x="227" y="195" style="fill: var(--figure-muted)">7</text>
+      <text x="253" y="195">8</text>
+      <text x="279" y="195">9</text>
+      <text x="305" y="195">10</text>
+      <text x="331" y="195">11</text>
+      <text x="357" y="195" style="fill: var(--figure-muted)">12</text>
+      <text x="383" y="195" style="fill: var(--figure-muted)">13</text>
+      <text x="409" y="195" style="fill: var(--figure-muted)">14</text>
+      <text x="435" y="195" style="fill: var(--figure-muted)">15</text>
+    </g>
+  </g>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="32" y="224">Filled channels are rotated; dashed channels pass through unchanged.</text>
+    <text x="32" y="241">An arc joins the two channels of one pair.</text>
+  </g>
+</svg>
