@@ -614,6 +614,15 @@ pub struct PathStage {
     pub description: String,
     /// Ids of existing problems, in study order.
     pub problems: Vec<String>,
+    /// Short name of the stage's illustration; absent when the path file has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place: Option<String>,
+    /// Slug of the bundled illustration; absent when none or invalid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene: Option<String>,
+    /// The stage's color as lowercase `#rrggbb`; absent when none or invalid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 /// A curated, ordered study plan with progress. `Path` in the TypeScript contract; named
@@ -1402,6 +1411,9 @@ mod tests {
                 title: "Numerics".into(),
                 description: "Another.".into(),
                 problems: vec!["stable-softmax".into()],
+                place: None,
+                scene: None,
+                color: None,
             }],
             problem_count: 1,
             solved_count: 0,

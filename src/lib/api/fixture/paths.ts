@@ -5,7 +5,14 @@ export interface FixturePath {
   id: string;
   title: string;
   description: string;
-  stages: { title: string; description: string; problems: string[] }[];
+  stages: {
+    title: string;
+    description: string;
+    problems: string[];
+    place?: string;
+    scene?: string;
+    color?: string;
+  }[];
 }
 
 /**
@@ -23,6 +30,9 @@ const INFERENCE_75: FixturePath = {
       title: "Numerics",
       description:
         "Float32 arithmetic and the normalizations and activations every layer is built from, with the edge cases that break naive versions.",
+      place: "The trailhead",
+      scene: "stage-01-trailhead",
+      color: "#ed9b11",
       problems: [
         "stable-softmax",
         "log-sum-exp",
@@ -37,6 +47,9 @@ const INFERENCE_75: FixturePath = {
       title: "From text to tokens",
       description:
         "How text becomes the integer ids a model sees, and how ids become text again without losing a character.",
+      place: "The crossing",
+      scene: "stage-02-crossing",
+      color: "#e5691d",
       problems: [
         "Byte-Level Pre-Tokenizer",
         "bpe-merge",
@@ -51,6 +64,9 @@ const INFERENCE_75: FixturePath = {
       title: "Attention",
       description:
         "The inner loop of the transformer: scores, masks, and positions, then the variants that make it cheaper.",
+      place: "The pine forest",
+      scene: "stage-03-forest",
+      color: "#2a71cc",
       problems: [
         "scaled-dot-product-attention",
         "causal-mask",
@@ -67,6 +83,9 @@ const INFERENCE_75: FixturePath = {
       title: "The forward pass",
       description:
         "Assembling layers into a decoder-only model whose activations match a reference, and loading real weights into it.",
+      place: "The meadow",
+      scene: "stage-04-meadow",
+      color: "#db5881",
       problems: [
         "Pre-Norm Residual Block",
         "Tied Embedding and Unembedding",
@@ -81,6 +100,9 @@ const INFERENCE_75: FixturePath = {
       title: "Decoding",
       description:
         "Turning logits into tokens: greedy and stochastic samplers, the filters and penalties in front of them, and search.",
+      place: "The lake",
+      scene: "stage-05-lake",
+      color: "#18978e",
       problems: [
         "Greedy Decoding with Stop Sequences",
         "temperature-top-k",
@@ -97,6 +119,9 @@ const INFERENCE_75: FixturePath = {
       title: "The KV cache",
       description:
         "Computing each key and value once: cached decoding, the layouts a cache can take, and what it costs in memory.",
+      place: "The terraces",
+      scene: "stage-06-terraces",
+      color: "#8fc30b",
       problems: [
         "kv-cache-decode",
         "Cache Append Without Reallocation",
@@ -112,6 +137,9 @@ const INFERENCE_75: FixturePath = {
       title: "Smaller and faster",
       description:
         "Spending less per token: fewer bits per weight, less memory per model, and several drafted tokens verified in one pass.",
+      place: "The canyon",
+      scene: "stage-07-canyon",
+      color: "#834ccd",
       problems: [
         "int8-affine-quant",
         "Symmetric Per-Channel Quantization",
@@ -129,6 +157,9 @@ const INFERENCE_75: FixturePath = {
       title: "Batching and serving",
       description:
         "The model as a service: sharing one accelerator between requests, then the protocol surface that streams tokens to clients.",
+      place: "The ridge",
+      scene: "stage-08-ridge",
+      color: "#f4c60a",
       problems: [
         "Static Batcher with Timeout",
         "Length-Bucketed Batching",
@@ -147,6 +178,9 @@ const INFERENCE_75: FixturePath = {
       title: "Constrained output and whole systems",
       description:
         "Holding generation to a grammar without slowing it down, then putting every earlier piece together into one engine and one server.",
+      place: "The summit",
+      scene: "stage-13-summit",
+      color: "#e6b125",
       problems: [
         "Regex to DFA",
         "Token-Level DFA Masks",

@@ -154,6 +154,97 @@ fn malformed_path_files_are_reported_and_never_break_the_others() {
         || i.path.contains("nested")));
 }
 
+fn one_stage(extra: &str) -> String {
+    format!(
+        "id = \"deco\"\ntitle = \"T\"\n[[stages]]\ntitle = \"S\"\nproblems = [\"add-two\"]\n{extra}"
+    )
+}
+
+fn stage_fields(core: &learnai_core::Core) -> (Option<String>, Option<String>, Option<String>) {
+    let paths = core.list_paths().expect("paths");
+    assert_eq!(paths.len(), 1);
+    assert_eq!(paths[0].stages.len(), 1);
+    let stage = &paths[0].stages[0];
+    (
+        stage.place.clone(),
+        stage.scene.clone(),
+        stage.color.clone(),
+    )
+}
+
+fn deco_issues(core: &learnai_core::Core) -> Vec<String> {
+    core.list_catalog_issues()
+        .into_iter()
+        .filter(|i| i.path.ends_with("deco.toml"))
+        .map(|i| i.message)
+        .collect()
+}
+
+#[test]
+fn stage_display_fields_round_trip() {
+    let root = TestRoot::new();
+    let core = root.core("happy");
+    let text = one_stage(
+        "place = \"  The trailhead \"\nscene = \"stage-01-trailhead\"\ncolor = \"#ed9b11\"\n",
+    );
+    write_path(root.path(), "deco.toml", &text);
+    assert_eq!(
+        stage_fields(&core),
+        (
+            Some("The trailhead".to_owned()),
+            Some("stage-01-trailhead".to_owned()),
+            Some("#ed9b11".to_owned())
+        )
+    );
+    assert!(deco_issues(&core).is_empty());
+}
+
+#[test]
+fn stage_color_is_lowercased_and_blank_place_is_absent() {
+    let root = TestRoot::new();
+    let core = root.core("happy");
+    write_path(
+        root.path(),
+        "deco.toml",
+        &one_stage("place = \"   \"\ncolor = \"#ED9B1F\"\n"),
+    );
+    assert_eq!(
+        stage_fields(&core),
+        (None, None, Some("#ed9b1f".to_owned()))
+    );
+    assert!(deco_issues(&core).is_empty());
+}
+
+#[test]
+fn a_bad_scene_or_color_is_dropped_with_one_issue_and_the_stage_stays() {
+    let root = TestRoot::new();
+    let core = root.core("happy");
+    write_path(
+        root.path(),
+        "deco.toml",
+        &one_stage("place = \"Here\"\nscene = \"Not A Slug\"\ncolor = \"#12345g\"\n"),
+    );
+    assert_eq!(stage_fields(&core), (Some("Here".to_owned()), None, None));
+    let issues = deco_issues(&core);
+    assert_eq!(issues.len(), 2, "{issues:?}");
+    assert!(issues[0].contains("stage `S`") && issues[0].contains("`Not A Slug`"));
+    assert!(issues[1].contains("stage `S`") && issues[1].contains("`#12345g`"));
+
+    // A short color is bad too; issues are recomputed on each load.
+    write_path(root.path(), "deco.toml", &one_stage("color = \"#fff\"\n"));
+    assert_eq!(stage_fields(&core), (None, None, None));
+    assert_eq!(deco_issues(&core).len(), 1);
+}
+
+#[test]
+fn a_stage_without_display_fields_is_unchanged() {
+    let root = TestRoot::new();
+    let core = root.core("happy");
+    write_path(root.path(), "deco.toml", &one_stage(""));
+    assert_eq!(stage_fields(&core), (None, None, None));
+    assert!(deco_issues(&core).is_empty());
+}
+
 #[test]
 fn paths_are_sorted_by_file_name_and_reloaded_on_every_call() {
     let root = TestRoot::new();
