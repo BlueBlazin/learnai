@@ -144,6 +144,29 @@ def decoder_forward_ref(
     Every position attends causally and positions count from 0, so row ``t`` depends
     only on ``tokens[..., : t + 1]``.
     """
+    x, batched = _hidden(cfg, params, tokens)
+    head = params["model.embed_tokens.weight" if cfg.tie_embeddings else "lm_head.weight"]
+    logits = (x @ head.T).astype(np.float32)
+    return logits if batched else logits[0]
+
+
+def decoder_hidden_ref(
+    cfg: DecoderConfig, params: dict[str, np.ndarray], tokens: Any
+) -> np.ndarray:
+    """The oracle's last hidden states, after the final norm: what the head reads.
+
+    ``tokens`` as for ``decoder_forward_ref``; the result is float32 ``(T, d_model)``
+    or ``(B, T, d_model)``, and ``decoder_forward_ref`` is this times the head matrix.
+    A multi-token-prediction module (``mtp_params``) starts from these states.
+    """
+    x, batched = _hidden(cfg, params, tokens)
+    return (x if batched else x[0]).astype(np.float32)
+
+
+def _hidden(
+    cfg: DecoderConfig, params: dict[str, np.ndarray], tokens: Any
+) -> tuple[np.ndarray, bool]:
+    """Final-normed hidden states ``(B, T, D)``, and whether ``tokens`` had a batch axis."""
     ids = np.asarray(tokens)
     if ids.ndim not in (1, 2) or ids.size == 0 or ids.dtype.kind not in "iu":
         raise ValueError("tokens must be integers of shape (T,) or (B, T) with T >= 1")
@@ -157,10 +180,7 @@ def decoder_forward_ref(
     causal = np.tril(np.ones((seq, seq), dtype=bool))  # query t may attend to keys <= t
     for i in range(cfg.n_layers):
         x = decoder_block_ref(cfg, layer_params(params, i), x, causal)
-    x = ops.rms_norm(x, params["model.norm.weight"], cfg.norm_eps)
-    head = params["model.embed_tokens.weight" if cfg.tie_embeddings else "lm_head.weight"]
-    logits = (x @ head.T).astype(np.float32)
-    return logits if batched else logits[0]
+    return ops.rms_norm(x, params["model.norm.weight"], cfg.norm_eps), batched
 
 
 def decoder_block_ref(

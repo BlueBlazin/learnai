@@ -281,7 +281,9 @@ Skipped cases and the two "not judged" endings:
   and for `assets_missing` an action that fetches the asset. They never mark a problem
   solved; they are stored like any other non-accepted submit.
 - Hidden cases have the opaque id `hidden-N` and the name "Hidden case N", keep the
-  one-line `message`, and always have `detail: null`. For a hidden `error`, `message` is
+  one-line `message`, and always have `detail: null` and `metrics: []` (pass or fail;
+  the run-level `metrics` of `end` are therefore the worst values over the public
+  cases). For a hidden `error`, `message` is
   the exception line plus the location in the solution file. Skipped cases have
   `detail: null`.
 - `end` may carry optional `message` and `detail` (used for `import_error` and

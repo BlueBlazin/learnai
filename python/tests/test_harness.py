@@ -94,6 +94,45 @@ def test_hidden_cases_are_redacted(sum_list):
         assert leak not in run.stdout
 
 
+def test_hidden_cases_report_no_metrics_pass_or_fail():
+    # A cost metric carries its limit, and the limit of a hidden case is derived from
+    # its hidden input (here 2 + 40 - 1 = 41 tokens). It must not leave the harness,
+    # whether the case passes (the leak this test was written for) or fails.
+    problem = fixture_problem("greedy-decode")
+    run = run_harness(problem, problem / "reference" / "torch.py", "torch")
+    assert run.end["status"] == "accepted", run.events
+    assert run.case("hidden-1")["status"] == "pass"
+    assert run.case("hidden-1")["metrics"] == []
+    # Public cases keep theirs, and the run-level metrics are the worst over them.
+    public = {m["name"]: m for m in run.case("linear_cost")["metrics"]}
+    assert public["tokens_processed"] == {
+        "name": "tokens_processed", "value": 15, "unit": "tokens", "limit": 15,
+    }  # fmt: skip
+    assert {m["name"]: m["value"] for m in run.end["metrics"]} == {
+        "tokens_processed": 15, "forward_calls": 12,
+    }  # fmt: skip
+    # The hidden limit (41 tokens) is nowhere in the stream, as a value or as a limit.
+    reported = [m for e in run.events for m in e.get("metrics") or []]
+    assert all(m["value"] != 41 and m.get("limit") != 41 for m in reported)
+    assert "41 tokens" not in run.stdout
+
+    failing = run_harness(problem, problem / "mutants" / "no_cache.py", "torch")
+    hidden = failing.case("hidden-1")
+    assert hidden["status"] == "fail" and hidden["metrics"] == [] and hidden["detail"] is None
+    # The one-line message still says how far over the limit the solution is.
+    assert "exceeds the limit of 41 tokens" in hidden["message"]
+    assert failing.case("linear_cost")["metrics"][0]["value"] == 114
+    assert {m["name"]: m["value"] for m in failing.end["metrics"]}["tokens_processed"] == 114
+
+
+def test_reveal_reports_the_metrics_of_hidden_cases():
+    problem = fixture_problem("greedy-decode")
+    run = run_harness(problem, problem / "reference" / "torch.py", "torch", extra=["--reveal"])
+    (metric,) = run.case("longer")["metrics"]
+    assert (metric["name"], metric["value"], metric["limit"]) == ("tokens_processed", 41, 41)
+    assert {m["name"]: m["value"] for m in run.end["metrics"]}["tokens_processed"] == 41
+
+
 def test_hidden_ids_are_stable_whatever_else_runs(sum_list):
     # hidden-2 is the second hidden case of the file, also when it runs alone.
     alone = run_harness(sum_list, SOLUTIONS / "wrong_on_negatives.py", case="hidden-1")

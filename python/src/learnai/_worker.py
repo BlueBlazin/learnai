@@ -505,7 +505,10 @@ class Worker:
         user_file = str(solution_path)
         wire_id = self.wire[case.id]
         # Hidden cases keep the one-line message and never carry a detail: it could
-        # show expected values, the test's inputs, or its source.
+        # show expected values, the test's inputs, or its source. They carry no metrics
+        # either, pass or fail: a counter with its limit ("96 rows, limit 96") gives away
+        # the sizes of a hidden input, and the run-level metrics are built from what
+        # the cases report, so they then cover the public cases only.
         shown = case.public or self.args.reveal
         if self.guard is not None:
             self.guard.install()  # picks up frameworks the solution imported since
@@ -559,7 +562,7 @@ class Worker:
             message,
             detail,
             protocol.truncate_output(data, total),
-            ctx.metrics,
+            ctx.metrics if shown else [],
         )
 
 

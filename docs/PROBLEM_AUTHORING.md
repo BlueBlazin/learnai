@@ -478,11 +478,21 @@ learner's own value, the exact error would give the expected value away, while t
 magnitude still tells "float noise, loosen nothing, fix the formula" (1e-01) from "a
 precision problem" (1e-05).
 
-One deliberate exception: **limits**. The limit of `check.cost`, `check.at_most`,
-`check.memory`, and the speed judge is reported with the metric on every case, hidden
-or not, because the app draws the bar from it, and the failure message repeats it
-(`tokens_processed: 114 tokens exceeds the limit of 15 tokens`). Never use a secret as
-a limit; state limits in the statement.
+One deliberate exception: **limits**. When `check.cost`, `check.at_most`,
+`check.memory`, or the speed judge fails, the message repeats the limit
+(`tokens_processed: 114 tokens exceeds the limit of 15 tokens`), in a hidden case too:
+without it the learner cannot tell how far off they are. Never use a secret as a
+limit; state limits in the statement.
+
+**Metrics are reported for public cases only.** A public case carries its metrics
+(value and limit, from which the app draws "114 / 15 tokens") whether it passes or
+fails. A hidden case carries none, pass or fail, and the run-level metrics at the end
+of a run are the worst values over the cases that reported some, so over the public
+ones. Before 2026-11-21 a passing hidden case printed `expert_rows: 96 rows (limit 96
+rows)`, which gave away `k * N` and the expert count of a hidden input; a hidden case
+must not say more when it passes than when it fails. So if the learner should see a
+cost figure, check it in a public case; `--reveal` (and `learnai validate`, which
+runs with it) still shows every metric of every case.
 
 When you write your own failure with `check.that(condition, message, detail)`, follow
 the same rule: describe what the solution did in `message`, put the specifics in
@@ -1288,6 +1298,12 @@ probs = ops.softmax(logits)
 | `top_k_filter(logits, k)` | Keeps the `k` largest per row, ties to the lowest index; `k <= 0` or `k >= V` is a no-op. |
 | `top_p_filter(logits, p)` | Keeps a token while the mass ranked strictly before it is below `p` (ties: lowest index first); the top token always survives. |
 | `min_p_filter(logits, min_p)` | Keeps tokens with probability at least `min_p` times the largest. |
+| `softplus(x)` | `log(1 + exp(x))` as `max(x, 0) + log1p(exp(-abs(x)))`: no overflow, and accurate to 2e-7 relatively where the result is tiny (large negative `x`). See the note on MLX below. |
+| `l2norm(x, eps=1e-6)` | `x * rsqrt(sum(x**2, -1) + eps)`, the `l2norm` of Qwen3.5's delta layers (eps inside the root). |
+| `causal_conv1d(x, w, state=None)` | Depthwise causal convolution of `x` `(..., T, C)`; returns `(y, state)`. `w` is `(C, K)` or the checkpoint's `(C, 1, K)`; no bias, no flip: `y[t, c] = sum_j w[c, j] * padded[t + j, c]` with `padded` the state followed by `x`, so the **last** tap multiplies the current input. `state` is the `K - 1` inputs before `x`, `(..., K - 1, C)` (`None`: zeros); the returned state is the last `K - 1` rows of `padded`, also when `T < K - 1`. |
+| `partial_rope(x, positions, base=10000.0, factor=1.0)` | The `partial_rope` of the `partial-rope` problem: the first `r = int(D * factor)` channels are a complete RoPE of width `r` in the **half-split** layout (pair `i` is channels `(i, i + r/2)`, frequency `base**(-2i / r)`), the rest pass through unchanged. `r` odd raises `ValueError`. `positions` as for `rope`. Not `rope` with a factor: `rope` pairs adjacent channels, so `partial_rope(x, p, base, 1.0)` is a permutation of `rope(x, p, base)`. There is no kit version of the proportional (Gemma 4) form. |
+| `gated_delta_layer(x, params, state=None, n_key_heads=None, norm_eps=1e-6)` | The Gated DeltaNet mixer of Qwen3.5 on `x` `(..., T, D)`; returns `(out, (conv_state, S))`. See [GDNConfig](#gdnconfig-gdn_params-and-the-delta-layer-oracles). |
+| `eb_accept(logits, entropy_bound)` | DiffusionGemma's entropy-bound acceptance for logits `(..., L, V)`: a boolean `(..., L)` mask. Positions are ranked by entropy in nats, ascending, ties to the lowest index; a position is accepted while the entropies ranked strictly before it sum to at most the bound. The lowest-entropy position is always accepted; `-inf` logits contribute no entropy. Pass the logits the tokens are sampled from (after the temperature). |
 
 The three filters work on the last axis and return **logits**: removed entries become
 `-inf`, kept entries are unchanged, already-masked entries stay masked. That makes
@@ -1297,7 +1313,31 @@ probabilities: `ops.softmax(ops.top_p_filter(logits, p))` equals that problem's 
 
 If your problem *teaches* one of these, forbid the kit version too, by saying so in the
 statement and adding a mutant that calls it; `forbidden` entries such as
-`learnai.kit.ops.softmax` resolve like any other name.
+`learnai.kit.ops.softmax` resolve like any other name. For the milestone 6 batches that
+means: `gated-delta-layer` forbids `learnai.kit.ops.gated_delta_layer` (and
+`gdn_layer_ref`), `gated-conv-block` forbids `learnai.kit.ops.causal_conv1d`,
+`entropy-bound-denoise-step` forbids `learnai.kit.ops.eb_accept`, and
+`hybrid-decoder-forward` and `block-diffusion-decode` are built on them.
+
+**`softplus` in MLX: `mlx.nn.softplus` is inexact for negative inputs** (MLX 0.32.4,
+measured 2026-11-21). It evaluates `log(1 + exp(x))` in float32, so the result carries
+an absolute error of up to 6e-8, which is a large *relative* error where the result is
+small: 4.5427e-5 against the exact 4.5399e-5 at `x = -10` (6e-4), up to 0.8% for `x` in
+`[-12, -8]`, and up to 39% near `x = -16`. `mx.logaddexp(x, 0)`, `torch`'s and JAX's
+`softplus`, and `ops.softplus` in every framework are accurate to 2e-7 relatively over
+`[-30, 10]`. What follows for a problem whose learners will call a built-in softplus:
+
+- In `g = exp(-exp(A_log) * softplus(a + dt_bias))` (the delta rule) and in
+  `h * exp(-dt * A)` (Mamba-2) the error is harmless: it is an absolute 6e-8 on a
+  number that is then compared near 1. No constraint is needed.
+- Where a small softplus is the *output* or is multiplied into it (`sqrt(softplus(.))`
+  of the `sqrtsoftplus` router, `dt * x B^T` in `mamba2-ssd-step`), keep the inputs of
+  softplus above about -5 in the cases (error below 1e-5 relatively), or give the
+  comparison an `atol` that covers 6e-8 times the factor it is multiplied by. The
+  `sigmoid-router-shared-expert` problem keeps router logits within 5 in magnitude for
+  this reason.
+- A reference solution may call `ops.softplus`; say in the statement that
+  `mx.logaddexp(x, 0)` is the accurate built-in if the case needs one.
 
 ### DecoderConfig, decoder_params, decoder_forward_ref
 
@@ -2195,6 +2235,399 @@ check.cost(distance.counters, "distances", exactly=16 + probed_sizes)
   `dot`, `cosine`: larger is closer) and counts `calls` and `distances` (`Q * N`). An
   empty candidate list is allowed and counts nothing.
 
+### GDNConfig, gdn_params, and the delta-layer oracles
+
+Weights for one Gated DeltaNet layer (the `linear_attn` sublayer of Qwen3.5), named
+like the checkpoint, and numpy oracles. The layer itself is `ops.gated_delta_layer`,
+one signature in torch, JAX, MLX, and numpy.
+
+```python
+from learnai.kit import GDNConfig, gdn_gates_ref, gdn_layer_ref, gdn_params, gdn_step_ref, ops
+
+cfg = GDNConfig()                        # d_model=32, n_key_heads=2, n_value_heads=4,
+params = gdn_params(cfg, seed=1)         #   key_head_dim=8, value_head_dim=8, conv_kernel=4,
+x = ctx.randn(10, cfg.d_model)           #   norm_eps=1e-6
+out, state = gdn_layer_ref(cfg, params, x)               # x (T, D) or (B, T, D)
+out2, state = gdn_layer_ref(cfg, params, more, state)    # continue the sequence
+y, state = ops.gated_delta_layer(x, params, state, cfg.n_key_heads)   # in a solution
+```
+
+- `gdn_params(cfg, seed)` returns `dict[str, np.ndarray]`, float32, linear weights
+  `(out, in)`, no biases:
+
+  | key | shape |
+  |---|---|
+  | `in_proj_qkv.weight` | `(2 * key_dim + value_dim, d_model)`: `q`, `k`, `v` in that order |
+  | `in_proj_z.weight` | `(value_dim, d_model)` |
+  | `in_proj_a.weight`, `in_proj_b.weight` | `(n_value_heads, d_model)` |
+  | `conv1d.weight` | `(2 * key_dim + value_dim, 1, conv_kernel)` |
+  | `A_log`, `dt_bias` | `(n_value_heads,)` |
+  | `norm.weight` | `(value_head_dim,)`, shared by all value heads |
+  | `out_proj.weight` | `(d_model, value_dim)` |
+
+  `cfg.key_dim`, `cfg.value_dim`, and `cfg.conv_dim` are totals over heads
+  (`key_dim = n_key_heads * key_head_dim`), as in the shipped configuration; the
+  per-head sizes are the fields `key_head_dim` and `value_head_dim`. Nothing is at its
+  initialization value: `norm.weight` is in `[0.5, 1.5]`, `dt_bias` in `[-1, 1]`,
+  `exp(A_log)` in `[0.05, 0.5]`, so the decay `g` of a typical token is between 0.6 and
+  0.99 and each constant changes the output when it is left out.
+- **The number of key heads is not in the shapes.** `ops.gated_delta_layer` reads
+  every other size from `params`, but `key_dim` could be split into any number of
+  heads, so it takes `n_key_heads` (default: the number of value heads). A problem
+  whose signature is `gdn_layer(x, params, state)` therefore has to pass the head
+  count some other way; pass `cfg` (`gdn_layer(x, params, cfg, state)`), which is a
+  frozen dataclass and goes through `ctx.call` unchanged.
+- The state is `(conv_state, S)`: the last `conv_kernel - 1` *projected inputs* (the
+  rows of `x W_qkv^T` before the convolution), `(K - 1, conv_dim)`, and the memory,
+  `(n_value_heads, value_head_dim, key_head_dim)`; a batch axis comes first in both when
+  `x` has one. `None` means zeros. The state passed in is not modified.
+- **Any chunking of a sequence gives the output of one pass, to float32 rounding**
+  (about 2e-6 on outputs of order 1; tests use `rtol=1e-4, atol=1e-5`), not bit for
+  bit: the convolution sums its taps in the same order, but a batched matmul may not.
+- `gdn_gates_ref(a, b, A_log, dt_bias) -> (g, beta)` and `gdn_step_ref(S, q, k, v, g,
+  beta) -> (y, S)` are the numpy oracles of `gated-delta-step` (decay, write, read
+  after the write; `q` and `k` used as given). With `g = 1`, `beta = 1`, and a unit
+  key, `S k == v` after the step.
+- What the layer computes, in order: `in_proj_qkv`; `ops.causal_conv1d` over the saved
+  inputs and the new ones; SiLU; split; `ops.l2norm` of `q` and `k`, and `q *
+  key_head_dim**-0.5`; each key head repeated over its `n_value_heads / n_key_heads`
+  consecutive value heads; `g = exp(-exp(A_log) * softplus(a + dt_bias))`, `beta =
+  sigmoid(b)`; per token `S = g S`, `S = S + beta (v - S k) k^T`, `y = S q`;
+  `norm.weight * rms_norm(y, eps=norm_eps) * silu(z)` per value head; `out_proj`.
+
+### HybridConfig, hybrid_params, hybrid_forward_ref
+
+Weights and the numpy oracle for a small decoder in the shape of the Qwen3.5 text
+models: Gated DeltaNet layers with an attention layer every `full_attention_interval`
+layers. For `hybrid-decoder-forward`.
+
+```python
+from learnai.kit import HybridConfig, hybrid_forward_ref, hybrid_params
+
+cfg = HybridConfig()                           # 4 layers: linear, linear, linear, full
+params = hybrid_params(cfg, seed=1)            # names as below
+logits, state = hybrid_forward_ref(cfg, params, prompt)            # tokens (T,) or (B, T)
+logits, state = hybrid_forward_ref(cfg, params, [token], state)    # continue
+```
+
+- `HybridConfig` is a frozen dataclass (it passes through `ctx.call`): `vocab_size=64,
+  d_model=32, n_layers=4, n_heads=4, n_kv_heads=2, head_dim=16, d_mlp=48,
+  rope_base=10000.0, partial_rotary_factor=0.25, norm_eps=1e-6, tie_embeddings=True,
+  full_attention_interval=4, layer_types=None`, and the delta-layer sizes of
+  `GDNConfig` (`n_key_heads=2, n_value_heads=4, key_head_dim=8, value_head_dim=8,
+  conv_kernel=4`). It is its own class, not a `DecoderConfig`: **`head_dim` is a
+  field**, as in Qwen3.5, and `n_heads * head_dim` (64) is not `d_model` (32).
+  `cfg.layers` is the resolved tuple of `"linear_attention"` / `"full_attention"`
+  (layer `i` is full when `(i + 1) % full_attention_interval == 0`; an explicit
+  `layer_types` wins); `cfg.rotary_dim` is `int(head_dim * partial_rotary_factor)`
+  (must be even); `cfg.gdn` is the matching `GDNConfig`.
+- `hybrid_params(cfg, seed)`: for every layer `model.layers.{i}.input_layernorm.weight`,
+  `post_attention_layernorm.weight`, `mlp.{gate,up,down}_proj.weight`; for a linear
+  layer the nine `gdn_params` keys under `model.layers.{i}.linear_attn.`; for a full
+  layer
+
+  | key | shape |
+  |---|---|
+  | `model.layers.{i}.self_attn.q_proj.weight` | `(n_heads * 2 * head_dim, d_model)`: per head, query then gate |
+  | `model.layers.{i}.self_attn.k_proj.weight`, `v_proj.weight` | `(n_kv_heads * head_dim, d_model)` |
+  | `model.layers.{i}.self_attn.o_proj.weight` | `(d_model, n_heads * head_dim)` |
+  | `model.layers.{i}.self_attn.q_norm.weight`, `k_norm.weight` | `(head_dim,)` |
+
+  then `model.norm.weight` and `model.embed_tokens.weight` (the head, when tied).
+  `layer_params(params, i)` strips the layer prefix as for `decoder_params`.
+- **Every norm weight is a plain gain** (`ops.rms_norm(x, weight, eps)`), drawn from
+  `[0.5, 1.5]`. The real checkpoint stores the block norms, the final norm, `q_norm`,
+  and `k_norm` zero-centered (`1 + weight`); that convention belongs to the real-model
+  problems, and `mlx-lm` converts it away when it loads.
+- The oracle, block by block: `x + mixer(rms_norm(x))`, then `x + swiglu(rms_norm(x))`.
+  A linear mixer is `ops.gated_delta_layer`. A full mixer is gated attention: split
+  each head's `2 * head_dim` outputs of `q_proj` into query and gate (inside the
+  head, not across the flat projection); `rms_norm` of queries and keys over
+  `head_dim` with `q_norm` and `k_norm`; `ops.partial_rope` on both; `ops.attention`
+  (grouped-query, scale `head_dim**-0.5`, causal); `o_proj(attended * sigmoid(gate))`.
+  `gated_attention_ref(cfg, attn, h, past)` is that mixer alone.
+- `state` is a list with one entry per layer: `(conv_state, S)` for a linear layer,
+  `(k, v)` for a full layer, where `k` are the keys **after the norm and the rotation**
+  and both are `(n_kv_heads, S, head_dim)` (batch axis first if the tokens have one).
+  New tokens take the positions after the cached keys, so positions never restart.
+  The oracle accepts the state a solution returned once it is converted to numpy.
+- Prefill in any chunking and then one token at a time agrees with one pass to
+  float32 rounding (measured up to 1.2e-4 on logits of magnitude 9 for 8 layers and
+  150 tokens): compare with `rtol=1e-3, atol=1e-3` or compare argmax tokens; pick
+  prompts whose top two logits are further apart than that if tokens are compared.
+- The same forward pass written from `ops` in torch, JAX, and MLX is in
+  `python/tests/test_kit_m6_models.py` (`hybrid_forward_with`); it is 40 lines and uses
+  only `reshape`, `swapaxes`, `concatenate`, and `exp` besides the kit.
+
+### CountingKV
+
+A key-value store that counts the rows read from it, for `gathered-sparse-attention`
+and `indexer-cache-decode`: sparse attention saves work only if the unselected keys are
+never read.
+
+```python
+from learnai.kit import CountingKV
+
+store = CountingKV(ctx.fw, k, v)                        # k (S, ...), v (S, ...): any row shapes
+k_rows, v_rows = store.gather(idx, valid=idx >= 0)      # idx (T, kk) -> (T, kk, ...) each
+check.cost(store.counters, "rows_read", exactly=int((idx >= 0).sum()), unit="rows")
+store = store.append(k_new, v_new)                      # a longer store, same counters
+```
+
+- `CountingKV(fw, k, v)` takes the adapter first, like every kit object (the
+  curriculum's sketch omitted it). `CountingKV.empty(fw)` is a store with no rows
+  whose first `append` fixes the row shapes: hand it to a decode problem as the
+  initial cache.
+- `gather(rows, valid=None)`: `rows` is an integer list or tensor of any shape. **Every
+  entry is one row read**, also a repeated one, so reading all `S` keys and masking
+  afterward costs `S` per query. Indices follow Python: **`-1` is the last row**, read
+  and counted (the mutant that uses the padding sentinel as an index reads the last
+  key). An index outside `[-n, n)` raises `ValueError`.
+- `valid` is a boolean array of the shape of `rows`. Where it is False the slot is
+  **not read and not counted**, whatever its index, and comes back as zeros. So the
+  intended solution of a padded selection is `store.gather(idx, valid=idx >= 0)`, and
+  `rows_read` then equals the number of valid slots exactly. The zeros still need a
+  `-inf` score: a slot scored 0 gets weight (another mutant).
+- `append(k, v)` returns a new store and leaves the old one usable (branching works).
+  **A store made by `append` shares the counters and the log of the one it came
+  from**, so a test keeps the initial store and reads the total of a whole decode from
+  it. `with_framework(fw)` (what `ctx.expected` uses) gives a twin with fresh counters.
+- Counters: `rows_read`, `gather_calls`. `store.log` is one `(shape of rows, rows read)`
+  per call, for "at most `k` rows per query":
+  `all(read <= k * shape[0] for shape, read in store.log)`.
+- `store.n` is the number of rows; `store.reference()` returns numpy copies of all
+  keys and values and is not counted. It is for tests: list
+  `learnai.kit.sparse.CountingKV.reference` in `forbidden`, and
+  `forbidden_source = ["_k", "_v"]` rules out reading the arrays behind the counter.
+
+### TinyDSA
+
+A seeded stack of sparse-attention layers in the manner of DeepSeek Sparse Attention
+(GLM-5.3, DeepSeek-V3.2), handed out in pieces. For `indexer-cache-decode` and
+`shared-index-layers`.
+
+```python
+from learnai.kit import CountingKV, TinyDSA
+
+dsa = TinyDSA(ctx.fw, seed=1)             # n_layers=4, d_model=32, n_heads=2, head_dim=8,
+x = ctx.randn(12, dsa.d_model)            #   index_heads=4, index_dim=8, top_k=4, types=None
+k_idx = dsa.index_key(layer, x)           # (T, index_dim); counts index_key_rows
+q_idx, w = dsa.index_query(layer, x)      # (T, index_heads, index_dim), (T, index_heads)
+q, k, v = dsa.qkv(layer, x)               # (T, n_heads, head_dim) each
+out = dsa.out(layer, attended)            # (T, n_heads, head_dim) -> (T, d_model)
+idx = dsa.indexer(layer, x, k=None)       # (T, min(k, T)) indices; counts indexer_calls
+out = dsa.attend(layer, x, idx)           # (T, d_model)
+check.allclose(got, dsa.layer_ref(layer, x, k), rtol=1e-4, atol=1e-5)
+check.cost(dsa.counters, "index_key_rows", exactly=len(x), unit="rows")
+```
+
+- What a layer computes (the statement can quote this): indexer key `k_I =
+  layer_norm(x Wk^T)`, one per token (weight, bias, eps 1e-6); indexer queries `q_I =
+  x Wq^T` in `index_heads` heads; raw head weights `w = x Ww^T`; score `I[t, s] = sum_h
+  (w[t, h] * H^-0.5) * relu(q_I[t, h] . k_I[s] * D^-0.5)`; later tokens `-inf`; the
+  `min(k, S)` best of each row, **best first, ties to the lowest index, `-1` in slots
+  that hold no visible token**; attention over the selected rows with scale
+  `head_dim**-0.5`; `out`. A token can always select itself.
+- `index_key`, `index_query`, `qkv`, `out`, `indexer`, and `attend` take and return
+  the framework's tensors and work on rows `(n, d_model)`; a row's result depends on
+  that row only (to about 1e-6, not bit for bit across batchings).
+- Counters: `index_key_rows` counts the rows passed to `index_key` **and every row of
+  every `indexer` call** (which computes its keys itself), so a decode loop cannot
+  dodge "each token's indexer key once" by calling `indexer` on the prefix.
+  `indexer_calls` counts `indexer`. Nothing else is counted; the rows read from the
+  main keys and values are counted by the `CountingKV` the solution keeps them in. A
+  refused call (bad layer, shape, or `k`) counts nothing.
+- `dsa.types` is `"full"` or `"shared"` per layer. The default is `index_types(n_layers)`
+  with `freq=2, offset=1` (full, shared, full, shared, ...); `index_types(n, freq,
+  offset)` is GLM's rule `max(i - offset + 1, 0) % max(freq, 1) == 0`, and GLM-5.3
+  itself is `index_types(n, 4, 3)`. `indexer` works on every layer whatever its type:
+  a shared layer that runs an indexer anyway is a cost mutant, not an error.
+- Oracles, numpy in and out, never counted: `index_scores_ref(layer, x)` (`(T, T)`,
+  `-inf` above the diagonal), `indexer_ref(layer, x, k)`, `attend_ref(layer, x, idx)`,
+  `layer_ref(layer, x, k)` (one layer on a whole sequence: what a chunked decode with
+  an indexer cache must reproduce), and `forward_ref(h, types=None, k=None)` (the
+  stack `h = h + attend(i, h, idx)`, a shared layer using the nearest preceding full
+  layer's indices, `ValueError` when there is none). List the ones a solution could
+  shortcut through in `forbidden` (`learnai.kit.sparse.TinyDSA.layer_ref`,
+  `...attend_ref`, `...forward_ref`, and for `indexer-cache-decode` also
+  `learnai.kit.sparse.TinyDSA.indexer` and `...attend`). The oracles do not go through
+  the public methods, so forbidding those does not break `ctx.expected` or a test
+  that calls an oracle. `forbidden_source = ["_layers", "_index_key", "_scores"]`
+  rules out the uncounted internals.
+- **Top-k is discontinuous: choose fixtures with a margin.** The ReLU makes index
+  scores that are exactly 0 (about 6% of the visible pairs with the default sizes),
+  and exact ties are safe, the lowest index wins in every framework. A `k`-th and
+  `(k + 1)`-th score that differ by 1e-7 are not. Draw `x` until, in every row, the
+  two scores at the cut are equal or more than 1e-4 apart
+  (`dsa.index_scores_ref`; `clear_margin` in `python/tests/test_kit_m6_models.py` is
+  the loop).
+- The stack has no norm and no MLP: the residual stream grows by about 9% per layer
+  (its RMS doubles over 8 layers), which is fine for the 4 to 8 layers these problems
+  use.
+- Not modeled, compared with the shipped `GlmMoeDsaIndexer`: rotary positions on the
+  first indexer channels (TinyDSA has no positions at all), the low-rank query
+  residual the shipped indexer projects its queries from (here they come from `x`),
+  and the latent (MLA) form of the main attention.
+
+### mtp_params and mtp_draft_ref
+
+The chained multi-token-prediction module that ships inside checkpoints (`mtp.*`), on
+top of the kit decoder. For `mtp-chain-draft`.
+
+```python
+from learnai.kit import (DecoderConfig, decoder_forward_ref, decoder_hidden_ref,
+                         mtp_draft_ref, mtp_layer_params, mtp_params)
+
+cfg = DecoderConfig(n_layers=2)
+params = mtp_params(cfg, n_layers=3, seed=1)         # decoder_params + mtp.layers.{0,1,2}.*
+hidden = decoder_hidden_ref(cfg, params, tokens)     # (T, d_model), after the final norm
+next_token = int(decoder_forward_ref(cfg, params, tokens)[-1].argmax())
+draft, logits = mtp_draft_ref(cfg, params, tokens, next_token, hidden, n_draft=3)
+```
+
+- `mtp_params(cfg, n_layers=1, seed=0)`: every entry of `decoder_params(cfg, seed)`
+  unchanged, plus for stage `k` `mtp.layers.{k}.enorm.weight`, `hnorm.weight`,
+  `post_norm.weight` (`(d_model,)`, gains in `[0.5, 1.5]`), `eh_proj.weight` (`(d_model,
+  2 * d_model)`), and one decoder layer under `mtp.layers.{k}.mtp_block.` with the nine
+  names of `decoder_params` (`input_layernorm.weight`, `self_attn.q_proj.weight`, ...).
+  `mtp_layer_params(params, k)` strips the stage prefix.
+- `decoder_hidden_ref(cfg, params, tokens)` (new) is the main model's last hidden
+  state after the final norm, which is what the module starts from;
+  `decoder_forward_ref` is this times the head.
+- Stage `j`: ids shifted left by `j + 1`, ending with the latest token (`next_token`,
+  then each draft); `eh_proj(concat(rms_norm(E[ids], enorm), rms_norm(h, hnorm)))`,
+  **embedding first**; `decoder_block_ref` with a causal mask at positions `j + 1 ..
+  j + T`; `rms_norm(., post_norm)`; argmax of the shared head at the last row. Stage
+  `j + 1` reads stage `j`'s output and the token it drafted. `n_draft` stages run, one
+  per layer present (`KeyError` beyond that).
+- Returns `draft_tokens` int64 `(n_draft,)` and `draft_logits` float32 `(n_draft, V)`
+  (standard deviation about 2). The drafted token feeds the next stage, so a
+  comparison of tokens needs prompts whose top two draft logits are clearly apart in
+  every stage; check with the reference in all three frameworks.
+- The block is the *kit* block: RoPE on adjacent pairs with `cfg.rope_base`, eps
+  `cfg.norm_eps` (1e-5). It is not a Qwen3.5 block.
+
+### BlockDenoiser
+
+A seeded block text-diffusion model with a prefix cache, for `block-diffusion-decode`.
+
+```python
+from learnai.kit import BlockDenoiser
+
+model = BlockDenoiser(ctx.fw, seed=3, sharpness=6.0)     # vocab_size=32, d_model=24,
+cache = model.encode(prompt)                             #   eos_bias=0.0, max_context=512
+logits = model.denoise(canvas, cache)                    # (L, vocab_size)
+logits = model.denoise(canvas, cache, scaled_logits)     # with self-conditioning
+cache = model.encode(final_canvas, cache)                # extend the prefix
+check.cost(model.counters, "encoder_tokens", exactly=P + (canvases - 1) * L, unit="tokens")
+```
+
+- `encode(tokens, cache=None)` is causal and folds the tokens in one at a time, so
+  the cache after a prefix is **bit-identical** however the prefix was split over
+  calls. It returns a new immutable `DenoiserCache` (`cache.length`); the one passed
+  in stays valid. Counts `encoder_calls` and `encoder_tokens`.
+- `denoise(canvas, cache, self_cond_logits=None)`: `canvas` is `(L,)` token ids placed
+  right after the cached prefix, any `L >= 1`. Position `i` reads the prefix, its own
+  token, every other canvas token (attention without a mask: bidirectional), and
+  `self_cond_logits[i]`. A pure function of its inputs. Counts `denoise_calls` and
+  `denoise_tokens`. The cache must not be empty (encode the prompt first).
+- `self_cond_logits` is `(L, V)` float: pass **the temperature-scaled logits the
+  previous step sampled from**, as the shipped loop does (the model takes their
+  softmax). `None` on a canvas's first step.
+- The logits are `sharpness * votes + eos_bias on eos_id`; a canvas token adds
+  `OWN_VOTE` (0.5) to its own vote and the self-conditioning adds `SELF_COND_VOTE`
+  (2.0) times its probabilities. Measured over 8 seeds with 3 canvases of 8, at most
+  12 steps, temperatures 1.0 down to 0.2, entropy bound 1.0, a stop after 2 stable
+  steps with mean entropy below 0.5, and `eos_bias=-100`. The last four columns count
+  the seeds on which a mutant of the spec produced other tokens than the correct loop:
+
+  | `sharpness` | steps per canvas | no self-conditioning | sampled canvas appended | noisy canvas encoded | stop on stability alone |
+  |---|---|---|---|---|---|
+  | 0.5 | 12, always (mean entropy stays above 0.55) | 8 | 8 | 8 | 2 |
+  | 1 | 9 to 12 | 8 | 6 | 4 | 7 |
+  | 1.5 | 4 to 11 | 8 | 7 | 5 | 8 |
+  | 2 | 3 to 10 | 8 | 5 | 3 | 4 |
+  | 3 | 3 to 6 | 8 | 5 | 1 | 0 |
+  | 4 | 3 to 6 | 8 | 0 | 0 | 0 |
+  | 6, 8 | 3 or 4 (3 is the earliest the rule allows) | 8 | 0 | 0 | 0 |
+
+  So "stops early" fixtures use 6 or more, "never converges" uses 0.5, and the cases
+  that must catch the sampled-canvas, noisy-canvas, and stability-only mutants use 1
+  to 1.5 (they are invisible at 4 and above, where every position is accepted and
+  sampled as its argmax by the time a canvas stops). A smaller entropy bound leaves
+  more positions unaccepted: at bound 0.1 the noisy-canvas mutant differed on 7 and 8
+  of 8 seeds at sharpness 1 and 1.5. These counts are for one configuration; confirm
+  each mutant on your own fixture.
+- `eos_bias` is added after the scaling, in logit units. `-100` never ends a text,
+  `+100` ends it at the first position of the first canvas; 3 at `sharpness=3` ended
+  some of six seeds' texts partway, at different positions. `model.eos_id` is 1 and
+  `model.pad_id` 0.
+- **Exact tokens across frameworks.** The model's arithmetic is numpy, so its logits
+  are the same bits for the same inputs. What can differ between frameworks is the
+  solution's own arithmetic: the division by the temperature (which also feeds back
+  as self-conditioning), the softmax and cumulative sum of the sampling, and the
+  entropies inside `eb_accept`. A draw within 1e-6 of a CDF boundary or two entropies
+  within 1e-6 at the cut would flip a token. `learnai validate` runs all three
+  references on every case, so a fixture that is not stable shows up there; replace
+  it.
+- The kit has no oracle for the loop itself: the problem's reference is the loop. A
+  complete one (numpy sampling, 30 lines) is `diffusion_generate` in
+  `python/tests/test_kit_m6_models.py`, including the rule that the last canvas is
+  never encoded.
+- It is a toy with the interface and the qualitative behavior of DiffusionGemma, not a
+  port: nothing in it was compared with the shipped denoiser. `ops.eb_accept` was.
+
+### Checked against the shipped code (milestone 6)
+
+The milestone 6 objects mirror `transformers` 5.23.0 and `mlx-lm` 0.32.2. Each was
+checked on 2026-11-21 by building the shipped module with a tiny configuration,
+copying the kit's seeded weights into it, and comparing outputs. The checks are unit
+tests (`python/tests/test_kit_m6_shipped.py`, skipped when the library is missing);
+running that file as a script prints the differences again. No weights were
+downloaded. "Diff" is the largest absolute difference.
+
+| kit | shipped | what was compared, on what | diff |
+|---|---|---|---|
+| `ops.l2norm`, `ops.causal_conv1d` | `l2norm`, `causal_conv1d_fn`, `causal_conv1d_update` (tf `qwen3_5`) | `(3, 5, 12)`; `(2, 9, 10)` with kernel 4: one prefill call, then 9 one-token calls with the saved state | below 1e-6; below 1e-5; states equal |
+| `ops.partial_rope` | `Qwen3_5TextRotaryEmbedding` + `apply_rotary_pos_emb` (tf) | queries and keys `(2, 3, 7, D)` for `(D, factor, theta)` = `(16, 0.25, 1e7)`, `(32, 0.5, 1e4)`, `(8, 1.0, 100)`, positions up to 202 | below 2e-5 |
+| `ops.partial_rope` | the `partial-rope` problem's three references | `(2, 7, D)` for four `(D, factor, base)`, positions up to 1000 | below 1e-6 in the same framework |
+| `ops.gated_delta_layer`, `gdn_layer_ref` | `Qwen3_5GatedDeltaNet` (tf), **chunked path** (one call, no cache; asserted that `torch_chunk_gated_delta_rule` ran) | `x` `(2, T, D)` for `T` = 1, 5, 64, 70, 150 (chunk size 64, so padding and three chunks) and head layouts 2 key/4 value, 3/3, 1/4 with kernel 2 | 3.6e-6 |
+| the same | `Qwen3_5GatedDeltaNet` (tf), **recurrent path** (prefill 70 with a `DynamicCache`, then 12 one-token calls; asserted that `torch_recurrent_gated_delta_rule` ran 12 times) | outputs; final memory against theirs transposed; conv state | 1.3e-6; 2.5e-7; 0 |
+| `ops.gated_delta_layer` in torch, JAX, MLX | the same module | `x` `(70, 32)` | below 2e-4 (asserted) |
+| `hybrid_forward_ref`, `HybridConfig.layers` | `Qwen3_5ForCausalLM` (tf) with 4 layers (3 linear + 1 full), 8 layers (factor 0.5, theta 1e7), and an explicit mixed `layer_types` of 5; norm gains stored as `gain - 1` | logits for `T` = 6, 70, 150 in one pass, and prefill in chunks then token by token with a `DynamicCache` on their side and the kit's state on ours; cached keys, values, memories | logits 2.3e-4 at magnitude 9 (4.8e-5 for the default config); keys 1.3e-4; argmax equal at every position |
+| the same | `mlx_lm.models.qwen3_5.TextModel` with its `make_cache()` | logits for `T` = 6 and 70, one pass and chunks, 4 and 8 layers | 1.4e-4 |
+| `TinyDSA` index scores and top-k, `index_types` | `GlmMoeDsaIndexer` (tf), `GlmMoeDsaConfig.indexer_types` | the `(24, 24)` scores handed to `topk`, for three seeds and layers; the selected sets for `k` = 1, 4, 7, 24, 34 after intersecting theirs with the causal mask; the same with their `DynamicCache` indexer cache over chunks of 6, 1, 1, 8, 8 | scores 6e-7; sets equal in every row without a tie at the cut (353 of 360 rows; in the other 7 the selected scores are equal); cached keys 5e-7 |
+| `mtp_draft_ref`, `mtp_params` | `MtpLayer` / `MtpModel.forward` (tf) on a `LlamaForCausalLM` holding the kit decoder (rows of `q_proj`, `k_proj` reordered for Llama's half-split RoPE) | draft tokens and logits for `(T, stages)` = `(1, 1)`, `(5, 2)`, `(12, 3)`, `(20, 3)`, without a cache and with an `MtpCache`; also that `mtp_hidden_states_first` gives other logits | tokens equal; logits 2.7e-6 |
+| `decoder_forward_ref`, `decoder_hidden_ref` | the same `LlamaForCausalLM` | logits and final-normed hidden states, `T` up to 20 | 3.7e-6; 2.3e-6 |
+| `ops.eb_accept` | `EntropyBoundSampler.accept_canvas` (tf `diffusion_gemma`) | the accepted mask for logits `(3, 16, 40)`, 4 seeds, 7 bounds from 1e-6 to 1e3; and in torch, JAX, MLX on `(12, 24)` | 0 positions differ |
+
+Facts these checks turned up that the specs did not have:
+
+- `transformers` keeps **`K` rows** of convolution state per layer (`conv_kernel`
+  projected inputs), one more than the next token's convolution reads; `mlx-lm` and
+  the kit keep `K - 1`. The last `K - 1` of theirs equal the kit's. A real-model
+  problem that compares states must say which.
+- `transformers` stores the delta memory as `(heads, d_key, d_value)`, the transpose
+  of the kit's and `mlx-lm`'s `(heads, d_value, d_key)`.
+- `GlmMoeDsaIndexer` applies its rotation in a form that also reorders the rotated
+  channels (evens, then odds) of queries and keys alike, so its cached indexer keys
+  are a permutation of `layer_norm(wk(x))` even at position 0.
+- `torch.topk` does not promise an order among equal scores, and the ReLU makes equal
+  (zero) scores common; "ties to the lowest index" is the kit's rule, not the
+  shipped one.
+- What the generator hands `MtpModel` as `hidden_states[-1]` is the final-normed
+  state (checked on Llama: equal to `last_hidden_state` bit for bit).
+
+**Not verified against shipped code:** `BlockDenoiser` (a toy, compared with nothing);
+`TinyDSA`'s main attention, output projection, and stack (plain attention over the
+selected rows; the shipped layer is latent attention inside a full decoder block, and
+only its indexer was run); cross-layer sharing as executed by `GlmMoeDsaModel` (only
+the `indexer_types` rule was compared); `gdn_gates_ref` and `gdn_step_ref` on their own
+(they are covered through the layer); the MTP module of a Qwen3.5 or GLM checkpoint
+(the check used a Llama decoder, whose block is the kit's block; no shipped `mtp.*`
+weights were loaded); anything on real weights (batch F); `ops.softplus` beyond the
+float64 formula.
+
 ### SimModel and Counters
 
 `SimModel` is described in section 5.6. `Counters("a", "b")` is the counter object for
@@ -2209,7 +2642,10 @@ The kit objects added for milestone 3 are documented where they are used:
 `LARGE_8BIT` in section 15. Milestone 4 added `pending_ops`, `watch_load`, and
 `LazyClock` (section 13), `logit_kl` (section 15), and the CUDA-on-CPU tools
 `SyncSpy`, `DeviceSpy`, `FakeDevice`, `RealDevice`, `OOMModel`, `FakeCudaGraph`,
-`CompileCounter`, `TransferSpy`, and `tritonshim` (section 18).
+`CompileCounter`, `TransferSpy`, and `tritonshim` (section 18). Milestone 6 added the
+`ops` functions `softplus`, `l2norm`, `causal_conv1d`, `partial_rope`,
+`gated_delta_layer`, and `eb_accept`, and `GDNConfig`, `HybridConfig`, `CountingKV`,
+`TinyDSA`, the MTP parameters, and `BlockDenoiser`, all in this section.
 
 **What milestone 5 left to problem-local test code**, after reading the specifications
 of its 90 problems for needs that two or more share: LRU and TTL bookkeeping (it is
@@ -2868,6 +3304,9 @@ pin moves.
 - **`atexit` handlers do not run in the harness.** The worker leaves with
   `os._exit` after the `end` event, so that framework teardown cannot delay or break
   the exit. Clean up with `ctx.defer(...)` (runs when the case ends), never `atexit`.
+- **`mlx.nn.softplus` loses small results** (4.5427e-5 at -10, exact 4.5399e-5;
+  relative error up to 39% near -16); `mx.logaddexp(x, 0)` does not. What this means
+  for tolerances is in section 7 under [ops](#ops).
 
 ## 14. Hardware requirements and skipped cases
 

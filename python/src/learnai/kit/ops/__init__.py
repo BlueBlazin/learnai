@@ -57,6 +57,61 @@ The contract, identical in every framework:
       largest probability.
 
     Entries that are already ``-inf`` stay ``-inf``.
+
+The pieces of the 2026 hybrid and diffusion models (Qwen3.5, DiffusionGemma), with the
+conventions of their shipped implementations:
+
+``softplus(x)``
+    ``log(1 + exp(x))``, accurate for large negative ``x`` too (the result there is
+    tiny, and a naive ``log(1 + tiny)`` rounds it away).
+
+``l2norm(x, eps=1e-6)``
+    ``x * rsqrt(sum(x**2, axis=-1) + eps)``: unit length over the last axis.
+
+``causal_conv1d(x, w, state=None) -> (y, state)``
+    Depthwise causal convolution of ``x`` ``(..., T, C)`` along ``T``. ``w`` is
+    ``(C, K)`` or the checkpoint's ``(C, 1, K)``; no bias, no flip (cross-correlation):
+    ``y[t, c] = sum_j w[c, j] * padded[t + j, c]`` where ``padded`` is ``state``
+    followed by ``x``, so the last tap multiplies the current input. ``state`` holds
+    the ``K - 1`` inputs before ``x`` (``(..., K - 1, C)``; ``None`` means zeros) and
+    the returned state the last ``K - 1`` rows of ``padded``. Feeding a sequence in
+    pieces, passing the state along, gives the output of one call.
+
+``partial_rope(x, positions, base=10000.0, factor=1.0)``
+    The default partial rotary embedding (Qwen3.5), as in the ``partial-rope``
+    problem: with ``r = int(D * factor)``, the first ``r`` channels of ``x``
+    ``(..., T, D)`` are a complete RoPE of width ``r`` in the half-split layout (pair
+    ``i`` is channels ``(i, i + r/2)``, frequency ``base**(-2i / r)``) and the other
+    ``D - r`` channels pass through. ``r`` must be even. ``positions`` as for
+    ``rope``. Note the layout: ``rope`` pairs adjacent channels, so
+    ``partial_rope(x, p, base, 1.0)`` is a permutation of ``rope(x, p, base)``, not
+    equal to it.
+
+``gated_delta_layer(x, params, state=None, n_key_heads=None, norm_eps=1e-6) -> (out, state)``
+    The Gated DeltaNet token mixer (the ``linear_attn`` sublayer of Qwen3.5) on ``x``
+    of shape ``(..., T, D)``. ``params`` is a dict with the checkpoint's names
+    (``learnai.kit.gdn_params`` makes one; sizes are read from its shapes):
+    ``in_proj_qkv.weight``, ``in_proj_z.weight``, ``in_proj_a.weight``,
+    ``in_proj_b.weight``, ``conv1d.weight``, ``A_log``, ``dt_bias``, ``norm.weight``,
+    ``out_proj.weight``. ``n_key_heads`` defaults to the number of value heads
+    (``len(A_log)``); it cannot be read from the shapes. ``state`` is
+    ``(conv_state, S)``: the ``K - 1`` last projected inputs ``(..., K - 1, C)`` and
+    the memory ``(..., n_value_heads, d_value, d_key)``; ``None`` means zeros. In order:
+    project; ``causal_conv1d``; SiLU; split into ``q``, ``k``, ``v``; ``l2norm`` of
+    ``q`` and ``k`` and ``q * d_key**-0.5``; each key head repeated over its
+    consecutive value heads; ``g = exp(-exp(A_log) * softplus(a + dt_bias))`` and
+    ``beta = sigmoid(b)``; per token ``S = g S``, ``S = S + beta (v - S k) k^T``,
+    ``y = S q``; ``norm.weight * rms_norm(y) * silu(z)`` per value head; ``out_proj``.
+    One token at a time, so any chunking of a sequence agrees with one call to
+    float32 rounding.
+
+``eb_accept(logits, entropy_bound)``
+    The entropy-bound acceptance of DiffusionGemma for logits ``(..., L, V)``: a
+    boolean ``(..., L)`` mask. Positions are ranked by the entropy (in nats) of their
+    distribution, ascending, ties to the lowest index; a position is accepted while
+    the entropies ranked strictly before it sum to at most ``entropy_bound``. The
+    lowest-entropy position is always accepted. Pass the logits the tokens were
+    sampled from (after the temperature).
 """
 
 from __future__ import annotations
@@ -67,11 +122,17 @@ from typing import Any
 
 __all__ = [
     "attention",
+    "causal_conv1d",
+    "eb_accept",
+    "gated_delta_layer",
+    "l2norm",
     "log_softmax",
     "min_p_filter",
+    "partial_rope",
     "rms_norm",
     "rope",
     "softmax",
+    "softplus",
     "swiglu",
     "top_k_filter",
     "top_p_filter",
@@ -135,3 +196,39 @@ def top_p_filter(logits: Any, p: float) -> Any:
 def min_p_filter(logits: Any, min_p: float) -> Any:
     """Keep tokens at least ``min_p`` times as probable as the top one; the rest ``-inf``."""
     return _backend(logits).min_p_filter(logits, min_p)
+
+
+def softplus(x: Any) -> Any:
+    """``log(1 + exp(x))``, accurate for large negative ``x``."""
+    return _backend(x).softplus(x)
+
+
+def l2norm(x: Any, eps: float = 1e-6) -> Any:
+    """``x * rsqrt(sum(x**2) + eps)`` over the last axis."""
+    return _backend(x).l2norm(x, eps)
+
+
+def causal_conv1d(x: Any, w: Any, state: Any = None) -> tuple[Any, Any]:
+    """Depthwise causal convolution with its ``K - 1`` rows of state: ``(y, state)``."""
+    return _backend(x).causal_conv1d(x, w, state)
+
+
+def partial_rope(x: Any, positions: Any, base: float = 10000.0, factor: float = 1.0) -> Any:
+    """Rotate the first ``int(D * factor)`` channels of ``x`` (half-split); pass the rest."""
+    return _backend(x).partial_rope(x, positions, base, factor)
+
+
+def gated_delta_layer(
+    x: Any,
+    params: dict[str, Any],
+    state: Any = None,
+    n_key_heads: int | None = None,
+    norm_eps: float = 1e-6,
+) -> tuple[Any, tuple[Any, Any]]:
+    """The Gated DeltaNet token mixer with its state: ``(out, (conv_state, S))``."""
+    return _backend(x).gated_delta_layer(x, params, state, n_key_heads, norm_eps)
+
+
+def eb_accept(logits: Any, entropy_bound: float) -> Any:
+    """Which positions the entropy-bound sampler accepts: a boolean mask."""
+    return _backend(logits).eb_accept(logits, entropy_bound)

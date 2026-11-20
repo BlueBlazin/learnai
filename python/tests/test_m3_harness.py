@@ -167,15 +167,16 @@ def test_the_oracle_of_an_mlx_only_problem_is_its_mlx_reference():
 
 @needs_mlx
 def test_mlx_only_problem_runs_with_memory_and_throughput_metrics():
-    run = run_harness(MLX_SCALE, MLX_SCALE / "reference" / "mlx.py", "mlx")
+    # Both measured cases are hidden, and hidden cases report metrics only to authors.
+    run = run_harness(MLX_SCALE, MLX_SCALE / "reference" / "mlx.py", "mlx", extra=["--reveal"])
     assert run.end["status"] == "accepted", run.events
     assert run.start["requires"] == "mlx-gpu" and run.start["requires_met"] is True
     assert "torch" not in run.start["env"] and "mlx" in run.start["env"]
     assert [c.get("requires") for c in run.start["cases"]] == [None, None, "mlx-gpu", "mlx-gpu"]
-    (memory,) = run.case("hidden-2")["metrics"]
+    (memory,) = run.case("half_precision")["metrics"]
     assert memory["name"] == "peak_memory" and memory["unit"] == "MiB" and memory["limit"] == 3
     assert 1.9 <= memory["value"] <= 3.0
-    metrics = {m["name"]: m for m in run.case("hidden-3")["metrics"]}
+    metrics = {m["name"]: m for m in run.case("speed")["metrics"]}
     assert metrics["slowdown"]["limit"] == 20
     assert (
         metrics["tokens_per_s"]["higher_is_better"] is True
