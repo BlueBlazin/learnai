@@ -1475,11 +1475,18 @@ function DevComponentsScreen() {
 
       <Section title="Path" aside="path/, home/">
         <Specimen name="PathSummary: under way, not started, finished">
-          <PathSummary path={PATH} next={PATH_NEXT} />
-          <PathSummary path={{ ...PATH, solvedCount: 0 }} next={PATH_ENTRIES[0]?.[0] ?? null} />
-          <PathSummary path={{ ...PATH, solvedCount: 4 }} next={null} />
+          <PathSummary path={PATH} entries={PATH_ENTRIES} next={PATH_NEXT} />
+          <PathSummary
+            path={{ ...PATH, solvedCount: 0 }}
+            entries={pathEntries(
+              PATH,
+              PATH_PROBLEMS.map((problem) => ({ ...problem, status: "todo" })),
+            )}
+            next={PATH_ENTRIES[0]?.[0] ?? null}
+          />
+          <PathSummary path={{ ...PATH, solvedCount: 4 }} entries={PATH_ENTRIES} next={null} />
         </Specimen>
-        <Specimen name="PathStage: a part with the next problem and an unmet prerequisite; a part not begun">
+        <Specimen name="PathStage: a part with the next problem and an unmet prerequisite; a part not begun; a part with a scene and a color">
           <PathStage
             number={1}
             stage={PATH.stages[0] as Path["stages"][number]}
@@ -1494,6 +1501,14 @@ function DevComponentsScreen() {
             nextId={PATH_NEXT?.problem.id}
             unmet={PATH_UNMET}
           />
+          <div style={stageColorVars(ROUTE_PATH)}>
+            <PathStage
+              number={4}
+              stage={ROUTE_STAGES[3] as Path["stages"][number]}
+              entries={ROUTE_ENTRIES[3] ?? []}
+              nextId={null}
+            />
+          </div>
         </Specimen>
         <Specimen name="PathEntryList on its own">
           <div className="flex max-w-measure">

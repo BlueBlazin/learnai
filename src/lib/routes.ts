@@ -26,6 +26,8 @@ export interface ProblemSearch {
 export interface PathsSearch {
   /** The path to show; the first one when absent. */
   path?: string;
+  /** A stage to scroll to, by its part number (1-based). */
+  part?: number;
 }
 
 export type RouteTarget =
@@ -38,8 +40,11 @@ export type RouteTarget =
 
 export const routes = {
   home: (): RouteTarget => ({ to: "/" }),
-  /** The study path with this id, or the first path when no id is given. */
-  paths: (path?: string): RouteTarget => ({ to: "/paths", search: path ? { path } : {} }),
+  /** The study path with this id (the first when no id is given), scrolled to a part when one is given. */
+  paths: (path?: string, part?: number): RouteTarget => ({
+    to: "/paths",
+    search: { ...(path ? { path } : {}), ...(part ? { part } : {}) },
+  }),
   library: (search: LibrarySearch = {}): RouteTarget => ({ to: "/library", search }),
   settings: (): RouteTarget => ({ to: "/settings" }),
   devComponents: (): RouteTarget => ({ to: "/dev/components" }),

@@ -41,8 +41,8 @@ export function StagePlates({
 }: {
   path: Path;
   entries: PathEntry[][];
-  /** Opens the Path screen. */
-  onOpen: () => void;
+  /** Opens the Path screen at the stage with this part number (1-based). */
+  onOpen: (number: number) => void;
 }) {
   const counts = stageCounts(entries);
   const current = counts.findIndex((stage) => stage.solved < stage.total);
@@ -73,7 +73,7 @@ export function StagePlates({
                     aria-label={`Part ${numeral}, ${stage.title}: ${solved} of ${total} solved`}
                     className="h-30 w-full cursor-pointer overflow-hidden rounded-sm border-0 p-0"
                     style={scene ? undefined : { backgroundColor: stageFill(index) }}
-                    onClick={onOpen}
+                    onClick={() => onOpen(index + 1)}
                   />
                 }
               >

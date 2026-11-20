@@ -44,8 +44,13 @@ const libraryRoute = createRoute({
 const pathsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/paths",
-  validateSearch: (search: Record<string, unknown>): PathsSearch =>
-    typeof search.path === "string" && search.path ? { path: search.path } : {},
+  validateSearch: (search: Record<string, unknown>): PathsSearch => {
+    const part = Number(search.part);
+    return {
+      ...(typeof search.path === "string" && search.path ? { path: search.path } : {}),
+      ...(Number.isInteger(part) && part > 0 ? { part } : {}),
+    };
+  },
 }).lazy(() => import("@/routes/paths").then((module) => module.Route));
 
 const problemRoute = createRoute({

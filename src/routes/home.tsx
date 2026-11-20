@@ -205,7 +205,11 @@ export function HomeScreen() {
                 <RouteSummary path={path} />
                 <StageProgressBar title={path.title} entries={entries} />
               </div>
-              <StagePlates path={path} entries={entries} onOpen={() => go(routes.paths(path.id))} />
+              <StagePlates
+                path={path}
+                entries={entries}
+                onOpen={(number) => go(routes.paths(path.id, number))}
+              />
             </div>
           </Section>
         ) : null}
