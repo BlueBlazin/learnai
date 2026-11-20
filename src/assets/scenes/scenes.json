@@ -1,0 +1,67 @@
+[
+  {
+    "slug": "stage-01-trailhead",
+    "place": "The trailhead",
+    "accent": "#ed9b11"
+  },
+  {
+    "slug": "stage-02-crossing",
+    "place": "The crossing",
+    "accent": "#e5691d"
+  },
+  {
+    "slug": "stage-03-forest",
+    "place": "The pine forest",
+    "accent": "#2a71cc"
+  },
+  {
+    "slug": "stage-04-meadow",
+    "place": "The meadow",
+    "accent": "#db5881"
+  },
+  {
+    "slug": "stage-05-lake",
+    "place": "The lake",
+    "accent": "#18978e"
+  },
+  {
+    "slug": "stage-06-terraces",
+    "place": "The terraces",
+    "accent": "#8fc30b"
+  },
+  {
+    "slug": "stage-07-canyon",
+    "place": "The canyon",
+    "accent": "#834ccd"
+  },
+  {
+    "slug": "stage-08-ridge",
+    "place": "The ridge",
+    "accent": "#f4c60a"
+  },
+  {
+    "slug": "stage-09-tower",
+    "place": "The survey tower",
+    "accent": "#c2332f"
+  },
+  {
+    "slug": "stage-10-village",
+    "place": "The village",
+    "accent": "#27add9"
+  },
+  {
+    "slug": "stage-11-glacier",
+    "place": "The glacier",
+    "accent": "#22964c"
+  },
+  {
+    "slug": "stage-12-pass",
+    "place": "The high pass",
+    "accent": "#c94db5"
+  },
+  {
+    "slug": "stage-13-summit",
+    "place": "The summit",
+    "accent": "#e6b125"
+  }
+]

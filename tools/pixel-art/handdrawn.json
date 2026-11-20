@@ -1,0 +1,36 @@
+{
+  "stage-03-forward": {
+    "legend": {
+      "#": "outline",
+      "c": "cyan",
+      "b": "blue",
+      "l": "cyan-light",
+      ".": null
+    },
+    "rows": [
+      "...........#...........",
+      ".........##c##.........",
+      ".......##ccccc##.......",
+      ".....##ccccccccc##.....",
+      "...##ccccccccccccc##...",
+      ".##ccccccccccccccccc##.",
+      "#llcccccccccccccccccll#",
+      "#bbllcccccccccccccllbb#",
+      "#bbbbllcccccccccllbbbb#",
+      ".##bbbbllcccccllbbbb##.",
+      "#ll##bbbbllcllbbbb##ll#",
+      "#bbll##bbbblbbbb##llbb#",
+      "#bbbbll##bbbbb##llbbbb#",
+      ".##bbbbll##b##llbbbb##.",
+      "#ll##bbbbll#llbbbb##ll#",
+      "#bbll##bbbblbbbb##llbb#",
+      "#bbbbll##bbbbb##llbbbb#",
+      ".##bbbbll##b##llbbbb##.",
+      "...##bbbbll#llbbbb##...",
+      ".....##bbbblbbbb##.....",
+      ".......##bbbbb##.......",
+      ".........##b##.........",
+      "...........#..........."
+    ]
+  }
+}

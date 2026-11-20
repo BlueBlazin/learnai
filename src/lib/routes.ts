@@ -34,6 +34,7 @@ export type RouteTarget =
   | { to: "/library"; search: LibrarySearch }
   | { to: "/settings" }
   | { to: "/dev/components" }
+  | { to: "/dev/home-mockup" }
   | { to: "/problems/$problemId"; params: { problemId: string }; search: ProblemSearch };
 
 export const routes = {
@@ -43,6 +44,7 @@ export const routes = {
   library: (search: LibrarySearch = {}): RouteTarget => ({ to: "/library", search }),
   settings: (): RouteTarget => ({ to: "/settings" }),
   devComponents: (): RouteTarget => ({ to: "/dev/components" }),
+  devHomeMockup: (): RouteTarget => ({ to: "/dev/home-mockup" }),
   problem: (problemId: string, search: ProblemSearch = {}): RouteTarget => ({
     to: "/problems/$problemId",
     params: { problemId },

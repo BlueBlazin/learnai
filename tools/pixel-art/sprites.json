@@ -1,0 +1,23 @@
+{
+  "rows": 4,
+  "cols": 4,
+  "neutrals": ["outline", "steel-dark", "steel", "steel-light", "paper"],
+  "sprites": [
+    {"name": "stage-01-numerics", "colors": ["amber", "yellow"]},
+    {"name": "stage-02-tokens", "colors": ["orange", "amber"]},
+    {"name": "stage-03-forward", "colors": ["blue", "cyan"]},
+    {"name": "stage-04-sampling", "colors": ["pink", "pink-light"]},
+    {"name": "stage-05-kv-cache", "colors": ["teal", "teal-light"]},
+    {"name": "stage-06-structured", "colors": ["lime", "lime-light"]},
+    {"name": "stage-07-quantization", "colors": ["purple", "purple-light"]},
+    {"name": "stage-08-speculative", "colors": ["yellow", "cream"]},
+    {"name": "stage-09-sizing", "colors": ["red", "orange"]},
+    {"name": "stage-10-serving", "colors": ["cyan", "cyan-light", "amber"]},
+    {"name": "stage-11-gpu", "colors": ["green", "lime"]},
+    {"name": "stage-12-around", "colors": ["orange", "amber"]},
+    {"name": "stage-13-capstone", "colors": ["amber", "yellow", "cream"]},
+    {"name": "icon-flame", "colors": ["red", "orange", "amber", "yellow", "cream"]},
+    {"name": "icon-star", "colors": ["amber", "yellow", "cream"]},
+    {"name": "icon-coin", "colors": ["orange", "amber", "yellow", "cream"]}
+  ]
+}
