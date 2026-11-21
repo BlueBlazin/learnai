@@ -14,16 +14,38 @@ Cost, through `dfa.counters.steps`:
 
 The index is opaque, and it can be a large nested dict, so the three functions are
 called directly on the solution module rather than through `ctx.call`, which would
-copy the index on every query.
+copy the index on every query (`call` below).
+
+The automaton is handed over as `DFA`, a `CharDFA` behind the kit's `Guarded` that
+shares the counters of the test's own automaton: a solution may use `step`, `walk`,
+`is_accepting`, and the public attributes. Its counters, its private table and `_next`,
+`trim`, and `with_framework` are refused (an index may keep the automaton, so the guard
+is armed for the queries too); the three oracles stay with `forbidden` in problem.toml.
 """
 
 from learnai.judge import case, check
-from learnai.kit import DEAD, CharDFA, ToyVocab
+from learnai.kit import DEAD, CharDFA, Guarded, ToyVocab, check_guard, guard
 
 OBJECT = r'\{"[a-z]+": (true|false|null|-?\d+)\}'
 NUMBER = r"-?(0|[1-9][0-9]*)(\.[0-9]+)?"
 STRING = r'"[^"]*"'
 EMOJI = r"(é|€|😀)+"
+
+
+class DFA(Guarded, CharDFA):
+    """The automaton the solution gets: counted steps and the public attributes."""
+
+    label = "dfa"
+    refused = Guarded.refused | {"trim"}  # trim() returns an equal automaton that counts apart
+
+
+def call(ctx, name, *args):
+    """The solution's `name`, with the guard armed before the call and checked after it."""
+    guard(ctx)
+    try:
+        return getattr(ctx.solution, name)(*args)
+    finally:
+        check_guard()
 
 
 def walk(dfa, state, piece):
@@ -69,7 +91,7 @@ def show(vocab, tokens):
 
 def build(ctx, dfa, vocab):
     """Build the solution's index and check the step budget. Returns the index."""
-    index = ctx.solution.build_index(dfa, vocab)
+    index = call(ctx, "build_index", DFA.of(dfa), vocab)  # shares the counters
     check.cost(dfa.counters, "steps", at_most=step_budget(dfa, vocab), unit="steps")
     return index
 
@@ -80,7 +102,7 @@ def check_queries(ctx, index, dfa, vocab, what):
     for state in dfa.states:
         expected = moves(dfa, state, vocab)
         label = f"allowed_from_index in state {state} of {what}"
-        got = ctx.solution.allowed_from_index(index, state)
+        got = call(ctx, "allowed_from_index", index, state)
         check.that(
             isinstance(got, list) and all(type(token) is int for token in got),
             f"{label}: must return a list of Python ints",
@@ -95,7 +117,7 @@ def check_queries(ctx, index, dfa, vocab, what):
         check.equal(got, sorted(expected), label=label)
         for token, after in expected.items():
             check.equal(
-                ctx.solution.advance_from_index(index, state, token),
+                call(ctx, "advance_from_index", index, state, token),
                 after,
                 label=f"advance_from_index from state {state} of {what} "
                 f"with token {vocab.pieces[token]!r}",
@@ -103,7 +125,7 @@ def check_queries(ctx, index, dfa, vocab, what):
         refused = [token for token in range(vocab.size) if token not in expected]
         for token in [*refused[:5], *refused[-12:]]:  # the five specials and a dozen others
             check.raises(
-                ValueError, ctx.solution.advance_from_index, index, state, token,
+                ValueError, call, ctx, "advance_from_index", index, state, token,
                 label=f"advance_from_index from state {state} of {what} "
                 f"with the disallowed token {token} ({vocab.pieces[token]!r})",
             )  # fmt: skip
@@ -123,7 +145,7 @@ def check_pattern(ctx, pattern, vocab):
 def worked_example(ctx):
     vocab = ToyVocab(size=64, seed=0)
     dfa = CharDFA.from_regex(r"(true|null)")
-    index = ctx.solution.build_index(dfa, vocab)
+    index = call(ctx, "build_index", DFA.of(dfa), vocab)  # shares the counters
     built = dfa.counters.steps
     table = {
         0: {6: 2, 19: 1, 40: 5, 46: 4, 47: 7, 49: 7, 53: 3, 54: 6},
@@ -136,13 +158,13 @@ def worked_example(ctx):
         7: {},
     }
     for state, expected in table.items():
-        got = ctx.solution.allowed_from_index(index, state)
+        got = call(ctx, "allowed_from_index", index, state)
         check.equal(got, sorted(expected), label=f"allowed_from_index(index, {state})")
         for token, after in expected.items():
-            got = ctx.solution.advance_from_index(index, state, token)
+            got = call(ctx, "advance_from_index", index, state, token)
             check.equal(got, after, label=f"advance_from_index(index, {state}, {token})")
     check.raises(
-        ValueError, ctx.solution.advance_from_index, index, 1, 53,
+        ValueError, call, ctx, "advance_from_index", index, 1, 53,
         label="advance_from_index(index, 1, 53)",
     )  # fmt: skip
     check.cost(
@@ -164,17 +186,17 @@ def queries_are_free(ctx):
     # Rejects lazy_walk. A decoding run: 200 masks and advances along a random path.
     vocab = ToyVocab(size=64, seed=1)
     dfa = CharDFA.from_regex(r"\[(true|false|null|-?\d+)(, (true|false|null|-?\d+))*\]")
-    index = ctx.solution.build_index(dfa, vocab)
+    index = call(ctx, "build_index", DFA.of(dfa), vocab)  # shares the counters
     before = dfa.counters.steps
     state = dfa.start
     for _ in range(200):
-        allowed = ctx.solution.allowed_from_index(index, state)
+        allowed = call(ctx, "allowed_from_index", index, state)
         check.equal(allowed, sorted(moves(dfa, state, vocab)), label="allowed_from_index")
         if not allowed:
             state = dfa.start
             continue
         token = allowed[int(ctx.rng.integers(len(allowed)))]
-        after = ctx.solution.advance_from_index(index, state, token)
+        after = call(ctx, "advance_from_index", index, state, token)
         check.equal(after, walk(dfa, state, vocab.pieces[token]), label="advance_from_index")
         state = after
     check.cost(
@@ -207,7 +229,7 @@ def specials_excluded(ctx):
     for pattern in (r"[0-9]*", r"(true|false)?"):
         dfa, index = check_pattern(ctx, pattern, vocab)
         for state in dfa.states:
-            got = ctx.solution.allowed_from_index(index, state)
+            got = call(ctx, "allowed_from_index", index, state)
             check.that(
                 not any(vocab.is_special(token) for token in got),
                 f"allowed_from_index: a special token is allowed in state {state} of {pattern}",

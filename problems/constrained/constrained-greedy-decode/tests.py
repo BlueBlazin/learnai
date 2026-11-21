@@ -6,10 +6,15 @@ every token permitted, EOS only in an accepting state and only at the end), agai
 constrained greedy decoding done here without a cache, and then the cost. For `g`
 returned tokens from a prompt of `P` tokens the limits are `g` forward calls and
 `P + g - 1` tokens processed, and nothing at all when `g` is 0.
+
+The model is handed over as `LM`, a `TinyLM` behind the kit's `Guarded`: a solution may
+call it and read its sizes. Its counters, its weights, its seed, and `with_framework`
+are refused, so the counts cannot be written and no second, uncounted model can do
+the work. The constraint is not judged on a count and is handed over as it is.
 """
 
 from learnai.judge import case, check
-from learnai.kit import CharDFA, DFAConstraint, TinyLM, ToyVocab
+from learnai.kit import CharDFA, DFAConstraint, Guarded, TinyLM, ToyVocab, check_guard, guard
 
 FN = "constrained_greedy"
 PROMPT = [0, 17, 42, 5]
@@ -19,6 +24,16 @@ WORD = r"(true|false|null)"
 NUMBER = r"-?\d+"
 DECIMAL = r"-?\d+(\.\d+)?"
 OBJECT = r'\{"[a-u]+": (true|false|null|-?\d+)\}'
+
+
+class LM(Guarded, TinyLM):
+    """The model the solution gets: it is called, and its sizes are read; nothing else."""
+
+    label = "lm"
+    refused = Guarded.refused | {"seed"}
+
+    def __repr__(self):  # TinyLM's shows the seed, which would rebuild the model
+        return f"TinyLM(vocab_size={self.vocab_size}, max_context={self.max_context})"
 
 
 class Brackets:
@@ -122,8 +137,10 @@ def decode(ctx, seed, constraint, max_new_tokens, eos_id, *, prompt=PROMPT, expe
             return ""
         return f"text so far: {b''.join(vocab.pieces[t] for t in tokens)!r}\n"
 
-    lm = TinyLM(ctx.fw, seed=seed)
+    lm = LM(ctx.fw, seed=seed)
+    guard(ctx)
     got = ctx.call(FN, lm, list(prompt), constraint, max_new_tokens, eos_id)
+    check_guard()
     check.that(
         isinstance(got, list) and all(type(token) is int for token in got),
         f"{FN}: must return a list of Python ints",

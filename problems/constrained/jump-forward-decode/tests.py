@@ -8,10 +8,15 @@ definition), and then the cost. The definition also yields the two numbers the l
 are stated in: `f`, the number of steps with two or more permitted tokens, and `L`,
 the number of tokens generated before the last of them. The limits are `f` forward
 calls and `P + L` tokens processed (0 when `f` is 0).
+
+The model is handed over as `LM`, a `TinyLM` behind the kit's `Guarded`: a solution may
+call it and read its sizes. Its counters, its weights, its seed, and `with_framework`
+are refused, so the counts cannot be written and no second, uncounted model can do
+the work. The constraint is not judged on a count and is handed over as it is.
 """
 
 from learnai.judge import case, check
-from learnai.kit import CharDFA, DFAConstraint, TinyLM, ToyVocab
+from learnai.kit import CharDFA, DFAConstraint, Guarded, TinyLM, ToyVocab, check_guard, guard
 
 FN = "jump_forward_decode"
 PROMPT = [0, 17, 42, 5]
@@ -24,6 +29,16 @@ TALLY = r'\{"users": \d\d?, "rest": \[(true|false)(, (true|false))*\]\}'
 # After the closing bracket the output is complete and exactly one token ("." ) may
 # still follow: one allowed token, two permitted ones.
 OPTIONAL_DOT = r"\[\d\]\.?"
+
+
+class LM(Guarded, TinyLM):
+    """The model the solution gets: it is called, and its sizes are read; nothing else."""
+
+    label = "lm"
+    refused = Guarded.refused | {"seed"}
+
+    def __repr__(self):  # TinyLM's shows the seed, which would rebuild the model
+        return f"TinyLM(vocab_size={self.vocab_size}, max_context={self.max_context})"
 
 
 class Template:
@@ -124,8 +139,10 @@ def decode(ctx, seed, constraint, max_new_tokens, eos_id, *, prompt=PROMPT, expe
             return ""
         return f"text so far: {b''.join(vocab.pieces[t] for t in tokens)!r}\n"
 
-    lm = TinyLM(ctx.fw, seed=seed)
+    lm = LM(ctx.fw, seed=seed)
+    guard(ctx)
     got = ctx.call(FN, lm, list(prompt), constraint, max_new_tokens, eos_id)
+    check_guard()
     check.that(
         isinstance(got, list) and all(type(token) is int for token in got),
         f"{FN}: must return a list of Python ints",
