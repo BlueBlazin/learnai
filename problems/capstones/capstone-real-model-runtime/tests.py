@@ -16,6 +16,10 @@ use are the ones the solution's `load_weights` returned, and stage 5 gets the
 solution's `Tokenizer`. Both are loaded once per run and kept in `_state`. Solution
 functions are called directly, with tensors of the solution's framework, because the
 weights and the cache must not be converted back and forth.
+
+The file that `load_weights` gets is a `CountingFile` behind the kit's `Guarded`: a
+solution may slice it, take its length, and read from it, all counted. Its counters,
+its path, and the mapping behind it are refused, and a second file cannot be opened.
 """
 
 import json
@@ -25,7 +29,15 @@ from pathlib import Path
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import ByteLevelBPE, CountingFile, SafetensorsFile, bf16_to_f32
+from learnai.kit import (
+    ByteLevelBPE,
+    CountingFile,
+    Guarded,
+    SafetensorsFile,
+    bf16_to_f32,
+    check_guard,
+    guard,
+)
 
 S1 = "1: weights from a safetensors file"
 S2 = "2: tokenizer and chat template"
@@ -40,6 +52,16 @@ _state: dict[str, object] = {}
 
 
 # -- models ---------------------------------------------------------------------------------
+
+
+class File(Guarded, CountingFile):
+    """The file a solution gets: slices, `len`, and reads, all counted."""
+
+    label = "file"
+    refused = Guarded.refused | {"path"}
+
+    def __repr__(self):  # CountingFile's shows the path, which would open the file again
+        return "CountingFile(...)"
 
 
 class Files:
@@ -74,7 +96,9 @@ def files_of(ctx, which):
 
 
 def call_load(ctx, file, *args):
+    guard(ctx)
     weights = ctx.solution.load_weights(file, *args)
+    check_guard()
     check.that(
         isinstance(weights, dict),
         f"load_weights: returned a {type(weights).__name__}, not a dict",
@@ -86,7 +110,7 @@ def weights_of(ctx, which):
     """The solution's own weights of a model, loaded once per run."""
     key = f"weights_{which}"
     if key not in _state:
-        file = CountingFile(files_of(ctx, which).checkpoint_path)
+        file = File(files_of(ctx, which).checkpoint_path)
         _state[key] = call_load(ctx, file)
         _state[f"file_{which}"] = file  # keeps the mapping alive
     return _state[key]
@@ -160,7 +184,7 @@ def write_file(ctx, entries, order=None, metadata=None, pad=0):
     handle.close()
     ctx.defer(lambda: Path(handle.name).unlink(missing_ok=True))
     sizes = {name: offsets[name][1] - offsets[name][0] for name in entries}
-    return CountingFile(handle.name), 8 + len(text), sizes
+    return File(handle.name), 8 + len(text), sizes
 
 
 def bf16(values):
@@ -219,7 +243,7 @@ def weights_example(ctx):
       stage=S1)  # fmt: skip
 def weights_tiny(ctx):
     files = files_of(ctx, "tiny")
-    file = CountingFile(files.checkpoint_path)
+    file = File(files.checkpoint_path)
     weights = call_load(ctx, file)
     kit = files.kit_checkpoint()
     check.equal(list(weights), kit.names(), label="names, in header order")
@@ -236,7 +260,7 @@ def weights_subset(ctx):
     files = files_of(ctx, "tiny")
     kit = files.kit_checkpoint()
     wanted = ["model.norm.weight", "model.layers.1.self_attn.k_proj.weight"]
-    file = CountingFile(files.checkpoint_path)
+    file = File(files.checkpoint_path)
     weights = call_load(ctx, file, wanted)
     check.equal(list(weights), wanted, label="names, in the order asked for")
     size = 0
@@ -247,14 +271,18 @@ def weights_subset(ctx):
         check_tensor(ctx, weights, name, want, "load_weights(file, names)")
     check_bytes(file, kit.data_start + size, "load_weights(file, names)")
 
-    file = CountingFile(files.checkpoint_path)
+    file = File(files.checkpoint_path)
+    guard(ctx)
     check.raises(KeyError, ctx.solution.load_weights, file, [wanted[0], "model.nope"],
                  label="load_weights with a name that is not in the file")  # fmt: skip
+    check_guard()
     check.cost(file.counters, "bytes_read", at_most=kit.data_start, unit="bytes",
                metric="bytes_read_before_keyerror")  # fmt: skip
-    file = CountingFile(files.checkpoint_path)
+    file = File(files.checkpoint_path)
+    guard(ctx)
     check.raises(KeyError, ctx.solution.load_weights, file, ["__metadata__"],
                  label="load_weights(file, ['__metadata__'])")  # fmt: skip
+    check_guard()
 
 
 @case("data in another order than the header, gaps, odd offsets, a scalar, an empty tensor",
@@ -293,7 +321,7 @@ def weights_real(ctx):
         "model.norm.weight",
         "model.layers.0.shared_mlp.output_linear.weight",
     ]
-    file = CountingFile(files.checkpoint_path)
+    file = File(files.checkpoint_path)
     weights = call_load(ctx, file, wanted)
     size = 0
     for name in wanted:

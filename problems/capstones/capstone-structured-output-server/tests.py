@@ -14,14 +14,30 @@ also checked directly against the schema by `conforms`, which knows nothing of r
 
 Stage 4 counts compilations by wrapping `CharDFA.from_regex` for the length of a case:
 every automaton the server compiles is recorded, and its step counter read.
+
+What the server is handed is behind the kit's `Guarded`. Of `lm` it may use `stream` and
+`count_tokens`, and of a stream the iteration and `aclose`: the script, the log of
+calls, the gate, and a stream's record are refused. In stage 4 an automaton compiled
+through the wrapper is guarded too (its counters, its copies, and `trim` are refused),
+and the wrapper's record cannot be reached through `CharDFA.from_regex`.
 """
 
 import json
+from contextlib import contextmanager
 
 import httpx
 
 from learnai.judge import CheckFailure, case, check, iter_sse
-from learnai.kit import CharDFA, DFAConstraint, ScriptedLM, ToyVocab
+from learnai.kit import (
+    CharDFA,
+    DFAConstraint,
+    Guarded,
+    ScriptedLM,
+    ToyVocab,
+    check_guard,
+    guard,
+)
+from learnai.kit.scriptedlm import ScriptedStream
 
 S1 = "1: chat completions"
 S2 = "2: schema-constrained output"
@@ -34,6 +50,31 @@ CONVERSATION = [
     {"role": "user", "content": "Say hello"},
 ]
 EOS = None  # in a ranking: the end-of-sequence token
+
+
+class Stream(Guarded, ScriptedStream):
+    """The stream a server gets from `lm.stream`: it is iterated and closed."""
+
+    label = "stream"
+    allowed = frozenset({"__class__", "__aiter__", "__anext__", "aclose"})
+
+
+class LM(Guarded, ScriptedLM):
+    """The model a server gets: `stream` and `count_tokens`, and nothing else."""
+
+    label = "lm"
+    allowed = frozenset({"__class__", "stream", "count_tokens"})
+
+    def stream(self, prompt, max_tokens=None):
+        return Stream.of(super().stream(prompt, max_tokens))
+
+
+class DFA(Guarded, CharDFA):
+    """An automaton the server compiled in stage 4: counted steps and the public attributes."""
+
+    label = "dfa"
+    refused = Guarded.refused | {"trim"}  # trim() returns an equal automaton that counts apart
+
 
 # The compiler the tests use for their own automata; stage 4 wraps the class attribute.
 _FROM_REGEX = CharDFA.__dict__["from_regex"].__func__
@@ -305,8 +346,15 @@ def named(name):
     return {"type": "function", "function": {"name": name}}
 
 
+@contextmanager
 def serve(ctx, lm):
-    return ctx.serve(ctx.solution.make_app(lm, VOCAB))
+    """The solution's app on a local socket, with the guard armed for as long as it runs."""
+    guard(ctx, may_build=True)  # the server compiles its own automata
+    with ctx.serve(ctx.solution.make_app(lm, VOCAB)) as client:
+        try:
+            yield client
+        finally:
+            check_guard()
 
 
 def send(client, method, path, label, **kwargs):
@@ -702,7 +750,7 @@ HELLO = [*spell("Hello, world!"), ranked(EOS), ranked("?"), ranked("?")]
       stage=S1)  # fmt: skip
 def chat_example(ctx):
     # Rejects eos_not_counted and reads_past_eos.
-    lm = ScriptedLM(HELLO)
+    lm = LM(HELLO)
     with serve(ctx, lm) as client:
         want = complete(ctx, client, lm, body_of(), HELLO, "the example request")
         check_closed(lm, "the example request")
@@ -718,7 +766,7 @@ def chat_example(ctx):
 @case("the stage 1 example, streamed with a limit of 4 tokens and a usage chunk", public=True,
       stage=S1)  # fmt: skip
 def chat_example_stream(ctx):
-    lm = ScriptedLM(HELLO)
+    lm = LM(HELLO)
     body = body_of(max_tokens=4, stream=True, stream_options={"include_usage": True})
     with serve(ctx, lm) as client:
         want = stream(ctx, client, lm, body, HELLO, "the example request, streamed")
@@ -730,7 +778,7 @@ def chat_example_stream(ctx):
 @case("finish_reason is stop exactly when end-of-sequence was chosen", public=True, stage=S1)
 def finish_reasons(ctx):
     # Rejects finish_from_count: with the limit at 13, the 13th token is end-of-sequence.
-    lm = ScriptedLM(HELLO)
+    lm = LM(HELLO)
     table = [
         ({"max_tokens": 12}, "length"),  # the twelve tokens of the text, no room for EOS
         ({"max_tokens": 13}, "stop"),  # the limit is reached by choosing EOS
@@ -765,7 +813,7 @@ def argmax_and_ties(ctx):
     eos_tie = base_row()
     eos_tie[VOCAB.eos_id] = eos_tie[c] = 1.0  # end-of-sequence has id 1: it wins the tie
     rows = [tie, late, tie, eos_tie, tie]
-    lm = ScriptedLM(rows)
+    lm = LM(rows)
     with serve(ctx, lm) as client:
         want = both(ctx, client, lm, body_of(), rows, "rows with tied logits")
     assert want.finish == "stop" and want.count == 4
@@ -792,7 +840,7 @@ INVALID_CHAT = [
 @case("routing and validation: 404, 405, and 400 with an OpenAI-shaped error", public=True,
       stage=S1)  # fmt: skip
 def routing_and_validation(ctx):
-    lm = ScriptedLM(HELLO)
+    lm = LM(HELLO)
     with serve(ctx, lm) as client:
         for method, path in [("POST", "/v1/completions"), ("GET", "/"), ("POST", URL + "/x")]:
             response = send(client, method, path, f"{method} {path}", json=body_of())
@@ -816,7 +864,7 @@ def routing_and_validation(ctx):
 def flushes_each_token(ctx):
     # Rejects buffers_stream. The gate lets one row through at a time.
     rows = [*spell("ab cd"), ranked(EOS)]
-    lm = ScriptedLM(rows, gated=True, gate_timeout_s=1.5)
+    lm = LM(rows, gated=True, gate_timeout_s=1.5)
     body = body_of(stream=True, stream_options={"include_usage": True})
     want = expect(ctx, body, rows)
     with serve(ctx, lm) as client, client.stream("POST", URL, json=body) as response:
@@ -846,7 +894,7 @@ def flushes_each_token(ctx):
 
 @case("seeded rows of logits, streamed and not, equal the greedy replay", stage=S1)
 def chat_random(ctx):
-    lm = ScriptedLM(HELLO)
+    lm = LM(HELLO)
     favorites = ["e", "t", " ", "a", "o", ", ", "n", "true", '"', "{", "!"]
     with serve(ctx, lm) as client:
         for trial in range(6):
@@ -915,7 +963,7 @@ CLOSERS = ('"', ":", ",", "}", "]", EOS)
 @case("the stage 2 example: the schema overrides what the model prefers", public=True, stage=S2)
 def schema_example(ctx):
     # Rejects stream_unconstrained on its streamed half.
-    lm = ScriptedLM(FLAGS_ROWS)
+    lm = LM(FLAGS_ROWS)
     body = body_of(response_format=schema_format(FLAGS))
     with serve(ctx, lm) as client:
         want = both(ctx, client, lm, body, FLAGS_ROWS, "the example request")
@@ -938,7 +986,7 @@ def prose_model(ctx):
         (SCHEMAS[4], "blue"),
         (SCHEMAS[5], "+12.50"),
     ]
-    lm = ScriptedLM(FLAGS_ROWS)
+    lm = LM(FLAGS_ROWS)
     with serve(ctx, lm) as client:
         for schema, text in scripts:
             rows = [*spell(text, *CLOSERS), *[ranked(EOS, *CLOSERS)] * 30]
@@ -956,7 +1004,7 @@ def truncated_document(ctx):
     text = '{"city":"Oslo","days":365}'
     rows = [*spell(text), ranked(EOS), ranked(EOS)]
     n = len(VOCAB.encode(text))
-    lm = ScriptedLM(rows)
+    lm = LM(rows)
     with serve(ctx, lm) as client:
         for limit, reason in [(3, "length"), (n - 1, "length"), (n, "length"), (n + 1, "stop")]:
             body = body_of(response_format=schema_format(TRIP), max_tokens=limit)
@@ -991,7 +1039,7 @@ INVALID_FORMAT = [
       stage=S2)  # fmt: skip
 def response_format_validation(ctx):
     # Rejects unsupported_schema_500.
-    lm = ScriptedLM(HELLO)
+    lm = LM(HELLO)
     with serve(ctx, lm) as client:
         for spec in ({"type": "text"}, None):
             want = both(ctx, client, lm, body_of(response_format=spec), HELLO, f"format {spec!r}")
@@ -1008,7 +1056,7 @@ def response_format_validation(ctx):
 @case("tokens that span structure: quotes with braces, colons, and split keywords", stage=S2)
 def spanning_tokens(ctx):
     # Tokens such as `"}`, `":`, `{"`, `tru`, and `nul` cross the boundaries of the grammar.
-    lm = ScriptedLM(HELLO)
+    lm = LM(HELLO)
     schema = {
         "type": "object",
         "properties": {
@@ -1037,7 +1085,7 @@ def spanning_tokens(ctx):
 
 @case("seeded logits on seven schemas, with and without a token limit", stage=S2)
 def schema_random(ctx):
-    lm = ScriptedLM(HELLO)
+    lm = LM(HELLO)
     favorites = ['"', '"}', '":', '": ', ",", ", ", "}", "]", "true", "nul", "1", "0", "e", "a"]
     stopped = 0
     with serve(ctx, lm) as client:
@@ -1079,7 +1127,7 @@ CALL_ROWS = [*spell(CALL_TEXT), ranked(EOS), ranked("?")]
 @case("the stage 3 example, not streamed: text, then one tool call", public=True, stage=S3)
 def tool_example(ctx):
     # Rejects tool_finish_stop.
-    lm = ScriptedLM(CALL_ROWS)
+    lm = LM(CALL_ROWS)
     body = body_of(tools=[WEATHER, CLOCK])
     with serve(ctx, lm) as client:
         want = complete(ctx, client, lm, body, CALL_ROWS, "the example request")
@@ -1097,7 +1145,7 @@ def tool_example(ctx):
       stage=S3)  # fmt: skip
 def tool_example_stream(ctx):
     # Rejects id_in_every_delta.
-    lm = ScriptedLM(CALL_ROWS)
+    lm = LM(CALL_ROWS)
     body = body_of(tools=[WEATHER, CLOCK], stream=True, stream_options={"include_usage": True})
     with serve(ctx, lm) as client:
         want = stream(ctx, client, lm, body, CALL_ROWS, "the example request, streamed")
@@ -1109,7 +1157,7 @@ def tool_example_stream(ctx):
       stage=S3)  # fmt: skip
 def named_tool(ctx):
     # Rejects named_choice_unconstrained.
-    lm = ScriptedLM(CALL_ROWS)
+    lm = LM(CALL_ROWS)
     text = 'I will look it up: {"city": "Oslo", "unit": "K"}'
     rows = [*spell(text, *CLOSERS), *[ranked(EOS, *CLOSERS)] * 20]
     schema = WEATHER["function"]["parameters"]
@@ -1150,7 +1198,7 @@ INVALID_TOOLS = [
       stage=S3)  # fmt: skip
 def tools_off_and_validation(ctx):
     # Rejects parses_without_tools.
-    lm = ScriptedLM(CALL_ROWS)
+    lm = LM(CALL_ROWS)
     with serve(ctx, lm) as client:
         for fields in ({}, {"tools": [WEATHER], "tool_choice": "none"}, {"tool_choice": "none"}):
             want = both(ctx, client, lm, body_of(**fields), CALL_ROWS, f"fields {fields!r}")
@@ -1182,7 +1230,7 @@ def tool_streams(ctx):
         ),
         "No call here, only a < and a <tool_cal",
     ]
-    lm = ScriptedLM(CALL_ROWS)
+    lm = LM(CALL_ROWS)
     with serve(ctx, lm) as client:
         for number, text in enumerate(texts):
             rows = [*spell(text), ranked(EOS)]
@@ -1207,7 +1255,7 @@ def named_random(ctx):
         tool("noop"),
     ]
     favorites = ['"', '"}', '":', ",", "}", "]", "true", "1", "0", "e", "a", "<", "{"]
-    lm = ScriptedLM(CALL_ROWS)
+    lm = LM(CALL_ROWS)
     with serve(ctx, lm) as client:
         for trial in range(8):
             rng = ctx.child_rng(trial)
@@ -1230,20 +1278,22 @@ def named_random(ctx):
 # == Stage 4: cancellation and the compilation cache =======================================
 
 
-class CompileSpy:
+class CompileSpy(Guarded):
     """Records every automaton that `CharDFA.from_regex` builds while the case runs."""
+
+    label = "CharDFA.from_regex"
+    allowed = frozenset({"__class__"})
 
     def __init__(self, ctx):
         self.dfas = []
-        original = CharDFA.__dict__["from_regex"]
-
-        def from_regex(cls, pattern):
-            dfa = original.__func__(cls, pattern)
-            self.dfas.append(dfa)
-            return dfa
-
-        CharDFA.from_regex = classmethod(from_regex)
+        original = self.original = CharDFA.__dict__["from_regex"]
+        CharDFA.from_regex = classmethod(self.from_regex)
         ctx.defer(lambda: setattr(CharDFA, "from_regex", original))
+
+    def from_regex(self, cls, pattern):
+        dfa = DFA.of(self.original.__func__(cls, pattern))
+        self.dfas.append(dfa)
+        return dfa
 
     def read(self):
         return len(self.dfas), sum(dfa.counters.snapshot()["steps"] for dfa in self.dfas)
@@ -1308,7 +1358,7 @@ def compiles_once(ctx):
     spy = CompileSpy(ctx)
     schema = unique_schema(ctx, "a")
     rows = schema_rows(ctx.child_rng(0))
-    lm = ScriptedLM(rows)
+    lm = LM(rows)
     body = body_of(response_format=schema_format(schema))
     streamed = {**body, "stream": True}
     with serve(ctx, lm) as client:
@@ -1324,7 +1374,7 @@ def compiles_once(ctx):
 def client_disconnect(ctx):
     # Rejects ignores_disconnect. The model would take about a second to run dry.
     rows = [ranked("w")] * 200
-    lm = ScriptedLM(rows, delay_s=0.005)
+    lm = LM(rows, delay_s=0.005)
     with serve(ctx, lm) as client:
         with client.stream("POST", URL, json=body_of(stream=True)) as response:
             events = iter_sse(response)
@@ -1369,7 +1419,7 @@ def cache_key(ctx):
         "required": [f"b{tag}", f"a{tag}"],
     }
     rows = [ranked(EOS, "true", '{"', '"', ":", ",", "}", "a", "b", *str(tag))] * 40
-    lm = ScriptedLM(rows)
+    lm = LM(rows)
     with serve(ctx, lm) as client:
 
         def ask(schema, label, **fields):
@@ -1413,7 +1463,7 @@ def index_is_complete(ctx):
     # generations reach new states.
     spy = CompileSpy(ctx)
     schema = unique_schema(ctx, "b")
-    lm = ScriptedLM(HELLO)
+    lm = LM(HELLO)
     body = body_of(response_format=schema_format(schema))
     with serve(ctx, lm) as client:
         short = [ranked(EOS, '{"', "o", "k", '":', "true", "}")] * 20
@@ -1443,7 +1493,7 @@ def disconnect_constrained(ctx):
     spy = CompileSpy(ctx)
     schema = {"type": "array", "items": {"enum": [f"v{ctx.seed % 100000}"]}}
     rows = [ranked(",", "[", '"', "v", *str(ctx.seed % 100000))] * 300
-    lm = ScriptedLM(rows, delay_s=0.005)
+    lm = LM(rows, delay_s=0.005)
     body = body_of(response_format=schema_format(schema), stream=True)
     with serve(ctx, lm) as client:
         with client.stream("POST", URL, json=body) as response:

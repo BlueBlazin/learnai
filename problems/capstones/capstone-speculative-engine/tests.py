@@ -20,12 +20,16 @@ Statistical cases use a pair of very small models (8 tokens) so that the exact
 distribution of the first emitted tokens can be enumerated. There are two of them
 with four checks each (three marginals and a joint), within the budget of ten checks
 at the default delta of 1e-10.
+
+The engine gets both models behind the kit's `Guarded` (`Target`, `Draft`): it may call
+them and read their sizes. Their counters, weights, seed, and `with_framework` are
+refused, so the counts cannot be written and no third, uncounted model can do the work.
 """
 
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import draft_target_pair
+from learnai.kit import Guarded, TinyLM, check_guard, draft_target_pair, guard
 
 S1 = "1: greedy speculation"
 S2 = "2: exact sampling"
@@ -71,6 +75,26 @@ def pair(seed, agreement, fw=None, **size):
     draft, target = _pairs[key]
     fw = Plain() if fw is None else fw
     return draft.with_framework(fw), target.with_framework(fw)
+
+
+class Target(Guarded, TinyLM):
+    """The target an engine gets: it is called, and its sizes are read; nothing else."""
+
+    label = "target"
+    refused = Guarded.refused | {"seed"}
+
+    def __repr__(self):  # TinyLM's shows the seed, which would rebuild the model
+        return f"TinyLM(vocab_size={self.vocab_size}, max_context={self.max_context})"
+
+
+class Draft(Target):
+    label = "draft"
+
+
+def handed(ctx, seed, agreement, **size):
+    """(draft, target) for the solution: guarded, with fresh counters that the test reads."""
+    draft, target = pair(seed, agreement, ctx.fw, **size)
+    return Draft.of(draft), Target.of(target)
 
 
 # -- the specification, in numpy ----------------------------------------------------------
@@ -207,7 +231,8 @@ def run(ctx, model, prompt, max_new_tokens, uniforms=None, expected=None, engine
         raise RuntimeError("authoring error: the rounds do not reproduce the greedy decode")
     if expected is not None and want != expected:
         raise RuntimeError("authoring error: the statement's example changed")
-    draft, target = pair(seed, agreement, ctx.fw, **size)
+    draft, target = handed(ctx, seed, agreement, **size)
+    guard(ctx)
     if engine is None:
         engine = ctx.solution.SpeculativeEngine(target, draft, **options)
     else:
@@ -216,8 +241,10 @@ def run(ctx, model, prompt, max_new_tokens, uniforms=None, expected=None, engine
         got = engine.generate(list(prompt), max_new_tokens)
     else:
         got = engine.generate(list(prompt), max_new_tokens, ctx.fw.tensor(uniforms))
+    check_guard()
     check_tokens(got, want)
     got_rounds = as_rounds(getattr(engine, "rounds", None))
+    check_guard()
     check.that(
         got_rounds == rounds,
         "engine.rounds is not the list of rounds the statement's procedure takes",
@@ -280,7 +307,8 @@ def edge_lengths(ctx):
 
 @case("one engine, several calls: nothing carries over", stage=S1)
 def engine_reuse(ctx):
-    draft, target = pair(3, 0.9, ctx.fw)
+    draft, target = handed(ctx, 3, 0.9)
+    guard(ctx)
     engine = ctx.solution.SpeculativeEngine(target, draft, k=3)
     numpy_draft, numpy_target = pair(3, 0.9)
     for prompt, n in ([0, 3, 4], 20), ([0, 8, 8, 8], 12), ([0, 3, 4], 20):
@@ -291,6 +319,7 @@ def engine_reuse(ctx):
             "engine.rounds does not describe the last call only",
             f"expected:\n{describe(rounds)}\ngot: {as_rounds(engine.rounds)!r}",
         )
+        check_guard()
 
 
 # -- stage 2: sampling ----------------------------------------------------------------------
@@ -318,8 +347,9 @@ def emitted_distribution(target, prompt, n_positions):
 
 
 def statistical(ctx, seed, agreement, prompt, n_calls, n_positions=3, **options):
-    draft, target = pair(seed, agreement, ctx.fw, **TINY)
+    draft, target = handed(ctx, seed, agreement, **TINY)
     marginals, joint = emitted_distribution(pair(seed, agreement, **TINY)[1], prompt, n_positions)
+    guard(ctx)
     engine = ctx.solution.SpeculativeEngine(target, draft, **options)
     uniforms = ctx.rng.random((n_calls, n_positions, n_positions, 3)).astype(np.float32)
     samples = []
@@ -333,6 +363,7 @@ def statistical(ctx, seed, agreement, prompt, n_calls, n_positions=3, **options)
             f"got {tokens!r}",
         )
         samples.append(tokens)
+    check_guard()
     samples = np.array(samples)
     for position in range(n_positions):
         check.distribution(samples[:, position].tolist(), marginals[position],
@@ -474,9 +505,11 @@ def run_batch(ctx, seed, agreement, prompts, max_new_tokens, k):
             raise RuntimeError("authoring error: the rounds do not reproduce the greedy decode")
         want.append(tokens)
         per_row.append(rounds)
-    draft, target = pair(seed, agreement, ctx.fw)
+    draft, target = handed(ctx, seed, agreement)
+    guard(ctx)
     engine = ctx.solution.SpeculativeEngine(target, draft, k=k)
     got = engine.generate_batch([list(prompt) for prompt in prompts], max_new_tokens)
+    check_guard()
     check.that(
         isinstance(got, list) and len(got) == len(prompts),
         "generate_batch: must return one list of tokens per prompt",

@@ -11,12 +11,26 @@ engine's own token counts at every step (who holds blocks, how many, reference
 counts, no leak). Schedules are compared with literal steps on the statement's
 examples and with the oracle's trace on seeded workloads; the costs of the policy
 (recomputed tokens, prefilled tokens, peak blocks) have limits.
+
+The solution's `Engine` gets the `Watched` engine as `Handed`, an object behind the
+kit's `Guarded` that passes on the calls, the queries, and the limits of a `SimEngine`.
+The engine itself, and with it the counters, the clock and its trace, the violations,
+and what the audit recorded, cannot be reached through it.
 """
 
 from itertools import pairwise
 
 from learnai.judge import case, check
-from learnai.kit import CostModel, ProtocolViolation, SimEngine, SimRequest, workloads
+from learnai.kit import (
+    CostModel,
+    Guarded,
+    ProtocolViolation,
+    SimEngine,
+    SimRequest,
+    check_guard,
+    guard,
+    workloads,
+)
 
 S1 = "1: block allocator"
 S2 = "2: continuous batching"
@@ -286,6 +300,40 @@ class Watched(SimEngine):
         self.peak_blocks = max(self.peak_blocks, len(held))
 
 
+class Handed(Guarded):
+    """The `sim_engine` a solution gets: what a `SimEngine` offers, passed on to `engine`.
+
+    The engine stays a plain object, because the kit's own bookkeeping reads its
+    attributes several hundred thousand times in a run.
+    """
+
+    label = "sim_engine"
+    refused = Guarded.refused | {"engine", "sim", "violations"}
+
+    def __init__(self, engine):
+        self.engine = engine
+
+    def admit(self, request, **options):
+        return self.engine.admit(request, **options)
+
+    async def step(self, prefill=(), decode=()):
+        return await self.engine.step(prefill=prefill, decode=decode)
+
+
+def passed_on(name):
+    def method(self, seq_id):
+        return getattr(self.engine, name)(seq_id)
+
+    return method
+
+
+for _name in ("preempt", "release", "remaining_prefill", "generated", "kv_tokens", "blocks"):
+    setattr(Handed, _name, passed_on(_name))
+for _name in ("name", "cost", "max_batch_tokens", "max_seqs", "kv_blocks", "block_tokens",
+              "busy", "busy_s", "live", "free_blocks"):  # fmt: skip
+    setattr(Handed, _name, property(lambda self, _name=_name: getattr(self.engine, _name)))
+
+
 class Run:
     def __init__(self, sim, engine, requests, config):
         self.sim, self.engine, self.requests, self.config = sim, engine, requests, config
@@ -347,7 +395,8 @@ def simulate(ctx, module, requests, *, n_blocks=AMPLE, block_size=16, max_batch_
         + ")"
     )
     run = Run(sim, watched, requests, config)
-    engine = module.Engine(watched, n_blocks, block_size, max_batch_tokens, **options)
+    guard(ctx)  # the solution's code runs from here to the end of `sim.run`
+    engine = module.Engine(Handed(watched), n_blocks, block_size, max_batch_tokens, **options)
     check.that(
         hasattr(engine, "allocator")
         and all(hasattr(engine.allocator, m) for m in ("block_table", "ref_count", "free_blocks")),
@@ -364,6 +413,7 @@ def simulate(ctx, module, requests, *, n_blocks=AMPLE, block_size=16, max_batch_
         sim.run(until=requests[-1].arrival_s + 20 * serial + 1000)
     except ProtocolViolation:
         pass  # reported below, with the timeline
+    check_guard()
     if watched.violations:
         first = watched.violations[0]
         check.that(False, f"the engine broke the SimEngine protocol ({first.code})",

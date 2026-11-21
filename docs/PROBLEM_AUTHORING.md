@@ -2748,6 +2748,15 @@ check_guard()                                # the first refused access fails th
   design: a second `MLXTinyLM` filled with them is refused by the rule against
   building counting objects, but a forward pass written by hand from the public
   submodules is not counted by anything.
+- **Cost, and two collisions.** While the solution runs, every restricted read by kit
+  code walks the call stack. That is nothing for a model called a few dozen times and
+  too much for an engine whose own bookkeeping reads its attributes several hundred
+  thousand times in a run (`SimEngine` under a long workload took five times as
+  long): hand over a small guarded object that passes the calls on to the plain one,
+  as `Handed` in `capstone-continuous-batching-engine` does. A kit class that has an
+  attribute called `label`, `refused`, or `allowed` of its own (`TransferSpy.label`)
+  cannot be mixed with `Guarded` directly, for the same reason: put a guarded object
+  in front of it (`Hands` in `cuda-pinned-transfer`).
 - **An object a factory built.** `Experts.of(moe.experts(1))` and `LM.of(draft)` (for
   `draft, target = draft_target_pair(...)`) are guarded objects with the attributes
   of the plain one. The attributes are shared, so the test can read the counters
