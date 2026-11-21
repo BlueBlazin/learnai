@@ -1,0 +1,42 @@
+id = "real-gdn-block"
+title = "One Recurrent Block of a Real Model"
+track = "real-hybrid-model"
+order = 20
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["gated-delta-net", "linear-attention", "qwen", "real-model", "checkpoint-porting", "recurrent-state", "rmsnorm"]
+prerequisites = ["gated-delta-layer", "real-model-block"]
+requires = "cpu"
+entry = ["qwen_gdn_block"]
+time_limit_s = 20
+# The statement's rule: compute the block yourself. The kit's delta layer (the
+# dispatcher and the per-framework functions behind it), its one-step and gate oracles,
+# and its reference blocks and models may not be called from the solution, and the
+# libraries that already implement this model may not be imported. Rejects the mutant
+# uses_kit_layer.
+forbidden = [
+    "learnai.kit.ops.gated_delta_layer",
+    "learnai.kit.ops._torch.gated_delta_layer",
+    "learnai.kit.ops._jax.gated_delta_layer",
+    "learnai.kit.ops._mlx.gated_delta_layer",
+    "learnai.kit.ops._numpy.gated_delta_layer",
+    "learnai.kit.gdn.gdn_layer_ref",
+    "learnai.kit.gdn.gdn_step_ref",
+    "learnai.kit.gdn.gdn_gates_ref",
+    "learnai.kit.hybrid.hybrid_block_ref",
+    "learnai.kit.hybrid.hybrid_forward_ref",
+    "learnai.kit.hybrid._block",
+    "learnai.kit.realhybrid.RealHybrid",
+    "learnai.kit.realhybrid.RealHybridLM",
+]
+# Package names only: a learner does not name a variable after these by accident.
+forbidden_source = ["transformers", "safetensors", "mlx_lm"]
+
+# The weights, plus config.json, which the kit needs to open the checkpoint.
+[[assets]]
+name = "qwen3.5-0.8b"
+repo = "Qwen/Qwen3.5-0.8B"
+revision = "2fc06364715b967f1860aea9cf38778875588b17"
+files = ["config.json", "model.safetensors-00001-of-00001.safetensors"]
+size_mb = 1750

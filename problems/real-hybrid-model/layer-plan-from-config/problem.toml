@@ -1,0 +1,16 @@
+id = "layer-plan-from-config"
+title = "A Layer Plan from `config.json`"
+track = "real-hybrid-model"
+order = 10
+difficulty = "medium"
+frameworks = ["python"]
+judges = ["numeric"]
+tags = ["config", "layer-schedule", "hybrid-decoder", "sparse-attention", "kv-sharing", "rope", "checkpoint-porting"]
+prerequisites = []
+requires = "cpu"
+entry = ["layer_plan"]
+time_limit_s = 10
+# The statement's rule: expand the configuration yourself. The library classes whose
+# defaults this problem is about may not be imported. Rejects the mutant
+# uses_transformers.
+forbidden_source = ["transformers"]

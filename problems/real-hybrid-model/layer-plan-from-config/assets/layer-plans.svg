@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 262" font-size="13">
+  <title>The layer plans of three published decoders</title>
+  <desc>Three rows of cells, one cell per layer, layer 0 on the left. Qwen3.5 0.8B has 24 layers; every fourth one, starting with layer 3, is filled: full attention among linear-attention layers. The first 24 of the 78 layers of GLM-5.3: layers 0, 1, 2 and then every fourth layer from 6 are filled, the layers that run their own indexer; the first three layers have a dense MLP. Gemma 4 E2B has 35 layers; every fifth one, starting with layer 4, is filled: full attention among sliding-window layers. Layers 13 and 14 store their keys and values, layers 15 to 34 reuse them.</desc>
+
+  <!-- Qwen3.5 0.8B: filled = full attention -->
+  <text x="24" y="24">Qwen3.5 0.8B, 24 layers: <tspan style="fill: var(--figure-accent)">full attention</tspan> every 4th, counted from 1</text>
+  <g stroke-width="1.5">
+    <rect x="24.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="42.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="60.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="78.0" y="34" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="96.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="114.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="132.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="150.0" y="34" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="168.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="186.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="204.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="222.0" y="34" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="240.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="258.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="276.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="294.0" y="34" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="312.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="330.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="348.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="366.0" y="34" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="384.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="402.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="420.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="438.0" y="34" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+  </g>
+  <g style="fill: var(--figure-muted)" text-anchor="middle">
+    <text x="32.0" y="68">0</text>
+    <text x="86.0" y="68">3</text>
+    <text x="158.0" y="68">7</text>
+    <text x="446.0" y="68">23</text>
+  </g>
+
+  <!-- GLM-5.3, layers 0 to 23: filled = the layer runs its own indexer -->
+  <text x="24" y="108">GLM-5.3, layers 0 to 23 of 78: <tspan style="fill: var(--figure-accent)">own indexer</tspan>, else shared</text>
+  <g stroke-width="1.5">
+    <rect x="24.0" y="118" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="42.0" y="118" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="60.0" y="118" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="78.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="96.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="114.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="132.0" y="118" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="150.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="168.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="186.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="204.0" y="118" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="222.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="240.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="258.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="276.0" y="118" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="294.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="312.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="330.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="348.0" y="118" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="366.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="384.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="402.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+    <rect x="420.0" y="118" width="16.0" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="438.0" y="118" width="16.0" height="18" fill="none" stroke="currentColor"/>
+  </g>
+  <g stroke-width="1">
+    <polyline points="24.0,140 24.0,145 76.0,145 76.0,140" fill="none" style="stroke: var(--figure-muted)"/>
+    <text x="24" y="160" style="fill: var(--figure-muted)">dense MLP</text>
+  </g>
+  <g style="fill: var(--figure-muted)" text-anchor="middle">
+    <text x="140.0" y="152">6</text>
+    <text x="212.0" y="152">10</text>
+    <text x="428.0" y="152">22</text>
+  </g>
+
+  <!-- Gemma 4 E2B: filled = full attention; brackets = key-value sharing -->
+  <text x="24" y="192">Gemma 4 E2B, 35 layers: <tspan style="fill: var(--figure-accent)">full attention</tspan>, else sliding window</text>
+  <g stroke-width="1.5">
+    <rect x="24.0" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="36.3" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="48.7" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="61.0" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="73.4" y="202" width="10.3" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="85.7" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="98.1" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="110.4" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="122.7" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="135.1" y="202" width="10.3" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="147.4" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="159.8" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="172.1" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="184.5" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="196.8" y="202" width="10.3" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="209.1" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="221.5" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="233.8" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="246.2" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="258.5" y="202" width="10.3" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="270.9" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="283.2" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="295.5" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="307.9" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="320.2" y="202" width="10.3" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="332.6" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="344.9" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="357.3" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="369.6" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="381.9" y="202" width="10.3" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+    <rect x="394.3" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="406.6" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="419.0" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="431.3" y="202" width="10.3" height="18" fill="none" stroke="currentColor"/>
+    <rect x="443.7" y="202" width="10.3" height="18" style="stroke: var(--figure-accent); fill: var(--figure-accent)"/>
+  </g>
+  <g stroke-width="1">
+    <polyline points="184.5,224 184.5,229 207.1,229 207.1,224" fill="none" style="stroke: var(--figure-muted)"/>
+    <text x="195.8" y="244" text-anchor="end" style="fill: var(--figure-muted)">store (13, 14)</text>
+    <polyline points="209.1,224 209.1,229 454.0,229 454.0,224" fill="none" style="stroke: var(--figure-muted)"/>
+    <text x="331.6" y="244" text-anchor="middle" style="fill: var(--figure-muted)">reuse (layers 15 to 34)</text>
+  </g>
+</svg>

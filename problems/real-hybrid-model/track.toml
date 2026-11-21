@@ -1,0 +1,11 @@
+id = "real-hybrid-model"
+title = "A Real Hybrid Model"
+description = "Read a real hybrid model's configuration, then match one of its recurrent blocks and its logits from the raw weights."
+order = 250
+scene = "ship"
+color = "#ebae23"
+core = [
+    "layer-plan-from-config",
+    "real-gdn-block",
+    "real-hybrid-logits",
+]

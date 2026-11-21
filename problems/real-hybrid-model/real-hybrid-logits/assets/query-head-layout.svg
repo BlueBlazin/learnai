@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 212" font-size="13">
+  <title>How the output of q_proj is laid out, and which channels of a query rotate</title>
+  <desc>Top row: the 4096 outputs of q_proj as eight equal segments, one per head; each segment is split in two halves, a query half and a gate half. Head 0 is drawn in the accent color. Bottom row: the 256 channels of one query after the norm. The first 64 are marked as rotating and are split into two halves of 32, channel i pairing with channel i plus 32; the remaining 192 pass through unchanged.</desc>
+
+  <!-- q_proj output: 8 heads, each [query | gate] -->
+  <text x="24" y="20">q_proj output, 4096 numbers per token: 8 heads of [query | gate]</text>
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="24" y="30" width="54" height="26" style="stroke: var(--figure-accent)"/>
+    <rect x="78" y="30" width="54" height="26"/>
+    <rect x="132" y="30" width="54" height="26"/>
+    <rect x="186" y="30" width="54" height="26"/>
+    <rect x="240" y="30" width="54" height="26"/>
+    <rect x="294" y="30" width="54" height="26"/>
+    <rect x="348" y="30" width="54" height="26"/>
+    <rect x="402" y="30" width="54" height="26"/>
+  </g>
+  <!-- the split inside each head -->
+  <g fill="none" stroke-width="1" stroke-dasharray="3 3" style="stroke: var(--figure-muted)">
+    <line x1="51" y1="30" x2="51" y2="56"/>
+    <line x1="105" y1="30" x2="105" y2="56"/>
+    <line x1="159" y1="30" x2="159" y2="56"/>
+    <line x1="213" y1="30" x2="213" y2="56"/>
+    <line x1="267" y1="30" x2="267" y2="56"/>
+    <line x1="321" y1="30" x2="321" y2="56"/>
+    <line x1="375" y1="30" x2="375" y2="56"/>
+    <line x1="429" y1="30" x2="429" y2="56"/>
+  </g>
+  <g text-anchor="middle">
+    <text x="37.5" y="48" style="fill: var(--figure-accent)">q</text>
+    <text x="64.5" y="48" style="fill: var(--figure-accent)">g</text>
+    <text x="91.5" y="48">q</text>
+    <text x="118.5" y="48">g</text>
+    <text x="145.5" y="48">q</text>
+    <text x="172.5" y="48">g</text>
+    <text x="415.5" y="48">q</text>
+    <text x="442.5" y="48">g</text>
+  </g>
+  <g style="fill: var(--figure-muted)">
+    <text x="24" y="74">head 0: query 0..255, gate 256..511</text>
+    <text x="456" y="74" text-anchor="end">head 7</text>
+  </g>
+
+  <!-- one query head after the norm: 64 rotating channels, 192 passing through -->
+  <text x="24" y="120">one query head (or key head), 256 channels, after its norm</text>
+  <g fill="none" stroke-width="1.5">
+    <rect x="24" y="130" width="54" height="26" style="stroke: var(--figure-accent)"/>
+    <rect x="78" y="130" width="54" height="26" style="stroke: var(--figure-accent)"/>
+    <rect x="132" y="130" width="324" height="26" stroke="currentColor"/>
+  </g>
+  <g text-anchor="middle">
+    <text x="51" y="148" style="fill: var(--figure-accent)">0..31</text>
+    <text x="105" y="148" style="fill: var(--figure-accent)">32..63</text>
+    <text x="294" y="148">64..255: not rotated</text>
+  </g>
+  <!-- the pairing i with i + 32 -->
+  <path d="M 51 160 C 51 176, 105 176, 105 160" fill="none" stroke-width="1" style="stroke: var(--figure-accent)"/>
+  <text x="24" y="194" style="fill: var(--figure-accent)">channel i turns with channel i + 32, by p · θ^(−i/32)</text>
+</svg>
