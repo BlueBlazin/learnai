@@ -5,6 +5,10 @@ in the solution's framework, computes `x @ W.T`, and counts its calls and the ro
 was given. Every case compares the result with the oracle and with a plain numpy loop
 over the rows (`by_rows`), which is the definition in the statement.
 
+`BaseLayer` is behind the kit's `Guarded`: a solution may call it and nothing else. Its
+weight and its two counts are refused, so the shared matmul cannot be done around the
+layer and the counts cannot be written.
+
 JAX compiles every new combination of shapes (about 0.15 s each), so the cases share
 a few layouts.
 """
@@ -12,12 +16,16 @@ a few layouts.
 import numpy as np
 
 from learnai.judge import case, check
+from learnai.kit import Guarded, check_guard, guard
 
 ATOL = 1e-4
 
 
-class BaseLayer:
+class BaseLayer(Guarded):
     """The frozen base layer: `base(x)` is `x @ W.T`. Counts its calls."""
+
+    label = "base"
+    allowed = frozenset({"__class__", "__call__"})
 
     def __init__(self, fw, w):
         self.weight = fw.tensor(w)
@@ -58,7 +66,9 @@ def run(ctx, x, w, a_stack, b_stack, ranks, adapter_ids, alpha, *, label="batche
     solution's base layer, for the cost checks."""
     ids = np.asarray(adapter_ids, dtype=np.int64)
     base = BaseLayer(ctx.fw, w)
+    guard(ctx)
     got = ctx.call("batched_lora_forward", x, base, a_stack, b_stack, ranks, ids, alpha)
+    check_guard()
     want = ctx.expected(
         "batched_lora_forward", x, BaseLayer(ctx.oracle_fw, w), a_stack, b_stack, ranks, ids, alpha
     )
@@ -84,7 +94,9 @@ MAIN_RANKS = [4, 2, 1]
 def worked_example(ctx):
     ids = np.array([0, -1, 1, 0])
     base = BaseLayer(ctx.fw, W)
+    guard(ctx)
     got = ctx.call("batched_lora_forward", X, base, A_STACK, B_STACK, RANKS, ids, 2.0)
+    check_guard()
     want = np.array([[11.0, 3.0], [7.0, -1.0], [9.0, 1.0], [0.0, -1.0]], dtype=np.float32)
     check.allclose(got, want, label="batched_lora_forward")
     run(ctx, X, W, A_STACK, B_STACK, RANKS, ids, 2.0)
@@ -107,7 +119,9 @@ def rows_without_adapter(ctx):
     x = ctx.randn(6, 10)
     ids = np.array([-1, 0, -1, 2, 1, -1])
     run(ctx, x, w, a, b, ranks, ids, 6.0)
+    guard(ctx)
     got = ctx.call("batched_lora_forward", x, BaseLayer(ctx.fw, w), a, b, ranks, ids, 6.0)
+    check_guard()
     plain = [0, 2, 5]
     check.allclose(got[plain], (x @ w.T)[plain], atol=ATOL, label="rows with adapter id -1")
     # A batch without any adapter is the base layer.
@@ -205,5 +219,7 @@ def fast_enough(ctx):
     # the rows (measured: 16x slower in torch, over 100x in JAX and MLX).
     x, w, a, b, ranks, ids = speed_inputs(ctx)
     run(ctx, x, w, a, b, ranks, ids, 16.0)
+    guard(ctx)
     ctx.check_speed("batched_lora_forward", x, BaseLayer(ctx.fw, w), a, b, ranks, ids, 16.0,
                     max_ratio=5.0)  # fmt: skip
+    check_guard()

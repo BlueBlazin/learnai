@@ -11,15 +11,36 @@ returned, the stream states, the engine steps, and the releases: against literal
 values on the hand-checked scenarios, and on seeded workloads against rules computed
 here from the statement and against the oracle. The number of tokens a stream holds
 unread is computed from the trace: tokens the engine produced minus tokens taken.
+
+The engine is handed over as `Engine`, a `SimEngine` behind the kit's `Guarded`: a
+server may use its operations and read its state and limits. `engine.sim` (the way to
+the trace everything here is judged on), `engine.violations`, and the counters are
+refused, so what the engine recorded cannot be rewritten.
 """
 
 import bisect
 
 from learnai.judge import case, check
-from learnai.kit import CostModel, ProtocolViolation, SimEngine, SimRequest, workloads
+from learnai.kit import (
+    CostModel,
+    Guarded,
+    ProtocolViolation,
+    SimEngine,
+    SimRequest,
+    check_guard,
+    guard,
+    workloads,
+)
 
 # A step over P prompt tokens and D decoded sequences takes 8 + 0.25 * P + D milliseconds.
 COST = CostModel(base_s=8, prefill_s_per_token=0.25, decode_s_per_seq=1)
+
+
+class Engine(Guarded, SimEngine):
+    """The engine a server gets: its operations, state, and limits; not its records."""
+
+    label = "engine"
+    refused = Guarded.refused | {"sim", "violations"}
 
 
 class Client:
@@ -138,7 +159,8 @@ def simulate(ctx, module, requests, clients, *, max_running, max_buffered, stall
     """Run `module.Server` over `requests`; `clients` maps a request id to its
     `Client`. A request without one is never read."""
     sim = ctx.simclock()
-    engine = SimEngine(sim, COST, max_seqs=max_running)
+    engine = Engine(sim, COST, max_seqs=max_running)
+    guard(ctx)  # the solution's code runs from here to the end of `sim.run`
     server = module.Server(engine, max_running, max_buffered, stall_ms)
     run = Run(sim, engine, requests, clients, max_running, max_buffered, stall_ms)
     streams = {}
@@ -174,6 +196,7 @@ def simulate(ctx, module, requests, clients, *, max_running, max_buffered, stall
         sim.run(until=horizon(requests, clients, stall_ms))
     except ProtocolViolation:
         pass  # reported below, with the timeline
+    check_guard()
     run.final = {request_id: stream.state for request_id, stream in streams.items()}
     if engine.violations:
         first = engine.violations[0]
