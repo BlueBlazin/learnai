@@ -96,6 +96,8 @@ The attention score depends on the positions only through $n - m$. Calling
 `apply_rope` with positions `[37, 38]` or `[0, 1]` therefore gives different vectors
 and the same scores between them.
 
+![The query (solid) and the key (dashed) in each pair's plane. The shift turns both by the same angle, so the angle between them and the score stay.](interactive:rope-shift)
+
 ## Constraints
 
 - $1 \le B, H, T \le 8$; $D$ is even, $2 \le D \le 32$; $10 \le \text{base} \le 10^4$;

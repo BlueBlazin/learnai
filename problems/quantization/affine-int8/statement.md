@@ -40,6 +40,8 @@ quantized on $[0, \max x]$ and an all-negative one on $[\min x, 0]$. As a result
 `lo` maps to code $-128$, `hi` maps to code $127$, and $0.0$ maps to the code
 `zero_point` exactly.
 
+![The comb marks the grid's levels under a sample of weights. With clipping off, the affine grid spans the lowest weight to the highest and puts a level on 0.](interactive:quant-grid-affine)
+
 It returns `scale` as a 0-d float32 tensor and `zero_point` as a 0-d integer tensor.
 
 **`quantize(x, scale, zero_point)`**:

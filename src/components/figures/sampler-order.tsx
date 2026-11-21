@@ -1,7 +1,6 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import { FigureDrawing } from "@/components/prose/figure";
-import { Slider } from "@/components/ui/slider";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { FigureChoice, FigureReadout, FigureSlider, FigureSliders } from "./controls";
 import type { InteractiveFigureProps } from "./registry";
 import { keptCount, runSampler, type StageOrder, softmax } from "./sampler-math";
 
@@ -21,49 +20,6 @@ const TICKS = [0, 0.25, 0.5, 0.75, 1];
 
 /** A probability the way the bars label it: two decimals, no leading zero. */
 const short = (probability: number) => probability.toFixed(2).replace(/^0/, "");
-
-function Knob({
-  name,
-  value,
-  shown,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  name: string;
-  value: number;
-  /** The value as text, with "(off)" where the value switches the stage off. */
-  shown: string;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (value: number) => void;
-}) {
-  const id = useId();
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-baseline justify-between gap-2">
-        <span id={id} className="font-mono text-xs text-muted-foreground">
-          {name}
-        </span>
-        <span className="font-mono text-xs text-foreground tabular-nums">{shown}</span>
-      </div>
-      <Slider
-        aria-labelledby={id}
-        value={[value]}
-        min={min}
-        max={max}
-        step={step}
-        onValueChange={(next) => {
-          const first = Array.isArray(next) ? next[0] : next;
-          // Steps of 0.05 and 0.1 are not exact in floating point; two decimals are.
-          if (typeof first === "number") onChange(Math.round(first * 100) / 100);
-        }}
-      />
-    </div>
-  );
-}
 
 /**
  * `sampler-order`: ten tokens under top-k, top-p, and temperature, with the
@@ -166,8 +122,8 @@ export default function SamplerOrder({ label }: InteractiveFigureProps) {
           <line className="axis" x1={CHART.left} y1={CHART.base} x2={CHART.right} y2={CHART.base} />
         </svg>
       </FigureDrawing>
-      <div className="mt-4 grid grid-cols-3 gap-x-6 gap-y-3 font-sans">
-        <Knob
+      <FigureSliders>
+        <FigureSlider
           name="top_k"
           value={topK}
           shown={topK >= TOKENS.length ? `${topK} (off)` : String(topK)}
@@ -176,7 +132,7 @@ export default function SamplerOrder({ label }: InteractiveFigureProps) {
           step={1}
           onChange={setTopK}
         />
-        <Knob
+        <FigureSlider
           name="top_p"
           value={topP}
           shown={topP >= 1 ? "1.00 (off)" : topP.toFixed(2)}
@@ -185,7 +141,7 @@ export default function SamplerOrder({ label }: InteractiveFigureProps) {
           step={0.05}
           onChange={setTopP}
         />
-        <Knob
+        <FigureSlider
           name="temperature"
           value={temperature}
           shown={temperature.toFixed(1)}
@@ -194,35 +150,18 @@ export default function SamplerOrder({ label }: InteractiveFigureProps) {
           step={0.1}
           onChange={setTemperature}
         />
-      </div>
-      <div className="mt-4 flex flex-wrap items-center gap-3 font-sans text-sm text-muted-foreground">
-        <span>Order</span>
-        <ToggleGroup
-          variant="outline"
-          size="sm"
-          spacing={0}
-          aria-label="Order of the stages"
-          value={[order]}
-          onValueChange={(next) => {
-            const choice = (next as StageOrder[])[0];
-            if (choice) setOrder(choice);
-          }}
-        >
-          {ORDERS.map(({ value, label: text }) => (
-            <ToggleGroupItem
-              key={value}
-              value={value}
-              className="text-muted-foreground aria-pressed:bg-accent aria-pressed:text-foreground"
-            >
-              {text}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-      <div className="mt-3 font-sans text-base text-foreground">
+      </FigureSliders>
+      <FigureChoice
+        name="Order"
+        label="Order of the stages"
+        value={order}
+        options={ORDERS}
+        onChange={setOrder}
+      />
+      <FigureReadout>
         Kept {kept} of {TOKENS.length}: {names.join(", ")}.{" "}
         {otherKept === kept ? "The other order keeps the same set." : `The other order keeps ${otherKept}.`}
-      </div>
+      </FigureReadout>
     </>
   );
 }

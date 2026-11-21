@@ -1232,7 +1232,7 @@ function DevComponentsScreen() {
             </div>
           </div>
         </Specimen>
-        <Specimen name="InteractiveFigure: sampler-order; a name the app does not have">
+        <Specimen name="InteractiveFigure: sampler-order, quant-grid, rope-shift; a name the app does not have">
           <div className="flex max-w-measure flex-col gap-8">
             <InteractiveFigure
               name="sampler-order"
@@ -1241,8 +1241,20 @@ function DevComponentsScreen() {
               caption="Ten candidate tokens. The dashed outline is the model's distribution; a filled bar is what the chain samples from."
             />
             <InteractiveFigure
-              name="no-such-figure"
+              name="quant-grid"
               number={6}
+              alt="A histogram of weights under a quantization grid"
+              caption="A fixed sample of weights. The comb is the grid's levels; the bars beyond its dashed ends are clipped."
+            />
+            <InteractiveFigure
+              name="rope-shift"
+              number={7}
+              alt="A query and a key rotated in two planes"
+              caption="The rotated query (solid) and key (dashed) in each pair's plane. The shift turns both and leaves the score alone."
+            />
+            <InteractiveFigure
+              name="no-such-figure"
+              number={8}
               alt="Missing"
               caption="The caption still stands."
             />

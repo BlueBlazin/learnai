@@ -5,7 +5,7 @@ under "Figures". "Mechanism" here also covers a static layout, timeline, or plot
 
 - Maps: 10 modules (1 exists, 9 planned), shown by 118 problems (1 placed).
 - Mechanism: 86 (41 exist, 45 planned). Stepped: 15 (1 exists, 14 planned).
-- Interactive: 5 components (1 exists, 4 proposed), used by 7 problems.
+- Interactive: 5 components (3 exist, 2 proposed), used by 7 problems.
 - 63 problems get no figure and are not listed. 101 get a mechanism or stepped figure.
 
 A map-only row names the highlighted part. Otherwise "what it shows" describes the
@@ -71,7 +71,7 @@ panel: `real-model-block`. Whole: `decoder-forward`, `real-model-logits`.
 | problem | kind | what it shows | note |
 |---|---|---|---|
 | `causal-self-attention` | map, mechanism | MatMul, scale, mask, softmax, MatMul with shapes | keeps `attention-steps.svg` |
-| `rope` | map, mechanism, interactive | Each pair turned by its own angle per position | keeps `pair-rotation.svg`; adds `rope-shift` |
+| `rope` | map, mechanism, interactive | Each pair turned by its own angle per position | keeps `pair-rotation.svg`; `rope-shift` is done |
 | `swiglu-mlp` | map, mechanism | `x` into gate and up branches, SiLU on gate, product, down; shapes on wires | |
 | `grouped-query-attention` | map, mechanism | 8 query heads over 2 KV heads: each KV head feeds 4 consecutive query heads | |
 | `pre-norm-block` | map, mechanism | Residual stream with two normalized branches | done |
@@ -135,7 +135,7 @@ positions: `cached-rope-offsets`. Attention, KV cache, and their wires:
 | `cached-greedy-decode` | map, mechanism | Tokens fed per call: uncached rows that grow, beside cached rows of `P` then 1 | |
 | `kv-cache-append` | map, stepped | Cache strip and mask over four calls | keeps `cache-steps.svg` |
 | `chunked-prefill-cache` | map | Prefill | |
-| `cached-rope-offsets` | map, interactive | `rope-shift` | |
+| `cached-rope-offsets` | map, interactive | `rope-shift` | interactive is done |
 | `preallocated-kv-cache` | map, mechanism | Buffer of 8 slots before and after a write | keeps `buffer-layout.svg`; role fills |
 | `batched-cached-decode` | map | panel, Next token, loop wire | |
 | `prefix-cache-reuse` | map, mechanism | Stored and new prompt aligned: common prefix, the cache cut there, the tokens still fed | |
@@ -183,11 +183,11 @@ No map: most problems are variants of one step, rounding to codes.
 
 | problem | kind | what it shows | note |
 |---|---|---|---|
-| `affine-int8` | interactive | `quant-grid` | |
+| `affine-int8` | interactive | `quant-grid-affine` | done |
 | `bit-packing` | mechanism | Eight 4-bit codes in one uint32, code 0 in the lowest four bits | |
 | `groupwise-4bit` | mechanism | Weight matrix `(out, in)`; groups of `group_size` along the input axis, each with scale, bias | |
 | `quantized-matmul` | mechanism | `x` cut into groups; per group `x_g · codes_g` scaled, plus `bias · Σx_g`; summed | `linear` fills |
-| `clipping-calibration` | interactive | `quant-grid` | |
+| `clipping-calibration` | interactive | `quant-grid` | done |
 | `nf4-codebook` | mechanism | Normal density with the 16 NF4 levels; uniform 4-bit levels beneath | plot |
 | `k-quant-superblock` | mechanism | One superblock: 8 blocks of 32 codes, 6-bit scale and minimum each, one float16 pair | |
 | `gptq-column-update` | stepped | Weight matrix by columns: quantized, current, remaining; the error added to the remaining ones | 4 frames |
@@ -402,7 +402,8 @@ No map: three problems.
 
 ## Interactive figures
 
-`sampler-order` exists. Four more, each a component in `src/components/figures/`:
+`sampler-order`, `quant-grid`, and `rope-shift` exist and are placed. Each is a
+component in `src/components/figures/`; the last two rows are still to build:
 
 | name | problems | controls | what is drawn |
 |---|---|---|---|

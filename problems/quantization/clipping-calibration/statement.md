@@ -29,6 +29,8 @@ where the sum runs over all $N$ elements of `samples`. Values beyond the limit
 saturate at $\pm \text{limit}$; values inside it are rounded to the nearest of the
 $2 q_{\max} + 1$ grid points.
 
+![Lower the clipping fraction: the levels close in on the bulk and rounding error falls, while the tinted tails saturate and clipping error rises.](interactive:quant-grid)
+
 `best_clip` returns the candidate with the lowest $\text{MSE}(c)$. If several
 candidates reach the lowest MSE, it returns the **largest** of them (the larger range).
 

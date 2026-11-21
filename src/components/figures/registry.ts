@@ -16,6 +16,9 @@ export interface InteractiveFigureProps {
 export const INTERACTIVE_FIGURES: Readonly<
   Record<string, LazyExoticComponent<ComponentType<InteractiveFigureProps>>>
 > = {
+  "quant-grid": lazy(() => import("./quant-grid")),
+  "quant-grid-affine": lazy(() => import("./quant-grid-affine")),
+  "rope-shift": lazy(() => import("./rope-shift")),
   "sampler-order": lazy(() => import("./sampler-order")),
 };
 

@@ -10,7 +10,12 @@ const PROBLEM_TEXTS = import.meta.glob<string>("../../../problems/**/*.md", {
 
 describe("interactive figures", () => {
   it("names every figure in lowercase words joined by hyphens", () => {
-    expect(Object.keys(INTERACTIVE_FIGURES)).toContain("sampler-order");
+    expect(Object.keys(INTERACTIVE_FIGURES).sort()).toEqual([
+      "quant-grid",
+      "quant-grid-affine",
+      "rope-shift",
+      "sampler-order",
+    ]);
     for (const name of Object.keys(INTERACTIVE_FIGURES)) expect(name).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
   });
 

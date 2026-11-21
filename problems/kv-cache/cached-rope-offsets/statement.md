@@ -109,6 +109,8 @@ position apart in either row. Starting row 0 at position 0 instead of 3 would gi
 same score **within this call**, and wrong scores against every key already in the
 cache, which was rotated for positions 0 to 2.
 
+![The second new query and the first new key of the example. At shift 0 they are row 1, at shift 3 row 0, with the same score.](interactive:rope-shift)
+
 ## Constraints
 
 - $1 \le B, H \le 4$; $1 \le T,\ n_{\text{new}} \le 4$; $D$ even, $2 \le D \le 16$;

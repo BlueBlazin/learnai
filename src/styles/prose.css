@@ -404,6 +404,123 @@
   fill: var(--figure-muted);
 }
 
+/* The histogram of the quant-grid figure: the weights as bars, the grid's
+   levels as a comb beneath the axis, and the ends of its range dashed. The
+   clipped tails beyond the ends are tinted straw, their bars straw, and each
+   stands under its count. */
+.figure-quant {
+  max-width: var(--container-measure);
+}
+
+.figure-quant text {
+  font-size: min(12px, var(--figure-text-max, 12px));
+}
+
+.figure-quant .bar {
+  fill: var(--figure-muted);
+  fill-opacity: 0.55;
+}
+
+.figure-quant .bar.clipped {
+  fill: var(--figure-straw);
+  fill-opacity: 1;
+}
+
+.figure-quant .tail {
+  fill: var(--figure-straw);
+  fill-opacity: 0.1;
+}
+
+.figure-quant .levels {
+  stroke: var(--figure-accent);
+}
+
+.figure-quant .axis {
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+
+.figure-quant .end {
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.figure-quant .value,
+.figure-quant .tick {
+  font-family: var(--figure-mono);
+}
+
+.figure-quant .tick,
+.figure-quant .note {
+  fill: var(--figure-muted);
+}
+
+/* The planes of the rope-shift figure, drawn like an author's pair plane
+   (problems/transformer/rope, pair-rotation.svg): faint axes and unit circle,
+   the query a solid accent arrow, the key a dashed straw one. */
+.figure-planes {
+  max-width: var(--container-measure);
+}
+
+.figure-planes text {
+  font-family: var(--figure-serif);
+  font-size: min(13px, var(--figure-text-max, 13px));
+}
+
+.figure-planes .guide {
+  fill: none;
+  stroke: var(--figure-faint);
+  stroke-width: 1;
+}
+
+.figure-planes .unit {
+  stroke-dasharray: 2 4;
+}
+
+.figure-planes .axis-name {
+  fill: var(--figure-muted);
+}
+
+.figure-planes .between {
+  fill: none;
+  stroke: var(--figure-muted);
+  stroke-width: 1;
+}
+
+.figure-planes .query,
+.figure-planes .key {
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.figure-planes .query {
+  stroke: var(--figure-accent);
+  fill: var(--figure-accent);
+}
+
+.figure-planes .key {
+  stroke: var(--figure-straw);
+  fill: var(--figure-straw);
+}
+
+.figure-planes .key line {
+  stroke-dasharray: 5 4;
+}
+
+.figure-planes .query-name,
+.figure-planes .key-name {
+  font-style: italic;
+}
+
+.figure-planes .query-name {
+  fill: var(--figure-accent);
+}
+
+.figure-planes .key-name {
+  fill: var(--figure-straw);
+}
+
 .figure figcaption {
   font-family: var(--font-sans);
   font-size: var(--text-sm);

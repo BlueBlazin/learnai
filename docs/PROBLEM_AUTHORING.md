@@ -3012,7 +3012,7 @@ There are four kinds of figure. Use the first that fits:
 | map | where the problem's piece sits in the whole model; the first figure, after the opening paragraph | `transformer/pre-norm-block`, `assets/map.svg` |
 | mechanism | the inside of one piece: blocks, wires, and the shape of the tensor on each wire | `transformer/causal-self-attention`, `assets/attention-steps.svg` |
 | stepped | state that changes over calls or steps | `kv-cache/kv-cache-append`, `assets/cache-steps.svg` |
-| interactive | the few ideas a reader has to turn by hand; built in the app, not by authors | `sampling/sampler-chain` |
+| interactive | the few ideas a reader has to turn by hand; built in the app, not by authors | `sampling/sampler-chain`, `quantization/clipping-calibration` |
 
 Anything else (a plot, a geometric construction) is an ordinary SVG under the same
 rules.
@@ -3174,10 +3174,17 @@ keep every frame inside the same `viewBox`.
 ![The dashed outline is the model's distribution and a filled bar is the probability the chain samples from.](interactive:sampler-order)
 ```
 
-The figure is numbered and captioned like any other. `sampler-order` (top-k, top-p,
-and temperature in either order) is the only one. A new one is a change to the app
-(`src/components/figures/registry.ts`), not something a problem can carry, and a name
-the app does not have fails the front-end tests.
+The figure is numbered and captioned like any other. There are three:
+
+| name | what the reader turns | what it shows |
+|---|---|---|
+| `sampler-order` | top-k, top-p, temperature, and the order of the stages | which tokens the chain keeps in either order |
+| `quant-grid` | bits, the clipping fraction, a symmetric or an affine grid | a sample of weights, the grid's levels, the clipped tails, and the clipping and rounding error |
+| `quant-grid-affine` | the same | the same figure, opening on the affine grid at 8 bits |
+| `rope-shift` | the query position, the key position, and one shift added to both | the rotated query and key in each pair's plane, and a score that the shift does not change |
+
+A new one is a change to the app (`src/components/figures/registry.ts`), not something
+a problem can carry, and a name the app does not have fails the front-end tests.
 
 **Starters** contain the imports the learner will need, the exact signature with type
 hints, a docstring restating argument and return shapes, and `raise NotImplementedError`.
