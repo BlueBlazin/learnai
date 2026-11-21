@@ -1,7 +1,9 @@
 # Learn AI curriculum
 
-The complete catalog plan: every problem Learn AI will ship, in fifteen tracks, with the
-milestone in which each is authored. Authors write problems from this document, five at
+The complete catalog plan: every problem Learn AI will ship, with the milestone in which
+each is authored. Sections 1 to 8 are the fifteen tracks of the "Inference and serving"
+area (213 problems); section 9 is the five tracks of the "Model architectures" area (24
+problems), added on 2026-11-21. The catalog has 237 problems in 20 tracks. Authors write problems from this document, five at
 a time, without further coordination; if a spec here is ambiguous, fix the spec here
 first, then write the problem.
 
@@ -62,6 +64,11 @@ Rules that apply to every spec, so they are not repeated:
 | 14 | `frontier` | Frontier | 8 | 0 | 0 | 0 | 0 | 8 | 0 | 4 | 4 |
 | 15 | `capstones` | Capstones | 6 | 0 | 0 | 0 | 0 | 6 | 0 | 0 | 6 |
 | | **all** | | **213** | **12** | **69** | **28** | **14** | **90** | **73** | **99** | **41** |
+
+The table covers the fifteen tracks of sections 4 to 7. The five tracks of section 9
+(milestone M6) add 24 problems, 2 easy, 12 medium, and 10 hard: `recurrent-mixers` 6,
+`sparse-attention` 5, `block-components` 7, `drafts-and-diffusion` 3, `real-hybrid-model`
+3. With them the catalog has 237 problems: 75 easy, 111 medium, 51 hard.
 
 Difficulty split: 34% easy, 46% medium, 19% hard. At the end of M2 the catalog has 81 problems. M3 is the 18 MLX problems plus 10 real-model problems in other tracks (two more real-model problems are inside the MLX track).
 
@@ -1015,12 +1022,15 @@ of truth.
 4. **Catalog size.** The plan has 213 problems against the target of about 210; the
    three extra are M3 real-model problems.
 
-## 9. PROPOSAL awaiting the owner's review: modern architectural components (2026-11-21)
+## 9. Modern architectural components (2026-11-21)
 
-**Status: proposed, not accepted. Nothing in this section exists yet.** No problem, kit
-object, track, or area below has been written, the totals in section 1 do not include
-these problems, and no weights have been downloaded. Section numbers 1 to 8 are
-unchanged. Written on 2026-11-21 as steps 1 and 2 of
+**Status: built.** The owner approved this section as proposed on 2026-11-21, and all 24
+problems, the kit additions, the five tracks, and the area `model-architectures` exist
+and are committed. Each batch was authored, reviewed by a second subagent, fixed, and
+re-validated ([`PROBLEM_PROCESS.md`](PROBLEM_PROCESS.md), step 6). The text below is the
+proposal as written, kept as the record of what was specified and why; where the built
+problem differs, its spec paragraph ends with an "As built" sentence, and the built
+problem is the authority. Section numbers 1 to 8 are unchanged. Written on 2026-11-21 as steps 1 and 2 of
 [`PROBLEM_PROCESS.md`](PROBLEM_PROCESS.md) for the owner's goal: problems on "modern LLM
 architectural components, just as thoroughly", from "the top open-weights models as-of
 Nov 2026", with no training topics and no image or vision-language models.
@@ -1039,8 +1049,9 @@ specified as a problem.
 
 ### 9.1 Area and modules
 
-A new area of five modules (tracks), 24 problems. Display titles are working titles for
-the owner to replace; ids are proposed.
+A new area of five modules (tracks), 24 problems. The owner accepted the ids and the
+titles as proposed. As built: the area's description in `areas/model-architectures.toml`
+is reworded, and each module has a scene of a second series (the sea) and a color.
 
 Area `model-architectures`, working title "Model architectures", one sentence: "The
 components that distinguish the open-weights models of 2026 from a plain decoder:
@@ -1257,11 +1268,11 @@ Milestone `M6` for every row. `requires` is `cpu`.
 | 20 | `real-gdn-block` | One Recurrent Block of a Real Model | hard | numeric | t/j/m | `gated-delta-layer`, `real-model-block` | M6 |
 | 30 | `real-hybrid-logits` | Matching a Hybrid Model's Logits | hard | numeric | t/j/m | `real-gdn-block`, `hybrid-decoder-forward`, `partial-rope`, `real-model-logits` | M6 |
 
-**`layer-plan-from-config`** — Implement `layer_plan(config) -> list[dict]` with one entry per layer holding `mixer`, `mlp`, `indexer`, `rope`, and `kv` for three families, from dicts with the keys of the real files: Qwen3.5 (`layer_types` if present, else `(i + 1) % full_attention_interval`; `rope` with `rotary_dim = int(head_dim * partial_rotary_factor)`); GLM-MoE-DSA (`mlp_layer_types` if present, else `min(first_k_dense_replace, L)` dense layers then sparse; `indexer_types` if present, else `index_topk_pattern` with `F` and `S`, else full when `max(i - index_skip_topk_offset + 1, 0) % max(index_topk_freq, 1) == 0`); Gemma 4 (`layer_types`, the per-type `rope_parameters` and head dimension, and `kv` as `"reuse"` for the last `num_kv_shared_layers` layers, `"store"` for the last earlier layer of each type, else `None`) (`Qwen3_5TextConfig`, `GlmMoeDsaConfig`, `Gemma4TextConfig.kv_sharing_modes` in `transformers` 5.23; the configs of `Qwen/Qwen3.5-0.8B`, `zai-org/GLM-5.3`, `google/gemma-4-E2B-it`). Goal: a modern model is a per-layer plan, and the defaults that expand a short config into it are where ports go wrong. Numeric on reduced copies of the three real configs and on hidden synthetic ones; no weights. Mutants: schedule `i % interval`; an explicit list ignored in favor of the rule; the index rule without the clamp at zero (layer 0 becomes shared); offset applied as `i - offset`; `"store"` given to the last unshared layer only, not to one per type; the sliding layers' RoPE parameters used for full layers.
+**`layer-plan-from-config`** — Implement `layer_plan(config) -> list[dict]` with one entry per layer holding `mixer`, `mlp`, `indexer`, `rope`, and `kv` for three families, from dicts with the keys of the real files: Qwen3.5 (`layer_types` if present, else `(i + 1) % full_attention_interval`; `rope` with `rotary_dim = int(head_dim * partial_rotary_factor)`); GLM-MoE-DSA (`mlp_layer_types` if present, else `min(first_k_dense_replace, L)` dense layers then sparse; `indexer_types` if present, else `index_topk_pattern` with `F` and `S`, else full when `max(i - index_skip_topk_offset + 1, 0) % max(index_topk_freq, 1) == 0`); Gemma 4 (`layer_types`, the per-type `rope_parameters` and head dimension, and `kv` as `"reuse"` for the last `num_kv_shared_layers` layers, `"store"` for the last earlier layer of each type, else `None`) (`Qwen3_5TextConfig`, `GlmMoeDsaConfig`, `Gemma4TextConfig.kv_sharing_modes` in `transformers` 5.23; the configs of `Qwen/Qwen3.5-0.8B`, `zai-org/GLM-5.3`, `google/gemma-4-E2B-it`). Goal: a modern model is a per-layer plan, and the defaults that expand a short config into it are where ports go wrong. Numeric on reduced copies of the three real configs and on hidden synthetic ones; no weights. Mutants: schedule `i % interval`; an explicit list ignored in favor of the rule; the index rule without the clamp at zero (layer 0 becomes shared); offset applied as `i - offset`; `"store"` given to the last unshared layer only, not to one per type; the sliding layers' RoPE parameters used for full layers. As built (2026-11-21): the `rope` value is `None` or `{type, theta, head_dim, rotary_dim}`, and `indexer` and `kv` are `None` where a family has none. The decoder's settings are read from `text_config` when the file has one; an unknown or missing `model_type` raises `ValueError`; Qwen's missing `partial_rotary_factor` is 0.25 and Gemma's is 1.0; `global_head_dim` defaults to 512. Expected plans come from the three configuration classes and the models' rotary embeddings through `fixtures/make.py`, not from the reference. `int(head_dim * f)` is constrained to be even, because the library's rotary embedding rounds an odd value up (found by the reviewer's fuzz of 1,400 configs). The spec's `min(first_k_dense_replace, L)` is unobservable and is not a mutant. 16 mutants; the three rules that only hidden cases distinguished (Gemma's missing factor, the default global head dimension, `store` for a type no shared layer reuses) now have public cases.
 
-**`real-gdn-block`** — Implement `qwen_gdn_block(x, weights, layer, state) -> (x, state)` for a linear-attention layer of `Qwen/Qwen3.5-0.8B` from the raw tensors: RMSNorm with eps 1e-6 and the stored weight used as `1 + weight`; the delta layer of `gated-delta-layer` with 16 key and 16 value heads of 128 and the `(6144, 1, 4)` convolution; its gated norm, whose weight is used as stored; residual; second norm; SwiGLU of width 3584; residual. Numeric against fixture hidden states for two linear layers, one early and one in the middle, produced by `transformers` on prompts of at most 16 token ids (`rtol` 1e-3, to be confirmed by measurement); synthetic public cases run without the asset. Goal: the conventions of one real checkpoint that no small synthetic model reveals. Mutants: block norm weights used without the `1 +` (real-weight cases only); the `1 +` also applied to the gated norm; `dt_bias` omitted; convolution kernel flipped; BF16 weights not converted to float32. [kit: asset `qwen3.5-0.8b`]
+**`real-gdn-block`** — Implement `qwen_gdn_block(x, weights, layer, state) -> (x, state)` for a linear-attention layer of `Qwen/Qwen3.5-0.8B` from the raw tensors: RMSNorm with eps 1e-6 and the stored weight used as `1 + weight`; the delta layer of `gated-delta-layer` with 16 key and 16 value heads of 128 and the `(6144, 1, 4)` convolution; its gated norm, whose weight is used as stored; residual; second norm; SwiGLU of width 3584; residual. Numeric against fixture hidden states for two linear layers, one early and one in the middle, produced by `transformers` on prompts of at most 16 token ids (`rtol` 1e-3, to be confirmed by measurement); synthetic public cases run without the asset. Goal: the conventions of one real checkpoint that no small synthetic model reveals. Mutants: block norm weights used without the `1 +` (real-weight cases only); the `1 +` also applied to the gated norm; `dt_bias` omitted; convolution kernel flipped; BF16 weights not converted to float32. [kit: asset `qwen3.5-0.8b`] As built (2026-11-21): returns `(x, (conv_state, S))`. Tolerance `rtol` 1e-3 with `atol` 1e-5 (hidden entries are 0.02 to 0.04, so the proposed `atol` of 1e-3 would pass anything); fixtures are bit-identical to a fresh `transformers` 5.23.0 run and the reference agrees within 3e-7. The mutant "BF16 not converted" cannot be written (the kit's `Weights` always decodes) and is replaced by `computes_in_bfloat16`; `norm_eps_default`, `conv_state_restarts`, `ignores_state`, and `state_updated_in_place` are added. The `1 +` mutant is caught by synthetic cases too; the real-weights-only mutant is `layer_prefix_without_dot` (layer 1 against layers 10 to 19). Added after review: a case that the arguments keep their values, calls of one row (a 4 + 1 + 1 split), and the per-framework backends of `ops.gated_delta_layer` in `forbidden` (a reviewer's solution passed by calling one). 14 mutants; 13 cases, 4 on real weights.
 
-**`real-hybrid-logits`** — Implement `qwen_logits(weights, cfg, tokens)`: the 24-layer text decoder of `Qwen/Qwen3.5-0.8B` from a name-to-array dict. The list a solution must get right: embeddings unscaled; 18 delta blocks and 6 attention blocks by `layer_types`; attention with 8 heads over 2 KV heads of 256, `q_proj` split per head into query and gate, RMS QK-norm with `1 + weight`, RoPE with theta 1e7 on the first 64 channels in the half-split layout inside them, scale `256^-0.5`, `o_proj(attn * sigmoid(gate))`; every block norm and the final norm with `1 + weight`; the head is the embedding matrix. Judged against fixture logits from `transformers` on prompts of at most 16 token ids (`rtol` 1e-3, `atol` 1e-3 expected, to be measured) and the fixture argmax tokens exactly. Goal: porting a hybrid checkpoint with no reference code open. Mutants: output gate omitted; RoPE over the whole head; final norm without the `1 +`; QK-norm weights used without the `1 +`; the query and gate halves of `q_proj` exchanged. [kit: asset `qwen3.5-0.8b`, `RealHybridLM`]
+**`real-hybrid-logits`** — Implement `qwen_logits(weights, cfg, tokens)`: the 24-layer text decoder of `Qwen/Qwen3.5-0.8B` from a name-to-array dict. The list a solution must get right: embeddings unscaled; 18 delta blocks and 6 attention blocks by `layer_types`; attention with 8 heads over 2 KV heads of 256, `q_proj` split per head into query and gate, RMS QK-norm with `1 + weight`, RoPE with theta 1e7 on the first 64 channels in the half-split layout inside them, scale `256^-0.5`, `o_proj(attn * sigmoid(gate))`; every block norm and the final norm with `1 + weight`; the head is the embedding matrix. Judged against fixture logits from `transformers` on prompts of at most 16 token ids (`rtol` 1e-3, `atol` 1e-3 expected, to be measured) and the fixture argmax tokens exactly. Goal: porting a hybrid checkpoint with no reference code open. Mutants: output gate omitted; RoPE over the whole head; final norm without the `1 +`; QK-norm weights used without the `1 +`; the query and gate halves of `q_proj` exchanged. [kit: asset `qwen3.5-0.8b`, `RealHybridLM`] As built (2026-11-21): `tokens` is one sequence `(T,)`. Tolerance as measured, `rtol` 1e-3 and `atol` 1e-3, with the argmax compared where the fixture's top-two margin is at least 0.01 (every margin is at least 0.044); the reference agrees with `transformers` within 6.1e-5. Two real-weight cases (one public, one hidden) keep JAX under the 3 s warning. Added after review: models generated and judged at run time against the kit's numpy forward, because a solution that replayed the fixture files was accepted; a synthetic model with `norm_eps` 0.01 so that a default epsilon in the block norms or in the QK norms fails widely (`norm_eps_default`, `qk_norm_eps_default`); a one-token case. Removed after review: a hidden case that injected an `lm_head.weight` although the statement says there is none, which rejected an honest port. The real-weights-only mutant is `layers_in_name_order`. The editorial records that `mlx-lm` 0.32.2 disagrees with `transformers` on this checkpoint because it adds the norms' 1.0 in bfloat16 (0.26 to 0.70 in the logits as loaded, depending on the prompts). 15 mutants; 9 cases.
 
 ### 9.6 Author batches
 
@@ -1319,7 +1330,14 @@ Not specified. Each needs the stated work before it can be.
   layers; GLM-5.3 runs 3 full indexers before the 3-shared-1-full pattern; DeepSeek-V4's
   hash layers are an expert router.
 
-### 9.9 Open decisions for the owner
+### 9.9 Decisions (open when proposed; resolved 2026-11-21)
+
+The owner approved the proposal with these defaults: all 24 problems (1); the download
+(2); the names as proposed, in a new area file (3); implementation over paper (4); the
+kit as listed (5). Item 6 was settled by measurement: a compiled per-token loop met the
+speed limit, so `gated-delta-chunked` has a cost judge on a counting memory instead.
+Item 7 was fixed in `f6acbff`: the wrong claim about `mtp-head-draft` was in this
+document's spec, not in the problem. Item 8: `M6` stands.
 
 1. **Count.** 24 problems against "about 20". The four to cut first, in order:
    `gated-conv-block`, `latent-moe`, `shared-kv-rotation`, `shared-index-layers`.

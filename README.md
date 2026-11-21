@@ -4,7 +4,7 @@ Learn AI is a native desktop app for mastering LLM inference and serving through
 LeetCode-style practice problems. You write solutions in PyTorch, JAX, MLX, or plain
 Python, and a local judge runs them against public and hidden tests.
 
-The catalog has 213 problems in 15 tracks, from stable softmax to capstones such as a
+The catalog has 237 problems in 20 tracks, from stable softmax to capstones such as a
 continuous-batching engine and a complete runtime for a real model, with a core list of
 problems in each module. Catalog and cores: `docs/CURRICULUM.md`. Writing problems:
 `docs/PROBLEM_AUTHORING.md`. Producing and verifying a batch of problems:
