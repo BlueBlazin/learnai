@@ -47,6 +47,8 @@ of window $w$ is at a position $\le t$. (Row $i$ of the stream is the token at
 position $i$.) The count is exact for every $t$ in the stated range and is computed
 in constant time: a loop over windows does not finish for the largest $t$.
 
+![The example below, with `rate` 2: four rows arrive as three and then one, and the last frame gives `visible_entries(t, 2)` for each position.](assets/window-steps.svg)
+
 Arguments:
 
 - `kv`, `gate`: float32, shape `(n, d)`, $n \ge 1$.

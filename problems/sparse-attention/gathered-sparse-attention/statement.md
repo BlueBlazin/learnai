@@ -3,6 +3,8 @@ tokens an indexer selected for it and to nothing else. Masked full attention ret
 the same numbers, so the keys and values sit behind a counter and the unselected ones
 must never be read.
 
+![This problem is the gather and the attention, which read only the rows of the cache that the indices name.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -39,6 +41,8 @@ only access to the keys $K$ and values $V$:
 
 **Cost.** `store.counters.rows_read` may be at most the number of used slots,
 $\sum_t |J_t|$. Reading the whole store costs $S$ rows.
+
+![In the example below, `idx` names tokens 0, 2, and 1, so the gather reads three rows and skips the `-1` slot and token 3.](assets/sparse-gather.svg)
 
 Arguments:
 

@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 206">
+  <title>The two caches and the selection over the two calls of the example</title>
+  <desc>Three frames. Each shows the indexer keys and the store as strips of three tokens and, under them, the tokens each new query selects.</desc>
+  <!-- Geometry: token s is the column at x = 150 + 64 s, 62 wide. index_keys is the row y = 24..50, the store y = 54..80; a query's row is at y = 122 or 152, 26 high. -->
+  <!-- Frames are the groups step-1 to step-3; the app shows one at a time. Their desc is the note of the step. -->
+
+  <!-- In every frame: the tokens, the row names, and the key -->
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="181" y="16.5">0</text>
+    <text x="245" y="16.5">1</text>
+    <text x="309" y="16.5">2</text>
+  </g>
+  <text x="140" y="16.5" font-size="13" text-anchor="end" font-style="italic" style="font-family: var(--figure-serif); fill: var(--figure-muted)">s</text>
+  <g font-size="13" text-anchor="end" style="font-family: var(--figure-mono)">
+    <text x="140" y="41.5">index_keys</text>
+    <text x="140" y="71.5">store</text>
+  </g>
+  <rect x="150" y="188" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1" fill-opacity="0.4" style="fill: var(--figure-attn)"/>
+  <text x="170" y="198.5" font-size="13">selected</text>
+
+  <!-- Call 1: S = 0, T = 2 -->
+  <g id="step-1">
+    <desc>Call 1 puts tokens 0 and 1 in both caches, and its two queries select three rows.</desc>
+    <!-- appended by this call -->
+    <g stroke="currentColor" stroke-width="1.5" fill-opacity="0.4" style="fill: var(--figure-cache)">
+      <rect x="150" y="24" width="62" height="26" rx="3"/>
+      <rect x="214" y="24" width="62" height="26" rx="3"/>
+      <rect x="150" y="54" width="62" height="26" rx="3"/>
+      <rect x="214" y="54" width="62" height="26" rx="3"/>
+    </g>
+    <!-- not yet filled -->
+    <g fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)">
+      <rect x="278" y="24" width="62" height="26" rx="3"/>
+      <rect x="278" y="54" width="62" height="26" rx="3"/>
+    </g>
+    <path d="M150 85 v5 H276 v-5" fill="none" stroke="currentColor" stroke-width="1"/>
+    <text x="213" y="106.5" font-size="13" text-anchor="middle">new, <tspan font-style="italic" style="font-family: var(--figure-serif)">T</tspan> = 2</text>
+    <!-- selected -->
+    <g stroke="currentColor" stroke-width="1" fill-opacity="0.4" style="fill: var(--figure-attn)">
+      <rect x="150" y="122" width="62" height="26" rx="3"/>
+      <rect x="150" y="152" width="62" height="26" rx="3"/>
+      <rect x="214" y="152" width="62" height="26" rx="3"/>
+    </g>
+    <!-- after the query: not a candidate -->
+    <rect x="214" y="122" width="62" height="26" rx="3" fill="none" stroke-width="1" style="stroke: var(--figure-faint)"/>
+    <g font-size="13" text-anchor="end" style="font-family: var(--figure-serif)">
+      <text x="140" y="139.5"><tspan font-style="italic">t</tspan> = 0</text>
+      <text x="140" y="169.5"><tspan font-style="italic">t</tspan> = 1</text>
+    </g>
+  </g>
+
+  <!-- Call 2, before scoring: S = 2, T = 1 -->
+  <g id="step-2">
+    <desc>Call 2 appends token 2 to both caches before it scores anything.</desc>
+    <!-- cached -->
+    <g stroke="currentColor" stroke-width="1" style="fill: var(--figure-cache)">
+      <rect x="150" y="24" width="62" height="26" rx="3"/>
+      <rect x="214" y="24" width="62" height="26" rx="3"/>
+      <rect x="150" y="54" width="62" height="26" rx="3"/>
+      <rect x="214" y="54" width="62" height="26" rx="3"/>
+    </g>
+    <!-- appended by this call -->
+    <g stroke="currentColor" stroke-width="1.5" fill-opacity="0.4" style="fill: var(--figure-cache)">
+      <rect x="278" y="24" width="62" height="26" rx="3"/>
+      <rect x="278" y="54" width="62" height="26" rx="3"/>
+    </g>
+    <g fill="none" stroke="currentColor" stroke-width="1">
+      <path d="M150 85 v5 H276 v-5"/>
+      <path d="M278 85 v5 H340 v-5"/>
+    </g>
+    <g font-size="13" text-anchor="middle">
+      <text x="213" y="106.5">cached, <tspan font-style="italic" style="font-family: var(--figure-serif)">S</tspan> = 2</text>
+      <text x="309" y="106.5">new, <tspan font-style="italic" style="font-family: var(--figure-serif)">T</tspan> = 1</text>
+    </g>
+    <!-- the candidates of token 2, not yet scored -->
+    <g fill="none" stroke="currentColor" stroke-width="1">
+      <rect x="150" y="122" width="62" height="26" rx="3"/>
+      <rect x="214" y="122" width="62" height="26" rx="3"/>
+      <rect x="278" y="122" width="62" height="26" rx="3"/>
+    </g>
+    <text x="140" y="139.5" font-size="13" text-anchor="end" style="font-family: var(--figure-serif)"><tspan font-style="italic">t</tspan> = 2</text>
+  </g>
+
+  <!-- Call 2, scored: token 2 selects tokens 0 and 2 -->
+  <g id="step-3">
+    <desc>Token 2 scores all three keys and selects token 0 and itself.</desc>
+    <!-- cached -->
+    <g stroke="currentColor" stroke-width="1" style="fill: var(--figure-cache)">
+      <rect x="150" y="24" width="62" height="26" rx="3"/>
+      <rect x="214" y="24" width="62" height="26" rx="3"/>
+      <rect x="150" y="54" width="62" height="26" rx="3"/>
+      <rect x="214" y="54" width="62" height="26" rx="3"/>
+    </g>
+    <!-- appended by this call -->
+    <g stroke="currentColor" stroke-width="1.5" fill-opacity="0.4" style="fill: var(--figure-cache)">
+      <rect x="278" y="24" width="62" height="26" rx="3"/>
+      <rect x="278" y="54" width="62" height="26" rx="3"/>
+    </g>
+    <g fill="none" stroke="currentColor" stroke-width="1">
+      <path d="M150 85 v5 H276 v-5"/>
+      <path d="M278 85 v5 H340 v-5"/>
+    </g>
+    <g font-size="13" text-anchor="middle">
+      <text x="213" y="106.5">cached, <tspan font-style="italic" style="font-family: var(--figure-serif)">S</tspan> = 2</text>
+      <text x="309" y="106.5">new, <tspan font-style="italic" style="font-family: var(--figure-serif)">T</tspan> = 1</text>
+    </g>
+    <!-- selected -->
+    <g stroke="currentColor" stroke-width="1" fill-opacity="0.4" style="fill: var(--figure-attn)">
+      <rect x="150" y="122" width="62" height="26" rx="3"/>
+      <rect x="278" y="122" width="62" height="26" rx="3"/>
+    </g>
+    <!-- scored, not selected -->
+    <rect x="214" y="122" width="62" height="26" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>
+    <!-- the index scores of token 2 -->
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)">
+      <text x="181" y="139.5">0.2708</text>
+      <text x="245" y="139.5">−0.3701</text>
+      <text x="309" y="139.5">0.4762</text>
+    </g>
+    <text x="140" y="139.5" font-size="13" text-anchor="end" style="font-family: var(--figure-serif)"><tspan font-style="italic">t</tspan> = 2</text>
+  </g>
+</svg>

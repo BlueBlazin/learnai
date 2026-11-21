@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 252">
+  <title>The gather of the example in front of attention</title>
+  <desc>The idx rows (0, 2) and (-1, 1) pick tokens 0, 2, and 1 from a store of four. The -1 slot and token 3 are not read.</desc>
+  <!-- Geometry: q at x = 100, idx at x = 197, the gathered rows at x = 285, the store at x = 355; boxes are 22 high, cells 30 by 24. -->
+  <!-- Wires -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <line x1="100" y1="230" x2="100" y2="62.5"/>
+    <line x1="197" y1="170" x2="197" y2="140.5"/>
+    <line x1="355" y1="170" x2="355" y2="140.5"/>
+    <line x1="285" y1="112" x2="285" y2="62.5"/>
+    <line x1="230" y1="34" x2="230" y2="24.5"/>
+  </g>
+  <g>
+    <polygon points="100,56 103.3,62.5 96.7,62.5"/>
+    <polygon points="197,134 200.3,140.5 193.7,140.5"/>
+    <polygon points="355,134 358.3,140.5 351.7,140.5"/>
+    <polygon points="285,56 288.3,62.5 281.7,62.5"/>
+    <polygon points="230,18 233.3,24.5 226.7,24.5"/>
+  </g>
+  <!-- Blocks -->
+  <g stroke="currentColor" stroke-width="1.5">
+    <rect x="60" y="34" width="360" height="22" rx="5" style="fill: var(--figure-attn)"/>
+    <rect x="150" y="112" width="270" height="22" rx="5" fill="none"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="240" y="49.5">Attention</text>
+    <text x="285" y="127.5">Gather</text>
+    <text x="230" y="13">out</text>
+    <text x="100" y="244" font-style="italic" style="font-family: var(--figure-serif)">q</text>
+  </g>
+  <!-- idx: one row per query, one cell per slot -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="166" y="176" width="30" height="24" rx="3"/>
+    <rect x="198" y="176" width="30" height="24" rx="3"/>
+    <rect x="198" y="202" width="30" height="24" rx="3"/>
+  </g>
+  <!-- the unused slot -->
+  <rect x="166" y="202" width="30" height="24" rx="3" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="181" y="192.5">0</text>
+    <text x="213" y="192.5">2</text>
+    <text x="181" y="218.5" style="fill: var(--figure-muted)">-1</text>
+    <text x="213" y="218.5">1</text>
+  </g>
+  <g font-size="13" text-anchor="end" style="font-family: var(--figure-serif)">
+    <text x="158" y="192.5"><tspan font-style="italic">t</tspan> = 0</text>
+    <text x="158" y="218.5"><tspan font-style="italic">t</tspan> = 1</text>
+  </g>
+  <!-- The store: tokens 0, 1, 2 are read, token 3 is not -->
+  <g stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-cache)">
+    <rect x="292" y="176" width="30" height="24" rx="3"/>
+    <rect x="324" y="176" width="30" height="24" rx="3"/>
+    <rect x="356" y="176" width="30" height="24" rx="3"/>
+  </g>
+  <rect x="388" y="176" width="30" height="24" rx="3" stroke="currentColor" stroke-width="1" stroke-dasharray="2 3" stroke-opacity="0.45" fill-opacity="0.4" style="fill: var(--figure-cache)"/>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="307" y="216.5">0</text>
+    <text x="339" y="216.5">1</text>
+    <text x="371" y="216.5">2</text>
+    <text x="403" y="216.5">3</text>
+  </g>
+  <text x="284" y="216.5" font-size="13" text-anchor="end" font-style="italic" style="font-family: var(--figure-serif); fill: var(--figure-muted)">s</text>
+  <g font-size="13" style="font-family: var(--figure-mono)">
+    <text x="190" y="160" text-anchor="end">idx</text>
+    <text x="348" y="160" text-anchor="end">store</text>
+    <text x="355" y="240" text-anchor="middle">rows_read = 3</text>
+  </g>
+  <!-- The shape of the tensor on each wire -->
+  <g font-size="13" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="107" y="90">(T, H, d)</text>
+    <text x="204" y="160">(T, k)</text>
+    <text x="362" y="160">(S, H, d)</text>
+    <text x="292" y="90">(T, k, H, d)</text>
+    <text x="237" y="30">(T, H, d)</text>
+  </g>
+</svg>

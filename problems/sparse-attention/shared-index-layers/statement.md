@@ -2,6 +2,8 @@ Run a stack of sparse-attention layers in which only some layers own an indexer.
 others attend with the token selection of the nearest indexed layer below them, so
 most of the indexer work of the stack is skipped.
 
+![This problem is the indices that top-k hands to the gather, which a shared layer takes from a full layer below it.](assets/map.svg)
+
 ## Specification
 
 ```python

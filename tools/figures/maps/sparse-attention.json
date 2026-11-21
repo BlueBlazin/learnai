@@ -1,0 +1,55 @@
+{
+  "track": "sparse-attention",
+  "file": "map.svg",
+  "title": "Where this problem sits in a sparse-attention layer",
+  "desc": "One sparse-attention layer drawn bottom to top, from the input x to the output.",
+  "width": 480,
+  "height": 176,
+  "blocks": [
+    {"part": "attn", "role": "attn", "label": "Attention", "x": 264, "y": 30, "width": 96, "height": 20},
+    {"part": "topk", "role": "embed", "label": "Top-k", "x": 147, "y": 70, "width": 60, "height": 20},
+    {"part": "gather", "label": "Gather", "x": 254, "y": 70, "width": 60, "height": 20},
+    {"part": "index-keys", "role": "cache", "label": "Indexer keys", "x": 6, "y": 110, "width": 98, "height": 20},
+    {"part": "scores", "role": "linear", "label": "Indexer scores", "x": 120, "y": 110, "width": 114, "height": 20},
+    {"part": "kv-cache", "role": "cache", "label": "KV cache", "x": 249, "y": 110, "width": 70, "height": 20}
+  ],
+  "wires": [
+    {"points": [[177, 160], [177, 130]], "arrow": true},
+    {"points": [[177, 146], [55, 146], [55, 130]], "round": 8, "arrow": true, "tap": true},
+    {"points": [[177, 146], [340, 146], [340, 50]], "round": 8, "arrow": true},
+    {"points": [[284, 146], [284, 130]], "arrow": true, "tap": true},
+    {"points": [[104, 120], [120, 120]], "arrow": true},
+    {"points": [[177, 110], [177, 90]], "arrow": true},
+    {"part": "idx", "points": [[207, 80], [254, 80]], "arrow": true},
+    {"points": [[284, 110], [284, 90]], "arrow": true},
+    {"points": [[284, 70], [284, 50]], "arrow": true},
+    {"points": [[312, 30], [312, 18]], "arrow": true}
+  ],
+  "labels": [
+    {"text": "out", "at": [312, 8]},
+    {"text": "idx", "at": [230.5, 68]},
+    {"text": "x", "at": [177, 168]}
+  ],
+  "problems": {
+    "indexer-topk-select": {
+      "parts": ["scores", "topk"],
+      "marker": {"from": [346, 80], "length": 18},
+      "desc": "The Indexer scores and Top-k blocks are at full strength."
+    },
+    "gathered-sparse-attention": {
+      "parts": ["gather", "attn"],
+      "marker": {"from": [366, 40], "length": 18},
+      "desc": "The Gather and Attention blocks are at full strength."
+    },
+    "indexer-cache-decode": {
+      "parts": ["index-keys", "kv-cache"],
+      "marker": {"from": [346, 120], "length": 18},
+      "desc": "The Indexer keys and KV cache blocks are at full strength."
+    },
+    "shared-index-layers": {
+      "parts": ["topk", "idx", "gather"],
+      "marker": {"from": [346, 80], "length": 18},
+      "desc": "The Top-k and Gather blocks and the idx wire between them are at full strength."
+    }
+  }
+}

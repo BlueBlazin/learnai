@@ -3,6 +3,8 @@ attention layer attends to: a score for every query and key, and the selection o
 `k` best visible keys per query. The scores are never normalized, and the selection
 has to say what happens to equal scores and to entries a query may not see.
 
+![This problem is the indexer's scores and its top-k, which choose the tokens each query attends to.](assets/map.svg)
+
 ## Specification
 
 ```python

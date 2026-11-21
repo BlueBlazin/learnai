@@ -2,6 +2,8 @@ Run one sparse-attention layer on a chunk of new tokens that continue a cached
 sequence. The layer keeps two caches, the indexer's keys and the attention's keys and
 values, and both must hold the new tokens before the first new query is scored.
 
+![This problem is the two caches, the indexer's keys and the attention's keys and values, which grow with each call.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -46,6 +48,8 @@ sequence is cut into calls, the outputs are the same.
 Before the first call, `index_keys` has shape `(0, index_dim)` and the store is empty.
 The returned cache holds `index_keys` of shape `(S + T, index_dim)` and the store
 obtained from the given one by `append`.
+
+![The two calls of the example below, with $k = 2$: both caches hold a new token before its query is scored.](assets/cache-steps.svg)
 
 **Cost.**
 
