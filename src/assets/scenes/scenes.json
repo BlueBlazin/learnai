@@ -58,5 +58,25 @@
   {
     "slug": "summit",
     "accent": "#e6b125"
+  },
+  {
+    "slug": "harbor",
+    "accent": "#e85a3a"
+  },
+  {
+    "slug": "arch",
+    "accent": "#188adc"
+  },
+  {
+    "slug": "causeway",
+    "accent": "#209d6e"
+  },
+  {
+    "slug": "archipelago",
+    "accent": "#8652ce"
+  },
+  {
+    "slug": "ship",
+    "accent": "#ebae23"
   }
 ]

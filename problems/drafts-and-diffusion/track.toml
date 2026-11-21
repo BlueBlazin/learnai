@@ -2,4 +2,6 @@ id = "drafts-and-diffusion"
 title = "Built-in Drafts and Text Diffusion"
 description = "Output paths beyond one token per pass: the chained multi-token-prediction module that ships inside checkpoints, and block text diffusion over a cached prefix."
 order = 240
+scene = "archipelago"
+color = "#8652ce"
 core = ["mtp-chain-draft", "entropy-bound-denoise-step", "block-diffusion-decode"]

@@ -2,6 +2,8 @@ id = "recurrent-mixers"
 title = "Recurrent and Hybrid Mixers"
 description = "Layers that carry a fixed-size state instead of a growing cache: the gated delta rule, a state-space step, a gated convolution, and a decoder that mixes them with attention."
 order = 210
+scene = "harbor"
+color = "#e85a3a"
 core = [
     "gated-delta-step",
     "gated-delta-layer",

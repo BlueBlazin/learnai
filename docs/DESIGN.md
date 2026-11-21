@@ -174,11 +174,14 @@ have no area around them. A module with no color falls back to the accent.
   `src/lib/scenes.ts`) are flat screenprint landscapes in the manner of
   mid-century travel posters: five flat inks, no gradients, no texture, no
   outlines. Every scene shares off-white paper, blue-black ink, and steel blue,
-  and adds one saturated ink of its own. There are fifteen, one per module of
-  "Inference and serving" (`scene` in `track.toml`), running from a trailhead
-  at dawn to a summit observatory at night. Fourteen are empty landscapes; one,
-  the CUDA module's, deliberately shows a person, as an homage the owner asked
-  for. It is the exception, not a direction for the series. They were generated
+  and adds one saturated ink of its own. There is one per module (`scene` in
+  `track.toml`), and each area has its own series, a journey through one kind
+  of landscape: the fifteen of "Inference and serving" run through the
+  mountains from a trailhead at dawn to a summit observatory at night, and the
+  five of "Model architectures" cross the sea from a harbor at dawn to a tall
+  ship under the moon. A new area gets a new landscape. All are empty
+  landscapes except one: the CUDA module's deliberately shows a person, as an
+  homage the owner asked for. It is the exception, not a direction. They were generated
   from one style reference; `tools/scene-art/` holds the prompts and scripts,
   and its README says how to add or redo one so that it stays in the series.
 - A scene is shown whole and unfiltered: no overlay text, no dimming for modules

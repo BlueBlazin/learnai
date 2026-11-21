@@ -2,6 +2,8 @@ id = "block-components"
 title = "Positions, Experts, and Streams"
 description = "The parts of a block that changed since 2024: partial and scaled rotary positions, sigmoid-routed experts with a shared expert, per-layer embeddings, and multi-stream residuals."
 order = 230
+scene = "causeway"
+color = "#209d6e"
 core = [
     "partial-rope",
     "yarn-frequencies",

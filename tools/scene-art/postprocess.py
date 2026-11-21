@@ -1,15 +1,16 @@
 """Turn raw scene generations into the shipped WebP files.
 
 Usage:
-  uv run --with pillow python postprocess.py RAW_DIR [--contact contact.jpg]
+  uv run --with pillow python postprocess.py RAW_DIR [--contact contact.jpg] [slug ...]
 
-For each scene in scenes.json this reads RAW_DIR/<slug>.jpg, trims the baked-in
+For each scene in scenes.json (or only the named ones) this reads RAW_DIR/<slug>.jpg, trims the baked-in
 poster margin listed in the scene's "crop" field ([left, top, right, bottom] in
 source pixels, omitted when there is none), center-crops to the shared aspect,
 resizes to the shared size, and writes src/assets/scenes/<slug>.webp. It then
 measures the accent actually printed in each final and writes
-src/assets/scenes/scenes.json for the UI. With --contact it also writes a
-labeled contact sheet.
+src/assets/scenes/scenes.json for the UI (when slugs are named, the other
+scenes keep their entries). With --contact it also writes a labeled contact
+sheet of the scenes it processed.
 """
 
 import argparse
@@ -83,21 +84,35 @@ def contact_sheet(finals: list[tuple[str, Image.Image]], path: pathlib.Path) -> 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("raw_dir", type=pathlib.Path)
+    parser.add_argument("slugs", nargs="*", help="scene slugs; all scenes when omitted")
     parser.add_argument("--contact", type=pathlib.Path)
     args = parser.parse_args()
 
     scenes = json.loads((HERE / "scenes.json").read_text())
+    unknown = set(args.slugs) - {scene["slug"] for scene in scenes}
+    if unknown:
+        raise SystemExit("unknown slug: " + ", ".join(sorted(unknown)))
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    manifest_path = OUT_DIR / "scenes.json"
+    kept = {}
+    if args.slugs and manifest_path.exists():
+        kept = {entry["slug"]: entry for entry in json.loads(manifest_path.read_text())}
     manifest, finals = [], []
     for scene in scenes:
         slug = scene["slug"]
+        if args.slugs and slug not in args.slugs:
+            if slug in kept:
+                manifest.append(kept[slug])
+            continue
         image = finish(Image.open(args.raw_dir / f"{slug}.jpg"), scene.get("crop"))
         image.save(OUT_DIR / f"{slug}.webp", "WEBP", quality=QUALITY, method=6)
-        accent = measure_accent(image)
+        # A scene whose lighter tint covers more area than its full accent is measured
+        # wrong; its "printed" field then holds the full accent sampled by hand.
+        accent = scene.get("printed") or measure_accent(image)
         manifest.append({"slug": slug, "accent": accent})
         finals.append((f"{scene['order']:02d}  {slug}   {accent}", image))
         print(slug, "asked", scene["accent"]["hex"], "printed", accent)
-    (OUT_DIR / "scenes.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     if args.contact:
         contact_sheet(finals, args.contact)
 
