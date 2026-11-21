@@ -1,5 +1,6 @@
 """The kit's Guarded mixin and DeltaMemory: what a solution can and cannot reach."""
 
+import asyncio
 import copy
 import textwrap
 import types
@@ -143,21 +144,39 @@ def test_nothing_is_refused_before_a_guard_is_armed():
         ("meter.counters.reset()", "`meter.counters` may not be used in this problem"),
         ("meter._values", "`meter._values` may not be used in this problem"),
         ("meter.peek()", "`meter.peek` may not be used in this problem"),
-        ("meter.with_framework", "`meter.with_framework` may not be used in this problem"),
+        (
+            "meter.with_framework",
+            "`meter.with_framework` may not be used in this problem",
+        ),
         ("vars(meter)", "`meter.__dict__` may not be used in this problem"),
-        ("getattr(meter, 'coun' + 'ters')", "`meter.counters` may not be used in this problem"),
-        ("eval('m.counters', {'m': meter})", "`meter.counters` may not be used in this problem"),
+        (
+            "getattr(meter, 'coun' + 'ters')",
+            "`meter.counters` may not be used in this problem",
+        ),
+        (
+            "eval('m.counters', {'m': meter})",
+            "`meter.counters` may not be used in this problem",
+        ),
         (
             "import operator; operator.attrgetter('counters')(meter)",
             "`meter.counters` may not be used in this problem",
         ),
         ("meter.size = 0", "`meter.size` may not be set in this problem"),
         ("meter.stash = [1]", "`meter.stash` may not be set in this problem"),
-        ("setattr(meter, 'counters', None)", "`meter.counters` may not be set in this problem"),
+        (
+            "setattr(meter, 'counters', None)",
+            "`meter.counters` may not be set in this problem",
+        ),
         ("del meter.size", "`meter.size` may not be set in this problem"),
         ("import copy; copy.copy(meter)", "`meter` may not be copied in this problem"),
-        ("import copy; copy.deepcopy(meter)", "`meter` may not be copied in this problem"),
-        ("import pickle; pickle.dumps(meter)", "`meter` may not be copied in this problem"),
+        (
+            "import copy; copy.deepcopy(meter)",
+            "`meter` may not be copied in this problem",
+        ),
+        (
+            "import pickle; pickle.dumps(meter)",
+            "`meter` may not be copied in this problem",
+        ),
     ],
 )
 def test_the_solution_is_refused(solve, body, message):
@@ -213,18 +232,30 @@ def test_a_borrowed_method_cannot_read_what_the_solution_cannot(solve):
 @pytest.mark.parametrize(
     ("body", "message"),
     [
-        ("meter.__getattribute__('counters').reset()", "`meter.__getattribute__` may not be used"),
+        (
+            "meter.__getattribute__('counters').reset()",
+            "`meter.__getattribute__` may not be used",
+        ),
         ("meter.__setattr__('counters', None)", "`meter.__setattr__` may not be used"),
         ("meter.__delattr__('size')", "`meter.__delattr__` may not be used"),
         ("meter.__init__([0])", "`meter.__init__` may not be used"),
-        ("type(meter).__getattribute__(meter, 'counters')", "`meter.counters` may not be used"),
+        (
+            "type(meter).__getattribute__(meter, 'counters')",
+            "`meter.counters` may not be used",
+        ),
         ("type(meter).__setattr__(meter, 'size', 0)", "`meter.size` may not be set"),
-        ("type(meter).__init__(meter, [0])", "`meter._values` may not be set outside the meter's"),
+        (
+            "type(meter).__init__(meter, [0])",
+            "`meter._values` may not be set outside the meter's",
+        ),
         (
             "type(meter).__mro__[2].__init__(meter, [0])",
             "`meter._values` may not be set outside the meter's own methods",
         ),
-        ("type(meter).of(meter)", "`meter.__dict__` may not be read outside the meter's"),
+        (
+            "type(meter).of(meter)",
+            "`meter.__dict__` may not be read outside the meter's",
+        ),
     ],
 )
 def test_the_machinery_of_the_object_is_not_the_solutions(solve, body, message):
@@ -360,7 +391,10 @@ def test_with_an_allowlist_only_the_listed_names_are_readable(solve):
     check_guard()
     assert refused(solution["other"], meter) == "`meter.last_index` may not be used in this problem"
     solve("def klass(meter): return meter.__class__")
-    assert meter.last_index == 1 and meter.peek() == [4, 5]  # the test still reads everything
+    assert meter.last_index == 1 and meter.peek() == [
+        4,
+        5,
+    ]  # the test still reads everything
     check_guard()
 
 
@@ -513,6 +547,68 @@ def test_a_special_method_of_the_guarded_class_is_wrapped_once(solve):
     assert not callable(GuardedMeter([1]))  # a class without __call__ gets none
 
 
+class Line:
+    """A kit object whose work happens later: a coroutine, a generator, an async one."""
+
+    def __init__(self, values):
+        self._values = list(values)
+        self.counters = Counters("asked", "items")
+
+    async def ask(self, i):
+        self.counters.add("asked")
+        await asyncio.sleep(0)
+        return self._values[i]
+
+    async def __call__(self, i):
+        return await self.ask(i)
+
+    def each(self):
+        for value in self._values:
+            self.counters.add("items")
+            yield value
+
+    async def stream(self):
+        for value in self._values:
+            await asyncio.sleep(0)
+            self.counters.add("items")
+            yield value
+
+
+class GuardedLine(Guarded, Line):
+    label = "line"
+
+
+def test_coroutines_and_generators_of_a_guarded_object_run_through_it(solve):
+    solution = solve(
+        """
+        import asyncio
+
+        async def use(line):
+            first = await line.ask(0)
+            second = await asyncio.create_task(line(1))     # the special method, as a task
+            third, fourth = await asyncio.gather(line.ask(2), line(0))
+            return [first, second, third, fourth], list(line.each()), [v async for v in line.stream()]
+
+        async def borrowed(line): return await type(line).__mro__[2].ask(line, 0)
+        def borrowed_each(line): return list(type(line).__mro__[2].each(line))
+        async def counters(line): return line.counters
+        """
+    )
+    line = GuardedLine([7, 8, 9])
+    assert asyncio.run(solution["use"](line)) == ([7, 8, 9, 7], [7, 8, 9], [7, 8, 9])
+    check_guard()
+    assert line.counters.snapshot() == {"asked": 4, "items": 6}
+
+    with pytest.raises(CheckFailure, match=r"`line.counters` may not be read outside the line's"):
+        asyncio.run(solution["borrowed"](line))
+    guarded_module._violations.clear()
+    assert "`line._values` may not be read outside" in refused(solution["borrowed_each"], line)
+    guarded_module._violations.clear()
+    with pytest.raises(CheckFailure, match=r"`line.counters` may not be used in this problem"):
+        asyncio.run(solution["counters"](line))
+    assert line.counters.asked == 4
+
+
 def test_of_guards_an_object_that_was_built_elsewhere(solve):
     solution = solve(
         """
@@ -554,7 +650,10 @@ def test_a_guarded_model_and_guarded_experts_are_called(solve, fw):
         def forge(lm): object.__getattribute__(lm, "counters").tokens_processed = 0
         """
     )
-    lm, experts = LM(fw, seed=3), Experts(fw, seed=1, n_experts=4, d_model=8, d_hidden=6)
+    lm, experts = (
+        LM(fw, seed=3),
+        Experts(fw, seed=1, n_experts=4, d_model=8, d_hidden=6),
+    )
     rows = np.random.default_rng(0).normal(size=(5, 8)).astype(np.float32)
     logits, length, out, vocab, n = solution["honest"](lm, experts, [0, 17, 42], fw.tensor(rows))
     check_guard()
@@ -608,7 +707,10 @@ def test_a_guarded_store_counts_and_stays_guarded_when_appended(solve, fw):
         """
     )
     rng = np.random.default_rng(0)
-    k, v = rng.normal(size=(4, 3)).astype(np.float32), rng.normal(size=(4, 2)).astype(np.float32)
+    k, v = (
+        rng.normal(size=(4, 3)).astype(np.float32),
+        rng.normal(size=(4, 2)).astype(np.float32),
+    )
     store = Store(fw, k, v)
     (k_rows, _), n, name = solution["honest"](store, [0, 5], k[:2], v[:2])
     check_guard()
@@ -649,7 +751,8 @@ def test_guarded_models_run_their_oracles_and_refuse_their_internals(solve, fw):
     x = np.random.default_rng(1).normal(size=(5, dsa.d_model)).astype(np.float32)
     plain = TinyDSA(fw, seed=1)
     np.testing.assert_allclose(
-        fw.numpy(solution["keys"](dsa, fw.tensor(x))), fw.numpy(plain.index_key(0, fw.tensor(x)))
+        fw.numpy(solution["keys"](dsa, fw.tensor(x))),
+        fw.numpy(plain.index_key(0, fw.tensor(x))),
     )
     check_guard()
     assert dsa.counters.index_key_rows == 5
@@ -665,6 +768,81 @@ def test_guarded_models_run_their_oracles_and_refuse_their_internals(solve, fw):
     check_guard()
     assert refused(solution["seed"], model) == "`model.seed` may not be used in this problem"
     assert "outside the model's own methods" in refused(solution["weights"], model)
+
+
+def test_a_guarded_mlx_module_keeps_its_parameters_where_mlx_looks(solve):
+    mx = pytest.importorskip("mlx.core")
+    from mlx import nn
+    from mlx.utils import tree_flatten
+
+    from learnai.kit import MLXTinyLM
+
+    class LM(Guarded, MLXTinyLM):
+        label = "lm"
+
+    solution = solve(
+        """
+        import mlx.core as mx
+        from mlx import nn
+        from mlx.utils import tree_flatten
+
+        def honest(lm, tokens):
+            logits, cache = lm(tokens)
+            state = lm.init_state(max_len=8)
+            step = mx.compile(lambda token, state: lm.step(token, state),
+                              inputs=lm.state, outputs=lm.state)
+            for token in tokens.tolist():
+                last, state = step(mx.array([token]), state)
+            mx.eval(logits, cache, last, lm.parameters())
+            lm.update(lm.parameters())
+            sizes = len(tree_flatten(lm.parameters())), len(lm.layers), lm.vocab_size
+            return logits, last, sizes, lm.training, isinstance(lm, nn.Module)
+
+        def quantized(lm, tokens):
+            nn.quantize(lm, bits=8, group_size=32)
+            return lm(tokens)[0]
+
+        def write(lm): lm.counters.forward_calls = 0
+        def pieces(lm, tokens): return lm._embed(tokens[None], mx.arange(4)[None])
+        def borrowed(lm, tokens): return type(lm).__mro__[2].__call__(lm, tokens)
+        def item(lm): return lm["counters"]
+        def around(lm): return object.__getattribute__(lm, "counters")
+        def replace(lm): lm.head = None
+        """
+    )
+    plain, lm = MLXTinyLM(seed=3), LM(seed=3)
+    tokens = mx.array([0, 17, 42, 5])
+    want, _ = plain(tokens)
+    assert object.__getattribute__(lm, "__dict__") == {}
+    assert sorted(dict.keys(lm)) == [
+        "embed",
+        "head",
+        "layers",
+        "norm",
+    ]  # the module's items
+    assert "counters" in vars(lm) and "_training" in vars(lm)  # the rest is in the table
+
+    logits, last, sizes, training, is_module = solution["honest"](lm, tokens)
+    check_guard()
+    assert mx.allclose(logits, want).item() and mx.allclose(last[0], want[-1], atol=1e-4).item()
+    assert sizes == (len(tree_flatten(plain.parameters())), 2, 64) and training and is_module
+    assert lm.counters.forward_calls == 2  # the call, and one trace of the compiled step
+
+    assert refused(solution["write"], lm) == "`lm.counters` may not be used in this problem"
+    assert refused(solution["pieces"], lm, tokens) == "`lm._embed` may not be used in this problem"
+    assert "`lm.counters` may not be read outside" in refused(solution["borrowed"], lm, tokens)
+    assert refused(solution["replace"], lm) == "`lm.head` may not be set in this problem"
+    guarded_module._violations.clear()
+    for name in ("item", "around"):
+        with pytest.raises((KeyError, AttributeError)):
+            solution[name](lm)
+    assert lm.counters.forward_calls == 2
+
+    shared = LM.of(plain)  # shares the parameters and the counters
+    assert mx.allclose(shared(tokens)[0], want).item() and plain.counters.forward_calls == 2
+    assert solution["quantized"](lm, tokens).shape == want.shape  # mlx may rebuild the tree
+    check_guard()
+    assert isinstance(lm.head, nn.QuantizedLinear)
 
 
 # -- DeltaMemory -----------------------------------------------------------------------
@@ -689,7 +867,10 @@ def test_delta_memory_reads_and_updates_in_counted_calls(fw):
     np.testing.assert_allclose(newer.peek(), want, rtol=1e-6)
     np.testing.assert_array_equal(memory.peek(), state)  # the old memory is unchanged
     assert newer.counters is memory.counters
-    assert memory.counters.snapshot() == {"reads": 1, "writes": 1}  # one per call, any R
+    assert memory.counters.snapshot() == {
+        "reads": 1,
+        "writes": 1,
+    }  # one per call, any R
     newer.peek()[...] = 0
     np.testing.assert_allclose(newer.peek(), want, rtol=1e-6)  # peek hands out a copy
 
@@ -709,12 +890,23 @@ def test_delta_memory_refuses_wrong_shapes_and_too_many_rows(fw):
     with pytest.raises(ValueError, match="1 to max_rows = 2 rows, got 0"):
         memory.read(ones((2, 0, 4), np.float32))
     with pytest.raises(ValueError, match="decay must have shape"):
-        memory.update(ones(3, np.float32), ones((2, 1, 3), np.float32), ones((2, 1, 4), np.float32))
+        memory.update(
+            ones(3, np.float32),
+            ones((2, 1, 3), np.float32),
+            ones((2, 1, 4), np.float32),
+        )
     with pytest.raises(ValueError, match="the same number of rows"):
-        memory.update(ones(2, np.float32), ones((2, 1, 3), np.float32), ones((2, 2, 4), np.float32))
+        memory.update(
+            ones(2, np.float32),
+            ones((2, 1, 3), np.float32),
+            ones((2, 2, 4), np.float32),
+        )
     with pytest.raises(ValueError, match="state must have shape"):
         DeltaMemory(fw, np.zeros((3, 4), np.float32), max_rows=2)
-    assert memory.counters.snapshot() == {"reads": 0, "writes": 0}  # a refused call is free
+    assert memory.counters.snapshot() == {
+        "reads": 0,
+        "writes": 0,
+    }  # a refused call is free
 
 
 def test_a_guarded_delta_memory_keeps_its_array_and_counters_to_itself(solve, fw):

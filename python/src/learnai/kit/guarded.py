@@ -35,7 +35,9 @@ Three rules, all about *who is asking* (the call stack decides, as for ``forbidd
 Python calls a special method without asking for an attribute: ``lm(tokens)``,
 ``len(file)``, ``file[a:b]``, ``with file:``. The special methods a guarded class
 inherits (the names in ``SPECIAL``) are therefore wrapped when the class is made, and
-count as calls made through the object like any other method.
+count as calls made through the object like any other method. A method that is a
+coroutine function or a generator function does its work after the call returned, when
+it is awaited or iterated; it is wrapped in kind, so that its body counts too.
 
 A refused access raises ``CheckFailure`` and is recorded, so a solution that catches
 the exception still fails at ``check_guard()``.
@@ -56,6 +58,7 @@ habit, and every cheat that needs only the object it was handed.
 from __future__ import annotations
 
 import functools
+import inspect
 import os
 import sys
 import types
@@ -75,9 +78,6 @@ _test_file: str | None = None
 #: ``refused``. Each one is a way around the rules: ``store.__init__(...)`` starts the
 #: counters over, ``store.__getattribute__("counters")`` reads through the kit.
 MACHINERY = frozenset({"__dict__", "__init__", "__getattribute__", "__setattr__", "__delattr__"})
-#: Code objects whose frames mark a call made through a guarded object: the wrappers
-#: around its methods and ``Guarded.__getattribute__`` (under which a property runs).
-_THROUGH: set[types.CodeType] = set()
 
 #: The special methods that count as calls made through the object. Python looks them
 #: up on the class, past ``__getattribute__``, so ``Guarded`` wraps the ones a guarded
@@ -95,7 +95,12 @@ SPECIAL = (
     "__next__",
     "__enter__",
     "__exit__",
+    "__aiter__",
+    "__anext__",
+    "__aenter__",
+    "__aexit__",
 )
+_LATER = inspect.CO_COROUTINE | inspect.CO_GENERATOR | inspect.CO_ASYNC_GENERATOR
 
 
 def guard(ctx: Any) -> None:
@@ -171,22 +176,64 @@ def _state(obj: Any) -> dict[str, Any]:
         return state
 
 
-def _entering(function: Callable[..., Any]) -> Callable[..., Any]:
-    """``function``, marked as a call made through a guarded object while it runs."""
+def _through(function: Callable[..., Any]) -> Callable[..., Any]:
+    """``function`` behind a frame that marks a call made through a guarded object.
 
-    def call(*args: Any, **kwargs: Any) -> Any:
-        return function(*args, **kwargs)
+    The body of a coroutine function or a generator function runs when the result is
+    awaited or iterated, so those get a wrapper of their own kind: its frame is then
+    between the body and whoever awaits or iterates.
+    """
+    code = getattr(getattr(function, "__func__", function), "__code__", None)
+    flags = code.co_flags & _LATER if code is not None else 0
+    if flags == inspect.CO_COROUTINE:
+
+        async def call(*args: Any, **kwargs: Any) -> Any:
+            return await function(*args, **kwargs)
+
+    elif flags == inspect.CO_GENERATOR:
+
+        def call(*args: Any, **kwargs: Any) -> Any:
+            return (yield from function(*args, **kwargs))
+
+    elif flags == inspect.CO_ASYNC_GENERATOR:
+
+        async def call(*args: Any, **kwargs: Any) -> Any:
+            async for item in function(*args, **kwargs):
+                yield item
+
+    else:
+
+        def call(*args: Any, **kwargs: Any) -> Any:
+            return function(*args, **kwargs)
 
     return call
 
 
+#: Code objects whose frames mark a call made through a guarded object: the four
+#: wrappers of ``_through`` and ``Guarded.__getattribute__`` (under which a property
+#: runs).
+_THROUGH: set[types.CodeType] = set()
+
+
+def _marked() -> None:
+    async def coroutine() -> None: ...
+
+    def generator() -> Any:
+        yield
+
+    async def async_generator() -> Any:
+        yield
+
+    for function in (len, coroutine, generator, async_generator):
+        _THROUGH.add(_through(function).__code__)
+
+
+_marked()
+
+
 def _special(function: Callable[..., Any]) -> Callable[..., Any]:
     """A special method of a guarded class: a call made through the object."""
-
-    @functools.wraps(function)
-    def method(*args: Any, **kwargs: Any) -> Any:
-        return function(*args, **kwargs)
-
+    method = functools.wraps(function)(_through(function))
     method._through_the_object = True  # type: ignore[attr-defined]
     return method
 
@@ -249,8 +296,10 @@ class Guarded:
         The attributes are shared, not copied: the counters of the guarded object are
         the counters of ``plain``.
         """
-        new = object.__new__(cls)
+        new = cls.__new__(cls)
         _state(new).update(vars(plain))
+        if isinstance(plain, dict):  # an mlx.nn.Module: its arrays and submodules
+            dict.update(new, plain)
         return new
 
     @staticmethod
@@ -284,7 +333,7 @@ class Guarded:
             # A property of the class runs under this frame: a call through the object.
             value = object.__getattribute__(self, name)
         if isinstance(value, (types.MethodType, types.FunctionType)):
-            return _entering(value)
+            return _through(value)
         return value
 
     def _may_set(self, name: str, frame: types.FrameType | None) -> None:
@@ -299,22 +348,29 @@ class Guarded:
 
     def __setattr__(self, name: str, value: Any) -> None:
         Guarded._may_set(self, name, sys._getframe(1))
-        if hasattr(getattr(type(self), name, None), "__set__"):
-            object.__setattr__(self, name, value)  # a property with a setter
+        # The kit class's own rule first: a property's setter runs, and an
+        # `mlx.nn.Module` keeps arrays and submodules as items of itself, where MLX
+        # looks for them. Whatever lands in the instance is then moved to the table.
+        super().__setattr__(name, value)
+        state = _state(self)
+        own = object.__getattribute__(self, "__dict__")
+        if name in own:
+            state[name] = own.pop(name)
         else:
-            _state(self)[name] = value
+            state.pop(name, None)
 
     def __delattr__(self, name: str) -> None:
         Guarded._may_set(self, name, sys._getframe(1))
-        try:
-            del _state(self)[name]
-        except KeyError:
-            raise AttributeError(name) from None
+        state = _state(self)
+        if name in state:
+            del state[name]
+        else:
+            super().__delattr__(name)
 
     def __repr__(self) -> str:
         # `print(store)` reaches the kit's `__repr__` without going through an
         # attribute of the object, and printing is not prying.
-        return _entering(super().__repr__)()
+        return _through(super().__repr__)()
 
     def _no_copy(self, *args: Any) -> Any:
         _violation(f"`{type(self).label}` may not be copied in this problem")
@@ -322,6 +378,4 @@ class Guarded:
     __copy__ = __deepcopy__ = __reduce_ex__ = __reduce__ = _no_copy
 
 
-_THROUGH.update(
-    (_entering(len).__code__, _special(len).__code__, Guarded.__getattribute__.__code__)
-)
+_THROUGH.add(Guarded.__getattribute__.__code__)

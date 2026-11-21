@@ -2694,7 +2694,8 @@ check_guard()                                # the first refused access fails th
   attribute. `Guarded` wraps the special methods a guarded class defines or inherits
   (`guarded.SPECIAL`: `__call__`, `__len__`, `__length_hint__`, `__bool__`,
   `__contains__`, `__getitem__`, `__setitem__`, `__delitem__`, `__iter__`,
-  `__next__`, `__enter__`, `__exit__`) when the class is made, so `class LM(Guarded,
+  `__next__`, `__enter__`, `__exit__`, and the four `__a...__` names of async
+  iteration and `async with`) when the class is made, so `class LM(Guarded,
   TinyLM)` and `class Experts(Guarded, CountingExperts)` are called as before, and
   the base class's method borrowed as a plain function (`TinyLM.__call__(lm, ...)`)
   is refused at its first private read. `__repr__` is exempt too: `print(store)` is
@@ -2715,6 +2716,20 @@ check_guard()                                # the first refused access fails th
   version of its object must build it with `object.__new__(type(self))`, as
   `CountingKV.append` and `DeltaMemory.update` do; a twin from `with_framework` is a
   plain, unguarded object, for tests.
+- **Coroutines and generators.** A method that is `async def` or a generator does its
+  work after the call returned, when it is awaited or iterated. `Guarded` wraps such
+  a method in a coroutine or generator of its own, so `await model.acomplete(...)`,
+  `await tool(city="Paris")`, `await engine.step(...)`, and a task made from one of
+  them run as calls through the object. One limit, of the same kind as threads: kit
+  code that the event loop runs from a callback has no solution frame above it and
+  is trusted.
+- **An `mlx.nn.Module`.** `class LM(Guarded, MLXTinyLM)` works: an attribute is set
+  by the kit class's own rule first, so arrays and submodules stay items of the
+  module, where `parameters()`, `update`, `nn.quantize`, and `mx.compile(...,
+  inputs=lm.state)` look for them, and everything else (the counters, the sizes)
+  goes to the table. The parameters are public by design, so a guarded module keeps
+  its counters and private methods to itself and nothing more: a second module with
+  the same parameters (`MLXTinyLM(...).update(lm.parameters())`) is not stopped.
 - **An object a factory built.** `Experts.of(moe.experts(1))` and `LM.of(draft)` (for
   `draft, target = draft_target_pair(...)`) are guarded objects with the attributes
   of the plain one. The attributes are shared, so the test can read the counters
