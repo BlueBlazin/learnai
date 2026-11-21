@@ -3,10 +3,12 @@
 Which of the 237 problems get which figure. The rules are in `PROBLEM_AUTHORING.md`
 under "Figures". "Mechanism" here also covers a static layout, timeline, or plot.
 
-- Maps: 10 modules (1 exists, 9 planned), shown by 118 problems (1 placed).
-- Mechanism: 86 (41 exist, 45 planned). Stepped: 15 (1 exists, 14 planned).
-- Interactive: 5 components (all exist), used by 7 problems.
-- 63 problems get no figure and are not listed. 101 get a mechanism or stepped figure.
+Status on 2026-11-22: every batch below is drawn and placed.
+
+- Maps: 9 drawings, shown by 118 problems (foundations uses the transformer drawing).
+- Mechanism figures, including layouts, timelines, and plots: 86. Stepped: 15.
+- Interactive: 5 components and one variant, used by 7 problems.
+- 63 problems have no figure and are not listed.
 
 A map-only row names the highlighted part. Otherwise "what it shows" describes the
 other figure, and the map part is in the list above the table.
