@@ -250,27 +250,53 @@ def hybrid_forward_ref(
     x = params["model.embed_tokens.weight"][ids]
     new_state: list[tuple[np.ndarray, np.ndarray]] = []
     for i, kind in enumerate(cfg.layers):
-        block = layer_params(params, i)
-        past = None if state[i] is None else tuple(np.asarray(t, np.float32) for t in state[i])
-        h = ops.rms_norm(x, block["input_layernorm.weight"], cfg.norm_eps)
-        if kind == LINEAR:
-            mixed, kept = ops.gated_delta_layer(
-                h, _strip(block, "linear_attn."), past, cfg.n_key_heads, cfg.norm_eps
-            )
-        else:
-            mixed, kept = gated_attention_ref(cfg, _strip(block, "self_attn."), h, past)
+        x, kept = _block(cfg, kind, layer_params(params, i), x, state[i])
         new_state.append(kept)
-        x = x + mixed
-        h = ops.rms_norm(x, block["post_attention_layernorm.weight"], cfg.norm_eps)
-        x = x + ops.swiglu(
-            h,
-            block["mlp.gate_proj.weight"],
-            block["mlp.up_proj.weight"],
-            block["mlp.down_proj.weight"],
-        )
     x = ops.rms_norm(x, params["model.norm.weight"], cfg.norm_eps)
     head = params["model.embed_tokens.weight" if cfg.tie_embeddings else "lm_head.weight"]
     return (x @ head.T).astype(np.float32), new_state
+
+
+def hybrid_block_ref(
+    cfg: HybridConfig,
+    params: dict[str, np.ndarray],
+    layer: int,
+    x: Any,
+    state: Any = None,
+) -> tuple[np.ndarray, tuple[np.ndarray, np.ndarray]]:
+    """One block of the oracle, in numpy: ``(x, state)`` for layer ``layer``.
+
+    ``x`` is the block's input, ``(T, d_model)`` or ``(B, T, d_model)``; ``state`` is
+    that layer's entry of the forward pass's state (``(conv_state, S)`` or ``(k, v)``),
+    or ``None`` when the tokens start a sequence. Chaining the blocks from the
+    embedding and applying the final norm and the head gives ``hybrid_forward_ref``.
+    """
+    x = np.asarray(x, dtype=np.float32)
+    return _block(cfg, cfg.layers[layer], layer_params(params, layer), x, state)
+
+
+def _block(
+    cfg: HybridConfig, kind: str, block: dict[str, np.ndarray], x: np.ndarray, state: Any
+) -> tuple[np.ndarray, tuple[np.ndarray, np.ndarray]]:
+    """``x + mixer(norm(x))``, then ``x + swiglu(norm(x))``, for one layer's parameters
+    (names without the layer prefix, every norm weight a plain gain)."""
+    past = None if state is None else tuple(np.asarray(t, np.float32) for t in state)
+    h = ops.rms_norm(x, block["input_layernorm.weight"], cfg.norm_eps)
+    if kind == LINEAR:
+        mixed, kept = ops.gated_delta_layer(
+            h, _strip(block, "linear_attn."), past, cfg.n_key_heads, cfg.norm_eps
+        )
+    else:
+        mixed, kept = gated_attention_ref(cfg, _strip(block, "self_attn."), h, past)
+    x = x + mixed
+    h = ops.rms_norm(x, block["post_attention_layernorm.weight"], cfg.norm_eps)
+    x = x + ops.swiglu(
+        h,
+        block["mlp.gate_proj.weight"],
+        block["mlp.up_proj.weight"],
+        block["mlp.down_proj.weight"],
+    )
+    return x, kept
 
 
 def _strip(block: dict[str, np.ndarray], prefix: str) -> dict[str, np.ndarray]:

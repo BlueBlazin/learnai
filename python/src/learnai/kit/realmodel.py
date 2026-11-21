@@ -64,6 +64,25 @@ LARGE_8BIT = AssetSpec(
 )
 HOUSE_MODELS = {spec.name: spec for spec in (SMALL, LARGE_8BIT)}
 
+#: The hybrid model of the `real-hybrid-model` problems: `Qwen/Qwen3.5-0.8B`, 873 M
+#: stored parameters in BF16 (752 M of them the text decoder), 1.75 GB, Apache-2.0.
+#: Not a house model: only those problems use it (see ``kit/realhybrid.py``). The
+#: weight file keeps its repository name, ``QWEN35_WEIGHTS_FILE``. A problem declares
+#: only ``config.json`` and the weights, because its prompts are token ids; the other
+#: two files are for authors: ``transformers`` needs the index to find a weight file
+#: with this name, and ``tokenizer.json`` makes fixture prompts from text.
+QWEN35_WEIGHTS_FILE = "model.safetensors-00001-of-00001.safetensors"
+QWEN35 = AssetSpec(
+    name="qwen3.5-0.8b",
+    repo="Qwen/Qwen3.5-0.8B",
+    revision="2fc06364715b967f1860aea9cf38778875588b17",
+    files=("config.json", "tokenizer.json", "model.safetensors.index.json", QWEN35_WEIGHTS_FILE),
+    size_mb=1760,
+)
+#: Every asset the kit knows by name: ``learnai assets fetch`` accepts these before any
+#: problem declares them.
+KIT_ASSETS = {**HOUSE_MODELS, QWEN35.name: QWEN35}
+
 
 def asset_toml(spec: AssetSpec) -> str:
     """The ``[[assets]]`` block for ``spec``, to paste into a problem.toml."""
@@ -220,13 +239,19 @@ class Weights(Mapping):
     bytes (BF16 as uint16), for problems about the file format itself.
     """
 
-    def __init__(self, checkpoint: SafetensorsFile, fw: Any = None) -> None:
+    def __init__(
+        self, checkpoint: SafetensorsFile, fw: Any = None, *, keep_numpy: bool = True
+    ) -> None:
         self.checkpoint = checkpoint
         self.fw = fw
+        #: False: a tensor handed out in a framework is decoded, converted, and the
+        #: numpy copy dropped, so a large checkpoint is held once and not twice
+        #: (``RealHybrid`` asks for this; ``numpy(name)`` still caches what it is asked).
+        self.keep_numpy = keep_numpy
         self._tensors: dict[str, Any] = {}
 
     def with_framework(self, fw: Any) -> Weights:
-        return Weights(self.checkpoint, fw)
+        return Weights(self.checkpoint, fw, keep_numpy=self.keep_numpy)
 
     def numpy(self, name: str) -> np.ndarray:
         """The tensor as a read-only numpy array (float32 for floats), cached."""
@@ -246,7 +271,10 @@ class Weights(Mapping):
         if self.fw is None or getattr(self.fw, "name", "python") == "python":
             return self.numpy(name)
         if name not in self._tensors:
-            array = self.numpy(name)
+            decoded = _DECODED.get((str(self.checkpoint.path), name))
+            if decoded is None and not self.keep_numpy:
+                decoded = self.checkpoint.array(name)
+            array = self.numpy(name) if decoded is None else decoded
             # Tensors keep the stored integer width: packed uint32 words stay uint32.
             self._tensors[name] = self.fw.tensor(array, dtype=array.dtype)
         return self._tensors[name]
@@ -306,10 +334,13 @@ class RealModel:
             return json.loads(config.read_text(encoding="utf-8")).get("chat_template")
         return None
 
+    #: The weight file inside the directory (a subclass may name another).
+    weights_file = "model.safetensors"
+
     @property
     def checkpoint(self) -> SafetensorsFile:
         if self._checkpoint is None:
-            self._checkpoint = SafetensorsFile(self.path / "model.safetensors")
+            self._checkpoint = SafetensorsFile(self.path / self.weights_file)
         return self._checkpoint
 
     def weights(self, fw: Any = None) -> Weights:

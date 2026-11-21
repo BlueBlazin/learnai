@@ -1093,16 +1093,16 @@ Nothing was downloaded except `config.json` and `model.safetensors.index.json`.
 | fact | value | status |
 |---|---|---|
 | repository, revision | `Qwen/Qwen3.5-0.8B` at `2fc06364715b967f1860aea9cf38778875588b17`, created 2026-02-28, ungated | VERIFIED (Hugging Face API) |
-| license | Apache-2.0 (card metadata; a `LICENSE` file of 11,544 bytes is present, text not read) | VERIFIED (metadata) |
-| parameters | 873,438,784 in the file (873,436,192 BF16 and 2,592 F32), which includes a 12-layer vision tower (153 tensors) and the MTP module (15 tensors); the text decoder is 320 tensors, about 752 M by arithmetic from the config | VERIFIED (API, index); the 752 M is computed, not read |
+| license | Apache-2.0 (card metadata; the `LICENSE` file of 11,544 bytes is the Apache License 2.0 text with "Copyright 2026 Alibaba Cloud") | VERIFIED (metadata; file text read 2026-11-21) |
+| parameters | 873,438,784 in the file (873,436,192 BF16 and 2,592 F32), which includes a 12-layer vision tower (153 tensors) and the MTP module (15 tensors); the text decoder is 320 tensors, 752,393,024 parameters | VERIFIED (API, index; the text decoder's count read from the safetensors header 2026-11-21) |
 | files | `model.safetensors-00001-of-00001.safetensors` 1,746,942,600 bytes; `config.json` 2,907; `tokenizer.json` 12.8 MB; `vocab.json`, `merges.txt`, `chat_template.jinja` | VERIFIED |
 | text decoder | 24 layers, hidden 1024, SwiGLU 3584, vocabulary 248,320, tied embeddings (no `lm_head` tensor), RMSNorm eps 1e-6 | VERIFIED (config, index) |
 | schedule | `layer_types`: linear attention except layers 3, 7, 11, 15, 19, 23 (18 delta layers, 6 attention layers) | VERIFIED |
 | delta layers | 16 key heads and 16 value heads of 128; conv kernel 4 over 6144 channels | VERIFIED |
-| attention layers | 8 heads, 2 KV heads, head dim 256; `q_proj` is `(4096, 1024)` (query and gate); RoPE theta 1e7 on the first 64 channels | VERIFIED (config; shapes by arithmetic) |
+| attention layers | 8 heads, 2 KV heads, head dim 256; `q_proj` is `(4096, 1024)` (query and gate); RoPE theta 1e7 on the first 64 channels | VERIFIED (config; shapes read from the safetensors header 2026-11-21) |
 | tensor names | `model.language_model.layers.{i}.linear_attn.{A_log, dt_bias, conv1d.weight, in_proj_qkv.weight, in_proj_z.weight, in_proj_a.weight, in_proj_b.weight, norm.weight, out_proj.weight}`, `...self_attn.{q,k,v,o}_proj.weight`, `...{q,k}_norm.weight`, `...mlp.{gate,up,down}_proj.weight`, `...input_layernorm.weight`, `...post_attention_layernorm.weight`, `model.language_model.norm.weight`, `model.language_model.embed_tokens.weight` | VERIFIED (index) |
-| library support | `transformers` 5.23.0 (installed) has `models/qwen3_5` with `Qwen3_5ForCausalLM`, which ignores `mtp.*` and `model.visual.*`; `mlx-lm` 0.32.2 (installed) has `models/qwen3_5.py`. No newer version is needed | VERIFIED by reading the installed code; **not** by loading the model |
-| which tensors are F32, exact tensor shapes | not established | UNVERIFIED (needs the safetensors header) |
+| library support | `transformers` 5.23.0 (installed) has `models/qwen3_5` with `Qwen3_5ForCausalLM`, which ignores `mtp.*` and `model.visual.*`; `mlx-lm` 0.32.2 (installed) has `models/qwen3_5.py`. No newer version is needed | VERIFIED by reading the installed code and, 2026-11-21, by loading the model: `Qwen3_5ForCausalLM.from_pretrained` maps the `model.language_model.` prefix (no missing or unexpected keys; it needs `model.safetensors.index.json`), and `mlx_lm.utils.load_model` loads it |
+| which tensors are F32, exact tensor shapes | F32: `linear_attn.A_log` `(16,)` and `linear_attn.norm.weight` `(128,)` of the 18 delta layers (36 tensors, 2,592 numbers); everything else BF16, `dt_bias` included. Shapes: `in_proj_qkv` `(6144, 1024)`, `in_proj_z` `(2048, 1024)`, `in_proj_a`, `in_proj_b` `(16, 1024)`, `conv1d` `(6144, 1, 4)`, `out_proj` `(1024, 2048)`; `q_proj` `(4096, 1024)`, `k_proj`, `v_proj` `(512, 1024)`, `o_proj` `(1024, 2048)`, `q_norm`, `k_norm` `(256,)`; `gate_proj`, `up_proj` `(3584, 1024)`, `down_proj` `(1024, 3584)`; norms `(1024,)`; `embed_tokens` `(248320, 1024)`; no `lm_head` | VERIFIED (safetensors header of the downloaded file, 2026-11-21) |
 
 Why this model: it is the only checkpoint of 4B parameters or fewer found that ships
 gated delta layers, the 3-to-1 schedule, gated attention, partial RoPE, and an MTP
@@ -1123,6 +1123,21 @@ needed); a kit reference forward (`RealHybridLM`) written from the list in
 `transformers` runs multi-token calls through the chunked delta rule in float32, so
 agreement with a step-by-step solution is expected near 1e-4 but must be measured, not
 assumed (section 7, item 8 of the process document).
+
+Measured 2026-11-21, after the owner approved the download (asset `qwen3.5-0.8b`,
+1.76 GB with `tokenizer.json` and the index; details and what was not verified in
+`PROBLEM_AUTHORING.md` section 15, "The hybrid model"). A from-scratch forward pass in
+float32 against `transformers` 5.23.0 on eight prompts of at most 16 ids, in numpy,
+torch, JAX, and MLX: logits within 1.9e-4 (magnitude 12 to 31), the argmax equal at all
+86 positions, hidden states after layers 0, 1, 12, and 13 within 5.3e-6 (their typical
+entry is 0.02 to 0.04), one delta block run on the reference input within 3.0e-6.
+Tolerances to use: `rtol=1e-3, atol=1e-3` for the logits, and `rtol=1e-3, atol=1e-5` for
+a block's hidden state (an `atol` of 1e-3 is too loose at that scale). `mlx-lm` 0.32.2
+does **not** agree with `transformers` on this checkpoint: it adds the `1.0` of the norm
+weights in bfloat16 when it loads, and its logits differ by 0.70 as loaded and 0.17
+after `set_dtype(float32)` (1.7e-4 when the weights are cast before that step), so
+fixtures come from `transformers`. `transformers`' own chunked and cached paths differ
+by up to 1.5e-4.
 
 ### 9.4 Kit additions needed
 

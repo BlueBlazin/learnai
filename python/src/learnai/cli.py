@@ -217,11 +217,11 @@ def _assets_list(root: Path, *, as_json: bool) -> int:
 
 def _assets_fetch(root: Path, args: argparse.Namespace) -> int:
     merged, _ = assets.catalog(root)
-    # The house models can be fetched before any problem declares them (authors need
+    # The kit's models can be fetched before any problem declares them (authors need
     # the weights to write the problem). A catalog declaration wins when there is one.
-    from learnai.kit.realmodel import HOUSE_MODELS
+    from learnai.kit.realmodel import KIT_ASSETS
 
-    for name, spec in HOUSE_MODELS.items():
+    for name, spec in KIT_ASSETS.items():
         merged.setdefault(name, assets.CatalogAsset(spec))
     if args.all == bool(args.names):
         print("learnai assets fetch: give asset names or --all (not both)", file=sys.stderr)

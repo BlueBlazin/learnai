@@ -2345,7 +2345,10 @@ logits, state = hybrid_forward_ref(cfg, params, [token], state)    # continue
   head, not across the flat projection); `rms_norm` of queries and keys over
   `head_dim` with `q_norm` and `k_norm`; `ops.partial_rope` on both; `ops.attention`
   (grouped-query, scale `head_dim**-0.5`, causal); `o_proj(attended * sigmoid(gate))`.
-  `gated_attention_ref(cfg, attn, h, past)` is that mixer alone.
+  `gated_attention_ref(cfg, attn, h, past)` is that mixer alone, and
+  `hybrid_block_ref(cfg, params, layer, x, state=None) -> (x, entry)` is one whole
+  block with that layer's state entry (chaining the blocks from the embedding, then
+  the final norm and the head, is `hybrid_forward_ref`).
 - `state` is a list with one entry per layer: `(conv_state, S)` for a linear layer,
   `(k, v)` for a full layer, where `k` are the keys **after the norm and the rotation**
   and both are `(n_kv_heads, S, head_dim)` (batch axis first if the tokens have one).
@@ -2645,7 +2648,9 @@ The kit objects added for milestone 3 are documented where they are used:
 `CompileCounter`, `TransferSpy`, and `tritonshim` (section 18). Milestone 6 added the
 `ops` functions `softplus`, `l2norm`, `causal_conv1d`, `partial_rope`,
 `gated_delta_layer`, and `eb_accept`, and `GDNConfig`, `HybridConfig`, `CountingKV`,
-`TinyDSA`, the MTP parameters, and `BlockDenoiser`, all in this section.
+`TinyDSA`, the MTP parameters, and `BlockDenoiser`, all in this section, and for the
+real hybrid model `RealHybrid`, `RealHybridLM`, `checkpoint_layout`, `hybrid_block_ref`,
+and the asset `QWEN35` (section 15).
 
 **What milestone 5 left to problem-local test code**, after reading the specifications
 of its 90 problems for needs that two or more share: LRU and TTL bookkeeping (it is
@@ -3420,7 +3425,10 @@ uv run --project python --extra models learnai assets fetch granite-4.0-350m
 ```
 
 Use the house models unless a problem truly cannot. Every extra model is another
-download for the learner.
+download for the learner. One other model is in the kit, for the three problems of the
+`real-hybrid-model` module only: `learnai.kit.QWEN35` (`qwen3.5-0.8b`, 1.76 GB), described
+in [The hybrid model](#the-hybrid-model-qwen35-08b-verified-2026-11-21). `learnai assets
+fetch` knows it the same way (`learnai.kit.realmodel.KIT_ASSETS` holds all three).
 
 ### Declaring an asset
 
@@ -3793,6 +3801,273 @@ in float32. Scales and biases must be converted from BF16 before use.
 
 `python/tests/fixtures/m3/problems/real/asset-vocab` is a complete miniature of an
 asset problem (with a made-up asset that the tests install themselves).
+
+### The hybrid model: Qwen3.5 0.8B (verified 2026-11-21)
+
+`Qwen/Qwen3.5-0.8B` is the real model of `real-gdn-block` and `real-hybrid-logits`: the
+smallest shipped decoder that mixes Gated DeltaNet layers with attention layers. It is
+not a house model; no other problem should use it. Everything below was established on
+this machine from the downloaded files with `transformers` 5.23.0, `mlx-lm` 0.32.2,
+torch 2.15.0, JAX 0.12.0.1, and MLX 0.32.4; the unit tests are
+`python/tests/test_kit_realhybrid.py` (skipped without the asset) and the committed
+`transformers` reference is `python/tests/fixtures/realhybrid/` (`make.py`, five prompts
+of 5 to 16 ids, 57 kB).
+
+| | |
+|---|---|
+| asset name, kit object | `qwen3.5-0.8b`, `learnai.kit.QWEN35` |
+| repository, pinned revision | `Qwen/Qwen3.5-0.8B` at `2fc06364715b967f1860aea9cf38778875588b17` |
+| license | Apache-2.0: the repository's `LICENSE` file (11,544 bytes) was read; it is the Apache License 2.0 text with "Copyright 2026 Alibaba Cloud" |
+| files the kit fetches | `model.safetensors-00001-of-00001.safetensors` 1,746,942,600 bytes (SHA-256 `04b1c301...1fe4696`, verified by the fetch), `config.json` 2,907, `tokenizer.json` 12,807,982, `model.safetensors.index.json` 50,900; 1.76 GB |
+| files a problem declares | `config.json` and the weight file. The other two are for authors: `transformers` cannot find the weight file without the index, and `tokenizer.json` is for making prompt ids with `tokenizers`. A directory fetched with the kit's four files is `present` for a problem that declares two |
+| tensors | 488, 873,438,784 parameters: 320 under `model.language_model.` (752,393,024, the text decoder), 153 under `model.visual.`, 15 under `mtp.`. No `lm_head` tensor |
+| storage | BF16, except `linear_attn.A_log` `(16,)` and `linear_attn.norm.weight` `(128,)` of the 18 delta layers, which are F32 (36 tensors, 2,592 numbers). `dt_bias` is BF16 |
+| decoder | 24 layers, width 1024, SwiGLU 3584, vocabulary 248,320, RMSNorm eps 1e-6, tied head |
+| schedule | `layer_types` in `config.json` (under `text_config`): attention at 3, 7, 11, 15, 19, 23, linear attention elsewhere |
+
+The `[[assets]]` block for a problem:
+
+```toml
+[[assets]]
+name = "qwen3.5-0.8b"
+repo = "Qwen/Qwen3.5-0.8B"
+revision = "2fc06364715b967f1860aea9cf38778875588b17"
+files = ["config.json", "model.safetensors-00001-of-00001.safetensors"]
+size_mb = 1750
+```
+
+Tensor shapes, all read from the safetensors header (`{i}` is the layer; linear weights
+are `(out, in)`, there are no biases):
+
+| name under `model.language_model.` | shape |
+|---|---|
+| `embed_tokens.weight` | `(248320, 1024)` |
+| `norm.weight`, `layers.{i}.input_layernorm.weight`, `layers.{i}.post_attention_layernorm.weight` | `(1024,)` |
+| `layers.{i}.mlp.gate_proj.weight`, `up_proj.weight` / `down_proj.weight` | `(3584, 1024)` / `(1024, 3584)` |
+| `layers.{i}.linear_attn.in_proj_qkv.weight` | `(6144, 1024)` |
+| `layers.{i}.linear_attn.in_proj_z.weight` / `out_proj.weight` | `(2048, 1024)` / `(1024, 2048)` |
+| `layers.{i}.linear_attn.in_proj_a.weight`, `in_proj_b.weight` | `(16, 1024)` |
+| `layers.{i}.linear_attn.conv1d.weight` | `(6144, 1, 4)` |
+| `layers.{i}.linear_attn.A_log`, `dt_bias` | `(16,)` |
+| `layers.{i}.linear_attn.norm.weight` | `(128,)` |
+| `layers.{i}.self_attn.q_proj.weight` | `(4096, 1024)`: 8 heads of query 256 then gate 256 |
+| `layers.{i}.self_attn.k_proj.weight`, `v_proj.weight` / `o_proj.weight` | `(512, 1024)` / `(1024, 2048)` |
+| `layers.{i}.self_attn.q_norm.weight`, `k_norm.weight` | `(256,)` |
+
+**Where the checkpoint differs from the kit's synthetic hybrid layout**
+(`hybrid_params`). The forward pass is the one of
+[HybridConfig](#hybridconfig-hybrid_params-hybrid_forward_ref); these are all the
+differences:
+
+1. Names start with `model.language_model.`, not `model.`.
+2. The block norms, the final norm, `q_norm`, and `k_norm` store `gain - 1`: they
+   compute `rms_norm(x) * (1 + weight)`. The gated norm inside a delta layer
+   (`linear_attn.norm.weight`) is a plain gain, used as stored.
+3. BF16 storage (two kinds of tensor F32), used as float32.
+4. The sizes above; 16 key heads and 16 value heads, so no key head is repeated.
+5. 168 tensors that a text-only port never reads (`model.visual.*`, `mtp.*`).
+6. `rope_parameters` also carries `mrope_interleaved` and `mrope_section`; for text
+   they change nothing (every position axis is the token index), and the plain partial
+   RoPE of `ops.partial_rope` matches.
+
+#### RealHybrid and RealHybridLM
+
+```python
+from learnai.kit import RealHybrid
+
+model = RealHybrid(ctx.asset("qwen3.5-0.8b"))
+model.config              # HybridConfig from config.json's text_config (layer_types set)
+model.config_json         # the raw dict
+model.checkpoint          # SafetensorsFile over all 488 tensors
+model.weights()           # Weights: checkpoint names, stored values, float32, lazy
+model.text_names()        # the 320 names under model.language_model.
+lm = model.lm()           # RealHybridLM, numpy inside
+logits, state = lm(tokens)                 # tokens (T,) or (B, T); state as hybrid_forward_ref
+logits, state = lm(more, state)            # continue the sequence
+x = lm.embed(tokens)                       # (T, 1024)
+x, entry = lm.block(x, layer, entry=None)  # one block; entry is that layer's state
+lm.final_norm(x); lm.head(x)               # the last norm; norm and tied head
+lm.hidden_states(tokens)                   # 25 arrays: the embedding, then every block
+lm.params(layer)                           # that layer in the kit's layout (gains, short names)
+```
+
+- `RealHybrid` is a `RealModel` whose `config` is a `HybridConfig` (a frozen dataclass:
+  hand it to the solution as `cfg`) and whose weight file is the repository's
+  `model.safetensors-00001-of-00001.safetensors`. It has **no tokenizer**
+  (`model.tokenizer` raises): prompts are token ids in fixtures.
+- `model.weights()` is what a porting problem hands the learner: every tensor under its
+  checkpoint name with its stored value, so norm weights are still offsets and the
+  learner applies the `1 +`. It always decodes BF16 to float32; `weights.raw(name)` is
+  the stored uint16.
+- **Hold the framework weights once per framework.** `model.weights(ctx.fw)` decodes
+  and converts a tensor the first time it is read and keeps it in that `Weights`
+  object. Keep the object in a module-level dict keyed by `ctx.framework` and call
+  `ctx.solution.qwen_logits(weights, cfg, ctx.fw.tensor(ids))` directly, as
+  `real-model-logits` does; a fresh `model.weights()` through `ctx.call` in every case
+  decodes 3 GB again each time (about 0.8 s). Unlike the Granite `Weights`, a
+  framework-bound `Weights` of this model does not also keep a numpy copy
+  (`Weights(keep_numpy=False)`), which lowers the peak memory of a run from about 9 GB
+  to about 7 GB. `RealHybridLM` reads numpy through its own cache, one layer at a time,
+  so an oracle for one block costs one block.
+- The state is the kit's: `(conv_state, S)` with shapes `(3, 6144)` and
+  `(16, 128, 128)` as `(heads, value, key)` for a delta layer, `(k, v)` with
+  `(2, seen, 256)` for an attention layer, keys normalized and rotated.
+- **Synthetic cases** (`assets=[]`) use `checkpoint_layout(hybrid_params(cfg, seed))`:
+  the kit's small hybrid weights renamed and with offset norms, so a solution written
+  for the checkpoint runs on them unchanged. The oracles are `hybrid_forward_ref(cfg,
+  params, tokens)` and, for one block, `hybrid_block_ref(cfg, params, layer, x,
+  state=None)`, both on the *kit-layout* `params`. The synthetic weights are all
+  float32 and have twice as many value heads as key heads by default; pass
+  `HybridConfig(n_key_heads=4)` for the real model's one-to-one layout.
+
+#### How the shipped libraries load and run it
+
+- **`transformers`.** `Qwen3_5ForCausalLM.from_pretrained(directory,
+  dtype=torch.float32)` loads the vision-language checkpoint as text only: with
+  `output_loading_info=True` there are no missing, unexpected, or mismatched keys, so
+  the class maps the `model.language_model.` prefix, ignores `model.visual.*` and
+  `mtp.*`, and ties `lm_head` to the embedding. It needs
+  `model.safetensors.index.json` next to the weights (without it: "no file named
+  model.safetensors"). The same holds for a miniature directory written by the unit
+  tests, so this is tested without the asset too.
+- `output_hidden_states=True` gives 25 tensors: entry 0 is the embedding, entry `i + 1`
+  the output of layer `i`, and **the last entry (24) has the final norm applied**.
+  `lm.hidden_states` applies it to none; compare entry 24 with
+  `lm.final_norm(hidden[24])`.
+- Its cache keeps, for a delta layer, the convolution state as `(1, 6144, 4)`
+  (channels by the last **4** inputs; the kit keeps the last 3 as `(3, 6144)`) and the
+  memory as `(1, 16, 128, 128)` in `(heads, key, value)` order, the transpose of the
+  kit's. Converted, they agree with the kit's state to 5e-5 and 1.1e-5 after 12 tokens
+  in four calls; cached keys and values to 1.9e-5.
+- `transformers` runs a multi-token call through the chunked delta rule (the prompt is
+  padded to 64) and a one-token call with a cache through the recurrent rule. On the
+  real weights its own two paths differ by up to 1.5e-4 on the logits (seven prompts,
+  argmax equal everywhere). Fixtures here are **one call, no cache**.
+- It is slow: the optional `flash-linear-attention` and `causal_conv1d` packages are
+  not installed, so the reference PyTorch delta rule runs, and one forward pass of up
+  to 16 tokens takes 4.0 to 4.6 s (a cached one-token step is similar). Loading is
+  lazy (0.2 s); peak memory 6.1 GB.
+- **`mlx-lm` is not a float32 reference for this model.** `mlx_lm.utils.load_model`
+  loads it (the model class is `mlx_lm.models.qwen3_5`; `mlx_lm.load`, which also loads
+  a tokenizer, was not tried), but its `sanitize` adds the `1.0` to
+  the norm weights **in bfloat16**, which rounds every gain (the final norm's by up to
+  0.39 %). Against `transformers` in float32, on eight prompts and 86 positions:
+
+  | how `mlx-lm` was run | largest logit difference | argmax differs |
+  |---|---|---|
+  | as loaded (bfloat16 weights; the F32 tensors stay float32) | 0.70 | 5 of 86 |
+  | after `model.set_dtype(mx.float32)` | 0.17 | 1 of 86 |
+  | weights cast to float32 *before* `sanitize`, then `load_weights` | 1.7e-4 | 0 of 86 |
+
+  The `set_dtype` recipe that works for the 8-bit Granite model therefore does not work
+  here. Take fixtures from `transformers`.
+
+#### Measured agreement and the tolerances to use
+
+The from-scratch forward (kit `ops`, the raw checkpoint names, the `1 +` applied; the
+port is `qwen_forward` in the unit tests, 45 lines, one code path for the three
+frameworks) against `transformers` float32, one call per prompt, on eight prompts:
+five texts of 5 to 15 ids, a chat-formatted prompt with special tokens, 16 random ids,
+and a single token. Largest absolute differences:
+
+| quantity | numpy (`RealHybridLM`) | torch | JAX | MLX |
+|---|---|---|---|---|
+| hidden state after layers 0 and 1 (early delta blocks), full forward | 1.4e-6 | 1.4e-6 | 4.1e-6 | 3.4e-6 |
+| hidden state after layers 12 and 13 (middle delta blocks), full forward | 1.9e-6 | 5.3e-6 | 4.4e-6 | 4.7e-6 |
+| hidden state after any of layers 0 to 22 | | 2.0e-5 | 1.8e-5 | 2.0e-5 |
+| one delta block (0, 1, 12, 13) run on the fixture's input | 7.2e-7 | 8.3e-7 | 3.0e-6 | 2.7e-6 |
+| the same block in two calls through its state | | 8.3e-7 | 3.0e-6 | 2.7e-6 |
+| logits (magnitude 12 to 31) | 1.9e-4 | 1.5e-4 | 1.6e-4 | 1.5e-4 |
+| argmax tokens | 86 of 86 equal | 86 of 86 | 86 of 86 | 86 of 86 |
+
+Nothing here held for some prompts and not others: the worst logit difference per
+prompt ranged from 1e-5 (one token) to 1.9e-4 (14 tokens of prose), and the argmax
+agreed at every position, including positions whose top two logits are 0.002 apart.
+What does depend on the prompt is listed under "Things that depend on the input" below.
+
+- **`real-hybrid-logits`: `rtol=1e-3, atol=1e-3`**, and the argmax exactly. The
+  smallest `atol` that would have passed with `rtol=1e-3` was 1e-4, so there is a
+  factor of ten in hand, and the documented single mistakes are off by far more.
+  Compare argmax only at positions whose fixture margin (top logit minus second) is at
+  least 0.01, about fifty times the measured error; the kit fixture stores
+  `margin_<i>` per prompt, and three of the eight prompts above have a position below
+  that.
+- **`real-gdn-block`: `rtol=1e-3, atol=1e-5` on the hidden state.** The hidden states
+  of this model are small: after layers 1 and 13 the median absolute entry is 0.02 to
+  0.04 and the largest about 1 (entry 24, before the final norm, reaches 50). An
+  `atol` of 1e-3 would be 3 % of a typical entry and is too loose; `1e-5` is three
+  times the worst single-block error and a thousand times smaller than a typical
+  entry. With this tolerance, on every prompt and each of the four layers: norm
+  weights used without the `1 +` fail 99 % of the entries, the `1 +` also applied to
+  the gated norm fails 99 %, and a flipped convolution kernel fails 99 %.
+- If the block's returned state is compared, use `rtol=1e-3, atol=1e-4`: the memory
+  (largest entry 0.2 to 2.6) agreed to 4.3e-6 and the convolution state (largest entry
+  13 to 37) to 2.6e-5 across frameworks.
+
+**Things that depend on the input.**
+
+- **`A_log` and `dt_bias` do not affect the first token of a sequence.** The decay
+  multiplies a memory that is still zero, so a one-token prompt, or position 0 of any
+  prompt, is identical with and without them (measured: exactly 0), and from position
+  1 on the output of block 0 moves by 0.02 to 0.07 (one 12-token prompt). A real-weight case meant to catch
+  "`dt_bias` omitted" needs at least two tokens and must not compare position 0 only.
+- JAX compiles per prompt length. Real-weight cases of one length share a compilation;
+  each new length costs 2 to 3.5 s the first time on a machine without the compilation
+  cache.
+
+#### Time and memory (Apple M1 Max, 64 GB)
+
+| | numpy | torch | JAX | MLX |
+|---|---|---|---|---|
+| decode all 320 text tensors to float32 (and convert) | 0.5 s | 0.8 s | 0.9 s | 0.8 s |
+| convert only, numpy already decoded | | 0.30 s | 0.33 s | 0.35 s |
+| forward pass, 16 tokens, first call | 0.27 s | 0.31 s | 2.7 s | 0.18 s |
+| forward pass, 16 tokens, later calls | 0.22 s | 0.26 s | 0.44 s | 0.08 s |
+| one delta block, 16 tokens | | 4 ms | 8 ms (0.7 s first) | 1 ms |
+
+Through the harness, a throwaway problem with two synthetic and three real-weight
+cases (`learnai submit --reference`): torch 2.2 s in all (first real case 0.9 s, later
+ones 0.3 s), MLX 1.7 s (0.8 s, then 0.05 s), JAX 4.0 s with a warm compilation cache
+and 12.7 s cold (2.3 to 3.4 s per real case of a new length). Peak resident memory of
+the harness process: 6.9 GB (torch, MLX) and 7.9 GB (JAX); 3.0 GB of that is the
+float32 weights and 1.7 GB the mapped file. `time_limit_s = 20`, as in
+`real-model-logits`, has room for the first real case. A run of `real-gdn-block` reads
+only the layers it uses: about 90 MB of float32 and 0.05 s for a delta layer.
+
+Each framework's harness process holds its own 7 GB, so validating this problem with
+several jobs in parallel multiplies that.
+
+#### The asset-missing path
+
+Checked with the same throwaway problem (the asset declared with two files, synthetic
+cases marked `assets=[]`): with `LEARNAI_MODELS_DIR=/nonexistent` the two synthetic
+cases run and pass, the three real cases are skipped with "model asset `qwen3.5-0.8b`
+(Qwen/Qwen3.5-0.8B, about 1.75 GB) is not downloaded; fetch it with `learnai assets
+fetch qwen3.5-0.8b`", the reference ends "Not judged: model asset missing", and the
+starter ends "Runtime error". `learnai assets list` shows the asset as `missing` and,
+with the real directory, `present` at 1.76 GB.
+
+In the app, the Models screen lists what `learnai assets list --json` returns, which is
+what the catalog's problems declare; this asset appears there once `real-gdn-block` or
+`real-hybrid-logits` declares it, with no front-end change (the name is valid for the
+Rust core's `is_asset_name`, and the row is generic). Read in the code, not exercised
+in the app.
+
+#### Not verified
+
+- The vision tower and the MTP module: their tensors were counted, never loaded or run.
+- The tokenizer: `tokenizer.json` was used with the `tokenizers` library to make
+  prompt ids and with nothing else; the kit's `ByteLevelBPE` was not tried on it, and
+  the chat template was not downloaded.
+- Any half-precision forward of the kit's port (bfloat16 or float16). The only 16-bit
+  numbers are `mlx-lm`'s above.
+- Prompts longer than 16 tokens on the real weights, in particular past 64, where
+  `transformers` starts a second chunk (tiny random models were checked to 150 tokens
+  in section 7), and a batch of more than one prompt against `transformers`.
+- `transformers` with the optional fast kernels installed: the fixtures come from its
+  reference PyTorch path.
+- Generation: only logits and states were compared, not a decode loop.
+- `Qwen/Qwen3.5-0.8B-Base`, `Qwen/Qwen3.5-2B`, or any other revision.
 
 ## 16. Checklist before you open a pull request
 

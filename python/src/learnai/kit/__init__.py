@@ -12,7 +12,8 @@ Kit objects are small and meant to be read. Anything with instrumentation expose
     weights      DecoderConfig, decoder_params, layer_params, decoder_forward_ref,
                  decoder_block_ref, decoder_hidden_ref,
                  GDNConfig, gdn_params, gdn_gates_ref, gdn_step_ref, gdn_layer_ref,
-                 HybridConfig, hybrid_params, hybrid_forward_ref, gated_attention_ref,
+                 HybridConfig, hybrid_params, hybrid_forward_ref, hybrid_block_ref,
+                 gated_attention_ref,
                  mtp_params, mtp_layer_params, mtp_draft_ref
     tensor ops   ops (softmax, rms_norm, rope, attention, swiglu, sampler filters,
                  softplus, l2norm, causal_conv1d, partial_rope, gated_delta_layer,
@@ -25,7 +26,8 @@ Kit objects are small and meant to be read. Anything with instrumentation expose
     devices      SimDevices, OutOfDeviceMemory
     retrieval    vectors (clustered, queries_near, exact_topk, recall, CountingDistance)
     real models  RealModel, RealLM, RealConfig, Weights, SafetensorsFile, ByteLevelBPE,
-                 dequantize, unpack_codes, bf16_to_f32, SMALL, LARGE_8BIT
+                 dequantize, unpack_codes, bf16_to_f32, SMALL, LARGE_8BIT,
+                 RealHybrid, RealHybridLM, checkpoint_layout, QWEN35
     files        CountingFile
     numbers      logit_kl
     MLX          MLXTinyLM, EvalSpy, TraceCounter, mlx_memory, pending_ops, watch_load,
@@ -80,6 +82,7 @@ from learnai.kit.grammar import Chars, Grammar, Ref
 from learnai.kit.hybrid import (
     HybridConfig,
     gated_attention_ref,
+    hybrid_block_ref,
     hybrid_forward_ref,
     hybrid_params,
 )
@@ -96,8 +99,10 @@ from learnai.kit.mlxtools import (
 )
 from learnai.kit.moe import CountingExperts, TinyMoE, moe_dense_ref, moe_route_ref
 from learnai.kit.mtp import mtp_draft_ref, mtp_layer_params, mtp_params
+from learnai.kit.realhybrid import RealHybrid, RealHybridLM, checkpoint_layout
 from learnai.kit.realmodel import (
     LARGE_8BIT,
+    QWEN35,
     SMALL,
     RealConfig,
     RealLM,
@@ -138,6 +143,7 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "DEAD",
     "LARGE_8BIT",
+    "QWEN35",
     "SMALL",
     "STEP_DONE_PRIORITY",
     "BlockDenoiser",
@@ -176,6 +182,8 @@ __all__ = [
     "ProtocolViolation",
     "RealConfig",
     "RealDevice",
+    "RealHybrid",
+    "RealHybridLM",
     "RealLM",
     "RealModel",
     "RecurrentLM",
@@ -207,6 +215,7 @@ __all__ = [
     "Weights",
     "assemble",
     "bf16_to_f32",
+    "checkpoint_layout",
     "decoder_block_ref",
     "decoder_forward_ref",
     "decoder_hidden_ref",
@@ -218,6 +227,7 @@ __all__ = [
     "gdn_layer_ref",
     "gdn_params",
     "gdn_step_ref",
+    "hybrid_block_ref",
     "hybrid_forward_ref",
     "hybrid_params",
     "index_types",
