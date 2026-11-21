@@ -15,11 +15,17 @@ key that stands for two prefixes is caught.
 with its own clock and store, and compares per request: what `serve` returned, the
 store operations it caused, and when it finished. The cost checks come last: bytes
 moved between tiers and total serving time, against the specified policy's.
+
+The solution's store is `Store`, a `SimTiers` behind the kit's `Guarded`: it may call
+`compute`, `load`, `demote`, and `drop` and read `capacity`, `costs`, and `block_bytes`
+(the two dicts are copies). The log, the violations, the totals, the clock, the
+private index, and the test-only methods are refused.
 """
 
 import asyncio
 
 from learnai.judge import CheckFailure, case, check
+from learnai.kit import Guarded, check_guard, guard
 
 TIERS = ("gpu", "host", "disk")
 BLOCK_BYTES = 1 << 20
@@ -54,8 +60,8 @@ class TierError(RuntimeError):
 class SimTiers:
     def __init__(self, sim, capacity, costs, block_size, names):
         self.sim = sim
-        self.capacity = dict(capacity)
-        self.costs = dict(costs)
+        self._capacity = dict(capacity)
+        self._costs = dict(costs)
         self.block_bytes = BLOCK_BYTES
         self._block_size = block_size
         self._names = names
@@ -70,6 +76,14 @@ class SimTiers:
         self.busy_s = 0.0
 
     # -- what a solution may call ---------------------------------------------------
+
+    @property
+    def capacity(self):
+        return dict(self._capacity)
+
+    @property
+    def costs(self):
+        return dict(self._costs)
 
     async def compute(self, key, parent, tokens):
         self._idle("compute")
@@ -204,6 +218,15 @@ class SimTiers:
             self._busy = False
 
 
+class Store(Guarded, SimTiers):
+    """The store the solution gets: the four operations and the three settings."""
+
+    label = "store"
+    allowed = frozenset(
+        {"capacity", "costs", "block_bytes", "compute", "load", "demote", "drop", "__class__"}
+    )
+
+
 # -- prompts made of named blocks -----------------------------------------------------
 
 
@@ -240,10 +263,10 @@ def show(operation):
     return f"compute {operation[1]}"
 
 
-def simulate(ctx, cls, script, capacity, costs, size):
+def simulate(ctx, cls, script, capacity, costs, size, tiers=SimTiers):
     """Run the script on a fresh clock. Returns (store, per-step records, error)."""
     sim = ctx.simclock()
-    store = SimTiers(sim, capacity, costs, size, namer(size))
+    store = tiers(sim, capacity, costs, size, namer(size))
     records = []
     failure = []
 
@@ -287,7 +310,11 @@ def play(ctx, script, *, capacity, costs=COSTS, size=2, expect=None):
         raise RuntimeError(f"authoring error: the oracle did not finish the script ({error})")
     if expect is not None and [r["result"] for r in want] != expect:
         raise RuntimeError(f"authoring error: the oracle returns {[r['result'] for r in want]}")
-    got_store, got, error = simulate(ctx, ctx.solution.TieredKV, script, capacity, costs, size)
+    guard(ctx)
+    got_store, got, error = simulate(
+        ctx, ctx.solution.TieredKV, script, capacity, costs, size, tiers=Store
+    )
+    check_guard()
 
     def history(upto):
         name = namer(size)

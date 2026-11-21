@@ -11,14 +11,30 @@ the layers from `share_from` up hold none), and the cost of that call:
 
 The tokens that are fed come from the test (the greedy tokens of the sharing model),
 so a solution's wrong logits cannot change what it is asked next.
+
+The solution gets the model as `LM`, a `LayeredLM` behind the kit's `Guarded`: it may use
+`embed`, `layers`, `norm`, `head`, `empty_cache`, a whole forward call, and the sizes.
+The counters, the weights, the seed, the private per-layer methods, and
+`with_framework` are refused, so the counts cannot be written and no layer can run
+where the counts do not see it.
 """
 
 from learnai.judge import case, check
-from learnai.kit import LayerCache, LayeredLM
+from learnai.kit import Guarded, LayerCache, LayeredLM, check_guard, guard
 
 PROMPT = [0, 17, 42, 5]
 EXAMPLE_FIRST = 48  # the sharing model's greedy token after PROMPT (seed 3, share_from 2)
 TOL = {"rtol": 1e-3, "atol": 1e-4}  # cached and uncached passes agree to about 1e-5
+
+
+class LM(Guarded, LayeredLM):
+    """The model the solution gets: the documented pieces and the sizes, nothing else."""
+
+    label = "lm"
+    refused = Guarded.refused | {"seed"}
+
+    def __repr__(self):  # LayeredLM's shows the seed, which would rebuild the model
+        return f"LayeredLM(n_layers={self.n_layers}, vocab_size={self.vocab_size})"
 
 
 def kv_bytes(cache):
@@ -76,7 +92,7 @@ def check_call(ctx, lm, name, result, want, n_tokens, share_from, limit_tokens):
 def run(ctx, seed, prompt, share_from, steps, n_layers=4, expected_first=None):
     """Prefill, then `steps` decode steps. Returns the final cache."""
     oracle = LayeredLM(ctx.oracle_fw, seed=seed, n_layers=n_layers)
-    lm = LayeredLM(ctx.fw, seed=seed, n_layers=n_layers)
+    lm = LM(ctx.fw, seed=seed, n_layers=n_layers)
 
     def definition(seq):
         return ctx.oracle_fw.numpy(oracle(seq, share_from=share_from)[0])[-1]
@@ -85,7 +101,9 @@ def run(ctx, seed, prompt, share_from, steps, n_layers=4, expected_first=None):
     want = definition(seq)
     if expected_first is not None and int(want.argmax()) != expected_first:
         raise RuntimeError(f"authoring error: the first token is {int(want.argmax())}")
+    guard(ctx)
     result = ctx.call("prefill_shared", lm, list(prompt), share_from)
+    check_guard()
     limit = share_from * len(prompt) + (n_layers - share_from)
     cache = check_call(ctx, lm, "prefill_shared", result, want, len(seq), share_from, limit)
     for _ in range(steps):
@@ -94,7 +112,9 @@ def run(ctx, seed, prompt, share_from, steps, n_layers=4, expected_first=None):
         want = definition(seq)
         lm.counters.reset()
         before = cache.lengths
+        guard(ctx)
         result = ctx.call("decode_step", lm, token, cache, share_from)
+        check_guard()
         check.that(cache.lengths == before, "decode_step modified the cache it was given")
         cache = check_call(ctx, lm, "decode_step", result, want, len(seq), share_from, n_layers)
     return lm, cache

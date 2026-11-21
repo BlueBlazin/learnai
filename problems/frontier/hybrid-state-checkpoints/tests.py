@@ -14,12 +14,17 @@ request is judged on its own, in this order:
 
 `plan` below is the specification of the store, written independently of the
 reference solution.
+
+The solution gets the model as `LM`, a `RecurrentLM` behind the kit's `Guarded`: it may
+call it, use `initial_state`, and read the sizes. The counters, the weights, the seed,
+and `with_framework` are refused, so the counts cannot be written and no token can be
+read by a model that does not count it.
 """
 
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import RecurrentLM, RecurrentState
+from learnai.kit import Guarded, RecurrentLM, RecurrentState, check_guard, guard
 
 FN = "generate_with_checkpoints"
 
@@ -28,6 +33,16 @@ PROMPT_A = [0, 17, 42, 5, 9, 33, 12, 60, 21, 7]
 PROMPT_B = [0, 17, 42, 5, 9, 33, 50, 8, 3]
 TOKENS_A = [26, 6, 7, 26]
 TOKENS_B = [11, 32, 38]
+
+
+class LM(Guarded, RecurrentLM):
+    """The model the solution gets: the call, `initial_state`, and the sizes."""
+
+    label = "lm"
+    refused = Guarded.refused | {"seed"}
+
+    def __repr__(self):  # RecurrentLM's shows the seed, which would rebuild the model
+        return f"RecurrentLM(vocab_size={self.vocab_size}, max_context={self.max_context})"
 
 
 def uncached_greedy(ctx, seed, prompt, max_new_tokens):
@@ -82,7 +97,7 @@ class Session:
         self.seed = seed
         self.interval = interval
         self.max_checkpoints = max_checkpoints
-        self.lm = RecurrentLM(ctx.fw, seed=seed)
+        self.lm = LM(ctx.fw, seed=seed)
         self.probe_lm = RecurrentLM(ctx.oracle_fw, seed=seed)
         self.store = dict(store or {})
 
@@ -104,6 +119,7 @@ class Session:
         )
 
         self.lm.counters.reset()
+        guard(ctx)
         result = ctx.call(
             FN,
             self.lm,
@@ -113,6 +129,7 @@ class Session:
             self.interval,
             self.max_checkpoints,
         )
+        check_guard()
         check.that(
             isinstance(result, tuple) and len(result) == 2,
             f"{FN}: must return a tuple (tokens, store)",

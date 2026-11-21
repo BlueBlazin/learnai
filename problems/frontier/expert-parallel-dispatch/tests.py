@@ -15,20 +15,45 @@ evaluate the layer in one place and send tensors of the right sizes. The local
 subclass `SpyDevices` therefore records the payload of every `send`, and step 4
 compares each message with the rows, or the weighted partial results, that the
 statement says cross between that pair of devices. Nothing else is added to the kit.
+
+Both objects are behind the kit's `Guarded`. Of `experts` a solution may call the
+experts and read their sizes; of `devs` it may use the operations and `n_devices`. The
+counters, the call log, the message log, the payloads, `with_framework`, and the
+experts' weights, seed, and `reference` are refused, so neither ledger can be written
+and the experts cannot be evaluated anywhere the counts do not see.
 """
 
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import CountingExperts, SimDevices, TinyMoE, moe_dense_ref, moe_route_ref
+from learnai.kit import (
+    CountingExperts,
+    Guarded,
+    SimDevices,
+    TinyMoE,
+    check_guard,
+    guard,
+    moe_dense_ref,
+    moe_route_ref,
+)
 
 FN = "ep_forward"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints
 MARGIN = 1e-3
 
 
-class SpyDevices(SimDevices):
-    """SimDevices that remembers what every message carried."""
+class Experts(Guarded, CountingExperts):
+    """The experts the solution gets: `experts(e, rows)` and the sizes, nothing else."""
+
+    label = "experts"
+    refused = Guarded.refused | {"seed", "weights", "calls", "reference"}
+
+
+class SpyDevices(Guarded, SimDevices):
+    """SimDevices that remembers what every message carried, and keeps its ledger."""
+
+    label = "devs"
+    refused = Guarded.refused | {"messages", "payloads"}
 
     def __init__(self, fw, n_devices):
         super().__init__(fw, n_devices=n_devices)
@@ -95,7 +120,9 @@ def run(ctx, x, home, w_router, experts, placement, k, n_devices, ties=False):
     setup = f"home = {home}\nplacement = {placement}\nk = {k}, {n_devices} devices\n"
 
     devs = SpyDevices(ctx.fw, n_devices)
-    y = ctx.call(FN, x, home, w_router, experts, placement, devs, k)
+    guard(ctx)  # the guarded experts share the counters and the log of `experts`
+    y = ctx.call(FN, x, home, w_router, Experts.of(experts), placement, devs, k)
+    check_guard()
 
     # 1. The output.
     check.allclose(y, moe_dense_ref(x, w_router, experts, k), **TOL, label=FN, dtype=True)
