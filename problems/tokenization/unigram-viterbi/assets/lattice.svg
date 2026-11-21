@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 166">
+  <title>The lattice of pieces over the character positions of hugs</title>
+  <desc>Circles are the character positions 0 to 4 of hugs, and each arrow is a piece with its score. The heavier arrows hu and gs are the best path.</desc>
+  <!-- Geometry: position p is the circle at x = 40 + 100 p, y = 72, radius 10. One-character pieces are straight; longer pieces are arcs. -->
+
+  <!-- Pieces that are not on the best path -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <path d="M50 72 L125 72"/>
+    <path d="M150 72 L225 72"/>
+    <path d="M250 72 L325 72"/>
+    <path d="M350 72 L425 72"/>
+    <path d="M148.2 77.7 Q240 142 327.7 80.6"/>
+    <path d="M40 82 C40 162 340 162 340 87"/>
+  </g>
+  <g>
+    <polygon points="130,72 123.5,75.3 123.5,68.7"/>
+    <polygon points="230,72 223.5,75.3 223.5,68.7"/>
+    <polygon points="330,72 323.5,75.3 323.5,68.7"/>
+    <polygon points="430,72 423.5,75.3 423.5,68.7"/>
+    <polygon points="331.8,77.7 328.4,84.2 324.6,78.8"/>
+    <polygon points="340,82 343.3,88.5 336.7,88.5"/>
+  </g>
+
+  <!-- The best path: hu, gs -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <path d="M47.4 65.3 Q140 -18 228.9 62"/>
+    <path d="M247.4 65.3 Q340 -18 428.9 62"/>
+  </g>
+  <g style="fill: var(--figure-accent)">
+    <polygon points="232.6,65.3 225.5,63.4 229.9,58.5"/>
+    <polygon points="432.6,65.3 425.5,63.4 429.9,58.5"/>
+  </g>
+
+  <!-- Character positions -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <circle cx="40" cy="72" r="10"/>
+    <circle cx="140" cy="72" r="10"/>
+    <circle cx="240" cy="72" r="10"/>
+    <circle cx="340" cy="72" r="10"/>
+    <circle cx="440" cy="72" r="10"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="40" y="76.5">0</text>
+    <text x="140" y="76.5">1</text>
+    <text x="240" y="76.5">2</text>
+    <text x="340" y="76.5">3</text>
+    <text x="440" y="76.5">4</text>
+  </g>
+
+  <!-- Each piece and its score -->
+  <g font-size="13" text-anchor="middle">
+    <text x="90" y="65.5"><tspan style="font-family: var(--figure-mono)">h</tspan> −3</text>
+    <text x="190" y="65.5"><tspan style="font-family: var(--figure-mono)">u</tspan> −3</text>
+    <text x="290" y="65.5"><tspan style="font-family: var(--figure-mono)">g</tspan> −3</text>
+    <text x="390" y="65.5"><tspan style="font-family: var(--figure-mono)">s</tspan> −2</text>
+    <text x="140" y="20.5"><tspan style="font-family: var(--figure-mono)">hu</tspan> −4</text>
+    <text x="340" y="20.5"><tspan style="font-family: var(--figure-mono)">gs</tspan> −4.5</text>
+    <text x="240" y="122.5"><tspan style="font-family: var(--figure-mono)">ug</tspan> −3.5</text>
+    <text x="190" y="157.5"><tspan style="font-family: var(--figure-mono)">hug</tspan> −9</text>
+  </g>
+
+  <!-- The key -->
+  <line x1="362" y1="124" x2="382" y2="124" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+  <text x="388" y="128.5" font-size="13">best path</text>
+  <text x="362" y="146.5" font-size="13">−4 − 4.5 = −8.5</text>
+</svg>

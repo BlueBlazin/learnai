@@ -4,6 +4,8 @@ the text that can be sent now. Tokens are byte strings, and a character's bytes 
 spread over several tokens, so the function must hold back an unfinished character,
 and nothing else, without ever decoding the whole sequence again.
 
+![This problem is the Detokenize step, turning one token at a time into the text that can be sent.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -98,6 +100,8 @@ With `vocab = ToyVocab(size=64, seed=0)`, take the tokens whose bytes are `{"`, 
 | 7 | (special) | `""` | |
 
 `detok_flush` returns `""`, and the pieces concatenate to `{"é": 😀"}`.
+
+![Steps 3 to 6 of the table: the four bytes of `😀` arrive in two tokens, and the first two wait for the rest.](assets/stream-steps.svg)
 
 A stream that stops in the middle of a character: the tokens `5`, a space, and the
 first two bytes of `€` (`E2 82`) return `"5"`, `" "`, `""`, and `detok_flush` returns

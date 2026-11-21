@@ -5,6 +5,8 @@ optimum over all ways of cutting the text, found by dynamic programming. The dif
 is in the corners that make the optimum unique: characters the vocabulary cannot spell,
 and segmentations that score the same.
 
+![This problem is the Encode step, choosing the split of the text with the highest total score.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -70,6 +72,8 @@ unigram_encode("hugs", pieces)  # ["hu", "gs"]
 unigram_encode("hug", pieces)  # ["h", "ug"]
 unigram_encode("hugz", pieces)  # ["h", "ug", "z"]
 ```
+
+![Every piece that matches `hugs` is an arrow between two character positions, labeled with its score. A segmentation is a path from 0 to 4.](assets/lattice.svg)
 
 The six segmentations of `hugs`:
 

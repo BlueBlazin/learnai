@@ -4,6 +4,8 @@ into token ids. The difficulty is that the result is defined by the *order* in w
 merges are applied, so a tokenizer that is nearly right produces ids the model was
 never trained on.
 
+![This problem is the Encode step, where ranked merges turn the bytes of the text into token ids.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -75,6 +77,8 @@ Step by step, writing merged tokens in brackets:
 | `[aa] a b d [aa] a b a c` | `(a, b)` rank 1 | rank 1 |
 | `[aa] [ab] d [aa] [ab] a c` | `([aa], [ab])` rank 2 | rank 2 |
 | `[aaab] d [aaab] a c` | none | stop |
+
+![The eleven bytes of the example after each applied merge, with the id of every token under it.](assets/merge-steps.svg)
 
 In the first step each run `a a a` becomes `[aa] a`, not `a [aa]`: the scan goes from
 left to right. Note also that `(a, b)` was applicable from the start and had to wait

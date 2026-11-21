@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 78">
+  <title>Byte-level BPE on aaabdaaabac, one frame per applied merge</title>
+  <desc>Four frames. Each shows the token sequence as cells over the eleven byte positions, with the id of every token under its cell.</desc>
+  <!-- Geometry: byte position j is at x = 58 + 37 j; a token of n bytes is 37 n - 2 wide. Tokens are the row y = 28..54, ids are set at y = 70.5. -->
+  <!-- Frames are the groups step-1 to step-4; the app shows one at a time. Their desc is the note of the step. -->
+
+  <!-- In every frame: the row names -->
+  <g font-size="13" text-anchor="end" style="fill: var(--figure-muted)">
+    <text x="50" y="45.5">token</text>
+    <text x="50" y="70.5">id</text>
+  </g>
+
+  <!-- UTF-8 bytes -->
+  <g id="step-1">
+    <desc>The text is eleven UTF-8 bytes, one id per byte.</desc>
+    <text x="58" y="16.5" font-size="13">UTF-8 bytes</text>
+    <!-- tokens carried over -->
+    <g fill="none" stroke="currentColor" stroke-width="1">
+      <rect x="58" y="28" width="35" height="26" rx="3"/>
+      <rect x="95" y="28" width="35" height="26" rx="3"/>
+      <rect x="132" y="28" width="35" height="26" rx="3"/>
+      <rect x="169" y="28" width="35" height="26" rx="3"/>
+      <rect x="206" y="28" width="35" height="26" rx="3"/>
+      <rect x="243" y="28" width="35" height="26" rx="3"/>
+      <rect x="280" y="28" width="35" height="26" rx="3"/>
+      <rect x="317" y="28" width="35" height="26" rx="3"/>
+      <rect x="354" y="28" width="35" height="26" rx="3"/>
+      <rect x="391" y="28" width="35" height="26" rx="3"/>
+      <rect x="428" y="28" width="35" height="26" rx="3"/>
+    </g>
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+      <text x="75.5" y="45.5">a</text>
+      <text x="112.5" y="45.5">a</text>
+      <text x="149.5" y="45.5">a</text>
+      <text x="186.5" y="45.5">b</text>
+      <text x="223.5" y="45.5">d</text>
+      <text x="260.5" y="45.5">a</text>
+      <text x="297.5" y="45.5">a</text>
+      <text x="334.5" y="45.5">a</text>
+      <text x="371.5" y="45.5">b</text>
+      <text x="408.5" y="45.5">a</text>
+      <text x="445.5" y="45.5">c</text>
+    </g>
+    <g font-size="13" text-anchor="middle">
+      <text x="75.5" y="70.5">97</text>
+      <text x="112.5" y="70.5">97</text>
+      <text x="149.5" y="70.5">97</text>
+      <text x="186.5" y="70.5">98</text>
+      <text x="223.5" y="70.5">100</text>
+      <text x="260.5" y="70.5">97</text>
+      <text x="297.5" y="70.5">97</text>
+      <text x="334.5" y="70.5">97</text>
+      <text x="371.5" y="70.5">98</text>
+      <text x="408.5" y="70.5">97</text>
+      <text x="445.5" y="70.5">99</text>
+    </g>
+  </g>
+
+  <!-- rank 0: (a, a) → 256 -->
+  <g id="step-2">
+    <desc>Rank 0 merges (a, a) from left to right, so each run a a a becomes aa a.</desc>
+    <text x="58" y="16.5" font-size="13">rank 0: <tspan style="font-family: var(--figure-mono)">(a, a) → 256</tspan></text>
+    <!-- tokens carried over -->
+    <g fill="none" stroke="currentColor" stroke-width="1">
+      <rect x="132" y="28" width="35" height="26" rx="3"/>
+      <rect x="169" y="28" width="35" height="26" rx="3"/>
+      <rect x="206" y="28" width="35" height="26" rx="3"/>
+      <rect x="317" y="28" width="35" height="26" rx="3"/>
+      <rect x="354" y="28" width="35" height="26" rx="3"/>
+      <rect x="391" y="28" width="35" height="26" rx="3"/>
+      <rect x="428" y="28" width="35" height="26" rx="3"/>
+    </g>
+    <!-- tokens made by this merge -->
+    <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+      <rect x="58" y="28" width="72" height="26" rx="3"/>
+      <rect x="243" y="28" width="72" height="26" rx="3"/>
+    </g>
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+      <text x="94" y="45.5">aa</text>
+      <text x="149.5" y="45.5">a</text>
+      <text x="186.5" y="45.5">b</text>
+      <text x="223.5" y="45.5">d</text>
+      <text x="279" y="45.5">aa</text>
+      <text x="334.5" y="45.5">a</text>
+      <text x="371.5" y="45.5">b</text>
+      <text x="408.5" y="45.5">a</text>
+      <text x="445.5" y="45.5">c</text>
+    </g>
+    <g font-size="13" text-anchor="middle">
+      <text x="94" y="70.5">256</text>
+      <text x="149.5" y="70.5">97</text>
+      <text x="186.5" y="70.5">98</text>
+      <text x="223.5" y="70.5">100</text>
+      <text x="279" y="70.5">256</text>
+      <text x="334.5" y="70.5">97</text>
+      <text x="371.5" y="70.5">98</text>
+      <text x="408.5" y="70.5">97</text>
+      <text x="445.5" y="70.5">99</text>
+    </g>
+  </g>
+
+  <!-- rank 1: (a, b) → 257 -->
+  <g id="step-3">
+    <desc>Rank 1 merges (a, b), a pair that was present from the start and had to wait.</desc>
+    <text x="58" y="16.5" font-size="13">rank 1: <tspan style="font-family: var(--figure-mono)">(a, b) → 257</tspan></text>
+    <!-- tokens carried over -->
+    <g fill="none" stroke="currentColor" stroke-width="1">
+      <rect x="58" y="28" width="72" height="26" rx="3"/>
+      <rect x="206" y="28" width="35" height="26" rx="3"/>
+      <rect x="243" y="28" width="72" height="26" rx="3"/>
+      <rect x="391" y="28" width="35" height="26" rx="3"/>
+      <rect x="428" y="28" width="35" height="26" rx="3"/>
+    </g>
+    <!-- tokens made by this merge -->
+    <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+      <rect x="132" y="28" width="72" height="26" rx="3"/>
+      <rect x="317" y="28" width="72" height="26" rx="3"/>
+    </g>
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+      <text x="94" y="45.5">aa</text>
+      <text x="168" y="45.5">ab</text>
+      <text x="223.5" y="45.5">d</text>
+      <text x="279" y="45.5">aa</text>
+      <text x="353" y="45.5">ab</text>
+      <text x="408.5" y="45.5">a</text>
+      <text x="445.5" y="45.5">c</text>
+    </g>
+    <g font-size="13" text-anchor="middle">
+      <text x="94" y="70.5">256</text>
+      <text x="168" y="70.5">257</text>
+      <text x="223.5" y="70.5">100</text>
+      <text x="279" y="70.5">256</text>
+      <text x="353" y="70.5">257</text>
+      <text x="408.5" y="70.5">97</text>
+      <text x="445.5" y="70.5">99</text>
+    </g>
+  </g>
+
+  <!-- rank 2: (256, 257) → 258 -->
+  <g id="step-4">
+    <desc>Rank 2 merges tokens 256 and 257 into 258, and no pair of the table is left.</desc>
+    <text x="58" y="16.5" font-size="13">rank 2: <tspan style="font-family: var(--figure-mono)">(256, 257) → 258</tspan></text>
+    <!-- tokens carried over -->
+    <g fill="none" stroke="currentColor" stroke-width="1">
+      <rect x="206" y="28" width="35" height="26" rx="3"/>
+      <rect x="391" y="28" width="35" height="26" rx="3"/>
+      <rect x="428" y="28" width="35" height="26" rx="3"/>
+    </g>
+    <!-- tokens made by this merge -->
+    <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+      <rect x="58" y="28" width="146" height="26" rx="3"/>
+      <rect x="243" y="28" width="146" height="26" rx="3"/>
+    </g>
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+      <text x="131" y="45.5">aaab</text>
+      <text x="223.5" y="45.5">d</text>
+      <text x="316" y="45.5">aaab</text>
+      <text x="408.5" y="45.5">a</text>
+      <text x="445.5" y="45.5">c</text>
+    </g>
+    <g font-size="13" text-anchor="middle">
+      <text x="131" y="70.5">258</text>
+      <text x="223.5" y="70.5">100</text>
+      <text x="316" y="70.5">258</text>
+      <text x="408.5" y="70.5">97</text>
+      <text x="445.5" y="70.5">99</text>
+    </g>
+  </g>
+</svg>

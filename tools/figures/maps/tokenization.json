@@ -1,0 +1,92 @@
+{
+  "track": "tokenization",
+  "file": "map.svg",
+  "title": "Where this problem sits between chat messages and streamed text",
+  "desc": "A chat request drawn bottom to top, from the messages through the tokenizer and the model to text.",
+  "width": 480,
+  "height": 258,
+  "blocks": [
+    {"part": "detok", "label": "Detokenize", "x": 104, "y": 32, "width": 132, "height": 20},
+    {"part": "model", "label": "Model", "x": 104, "y": 62, "width": 132, "height": 20},
+    {"part": "pad", "label": "Pad batch", "x": 104, "y": 92, "width": 132, "height": 20},
+    {"part": "encode", "label": "Encode", "x": 104, "y": 122, "width": 132, "height": 20},
+    {"part": "split", "label": "Split specials", "x": 104, "y": 152, "width": 132, "height": 20},
+    {"part": "template", "label": "Chat template", "x": 104, "y": 182, "width": 132, "height": 20},
+    {"part": "trim", "label": "Trim to context", "x": 104, "y": 212, "width": 132, "height": 20}
+  ],
+  "wires": [
+    {"points": [[170, 242], [170, 232]], "arrow": true},
+    {"points": [[170, 212], [170, 202]], "arrow": true},
+    {"points": [[170, 182], [170, 172]], "arrow": true},
+    {"points": [[170, 152], [170, 142]], "arrow": true},
+    {"points": [[170, 122], [170, 112]], "arrow": true},
+    {"points": [[170, 92], [170, 82]], "arrow": true},
+    {"points": [[170, 62], [170, 52]], "arrow": true},
+    {"points": [[170, 32], [170, 22]], "arrow": true}
+  ],
+  "labels": [
+    {"text": "text", "at": [170, 10]},
+    {"text": "messages", "at": [170, 250]}
+  ],
+  "problems": {
+    "bpe-encode": {
+      "parts": ["encode"],
+      "marker": {"from": [242, 132], "length": 18},
+      "desc": "The Encode block is at full strength."
+    },
+    "utf8-boundaries": {
+      "parts": ["detok"],
+      "marker": {"from": [242, 42], "length": 18},
+      "desc": "The Detokenize block is at full strength."
+    },
+    "pad-batch-left": {
+      "parts": ["pad"],
+      "marker": {"from": [242, 102], "length": 18},
+      "desc": "The Pad batch block is at full strength."
+    },
+    "special-tokens-split": {
+      "parts": ["split"],
+      "marker": {"from": [242, 162], "length": 18},
+      "desc": "The Split specials block is at full strength."
+    },
+    "streaming-detokenizer": {
+      "parts": ["detok"],
+      "marker": {"from": [242, 42], "length": 18},
+      "desc": "The Detokenize block is at full strength."
+    },
+    "chat-template-render": {
+      "parts": ["template"],
+      "marker": {"from": [242, 192], "length": 18},
+      "desc": "The Chat template block is at full strength."
+    },
+    "wordpiece-encode": {
+      "parts": ["encode"],
+      "marker": {"from": [242, 132], "length": 18},
+      "desc": "The Encode block is at full strength."
+    },
+    "context-window-trim": {
+      "parts": ["trim"],
+      "marker": {"from": [242, 222], "length": 18},
+      "desc": "The Trim to context block is at full strength."
+    },
+    "bpe-encode-fast": {
+      "parts": ["encode"],
+      "marker": {"from": [242, 132], "length": 18},
+      "desc": "The Encode block is at full strength."
+    },
+    "unigram-viterbi": {
+      "parts": ["encode"],
+      "marker": {"from": [242, 132], "length": 18},
+      "desc": "The Encode block is at full strength."
+    },
+    "tokenizer-json-load": {
+      "parts": ["split", "encode", "detok"],
+      "marker": {"from": [242, 132], "length": 18},
+      "desc": "The Split specials, Encode, and Detokenize blocks are at full strength."
+    },
+    "real-model-chat-turn": {
+      "parts": null,
+      "desc": "Nothing is dimmed: the problem is the whole pipeline."
+    }
+  }
+}

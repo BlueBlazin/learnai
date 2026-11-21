@@ -4,6 +4,8 @@ right, marking every piece after the first with the continuation prefix `##`. Th
 algorithm is greedy and never reconsiders, and a word that cannot be finished becomes
 a single unknown token as a whole.
 
+![This problem is the Encode step, splitting one word greedily into vocabulary pieces.](assets/map.svg)
+
 ## Specification
 
 ```python

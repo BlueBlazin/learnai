@@ -4,6 +4,8 @@ whole sequence for every merge it applies, which is quadratic on a long input wi
 deep merge table, and a faster algorithm has to reproduce its order of merges exactly,
 including the cases where the order is decided by a tie.
 
+![This problem is the Encode step, producing the ids of `bpe-encode` in $O(n \log n)$ time.](assets/map.svg)
+
 ## Specification
 
 ```python

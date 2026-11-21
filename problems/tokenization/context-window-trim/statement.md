@@ -5,6 +5,8 @@ turn, drop the oldest turns whole until the prompt fits, and leave room for the
 answer. The work is in the bookkeeping: what a turn is, what "fits" means, and what
 must never be dropped.
 
+![This problem is the Trim to context step, dropping the oldest turns until the prompt fits.](assets/map.svg)
+
 ## Specification
 
 ```python

@@ -4,6 +4,8 @@ greedily until the model ends its turn, and stream the reply as text. The tokeni
 and the model call are given. What is left is everything a chat endpoint does around
 them, where each mistake still produces an answer, only a worse one.
 
+![This problem is the whole path, one chat turn from the messages to streamed text.](assets/map.svg)
+
 ## Specification
 
 ```python

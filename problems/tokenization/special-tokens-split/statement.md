@@ -5,6 +5,8 @@ encoder and decides when the *string* `<|im_start|>` becomes the *token*
 `<|im_start|>`. The answer cannot be "always": then anyone who types that string into
 a chat box writes their own system prompt.
 
+![This problem is the Split specials step, deciding where the string of a special token becomes its id.](assets/map.svg)
+
 ## Specification
 
 ```python

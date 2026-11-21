@@ -3,6 +3,8 @@ function that pads a batch of token sequences and reports which positions are re
 detail that matters for generation is the side: a decoder-only model continues each row
 from its **last** column, so the padding has to go on the left.
 
+![This problem is the Pad batch step, making token sequences of different lengths into a rectangle.](assets/map.svg)
+
 ## Specification
 
 ```python

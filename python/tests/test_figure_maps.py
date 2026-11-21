@@ -38,12 +38,14 @@ def test_written_maps_are_up_to_date():
 
 
 def test_check_fails_on_a_stale_or_missing_file(tmp_path):
-    spec = json.loads(SPECS[0].read_text(encoding="utf-8"))
-    for problem in spec["problems"]:
-        track, _, name = problem.rpartition("/")
-        directory = tmp_path / "problems" / (track or spec["track"]) / name
-        directory.mkdir(parents=True)
-        (directory / "problem.toml").write_text("", encoding="utf-8")
+    # The script draws every spec, so the root needs the problems of all of them.
+    for path in SPECS:
+        spec = json.loads(path.read_text(encoding="utf-8"))
+        for problem in spec["problems"]:
+            track, _, name = problem.rpartition("/")
+            directory = tmp_path / "problems" / (track or spec["track"]) / name
+            directory.mkdir(parents=True)
+            (directory / "problem.toml").write_text("", encoding="utf-8")
     root = ["--root", str(tmp_path)]
 
     missing = run("--check", *root)
@@ -55,7 +57,7 @@ def test_check_fails_on_a_stale_or_missing_file(tmp_path):
 
     written = next(tmp_path.rglob(spec["file"]))
     first = written.read_text(encoding="utf-8")
-    written.write_text(first.replace("RMSNorm", "LayerNorm"), encoding="utf-8")
+    written.write_text(first.replace("</title>", " (stale)</title>"), encoding="utf-8")
     stale = run("--check", *root)
     assert stale.returncode == 1
     assert "out of date" in stale.stderr

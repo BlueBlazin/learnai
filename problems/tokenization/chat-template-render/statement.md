@@ -5,6 +5,8 @@ two forms: as a string, and as a list of segments that records which parts are s
 tokens written by the template and which parts are text. The second form is what makes
 the prompt safe to tokenize.
 
+![This problem is the Chat template step, laying the messages out as one prompt.](assets/map.svg)
+
 ## Specification
 
 ```python

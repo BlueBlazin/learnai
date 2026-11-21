@@ -4,6 +4,8 @@ the bytes received so far can be turned into text now, and how many must wait fo
 next token. The difficulty is telling a character that is merely unfinished from bytes
 that are broken for good: the first must wait, the second must not.
 
+![This problem is the Detokenize step, deciding how many of the received bytes can become text.](assets/map.svg)
+
 ## Specification
 
 ```python

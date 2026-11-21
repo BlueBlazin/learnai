@@ -4,6 +4,8 @@ one you wrote in `bpe-encode`. What is new is everything a real file wraps aroun
 added tokens, a pre-tokenizer that decides where merges may not cross, a printable
 alphabet for bytes, and ids that are looked up instead of computed.
 
+![This problem is the Split specials, Encode, and Detokenize steps, built from the file of a real model.](assets/map.svg)
+
 ## Specification
 
 ```python
