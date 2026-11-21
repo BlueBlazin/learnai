@@ -6,12 +6,17 @@ the returned store (old entries kept, the new entry covering exactly the prompt 
 usable to continue from); then the cost. For a prompt of `P` tokens of which `reused`
 come from the store, and `g` generated tokens, the limits are `g` forward calls and
 `P - reused + g - 1` tokens processed.
+
+The model is handed over as `LM`, a `TinyLM` behind the kit's `Guarded`: a solution may
+call it and read its sizes. Its counters, its weights, its seed, and `with_framework`
+are refused, so the counts cannot be written and no second, uncounted model can do
+the work.
 """
 
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import KVCache, TinyLM
+from learnai.kit import Guarded, KVCache, TinyLM, check_guard, guard
 
 FN = "generate_with_store"
 
@@ -21,6 +26,16 @@ PROMPT_A = [*SYSTEM, 33, 12, 60]
 PROMPT_B = [*SYSTEM, 21, 7, 50, 8]
 TOKENS_A = [4, 61, 60, 26]
 TOKENS_B = [35, 45, 60, 60]
+
+
+class LM(Guarded, TinyLM):
+    """The model the solution gets: it is called, and its sizes are read; nothing else."""
+
+    label = "lm"
+    refused = Guarded.refused | {"seed"}
+
+    def __repr__(self):  # TinyLM's shows the seed, which would rebuild the model
+        return f"TinyLM(vocab_size={self.vocab_size}, max_context={self.max_context})"
 
 
 def common_prefix_len(a, b):
@@ -56,7 +71,7 @@ class Session:
     def __init__(self, ctx, seed, store=None):
         self.ctx = ctx
         self.seed = seed
-        self.lm = TinyLM(ctx.fw, seed=seed)
+        self.lm = LM(ctx.fw, seed=seed)
         self.probe_lm = TinyLM(ctx.oracle_fw, seed=seed)
         self.store = dict(store or {})
 
@@ -75,7 +90,9 @@ class Session:
         )
 
         self.lm.counters.reset()
+        guard(ctx)
         result = ctx.call(FN, self.lm, dict(self.store), list(prompt), max_new_tokens)
+        check_guard()
         check.that(
             isinstance(result, tuple) and len(result) == 2,
             f"{FN}: must return a tuple (tokens, store)",

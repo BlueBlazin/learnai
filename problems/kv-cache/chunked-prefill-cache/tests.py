@@ -4,12 +4,17 @@ Every case runs the solution on a model that records its calls, then checks, in 
 order: the returned logits (against the whole prompt in one call), the returned cache
 (its length, and that a further token continues from it correctly), the two counters
 (`ceil(P / chunk_size)` calls and `P` tokens, exactly), and the layout of the chunks.
+
+The recording model (`RecordingLM`) is behind the kit's `Guarded`: a solution may call
+it and read its sizes. Its counters, its list of call sizes, its weights, its seed, and
+`with_framework` are refused, so neither the counts nor the list can be written and no
+second, unrecorded model can do the work.
 """
 
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import KVCache, TinyLM
+from learnai.kit import Guarded, KVCache, TinyLM, check_guard, guard
 
 FN = "prefill"
 
@@ -17,8 +22,11 @@ FN = "prefill"
 PROMPT = [0, 17, 42, 5, 9, 33, 12, 60, 21, 7]
 
 
-class RecordingLM(TinyLM):
+class RecordingLM(Guarded, TinyLM):
     """A TinyLM that also notes how many tokens each call passed."""
+
+    label = "lm"
+    refused = Guarded.refused | {"seed", "call_sizes"}
 
     def __init__(self, fw, seed):
         super().__init__(fw, seed=seed)
@@ -29,6 +37,9 @@ class RecordingLM(TinyLM):
         self.call_sizes.append(int(np.asarray(ids).size))
         return super().__call__(tokens, cache)
 
+    def __repr__(self):  # TinyLM's shows the seed, which would rebuild the model
+        return f"TinyLM(vocab_size={self.vocab_size}, max_context={self.max_context})"
+
 
 def run(ctx, seed, prompt, chunk_size):
     """Run the solution and check everything. Returns the logits as numpy."""
@@ -37,7 +48,9 @@ def run(ctx, seed, prompt, chunk_size):
     full = ctx.oracle_fw.numpy(oracle(prompt)[0])
 
     lm = RecordingLM(ctx.fw, seed)
+    guard(ctx)
     result = ctx.call(FN, lm, list(prompt), chunk_size)
+    check_guard()
     check.that(
         isinstance(result, tuple) and len(result) == 2,
         f"{FN}: must return a tuple (last_logits, cache)",

@@ -5,12 +5,17 @@ without a cache (the whole sequence through the model at every step), and then t
 cost through the model's counters. For a generation of `g` tokens from a prompt of
 `P` tokens the limits are `g` forward calls and `P + g - 1` tokens processed: the
 prompt once, in one call, then each generated token except the last, one per call.
+
+The model is handed over as `LM`, a `TinyLM` behind the kit's `Guarded`: a solution may
+call it and read its sizes. Its counters, its weights, its seed, and `with_framework`
+are refused, so the counts cannot be written and no second, uncounted model can do
+the work.
 """
 
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import TinyLM
+from learnai.kit import Guarded, TinyLM, check_guard, guard
 
 FN = "greedy_decode"
 
@@ -18,6 +23,16 @@ FN = "greedy_decode"
 # 42, 62, 33, 33, 40, 32, 45, 37.
 PROMPT = [0, 17, 42, 5]
 CONTINUATION = [42, 62, 33, 33, 40, 32, 45, 37]
+
+
+class LM(Guarded, TinyLM):
+    """The model the solution gets: it is called, and its sizes are read; nothing else."""
+
+    label = "lm"
+    refused = Guarded.refused | {"seed"}
+
+    def __repr__(self):  # TinyLM's shows the seed, which would rebuild the model
+        return f"TinyLM(vocab_size={self.vocab_size}, max_context={self.max_context})"
 
 
 def uncached_greedy(ctx, seed, prompt, max_new_tokens, eos_id):
@@ -38,8 +53,10 @@ def decode(ctx, seed, prompt, max_new_tokens, eos_id, expected=None):
     """Run the solution; check its tokens, then its cost. Returns the tokens."""
     if expected is None:
         expected = uncached_greedy(ctx, seed, prompt, max_new_tokens, eos_id)
-    lm = TinyLM(ctx.fw, seed=seed)
+    lm = LM(ctx.fw, seed=seed)
+    guard(ctx)
     got = ctx.call(FN, lm, list(prompt), max_new_tokens, eos_id)
+    check_guard()
     check.that(
         isinstance(got, list) and all(type(token) is int for token in got),
         f"{FN}: must return a list of Python ints",

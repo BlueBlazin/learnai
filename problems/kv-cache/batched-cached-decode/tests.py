@@ -10,13 +10,16 @@ Every case checks three things, in this order:
    forward calls and `B * (P + g_max - 1)` tokens processed.
 
 The model handed to the solution is a `TinyLM` that also writes down what it was
-called with (`RecordingLM`), which is how point 2 is checked.
+called with (`RecordingLM`), which is how point 2 is checked. It is behind the kit's
+`Guarded`: a solution may call it and read its sizes. Its counters, its record of the
+calls, its weights, its seed, and `with_framework` are refused, so neither the counts
+nor the record can be written and no second, unrecorded model can do the work.
 """
 
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import TinyLM
+from learnai.kit import Guarded, TinyLM, check_guard, guard
 
 FN = "batched_greedy"
 
@@ -25,8 +28,11 @@ PROMPTS = [[0, 52, 7, 13], [0, 16, 13, 51], [0, 55, 38, 4]]
 ROWS = [[24, 7, 51, 16, 16, 18], [16, 18], [5, 60, 26, 41, 37, 62, 30, 7, 18]]
 
 
-class RecordingLM(TinyLM):
+class RecordingLM(Guarded, TinyLM):
     """A TinyLM that records the tokens of every call, as numpy arrays."""
+
+    label = "lm"
+    refused = Guarded.refused | {"seed", "calls"}
 
     def __init__(self, fw, seed):
         super().__init__(fw, seed=seed)
@@ -35,6 +41,9 @@ class RecordingLM(TinyLM):
     def __call__(self, tokens, cache=None):
         self.calls.append(np.array(self._token_array(tokens)))
         return super().__call__(tokens, cache)
+
+    def __repr__(self):  # TinyLM's shows the seed, which would rebuild the model
+        return f"TinyLM(vocab_size={self.vocab_size}, max_context={self.max_context})"
 
 
 def uncached_greedy(ctx, seed, prompt, max_new_tokens, eos_id):
@@ -59,7 +68,9 @@ def decode(ctx, seed, prompts, max_new_tokens, eos_id, expected=None):
     if expected is None:
         expected = [uncached_greedy(ctx, seed, p, max_new_tokens, eos_id) for p in prompts]
     lm = RecordingLM(ctx.fw, seed)
+    guard(ctx)
     got = ctx.call(FN, lm, [list(p) for p in prompts], max_new_tokens, eos_id)
+    check_guard()
     check.that(
         isinstance(got, list)
         and all(isinstance(row, list) and all(type(t) is int for t in row) for row in got),
