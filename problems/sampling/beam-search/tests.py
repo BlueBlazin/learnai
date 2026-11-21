@@ -10,6 +10,11 @@ smallest gap in any comparison it makes (between neighboring candidates, between
 finished scores, between the stopping bound and the worst finished score). Cached and
 uncached logits agree to about 1e-5, so every fixture must keep that gap above
 MARGIN; a fixture that does not is an authoring error.
+
+The model is handed over as `LM`, a `TinyLM` behind the kit's `Guarded`: a solution may
+call it and read its sizes. Its counters, its weights, its seed, and `with_framework`
+are refused, so the counts cannot be written and no second, uncounted model can do
+the work.
 """
 
 from itertools import pairwise
@@ -17,10 +22,20 @@ from itertools import pairwise
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import TinyLM
+from learnai.kit import Guarded, TinyLM, check_guard, guard
 
 FN = "beam_search"
 MARGIN = 1e-3
+
+
+class LM(Guarded, TinyLM):
+    """The model the solution gets: it is called, and its sizes are read; nothing else."""
+
+    label = "lm"
+    refused = Guarded.refused | {"seed"}
+
+    def __repr__(self):  # TinyLM's shows the seed, which would rebuild the model
+        return f"TinyLM(vocab_size={self.vocab_size}, max_context={self.max_context})"
 
 
 def log_softmax64(logits):
@@ -71,8 +86,10 @@ def search(ctx, seed, prompt, n_beams, max_new_tokens, eos_id, length_penalty, s
     )
     if margin < MARGIN or (steps is not None and steps != n_steps):
         raise RuntimeError(f"authoring error: margin {margin:.1e}, {n_steps} steps")
-    lm = TinyLM(ctx.fw, seed=seed)
+    lm = LM(ctx.fw, seed=seed)
+    guard(ctx)
     got = ctx.call(FN, lm, list(prompt), n_beams, max_new_tokens, eos_id, length_penalty)
+    check_guard()
     check.that(
         isinstance(got, list)
         and all(
