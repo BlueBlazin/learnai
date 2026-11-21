@@ -5,6 +5,8 @@ formula that uses it. Both parts have a detail that is easy to get wrong: the co
 covers generated tokens only, not the prompt, and the two penalties use the count
 differently.
 
+![This problem is Penalties, here the two additive penalties on tokens already generated.](assets/map.svg)
+
 ## Specification
 
 ```python

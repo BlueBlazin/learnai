@@ -84,6 +84,8 @@ pieces complete `"\nUser:"`; nothing of it is emitted, and the piece `" next"` t
 the model would have produced afterwards is never processed. The emitted text is
 `"Sure.\nUse ##1."`.
 
+![The stream after pieces 2, 3, 4, and 7 of the table. Filled cells are held back, and the stop string is never emitted.](assets/stream-steps.svg)
+
 If the stream had ended after `".\nUser"` instead, `stop_flush` would return
 `"\nUser"`.
 

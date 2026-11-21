@@ -2,6 +2,8 @@ Apply sampling temperature to a batch of next-token logits, where every row has 
 temperature. Dividing by the temperature is one line; the exercise is the temperature
 of exactly `0`, which means "greedy" and cannot be computed by dividing.
 
+![This problem is Temperature, which divides the logits before the softmax.](assets/map.svg)
+
 ## Specification
 
 ```python

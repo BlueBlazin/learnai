@@ -141,6 +141,8 @@ is never made: the finished set is now full, and the best live beam has
 $S = -4.790$, which is below the worst finished score, $-3.605$. With
 $\alpha = 0$ the bound is $S$ itself, so the search stops after 3 of 12 steps.
 
+![The three steps of this example and its stop. Arrows run from a live beam, one cache row each, to the candidates that extend it.](assets/beam-steps.svg)
+
 A length penalty changes both the ranking of the results and the stopping point:
 
 ```python

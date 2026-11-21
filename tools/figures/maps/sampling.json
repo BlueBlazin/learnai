@@ -1,0 +1,77 @@
+{
+  "track": "sampling",
+  "file": "map.svg",
+  "title": "Where this problem sits in the sampler chain",
+  "desc": "A sampler chain drawn bottom to top, from a row of logits through penalties, filters, and temperature to a token.",
+  "width": 480,
+  "height": 258,
+  "blocks": [
+    {"part": "sample", "role": "softmax", "label": "Sample", "x": 104, "y": 32, "width": 132, "height": 20},
+    {"part": "softmax", "role": "softmax", "label": "Softmax", "x": 104, "y": 62, "width": 132, "height": 20},
+    {"part": "temperature", "role": "norm", "label": "Temperature", "x": 104, "y": 92, "width": 132, "height": 20},
+    {"part": "min-p", "role": "embed", "label": "Min-p", "x": 104, "y": 122, "width": 132, "height": 20},
+    {"part": "top-p", "role": "embed", "label": "Top-p", "x": 104, "y": 152, "width": 132, "height": 20},
+    {"part": "top-k", "role": "embed", "label": "Top-k", "x": 104, "y": 182, "width": 132, "height": 20},
+    {"part": "penalties", "label": "Penalties", "x": 104, "y": 212, "width": 132, "height": 20}
+  ],
+  "wires": [
+    {"points": [[170, 242], [170, 232]], "arrow": true},
+    {"points": [[170, 212], [170, 202]], "arrow": true},
+    {"points": [[170, 182], [170, 172]], "arrow": true},
+    {"points": [[170, 152], [170, 142]], "arrow": true},
+    {"points": [[170, 122], [170, 112]], "arrow": true},
+    {"points": [[170, 92], [170, 82]], "arrow": true},
+    {"points": [[170, 62], [170, 52]], "arrow": true},
+    {"points": [[170, 32], [170, 22]], "arrow": true}
+  ],
+  "labels": [
+    {"text": "token", "at": [170, 10]},
+    {"text": "logits", "at": [170, 250]}
+  ],
+  "problems": {
+    "top-p-filtering": {
+      "parts": ["top-p"],
+      "marker": {"from": [242, 162], "length": 18},
+      "desc": "The Top-p block is at full strength."
+    },
+    "repetition-penalty": {
+      "parts": ["penalties"],
+      "marker": {"from": [242, 222], "length": 18},
+      "desc": "The Penalties block is at full strength."
+    },
+    "temperature-scaling": {
+      "parts": ["temperature"],
+      "marker": {"from": [242, 102], "length": 18},
+      "desc": "The Temperature block is at full strength."
+    },
+    "top-k-filtering": {
+      "parts": ["top-k"],
+      "marker": {"from": [242, 192], "length": 18},
+      "desc": "The Top-k block is at full strength."
+    },
+    "categorical-sample": {
+      "parts": ["sample"],
+      "marker": {"from": [242, 42], "length": 18},
+      "desc": "The Sample block is at full strength."
+    },
+    "min-p-filtering": {
+      "parts": ["min-p"],
+      "marker": {"from": [242, 132], "length": 18},
+      "desc": "The Min-p block is at full strength."
+    },
+    "frequency-presence-penalty": {
+      "parts": ["penalties"],
+      "marker": {"from": [242, 222], "length": 18},
+      "desc": "The Penalties block is at full strength."
+    },
+    "sampler-chain": {
+      "parts": null,
+      "desc": "Nothing is dimmed: the problem is the whole chain."
+    },
+    "gumbel-max-sample": {
+      "parts": ["softmax", "sample"],
+      "marker": {"from": [242, 57], "length": 18},
+      "desc": "The Softmax and Sample blocks are at full strength."
+    }
+  }
+}

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 84">
+  <title>The history a b c c b c y a b c and the two tokens DRY penalizes</title>
+  <desc>Ten tokens in a strip, with brackets under the two earlier matches and the end of the window. The token after each match is outlined.</desc>
+  <!-- Geometry: position i is the cell at x = 30 + 40 i, 38 wide, y = 24..50. The dashed cell after position 9 is the token to come. -->
+
+  <!-- Positions -->
+  <text x="14" y="16.5" font-size="13" text-anchor="middle" font-style="italic" style="font-family: var(--figure-serif); fill: var(--figure-muted)">i</text>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="49" y="16.5">0</text>
+    <text x="89" y="16.5">1</text>
+    <text x="129" y="16.5">2</text>
+    <text x="169" y="16.5">3</text>
+    <text x="209" y="16.5">4</text>
+    <text x="249" y="16.5">5</text>
+    <text x="289" y="16.5">6</text>
+    <text x="329" y="16.5">7</text>
+    <text x="369" y="16.5">8</text>
+    <text x="409" y="16.5">9</text>
+  </g>
+
+  <!-- The window, and the token to come -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <rect x="30" y="24" width="38" height="26" rx="3"/>
+    <rect x="70" y="24" width="38" height="26" rx="3"/>
+    <rect x="110" y="24" width="38" height="26" rx="3"/>
+    <rect x="190" y="24" width="38" height="26" rx="3"/>
+    <rect x="230" y="24" width="38" height="26" rx="3"/>
+    <rect x="310" y="24" width="38" height="26" rx="3"/>
+    <rect x="350" y="24" width="38" height="26" rx="3"/>
+    <rect x="390" y="24" width="38" height="26" rx="3"/>
+  </g>
+  <rect x="430" y="24" width="38" height="26" rx="3" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+  <!-- Candidates: the tokens that followed an earlier match -->
+  <g stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)">
+    <rect x="150" y="24" width="38" height="26" rx="3"/>
+    <rect x="270" y="24" width="38" height="26" rx="3"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="49" y="41.5">a</text>
+    <text x="89" y="41.5">b</text>
+    <text x="129" y="41.5">c</text>
+    <text x="169" y="41.5">c</text>
+    <text x="209" y="41.5">b</text>
+    <text x="249" y="41.5">c</text>
+    <text x="289" y="41.5">y</text>
+    <text x="329" y="41.5">a</text>
+    <text x="369" y="41.5">b</text>
+    <text x="409" y="41.5">c</text>
+  </g>
+  <text x="449" y="41.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">?</text>
+
+  <!-- The matches, and the run they match at the end -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <path d="M30 55 v5 H148 v-5"/>
+    <path d="M190 55 v5 H268 v-5"/>
+    <path d="M310 55 v5 H428 v-5"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="89" y="76.5" style="font-family: var(--figure-serif)"><tspan font-style="italic">m</tspan>₂ = 3</text>
+    <text x="229" y="76.5" style="font-family: var(--figure-serif)"><tspan font-style="italic">m</tspan>₅ = 2</text>
+    <text x="369" y="76.5">end of window</text>
+  </g>
+  <!-- The penalties of the candidates -->
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-accent)">
+    <text x="169" y="76.5">1.4</text>
+    <text x="289" y="76.5">0.8</text>
+  </g>
+</svg>

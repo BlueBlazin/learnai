@@ -4,6 +4,8 @@ sum, and the winner is distributed exactly as the softmax of the logits. The noi
 made from uniform numbers that the caller supplies, and the care goes into the two
 ends of the unit interval, where the transformation blows up.
 
+![This problem is Softmax and Sample, done together as one argmax over noisy logits.](assets/map.svg)
+
 ## Specification
 
 ```python

@@ -4,6 +4,8 @@ The arithmetic is one line. The exercise is to do it for the whole batch with te
 operations, without a Python loop over rows or tokens, while ignoring padding and
 penalizing each token once however often it occurred.
 
+![This problem is Penalties, here the repetition penalty on tokens already in the history.](assets/map.svg)
+
 ## Specification
 
 ```python

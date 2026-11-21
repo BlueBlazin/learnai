@@ -3,6 +3,8 @@ probability is less than a fraction `min_p` of the most likely token's probabili
 Unlike top-k and top-p, the cutoff is relative to how confident the model is, so the
 one thing to get right is what the fraction is a fraction *of*.
 
+![This problem is Min-p, which removes tokens far less probable than the top one.](assets/map.svg)
+
 ## Specification
 
 ```python

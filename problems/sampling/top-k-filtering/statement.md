@@ -3,6 +3,8 @@ logits and mask all the others with `-inf`. Finding the k-th largest value is ea
 the exercise is to keep **exactly** `k` entries when several logits are tied at the
 boundary, and to get the edge values of `k` right.
 
+![This problem is Top-k, which masks all but the `k` largest logits.](assets/map.svg)
+
 ## Specification
 
 ```python

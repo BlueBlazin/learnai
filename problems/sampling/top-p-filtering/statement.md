@@ -4,6 +4,8 @@ the renormalized distribution over that set. The work is in the boundary (which 
 is the last one kept) and in getting the result back from sorted order to token order,
 for every row at once.
 
+![This problem is Top-p, which keeps the most probable tokens until their mass reaches $p$.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -77,6 +79,8 @@ cumulative masses are 0.4, 0.7, 0.9, 1.0. Token 1 alone has 0.4, which is short 
 0.6; token 3 crosses it (0.7), so it is the last token kept. The nucleus
 $\{1, 3\}$ has mass 0.7, and renormalizing gives $0.4 / 0.7 = 0.5714$ and
 $0.3 / 0.7 = 0.4286$, written back to positions 1 and 3.
+
+![Row 0 in rank order with $p = 0.6$: token 3 carries the cumulative mass past $p$ and is the last one kept.](assets/nucleus.svg)
 
 Row 1: token 0 alone has 0.7, which already reaches 0.6. It is the only survivor and
 gets probability 1. The two rows keep different numbers of tokens.

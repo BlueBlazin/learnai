@@ -5,6 +5,8 @@ with probability 0 must never be returned, and the function must return a valid 
 even when the probabilities do not add up to exactly 1, which in float32 they rarely
 do.
 
+![This problem is Sample, which turns a distribution and one uniform number into a token.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -76,6 +78,8 @@ $0.55 \times 1.0$. The first sum above 0.55 is $c_2 = 0.7$: token 2.
 
 Row 1: the sums are `[0.0, 0.5, 0.5, 1.0]` and the threshold is 0. $c_0 = 0$ does not
 exceed 0, so token 0, which has probability 0, is skipped; $c_1 = 0.5$ does: token 1.
+
+![Rows 0 and 1 as unit intervals cut at the cumulative sums. Tokens 0 and 2 of row 1 have zero width, so no $u$ selects them.](assets/unit-interval.svg)
 
 Row 2 sums to 0.999: the sums are `[0.25, 0.5, 0.999, 0.999]`. Comparing them with
 the raw `u = 0.9995` finds no sum above it. The threshold is

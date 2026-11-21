@@ -86,6 +86,8 @@ not a candidate.
 - `c`: $0.8 \times 1.75^{3-2} = 1.4$
 - `y`: $0.8 \times 1.75^{2-2} = 0.8$
 
+![The window ends in `a b c`. The earlier `a b c` and `b c` are followed by `c` and `y`, the two penalized tokens.](assets/history.svg)
+
 With breakers, on the same history:
 
 ```python
