@@ -65,10 +65,11 @@ def test_no_check_message_reveals_what_was_expected(call, secrets):
 def test_the_expected_side_is_in_the_detail_for_public_cases():
     failure = fails(check.equal, [1, 2], [5, 6, 7])
     assert failure.message == "output: got 2 items, which is not the expected number"
-    assert "expected 3 items, got 2" in failure.detail and "[5, 6, 7]" in failure.detail
+    assert "  expected items    3\n  got items         2\n" in failure.detail
+    assert "expected\n  [5, 6, 7]\n" in failure.detail
     failure = fails(check.match, {"a": 1}, {"zebra": 1})
     assert failure.message == "output: got a dict whose keys are not the expected keys"
-    assert "expected keys: ['zebra']" in failure.detail and "got keys: ['a']" in failure.detail
+    assert failure.detail == "result\n  expected keys    ['zebra']\n  got keys         ['a']\n"
     assert fails(check.match, [1], {"zebra": 1}).message == "output: expected a dict, got a list"
 
 
@@ -76,7 +77,7 @@ def test_allclose_states_only_the_order_of_magnitude_of_the_error():
     expected = np.array([1.0, 2.0, 3.0], dtype=np.float32)
     failure = fails(check.allclose, expected + np.float32(0.004), expected)
     assert "largest error on the order of 1e-03" in failure.message
-    assert "max abs error: 0.00" in failure.detail
+    assert "  max abs error    0.00" in failure.detail
     got = expected.copy()
     got[1] = np.inf
     assert (

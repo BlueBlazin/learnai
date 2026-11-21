@@ -436,22 +436,33 @@ Every failure has a one-line `message` and a longer `detail`.
 ```
 softmax: got NaN where a number is expected (4 of 6 values, first at index [0, 0])
 
-call: softmax(x, axis)
-  x = float32 array, shape (2, 3):
-    [[  1001.,   1002.,   1003.],
-     [ 10000.,      0., -10000.]]
-  axis = -1
-shape (2, 3), dtype float32
-tolerance: |got - expected| <= 1e-06 + 0.0001 * |expected|
-mismatched values: 4 of 6
-max abs error: inf at index [0, 0] (expected 0.09003057, got nan)
-expected =
+call
+  softmax(x, axis)
+    x       = float32 array, shape (2, 3)
+              [[  1001.,   1002.,   1003.],
+               [ 10000.,      0., -10000.]]
+    axis    = -1
+
+result
+  shape            (2, 3), dtype float32
+  mismatched       4 of 6 values
+  max abs error    inf at index [0, 0]   (expected 0.09003057, got nan)
+  tolerance        |got - expected| <= 1e-06 + 0.0001 * |expected|
+
+expected
   [[0.090031, 0.244728, 0.665241],
    [1.      , 0.      , 0.      ]]
-got =
+
+got
   [[nan, nan, nan],
    [nan,  0.,  0.]]
 ```
+
+The detail is laid out in groups, one blank line apart, always in this order: `call`
+(when the test went through `ctx.check`), the facts about the `result` in two columns,
+then `expected` and `got` (with the slice they show when the arrays are large:
+`expected[3, 0:8]`). Text that a test passes itself (the `detail` of `check.that`, a
+`context=` string) is shown as written, as a group of its own.
 
 A shape mismatch is reported first and alone (`softmax: got shape (4,), which is not the
 expected shape`), then dtype, then values with the worst index and an excerpt around

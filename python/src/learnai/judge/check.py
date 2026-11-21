@@ -22,6 +22,7 @@ from typing import Any
 
 import numpy as np
 
+from learnai.judge import layout
 from learnai.judge.context import current, current_or_none
 from learnai.judge.errors import CheckFailure
 
@@ -46,8 +47,7 @@ def that(condition: Any, message: str, detail: str | None = None) -> None:
         raise CheckFailure(message, detail)
 
 
-def _join(*parts: str | None) -> str:
-    return "\n".join(part for part in parts if part) + "\n"
+_join = layout.join
 
 
 def _index(idx: Sequence[int]) -> str:
@@ -94,39 +94,36 @@ def _coerce(got: Any, label: str, context: str | None) -> np.ndarray:
     return array
 
 
-def _show(name: str, array: np.ndarray) -> str:
-    text = _array_text(array)
-    if "\n" not in text:
-        return f"{name} = {text}"
-    return f"{name} =\n" + "\n".join("  " + line for line in text.splitlines())
+def _sides(expected: str, got: str, where: str = "") -> list[str]:
+    """The ``expected`` group, then the ``got`` group, each a block of text."""
+    return [layout.block(f"expected{where}", expected), layout.block(f"got{where}", got)]
 
 
-def _excerpt(got: np.ndarray, expected: np.ndarray, idx: tuple[int, ...], width: int = 8) -> str:
+def _excerpt(
+    got: np.ndarray, expected: np.ndarray, idx: tuple[int, ...], width: int = 8
+) -> list[str]:
     """Expected and got around ``idx``: whole arrays if tiny, else a slice of the last axis."""
     if expected.ndim == 0:
-        return f"expected = {_fmt(expected[()])}\n     got = {_fmt(got[()])}"
+        return _sides(_fmt(expected[()]), _fmt(got[()]))
     if expected.size <= 12:
-        return f"{_show('expected', expected)}\n{_show('got', got)}"
+        return _sides(_array_text(expected), _array_text(got))
     row, j = idx[:-1], idx[-1]
     n = expected.shape[-1]
     hi = min(n, max(0, j - width // 2) + width)
     lo = max(0, hi - width)
     where = "[" + "".join(f"{i}, " for i in row) + f"{lo}:{hi}]"
-    return (
-        f"expected{where} = {_array_text(expected[row][lo:hi])}\n"
-        f"     got{where} = {_array_text(got[row][lo:hi])}"
-    )
+    return _sides(_array_text(expected[row][lo:hi]), _array_text(got[row][lo:hi]), where)
+
+
+def _shape_facts(expected: Sequence[int], got: Sequence[int]) -> str:
+    return layout.facts("result", [("expected shape", tuple(expected)), ("got shape", tuple(got))])
 
 
 def _check_shape(got: np.ndarray, expected: np.ndarray, label: str, context: str | None) -> None:
     if got.shape != expected.shape:
         raise CheckFailure(
             f"{label}: got shape {tuple(got.shape)}, which is not the expected shape",
-            _join(
-                context,
-                f"expected shape: {tuple(expected.shape)}",
-                f"     got shape: {tuple(got.shape)}",
-            ),
+            _join(context, _shape_facts(expected.shape, got.shape)),
         )
 
 
@@ -142,8 +139,9 @@ def _check_dtype(got: np.ndarray, expected: np.ndarray, label: str, context: str
             f"{label}: got dtype {got.dtype}, which is not the expected dtype",
             _join(
                 context,
-                f"expected dtype: {expected.dtype}",
-                f"     got dtype: {got.dtype}",
+                layout.facts(
+                    "result", [("expected dtype", expected.dtype), ("got dtype", got.dtype)]
+                ),
                 "The result must have the same dtype as the reference's result.",
             ),
         )
@@ -158,7 +156,7 @@ def shape(got: Any, expected_shape: Sequence[int], *, label: str = "output") -> 
     if tuple(array.shape) != tuple(expected_shape):
         raise CheckFailure(
             f"{label}: got shape {tuple(array.shape)}, which is not the expected shape",
-            f"expected shape: {tuple(expected_shape)}\n     got shape: {tuple(array.shape)}\n",
+            _join(_shape_facts(expected_shape, array.shape)),
         )
 
 
@@ -238,25 +236,25 @@ def allclose(
             f"at index {_index(worst)})"
         )
 
-    lines = [
-        f"shape {tuple(want.shape)}, dtype {have.dtype}",
-        f"tolerance: |got - expected| <= {atol:g} + {rtol:g} * |expected|",
-        f"mismatched values: {n_bad} of {size}",
-        (
-            f"max abs error: {_fmt(err[worst])} at index {_index(worst)} "
-            f"(expected {_fmt(want[worst])}, got {_fmt(have[worst])})"
-        ),
+    def error_at(error: Any, at: tuple[int, ...]) -> str:
+        return layout.located(
+            f"{_fmt(error)} at index {_index(at)}", _fmt(want[at]), _fmt(have[at])
+        )
+
+    rows = [
+        ("shape", f"{tuple(want.shape)}, dtype {have.dtype}"),
+        ("mismatched", f"{n_bad} of {size} values"),
+        ("max abs error", error_at(err[worst], worst)),
     ]
     with np.errstate(invalid="ignore", divide="ignore"):
         rel = np.where(np.isfinite(err) & np.isfinite(e) & (e != 0), err / np.abs(e), -1.0)
     if rel.max() > 0:
         at = tuple(int(i) for i in np.unravel_index(np.argmax(rel), rel.shape))
-        lines.append(
-            f"max rel error: {_fmt(rel[at])} at index {_index(at)} "
-            f"(expected {_fmt(want[at])}, got {_fmt(have[at])})"
-        )
-    lines.append(_excerpt(have, want, worst))
-    raise CheckFailure(message, _join(context, *lines))
+        rows.append(("max rel error", error_at(rel[at], at)))
+    rows.append(("tolerance", f"|got - expected| <= {atol:g} + {rtol:g} * |expected|"))
+    raise CheckFailure(
+        message, _join(context, layout.facts("result", rows), *_excerpt(have, want, worst))
+    )
 
 
 def equal(got: Any, expected: Any, *, label: str = "output", context: str | None = None) -> None:
@@ -285,9 +283,18 @@ def equal(got: Any, expected: Any, *, label: str = "output", context: str | None
             f"result (first at index {_index(first)})",
             _join(
                 context,
-                f"first difference at index {_index(first)}: "
-                f"expected {_fmt(want[first])}, got {_fmt(have[first])}",
-                _excerpt(have, want, first),
+                layout.facts(
+                    "result",
+                    [
+                        (
+                            "first difference",
+                            layout.located(
+                                f"at index {_index(first)}", _fmt(want[first]), _fmt(have[first])
+                            ),
+                        )
+                    ],
+                ),
+                *_excerpt(have, want, first),
             ),
         )
 
@@ -302,10 +309,10 @@ def equal(got: Any, expected: Any, *, label: str = "output", context: str | None
                 "which is not the expected number",
                 _join(
                     context,
-                    f"expected {len(expected)} item{'' if len(expected) == 1 else 's'}, "
-                    f"got {len(got)}",
-                    f"expected: {_short(expected)}",
-                    f"     got: {_short(got)}",
+                    layout.facts(
+                        "result", [("expected items", len(expected)), ("got items", len(got))]
+                    ),
+                    *_sides(_short(expected), _short(got)),
                 ),
             )
         for i, (g, e) in enumerate(zip(got, expected, strict=True)):
@@ -320,16 +327,27 @@ def equal(got: Any, expected: Any, *, label: str = "output", context: str | None
                     f"{label}: differs from the expected result (first difference at position {i})",
                     _join(
                         context,
-                        f"position {i}: expected {_short(e)}, got {_short(g)}",
-                        f"expected[{lo}:{lo + 10}] = {_short(list(expected[lo : lo + 10]))}",
-                        f"     got[{lo}:{lo + 10}] = {_short(list(got[lo : lo + 10]))}",
+                        layout.facts(
+                            "result",
+                            [
+                                (
+                                    "first difference",
+                                    layout.located(f"position {i}", _short(e), _short(g)),
+                                )
+                            ],
+                        ),
+                        *_sides(
+                            _short(list(expected[lo : lo + 10])),
+                            _short(list(got[lo : lo + 10])),
+                            f"[{lo}:{lo + 10}]",
+                        ),
                     ),
                 )
         return
     if not _py_equal(got, expected):
         raise CheckFailure(
             f"{label}: differs from the expected result",
-            _join(context, f"expected: {_short(expected)}", f"     got: {_short(got)}"),
+            _join(context, *_sides(_short(expected), _short(got))),
         )
 
 
@@ -407,13 +425,17 @@ def match(
         if not isinstance(got, dict) or set(got) != set(expected):
             if isinstance(got, dict):
                 message = f"{label}: got a dict whose keys are not the expected keys"
-                have = f"     got keys: {sorted(map(str, got))}"
+                keys = layout.facts(
+                    "result",
+                    [
+                        ("expected keys", sorted(map(str, expected))),
+                        ("got keys", sorted(map(str, got))),
+                    ],
+                )
             else:
                 message = f"{label}: expected a dict, got a {type(got).__name__}"
-                have = None
-            raise CheckFailure(
-                message, _join(context, f"expected keys: {sorted(map(str, expected))}", have)
-            )
+                keys = f"expected keys: {sorted(map(str, expected))}"
+            raise CheckFailure(message, _join(context, keys))
         for key, value in expected.items():
             match(got[key], value, rtol=rtol, atol=atol, dtype=dtype,
                   label=f"{label}[{key!r}]", context=context)  # fmt: skip
@@ -477,7 +499,12 @@ def raises(
         raise CheckFailure(
             f"{label}: raised {type(exc).__name__}, which is not the exception the "
             "statement specifies here",
-            f"expected {exception.__name__}\n{type(exc).__name__}: {exc}\n",
+            _join(
+                layout.facts(
+                    "result",
+                    [("expected", exception.__name__), ("raised", f"{type(exc).__name__}: {exc}")],
+                )
+            ),
         ) from None
     raise CheckFailure(
         f"{label}: returned normally where the statement specifies an exception",
@@ -605,22 +632,28 @@ def distribution(
         return
     worst = int(np.argmax(stats))
     direction = "more" if observed[worst] / n > target[worst] else "less"
-    rows = ["outcome   target  allowed frequency    observed   count"]
+    rows = ["frequencies", "  outcome   target  allowed frequency    observed   count"]
     order = range(k) if k <= 24 else np.argsort(-stats)[:12]
     for i in order:
         lo, hi = _kl_interval(float(target[i]), threshold / n)
         flag = "  <-- outside" if stats[i] >= threshold else ""
         rows.append(
-            f"{int(i):7d}  {target[i]:7.4f}  [{lo:7.4f}, {hi:7.4f}]  "
+            f"  {int(i):7d}  {target[i]:7.4f}  [{lo:7.4f}, {hi:7.4f}]  "
             f"{observed[i] / n:9.4f}  {int(observed[i]):6d}{flag}"
         )
     raise CheckFailure(
         f"{label}: the empirical distribution does not match the target: outcome {worst} "
         f"occurs {direction} often than it should",
         _join(
-            f"{n} samples, {k} outcomes; allowed frequencies have false-failure "
-            f"probability below {delta:g}",
-            *rows,
+            layout.facts(
+                "result",
+                [
+                    ("samples", n),
+                    ("outcomes", k),
+                    ("allowed frequencies", f"false-failure probability below {delta:g}"),
+                ],
+            ),
+            "\n".join(rows),
         ),
     )
 
@@ -657,8 +690,20 @@ def mean(
     if abs(observed - expected) > eps:
         raise CheckFailure(
             f"{label}: the average over the samples is not consistent with the target",
-            f"{n} samples; expected {expected:.6g} +/- {eps:.3g} (false-failure probability below "
-            f"{delta:g}), observed {observed:.6g}\n",
+            _join(
+                layout.facts(
+                    "result",
+                    [
+                        ("samples", n),
+                        (
+                            "expected",
+                            f"{expected:.6g} +/- {eps:.3g}   (false-failure probability "
+                            + f"below {delta:g})",
+                        ),
+                        ("observed", f"{observed:.6g}"),
+                    ],
+                )
+            ),
         )
 
 

@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 
 from learnai import assets, protocol
+from learnai.judge import layout
 from learnai.judge.frameworks import Framework, get
 from learnai.problem import Problem
 
@@ -384,31 +385,47 @@ def make_context(problem: Problem, solution: ModuleType, framework: str, case: A
     return Context(store, case)
 
 
-def _summarize(value: Any) -> str:
+def _summarize(value: Any) -> tuple[str, str | None]:
+    """An argument as ``(text, kind)``: its value, and for an array what kind it is.
+
+    A small array is its values, with the dtype and shape as the kind; a large one is
+    the dtype and shape alone.
+    """
     if isinstance(value, np.ndarray):
         head = f"{value.dtype} array, shape {tuple(value.shape)}"
         if value.size <= 16:
             body = np.array2string(value, precision=6, separator=", ", max_line_width=88)
-            return f"{head}: {body}" if "\n" not in body else f"{head}:\n{body}"
-        return head
+            return body, head
+        return head, None
     text = repr(value)
-    return text if len(text) <= 200 else text[:197] + "..."
+    return (text if len(text) <= 200 else text[:197] + "..."), None
 
 
 def describe_call(fn: Callable[..., Any], name: str, args: tuple, kwargs: dict) -> str:
-    """Human-readable description of a call, for failure details."""
+    """The ``call`` group of a failure detail: the call, then one line per argument.
+
+    Names are padded so the ``=`` signs line up. A small array on one line is followed
+    by its dtype and shape in a second column; one that takes several lines comes
+    under its dtype and shape.
+    """
     try:
         bound = inspect.signature(fn).bind(*args, **kwargs)
         items = list(bound.arguments.items())
     except TypeError, ValueError:
         items = [(f"arg{i}", a) for i, a in enumerate(args)] + list(kwargs.items())
-    lines = [f"call: {name}({', '.join(key for key, _ in items)})"]
-    for key, value in items:
-        text = _summarize(value)
-        if "\n" in text:
-            first, rest = text.split("\n", 1)
-            lines.append(f"  {key} = {first}")
-            lines.extend(f"    {line}" for line in rest.splitlines())
+    lines = ["call", f"  {name}({', '.join(key for key, _ in items)})"]
+    if not items:
+        return "\n".join(lines)
+    shown = [(key, *_summarize(value)) for key, value in items]
+    width = layout.column([key for key, _, _ in shown])
+    inline = [len(text) for _, text, kind in shown if kind and "\n" not in text]
+    for key, text, kind in shown:
+        start = f"    {key:<{width}}= "
+        if kind is None:
+            lines.append(start + text)
+        elif "\n" in text:
+            lines.append(start + kind)
+            lines.extend(" " * len(start) + line for line in text.splitlines())
         else:
-            lines.append(f"  {key} = {text}")
+            lines.append(f"{start}{text:<{max(inline)}}      {kind}")
     return "\n".join(lines)

@@ -7,7 +7,7 @@ import pytest
 from conftest import fixture_problem
 
 from learnai.judge import CheckFailure, frameworks
-from learnai.judge.context import make_context
+from learnai.judge.context import describe_call, make_context
 from learnai.judge.registry import Case, load_cases
 from learnai.kit import TinyLM
 from learnai.problem import load_problem
@@ -43,11 +43,50 @@ def test_check_failure_names_the_call_and_its_inputs():
     with pytest.raises(CheckFailure) as failure:
         ctx.check("normalize", np.array([[3.0, 4.0]], dtype=np.float32), axis=-1)
     assert failure.value.message.startswith("normalize: 2 of 2 values differ")
-    detail = failure.value.detail.splitlines()
-    assert detail[0] == "call: normalize(x, axis)"
-    assert detail[1] == "  x = float32 array, shape (1, 2): [[3., 4.]]"
-    assert detail[2] == "  axis = -1"
-    assert "expected = [[0.6, 0.8]]" in detail
+    assert failure.value.detail == (
+        "call\n"
+        "  normalize(x, axis)\n"
+        "    x       = [[3., 4.]]      float32 array, shape (1, 2)\n"
+        "    axis    = -1\n"
+        "\n"
+        "result\n"
+        "  shape            (1, 2), dtype float32\n"
+        "  mismatched       2 of 2 values\n"
+        "  max abs error    7.2 at index [0, 1]   (expected 0.8, got 8)\n"
+        "  max rel error    9 at index [0, 1]   (expected 0.8, got 8)\n"
+        "  tolerance        |got - expected| <= 1e-06 + 0.0001 * |expected|\n"
+        "\n"
+        "expected\n"
+        "  [[0.6, 0.8]]\n"
+        "\n"
+        "got\n"
+        "  [[6., 8.]]\n"
+    )
+
+
+def test_describe_call_lines_up_names_and_array_kinds():
+    def f(logits, mask, table, k, side="right"):
+        return None
+
+    args = (
+        np.zeros((4, 6), dtype=np.float32),
+        np.array([1, 0, 1]),
+        np.array([[1.5, 2.0], [3.0, 4.0]], dtype=np.float32),
+        np.array([4, 2, 9, 9]),
+        "left",
+    )
+    assert describe_call(f, "f", args, {}).splitlines() == [
+        "call",
+        "  f(logits, mask, table, k, side)",
+        "    logits    = float32 array, shape (4, 6)",  # too large to show
+        "    mask      = [1, 0, 1]         int64 array, shape (3,)",
+        "    table     = float32 array, shape (2, 2)",  # several lines: under its kind
+        "                [[1.5, 2. ],",
+        "                 [3. , 4. ]]",
+        "    k         = [4, 2, 9, 9]      int64 array, shape (4,)",
+        "    side      = 'left'",
+    ]
+    assert describe_call(lambda: None, "g", (), {}) == "call\n  g()"
 
 
 def test_check_enforces_tensor_type_and_dtype():

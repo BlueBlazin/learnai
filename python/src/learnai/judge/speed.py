@@ -15,6 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from learnai.judge import layout
 from learnai.judge.errors import CheckFailure
 
 #: Each timed measurement repeats its call until it lasts about this long, so that
@@ -120,7 +121,17 @@ def require(
     if result.ratio > max_ratio:
         raise CheckFailure(
             f"{label}: {result.ratio:.1f}x slower than the reference (limit {max_ratio:g}x)",
-            f"solution:  {result.solution_s * 1e3:.4g} ms per call (median of {result.rounds})\n"
-            f"reference: {result.reference_s * 1e3:.4g} ms per call (median of {result.rounds})\n"
-            "Timed in the same process, interleaved, after warmup.\n",
+            layout.join(
+                layout.facts(
+                    "timing",
+                    [
+                        (who, f"{seconds * 1e3:.4g} ms per call (median of {result.rounds})")
+                        for who, seconds in (
+                            ("solution", result.solution_s),
+                            ("reference", result.reference_s),
+                        )
+                    ],
+                ),
+                "Timed in the same process, interleaved, after warmup.",
+            ),
         )

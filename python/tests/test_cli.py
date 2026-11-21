@@ -67,12 +67,17 @@ def test_submit_renders_failures_from_the_same_events(capsys, fixture_root):
     assert "total: differs from the expected result" in out
     assert "Wrong answer  3/4 passed" in out
     # What the hidden tests are called and what they check is not printed...
-    assert "negatives" not in out and "negative numbers" not in out and "expected:" not in out
+    assert "negatives" not in out and "negative numbers" not in out and "detail" not in out
+    assert "-10" not in out
 
     # ...unless an author asks.
     code, out, _ = learnai(capsys, "submit", "sum-list", "--mutant", "absolute_values", "--reveal")
     assert code == 1
-    assert "FAIL  negatives" in out and "negative numbers" in out and "expected: -10" in out
+    assert (
+        "FAIL  negatives" in out
+        and "negative numbers" in out
+        and "| expected\n      |   -10\n" in out
+    )
     code, out, _ = learnai(capsys, "submit", "sum-list", "--reference", "--case", "hidden-2")
     assert code == 0 and "PASS  hidden-2" in out and "1/1 passed" in out
 

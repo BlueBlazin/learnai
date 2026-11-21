@@ -28,8 +28,7 @@ def test_allclose_accepts_float32_noise_and_rejects_real_errors():
 def test_shape_mismatch_is_stated_first_and_alone():
     failure = fails(check.allclose, np.zeros((4,)), np.zeros((4, 8)), label="softmax")
     assert failure.message == "softmax: got shape (4,), which is not the expected shape"
-    assert "expected shape: (4, 8)" in failure.detail
-    assert "max abs error" not in failure.detail
+    assert failure.detail == "result\n  expected shape    (4, 8)\n  got shape         (4,)\n"
 
 
 def test_detail_has_errors_worst_index_and_excerpts():
@@ -42,17 +41,22 @@ def test_detail_has_errors_worst_index_and_excerpts():
         "y: 2 of 60 values differ from the expected result "
         "(largest error on the order of 1e-01, at index [1, 13])"
     )
-    lines = failure.detail.splitlines()
-    assert lines[0] == "call: f(x)"
-    assert "tolerance: |got - expected| <= 1e-06 + 0.0001 * |expected|" in lines
-    assert "mismatched values: 2 of 60" in lines
-    assert "max abs error: 0.5 at index [1, 13] (expected 33, got 33.5)" in lines
-    assert any(
-        line.startswith("max rel error: 0.25 at index [0, 1] (expected 1, got 1.25)")
-        for line in lines
+    assert failure.detail == (
+        "call: f(x)\n"  # a test's own context is passed through as it is
+        "\n"
+        "result\n"
+        "  shape            (3, 20), dtype float32\n"
+        "  mismatched       2 of 60 values\n"
+        "  max abs error    0.5 at index [1, 13]   (expected 33, got 33.5)\n"
+        "  max rel error    0.25 at index [0, 1]   (expected 1, got 1.25)\n"
+        "  tolerance        |got - expected| <= 1e-06 + 0.0001 * |expected|\n"
+        "\n"
+        "expected[1, 9:17]\n"
+        "  [29., 30., 31., 32., 33., 34., 35., 36.]\n"
+        "\n"
+        "got[1, 9:17]\n"
+        "  [29. , 30. , 31. , 32. , 33.5, 34. , 35. , 36. ]\n"
     )
-    assert any(line.startswith("expected[1, 9:17] = ") for line in lines)
-    assert any(line.startswith("     got[1, 9:17] = ") and "33.5" in line for line in lines)
 
 
 def test_message_never_contains_expected_values():
@@ -85,7 +89,13 @@ def test_dtype_check_is_opt_in():
     check.allclose(np.ones(2, dtype=np.float64), np.ones(2, dtype=F32))
     failure = fails(check.allclose, np.ones(2, dtype=np.float64), np.ones(2, dtype=F32), dtype=True)
     assert failure.message == "output: got dtype float64, which is not the expected dtype"
-    assert "expected dtype: float32" in failure.detail
+    assert failure.detail == (
+        "result\n"
+        "  expected dtype    float32\n"
+        "  got dtype         float64\n"
+        "\n"
+        "The result must have the same dtype as the reference's result.\n"
+    )
 
 
 def test_equal_on_arrays_ignores_integer_width():
@@ -94,7 +104,16 @@ def test_equal_on_arrays_ignores_integer_width():
     assert failure.message == (
         "tokens: 1 of 3 values differ from the expected result (first at index [1])"
     )
-    assert "expected 2, got 9" in failure.detail
+    assert failure.detail == (
+        "result\n"
+        "  first difference    at index [1]   (expected 2, got 9)\n"
+        "\n"
+        "expected\n"
+        "  [1, 2, 3]\n"
+        "\n"
+        "got\n"
+        "  [1, 9, 3]\n"
+    )
     assert "not the expected shape" in (
         fails(check.equal, np.array([1, 2]), np.array([1, 2, 3])).message
     )
@@ -107,12 +126,28 @@ def test_equal_on_python_values():
     assert failure.message == (
         "tokens: differs from the expected result (first difference at position 2)"
     )
-    assert "position 2: expected 9, got 7" in failure.detail
+    assert failure.detail == (
+        "result\n"
+        "  first difference    position 2   (expected 9, got 7)\n"
+        "\n"
+        "expected[0:10]\n"
+        "  [5, 6, 9, 8]\n"
+        "\n"
+        "got[0:10]\n"
+        "  [5, 6, 7, 8]\n"
+    )
     failure = fails(check.equal, [1], [1, 2])
     assert failure.message == "output: got 1 item, which is not the expected number"
-    assert "expected 2 items, got 1" in failure.detail
+    assert failure.detail == (
+        "result\n  expected items    2\n  got items         1\n\nexpected\n  [1, 2]\n\ngot\n  [1]\n"
+    )
     assert "got None" in fails(check.equal, None, [1]).message
-    assert "expected: {'a': 1}" in fails(check.equal, {"a": 2}, {"a": 1}).detail
+    assert fails(check.equal, {"a": 2}, {"a": 1}).detail == (
+        "expected\n  {'a': 1}\n\ngot\n  {'a': 2}\n"
+    )
+    assert fails(check.equal, "ab", "abc", context="why").detail == (
+        "why\n\nexpected\n  'abc'\n\ngot\n  'ab'\n"
+    )
 
 
 def test_equal_treats_a_list_of_0d_arrays_as_a_list_of_scalars():
@@ -128,8 +163,8 @@ def test_equal_treats_a_list_of_0d_arrays_as_a_list_of_scalars():
         "tokens: differs from the expected result (first difference at position 1)"
     )
     # The detail shows numbers, not `array(6)`.
-    assert "position 1: expected 9, got 6" in failure.detail
-    assert "got[0:10] = [5, 6, 7]" in failure.detail and "array(" not in failure.detail
+    assert "position 1   (expected 9, got 6)" in failure.detail
+    assert "got[0:10]\n  [5, 6, 7]\n" in failure.detail and "array(" not in failure.detail
     assert fails(check.equal, tokens, [5, 6]).message == (
         "output: got 3 items, which is not the expected number"
     )
@@ -194,18 +229,21 @@ def test_shape_finite_that_and_raises():
     check.shape(np.zeros((2, 3)), (2, 3))
     failure = fails(check.shape, np.zeros((3, 2)), (2, 3))
     assert failure.message == "output: got shape (3, 2), which is not the expected shape"
-    assert "expected shape: (2, 3)" in failure.detail
+    assert failure.detail == "result\n  expected shape    (2, 3)\n  got shape         (3, 2)\n"
     check.finite(np.ones(3))
-    assert "non-finite" in fails(check.finite, np.array([1.0, np.inf])).message
+    failure = fails(check.finite, np.array([1.0, np.inf]))
+    assert "non-finite" in failure.message
+    assert failure.detail == "value at [1]: inf\n"  # one line stays one line
     check.that(True, "never shown")
     assert fails(check.that, 0, "broken invariant", "why").detail == "why"
     check.raises(ValueError, int, "x")
     failure = fails(check.raises, ValueError, int, "3")
     assert failure.message == "call: returned normally where the statement specifies an exception"
-    assert "expected ValueError, but nothing was raised" in failure.detail
+    assert failure.detail == "expected ValueError, but nothing was raised\n"
     failure = fails(check.raises, ValueError, {}.__getitem__, "k")
     assert failure.message.startswith("call: raised KeyError, which is not the exception")
-    assert "ValueError" not in failure.message and "expected ValueError" in failure.detail
+    assert "ValueError" not in failure.message
+    assert failure.detail == "result\n  expected    ValueError\n  raised      KeyError: 'k'\n"
 
 
 # -- property -------------------------------------------------------------------------
@@ -221,8 +259,12 @@ def test_forall_reports_the_first_failing_trial_and_how_to_replay_it(ctx):
 
     failure = fails(check.forall, prop, trials=10)
     assert failure.message == "invariant broken (property failed on trial 4 of 10)"
-    assert f"np.random.default_rng([{ctx.seed}, 3])" in failure.detail
-    assert "the detail" in failure.detail
+    assert failure.detail == (
+        "property failed on trial 4 of 10; "
+        f"replay with np.random.default_rng([{ctx.seed}, 3])\n"
+        "\n"
+        "the detail\n"
+    )
     assert len(seen) == 4
     # Replaying the reported seed reproduces the failing input exactly.
     assert float(np.random.default_rng([ctx.seed, 3]).random()) == seen[3]
@@ -258,10 +300,23 @@ def test_distribution_rejects_a_shifted_distribution():
     assert failure.message.startswith(
         "tokens: the empirical distribution does not match the target: outcome"
     )
-    assert "20000 samples" in failure.detail and "20000" not in failure.message
+    assert "20000" not in failure.message
     assert "0.5" not in failure.message  # target probabilities stay in the detail
-    assert "<-- outside" in failure.detail
-    assert "false-failure probability below 1e-10" in failure.detail
+    facts, table = failure.detail.split("\n\n")
+    assert facts == (
+        "result\n"
+        "  samples                20000\n"
+        "  outcomes               5\n"
+        "  allowed frequencies    false-failure probability below 1e-10"
+    )
+    rows = table.splitlines()
+    assert rows[:2] == [
+        "frequencies",
+        "  outcome   target  allowed frequency    observed   count",
+    ]
+    assert len(rows) == 7 and all(row.startswith("  ") for row in rows[1:])
+    assert rows[2].startswith("        0   0.5000  [") and rows[2].endswith("  <-- outside")
+    assert not rows[4].endswith("<-- outside")
 
 
 def test_distribution_threshold_is_the_documented_chernoff_bound():
@@ -300,7 +355,12 @@ def test_mean_uses_a_hoeffding_bound():
         "acceptance rate: the average over the samples is not consistent with the target"
     )
     eps = math.sqrt(math.log(2 / 1e-10) / (2 * 10_000))
-    assert f"+/- {eps:.3g}" in failure.detail
+    assert failure.detail == (
+        "result\n"
+        "  samples     10000\n"
+        f"  expected    0.4 +/- {eps:.3g}   (false-failure probability below 1e-10)\n"
+        f"  observed    {accepted.mean():.6g}\n"
+    )
     assert "outside the possible range" in fails(check.mean, [0.5, 2.0], 0.5, low=0, high=1).message
 
 

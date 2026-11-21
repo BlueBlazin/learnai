@@ -159,7 +159,7 @@ def test_reveal_shows_authors_the_real_hidden_cases(sum_list):
     assert names["negatives"] == "negative numbers" and names["long_list"] == "a long list"
     failed = run.case("negatives")
     assert failed["status"] == "fail"
-    assert "expected: -10" in failed["detail"]
+    assert "expected\n  -10\n" in failed["detail"]
 
 
 def test_hidden_errors_say_what_and_where_in_the_learners_file_only(sum_list, tmp_path):
@@ -220,7 +220,7 @@ def test_public_failures_show_expected_and_got(sum_list, tmp_path):
     public = run.case("short")
     assert public["status"] == "fail"
     assert public["message"] == "total: differs from the expected result"
-    assert "expected: 6" in public["detail"] and "got: 7" in public["detail"]
+    assert public["detail"] == "expected\n  6\n\ngot\n  7\n"
     assert run.case("hidden-1")["detail"] is None
 
 

@@ -37,7 +37,13 @@ def test_require_reports_the_metric_and_fails_beyond_the_factor(ctx):
     with pytest.raises(CheckFailure) as failure:
         speed.require(speed.SpeedResult(0.010, 0.001, 7), max_ratio=3.0, label="f", ctx=ctx)
     assert failure.value.message == "f: 10.0x slower than the reference (limit 3x)"
-    assert "median of 7" in failure.value.detail
+    assert failure.value.detail == (
+        "timing\n"
+        "  solution     10 ms per call (median of 7)\n"
+        "  reference    1 ms per call (median of 7)\n"
+        "\n"
+        "Timed in the same process, interleaved, after warmup.\n"
+    )
     assert ctx.metrics[0]["value"] == 10
 
 
