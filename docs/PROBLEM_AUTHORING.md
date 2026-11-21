@@ -2651,10 +2651,16 @@ check_guard()                                # the first refused access fails th
 ```
 
 - **What the solution may read.** By default every public attribute except the names
-  in `refused` (`counters`, `log`, `with_framework`, `__dict__`); private names
-  (`_x`) are always refused. A class that sets `allowed` turns this into an
-  allowlist: use it when the public settings would let a solution build a twin
-  (`type(model)(model.fw, seed=model.seed)`), as `block-diffusion-decode` does.
+  in `refused` (`counters`, `log`, `with_framework`). Private names (`_x`) and the
+  object's machinery (`guarded.MACHINERY`: `__dict__`, `__init__`,
+  `__getattribute__`, `__setattr__`, `__delattr__`) are always refused: each of the
+  five is a way around the rules (`store.__init__(...)` starts the counters over,
+  `store.__getattribute__("counters")` would read through the kit). When the public
+  settings would let a solution build a twin (`type(lm)(lm.fw, seed=lm.seed)`),
+  refuse the setting (`refused = Guarded.refused | {"seed"}`) or set `allowed`, which
+  turns the rule into an allowlist, as `block-diffusion-decode` does. An allowlist
+  also refuses `lm.__class__`, which `isinstance(lm, ...)` can ask for: list
+  `"__class__"` unless you mean that.
 - **What it may never do.** Set or delete an attribute, or copy the object (`copy`,
   `deepcopy`, `pickle`).
 - **Messages**, the same on public and hidden cases: `` `store.counters` may not be
@@ -2662,22 +2668,38 @@ check_guard()                                # the first refused access fails th
   `` `model` may not be copied in this problem ``, and, for a borrowed method (next
   point), `` `model._w` may not be read outside the model's own methods ``. `label`
   is the argument's name in the statement.
-- **Who is asking is read from the call stack**, as for `forbidden`. The nearest frame
-  that belongs to the solution file, to `learnai`, or to the file that called
-  `guard(ctx)` (your `tests.py`) decides; frames of anything else (`operator`, a
-  string given to `eval`) act for their caller. So `getattr(store, "coun" + "ters")`
-  and `eval("store.counters")` are refused like `store.counters`.
+- **Who is asking is read from the call stack**, as for `forbidden`. Walking out from
+  the access, the first frame of the solution file or of a call made through the
+  object decides. Frames of `learnai` and of the file that called `guard(ctx)` (your
+  `tests.py`) are trusted; frames of anything else (`operator`, a string given to
+  `eval`) act for their caller. So `getattr(store, "coun" + "ters")` and
+  `eval("store.counters")` are refused like `store.counters`.
 - **Kit and test code is not restricted**, with one exception that closes a hole.
-  While the solution is running, the restricted names can be read only inside a call
-  the solution made through the object (`store.gather(...)`, a property). The kit's
-  methods therefore work, and borrowing one as a plain function does not:
-  `CountingKV.reference(store)` and `TinyDSA._index_key(dsa, ...)` fail at the first
-  private attribute they read. Two consequences for test code: a callback of yours
-  that the solution reaches some other way than through the guarded object may not
-  read restricted names while the solution runs, and Python calls special methods
-  (`len(store)`) without going through an attribute, so a kit class's `__len__` that
-  reads private state is refused during the solution's call. `__repr__` is exempt:
-  `print(store)` is a learner debugging.
+  While the solution is running, the restricted names can be read, and attributes
+  set, only inside a call the solution made through the object (`store.gather(...)`,
+  a property). The kit's methods therefore work, and borrowing one as a plain
+  function does not: `CountingKV.reference(store)` and `TinyDSA._index_key(dsa, ...)`
+  fail at the first private attribute they read, and `TinyLM.__init__(lm, lm.fw)` at
+  the first attribute it sets (`` `lm.fw` may not be set outside the lm's own
+  methods ``). Code that the solution has such a call run for it is not part of the
+  call either: a callback, or the `__index__` or `__array__` of an argument. Three
+  consequences for test code: a callback of yours that the solution reaches some
+  other way than through the guarded object may not read restricted names while the
+  solution runs; such a callback cannot build a guarded object either (make the
+  factory a method of a guarded object); and a special method outside the list of
+  the next point (`__eq__`, say) that reads private state is refused during the
+  solution's call.
+- **Special methods are calls made through the object.** Python calls `lm(tokens)`,
+  `len(file)`, `file[a:b]`, and `with file:` on the class, without asking for an
+  attribute. `Guarded` wraps the special methods a guarded class defines or inherits
+  (`guarded.SPECIAL`: `__call__`, `__len__`, `__length_hint__`, `__bool__`,
+  `__contains__`, `__getitem__`, `__setitem__`, `__delitem__`, `__iter__`,
+  `__next__`, `__enter__`, `__exit__`) when the class is made, so `class LM(Guarded,
+  TinyLM)` and `class Experts(Guarded, CountingExperts)` are called as before, and
+  the base class's method borrowed as a plain function (`TinyLM.__call__(lm, ...)`)
+  is refused at its first private read. `__repr__` is exempt too: `print(store)` is
+  a learner debugging. It also shows what the kit class's `__repr__` shows: override
+  it in the guarded class if that includes a seed.
 - **Refusals are recorded.** The access raises `CheckFailure`, and `check_guard()`
   raises the first one again, so a solution that catches the exception and falls
   back to honest code still fails. Call `guard(ctx)` and `check_guard()` around
@@ -2693,6 +2715,10 @@ check_guard()                                # the first refused access fails th
   version of its object must build it with `object.__new__(type(self))`, as
   `CountingKV.append` and `DeltaMemory.update` do; a twin from `with_framework` is a
   plain, unguarded object, for tests.
+- **An object a factory built.** `Experts.of(moe.experts(1))` and `LM.of(draft)` (for
+  `draft, target = draft_target_pair(...)`) are guarded objects with the attributes
+  of the plain one. The attributes are shared, so the test can read the counters
+  from either.
 - **It is a guard against taking the shortcut, not a sandbox.** The solution runs in
   the judge's process. What still gets through: importing `learnai.kit.guarded` and
   reading its table or replacing its functions, replacing a method on the guarded

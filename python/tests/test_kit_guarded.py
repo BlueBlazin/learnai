@@ -12,10 +12,12 @@ from learnai.judge.errors import CheckFailure
 from learnai.kit import (
     BlockDenoiser,
     Counters,
+    CountingExperts,
     CountingKV,
     DeltaMemory,
     Guarded,
     TinyDSA,
+    TinyLM,
     check_guard,
     guard,
 )
@@ -208,6 +210,93 @@ def test_a_borrowed_method_cannot_read_what_the_solution_cannot(solve):
     assert meter.peek() == [1, 2]  # outside the solution, the test still reads it
 
 
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        ("meter.__getattribute__('counters').reset()", "`meter.__getattribute__` may not be used"),
+        ("meter.__setattr__('counters', None)", "`meter.__setattr__` may not be used"),
+        ("meter.__delattr__('size')", "`meter.__delattr__` may not be used"),
+        ("meter.__init__([0])", "`meter.__init__` may not be used"),
+        ("type(meter).__getattribute__(meter, 'counters')", "`meter.counters` may not be used"),
+        ("type(meter).__setattr__(meter, 'size', 0)", "`meter.size` may not be set"),
+        ("type(meter).__init__(meter, [0])", "`meter._values` may not be set outside the meter's"),
+        (
+            "type(meter).__mro__[2].__init__(meter, [0])",
+            "`meter._values` may not be set outside the meter's own methods",
+        ),
+        ("type(meter).of(meter)", "`meter.__dict__` may not be read outside the meter's"),
+    ],
+)
+def test_the_machinery_of_the_object_is_not_the_solutions(solve, body, message):
+    # Each of these went around the rules: the bound special methods of the guard ran
+    # as kit code, and `__init__` starts the counters over.
+    solution = solve(f"def cheat(meter):\n    {body}\n")
+    meter = GuardedMeter([1, 2, 3])
+    meter.read(0)
+    assert refused(solution["cheat"], meter).startswith(message)
+    assert meter.counters.reads == 1 and meter.size == 3 and meter.peek() == [1, 2, 3]
+
+
+def test_a_class_that_replaces_refused_keeps_the_machinery_refused(solve):
+    class Bare(Guarded, Meter):
+        label = "meter"
+        refused = frozenset({"peek"})
+
+    solution = solve(
+        """
+        def state(meter): return vars(meter)
+        def again(meter): meter.__init__([0])
+        def counted(meter): return meter.counters.reads
+        """
+    )
+    meter = Bare([1])
+    assert refused(solution["state"], meter) == "`meter.__dict__` may not be used in this problem"
+    assert refused(solution["again"], meter) == "`meter.__init__` may not be used in this problem"
+    guarded_module._violations.clear()
+    assert solution["counted"](meter) == 0  # this class chose not to refuse its counters
+    check_guard()
+
+
+def test_code_the_solution_has_a_method_run_is_not_a_call_through_the_object(solve):
+    # `meter.read(i)` asks for `i.__index__()`. The solution's object answers by borrowing
+    # a kit method, inside the kit's own call: still the solution's doing.
+    solution = solve(
+        """
+        def cheat(meter):
+            taken = []
+
+            class Index:
+                def __index__(self):
+                    taken.append(type(meter).__mro__[2].peek(meter))
+                    return 0
+
+            return meter.read(Index()), taken
+        """
+    )
+    meter = GuardedMeter([1, 2, 3])
+    assert refused(solution["cheat"], meter) == (
+        "`meter._values` may not be read outside the meter's own methods"
+    )
+
+
+def test_a_test_callback_may_build_a_guarded_object_through_the_object(solve):
+    # A factory of the test that the solution calls directly counts as borrowed; one
+    # that is a method of a guarded object is a call through it.
+    class Maker(Guarded, Meter):
+        label = "maker"
+
+        def make(self, values):
+            return GuardedMeter(values)
+
+    def loose(values):
+        return GuardedMeter(values)
+
+    solution = solve("def build(factory): return factory([4, 5]).read(1)")
+    assert solution["build"](Maker([0]).make) == 5
+    check_guard()
+    assert refused(solution["build"], loose).startswith("`meter._values` may not be set outside")
+
+
 # -- introspection --------------------------------------------------------------------
 
 
@@ -320,6 +409,176 @@ def test_a_property_with_a_setter_still_sets():
     with pytest.raises(CheckFailure, match="may not be copied"):
         copy.copy(dial)
     guarded_module._violations.clear()
+
+
+# -- special methods --------------------------------------------------------------------
+
+
+class Shelf:
+    """A kit object used through special methods: called, measured, indexed, entered."""
+
+    def __init__(self, values):
+        self._values = list(values)
+        self.counters = Counters("calls", "reads")
+        self.open = False
+
+    def __call__(self, i):
+        self.counters.add("calls")
+        return self._values[i]
+
+    def __len__(self):
+        return len(self._values)
+
+    def __getitem__(self, i):
+        self.counters.add("reads")
+        return self._values[i]
+
+    def __contains__(self, value):
+        return value in self._values
+
+    def __iter__(self):
+        return iter(tuple(self._values))
+
+    def __enter__(self):
+        self.open = True
+        return self
+
+    def __exit__(self, *exc):
+        self.open = False
+
+    def __eq__(self, other):  # not in SPECIAL: it stays a borrowed method
+        return self._values == other
+
+    __hash__ = None
+
+
+class GuardedShelf(Guarded, Shelf):
+    label = "shelf"
+
+
+def test_special_methods_are_calls_made_through_the_object(solve):
+    solution = solve(
+        """
+        def use(shelf):
+            with shelf as same:
+                opened = same.open
+            total = shelf(0) + shelf[1] + shelf.__call__(2) + len(shelf) + sum(shelf)
+            return total, 3 in shelf, opened, shelf.open, callable(shelf)
+        """
+    )
+    shelf = GuardedShelf([1, 2, 3])
+    assert solution["use"](shelf) == (1 + 2 + 3 + 3 + 6, True, True, False, True)
+    check_guard()
+    assert shelf.counters.snapshot() == {"calls": 2, "reads": 1}
+    assert GuardedShelf.__call__.__doc__ == Shelf.__call__.__doc__
+    assert shelf(0) == 1 and shelf == [1, 2, 3]  # the test, outside the solution
+
+
+def test_a_borrowed_special_method_is_refused(solve):
+    solution = solve(
+        """
+        def borrowed(shelf): return type(shelf).__mro__[2].__call__(shelf, 0)
+        def compared(shelf): return shelf == [1, 2, 3]
+        def through_the_class(shelf): return type(shelf).__call__(shelf, 0)
+        """
+    )
+    shelf = GuardedShelf([1, 2, 3])
+    outside = "may not be read outside the shelf's own methods"
+    assert refused(solution["borrowed"], shelf) == f"`shelf.counters` {outside}"
+    assert refused(solution["compared"], shelf) == f"`shelf._values` {outside}"
+    guarded_module._violations.clear()
+    assert solution["through_the_class"](shelf) == 1  # the guarded class's own: counted
+    check_guard()
+    assert shelf.counters.calls == 1  # the borrowed call was refused before it counted
+
+
+def test_a_special_method_of_the_guarded_class_is_wrapped_once(solve):
+    class Logged(Guarded, Shelf):
+        label = "shelf"
+
+        def __call__(self, i):
+            self.asked = [*getattr(self, "asked", []), i]
+            return Shelf.__call__(self, i)
+
+    class Further(Logged):
+        pass
+
+    solution = solve("def use(shelf): return shelf(1), len(shelf)")
+    for cls in (Logged, Further):
+        shelf = cls([4, 5])
+        assert solution["use"](shelf) == (5, 2)
+        check_guard()
+        assert shelf.asked == [1] and shelf.counters.calls == 1
+    assert Further.__call__ is Logged.__call__  # inherited, not wrapped again
+    assert not callable(GuardedMeter([1]))  # a class without __call__ gets none
+
+
+def test_of_guards_an_object_that_was_built_elsewhere(solve):
+    solution = solve(
+        """
+        def use(meter): return meter.read(1)
+        def cheat(meter): return meter.counters
+        """
+    )
+    plain = Meter([1, 2, 3])
+    meter = GuardedMeter.of(plain)
+    assert type(meter) is GuardedMeter and solution["use"](meter) == 2
+    check_guard()
+    assert meter.counters is plain.counters and plain.counters.reads == 1
+    assert refused(solution["cheat"], meter) == "`meter.counters` may not be used in this problem"
+    again = GuardedMeter.of(meter)  # also from a guarded object
+    assert again.counters is plain.counters and again.peek() == [1, 2, 3]
+
+
+def test_a_guarded_model_and_guarded_experts_are_called(solve, fw):
+    class LM(Guarded, TinyLM):
+        label = "lm"
+        refused = Guarded.refused | {"seed"}
+
+    class Experts(Guarded, CountingExperts):
+        label = "experts"
+        refused = Guarded.refused | {"seed", "weights", "calls", "reference"}
+
+    solution = solve(
+        """
+        def honest(lm, experts, tokens, rows):
+            logits, cache = lm(tokens)
+            logits, cache = lm(tokens[-1:], cache)
+            return logits, cache.length, experts(1, rows), lm.vocab_size, experts.n_experts
+
+        def twin(lm): return type(lm)(lm.fw, seed=lm.seed)
+        def kit_twin(lm): return type(lm).__mro__[2].with_framework(lm, lm.fw)
+        def borrowed(lm, tokens): return type(lm).__mro__[2].__call__(lm, tokens)
+        def weights(experts): return experts.weights
+        def oracle(experts, rows): return type(experts).__mro__[2].reference(experts, 1, rows)
+        def forge(lm): object.__getattribute__(lm, "counters").tokens_processed = 0
+        """
+    )
+    lm, experts = LM(fw, seed=3), Experts(fw, seed=1, n_experts=4, d_model=8, d_hidden=6)
+    rows = np.random.default_rng(0).normal(size=(5, 8)).astype(np.float32)
+    logits, length, out, vocab, n = solution["honest"](lm, experts, [0, 17, 42], fw.tensor(rows))
+    check_guard()
+    plain = TinyLM(fw, seed=3)
+    want, _ = plain([0, 17, 42, 42])
+    np.testing.assert_allclose(fw.numpy(logits), fw.numpy(want)[-1:], rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(fw.numpy(out), experts.reference(1, rows), rtol=1e-6)
+    assert (length, vocab, n) == (4, 64, 4)
+    assert lm.counters.snapshot() == {"forward_calls": 2, "tokens_processed": 4}
+    assert experts.counters.snapshot() == {"expert_calls": 1, "expert_rows": 5}
+    assert isinstance(lm.with_framework(fw), TinyLM)  # the test may make a twin
+
+    assert refused(solution["twin"], lm) == "`lm.seed` may not be used in this problem"
+    assert "`lm.__dict__` may not be read outside" in refused(solution["kit_twin"], lm)
+    assert "`lm._token_array` may not be read outside" in refused(solution["borrowed"], lm, [0, 1])
+    assert refused(solution["weights"], experts) == (
+        "`experts.weights` may not be used in this problem"
+    )
+    assert refused(solution["oracle"], experts, rows) == (
+        "`experts._expert` may not be read outside the experts' own methods"
+    )
+    with pytest.raises(AttributeError):
+        solution["forge"](lm)
+    assert lm.counters.tokens_processed == 4
 
 
 # -- the kit's own objects behind the guard -------------------------------------------

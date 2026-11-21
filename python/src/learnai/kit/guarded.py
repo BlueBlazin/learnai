@@ -20,13 +20,22 @@ Three rules, all about *who is asking* (the call stack decides, as for ``forbidd
 
 1. Code in the solution file may read the names the class lets it read, and may set
    nothing. By default that is every public attribute except ``refused``; a class that
-   sets ``allowed`` lets the solution read those names only.
+   sets ``allowed`` lets the solution read those names only. The object's machinery
+   (``__dict__``, ``__init__``, ``__getattribute__``, ``__setattr__``, ``__delattr__``)
+   is never the solution's to use.
 2. Kit and test code is not restricted, with one exception: while the solution is
-   running, the restricted names can be read only inside a call the solution made
-   *through the object* (``store.gather(...)``). So the kit's own methods work, and
-   borrowing one as a plain function (``CountingKV.reference(store)``,
-   ``type(store).gather(store, ...)``) does not.
+   running, the restricted names can be read, and attributes set, only inside a call
+   the solution made *through the object* (``store.gather(...)``). So the kit's own
+   methods work, and borrowing one as a plain function (``CountingKV.reference(store)``,
+   ``type(store).gather(store, ...)``, ``CountingKV.__init__(store, ...)``) does not.
+   Nor does code the solution has such a call run for it: a callback, or the special
+   method of an argument it passed in.
 3. A guarded object cannot be copied.
+
+Python calls a special method without asking for an attribute: ``lm(tokens)``,
+``len(file)``, ``file[a:b]``, ``with file:``. The special methods a guarded class
+inherits (the names in ``SPECIAL``) are therefore wrapped when the class is made, and
+count as calls made through the object like any other method.
 
 A refused access raises ``CheckFailure`` and is recorded, so a solution that catches
 the exception still fails at ``check_guard()``.
@@ -46,6 +55,7 @@ habit, and every cheat that needs only the object it was handed.
 
 from __future__ import annotations
 
+import functools
 import os
 import sys
 import types
@@ -61,7 +71,31 @@ _STATE: dict[int, dict[str, Any]] = {}
 _violations: list[str] = []
 _solution_file: str | None = None
 _test_file: str | None = None
-_depth = 0  # > 0 while a call made through a guarded object is running
+#: Names of the object's machinery: restricted in every guarded class, whatever its
+#: ``refused``. Each one is a way around the rules: ``store.__init__(...)`` starts the
+#: counters over, ``store.__getattribute__("counters")`` reads through the kit.
+MACHINERY = frozenset({"__dict__", "__init__", "__getattribute__", "__setattr__", "__delattr__"})
+#: Code objects whose frames mark a call made through a guarded object: the wrappers
+#: around its methods and ``Guarded.__getattribute__`` (under which a property runs).
+_THROUGH: set[types.CodeType] = set()
+
+#: The special methods that count as calls made through the object. Python looks them
+#: up on the class, past ``__getattribute__``, so ``Guarded`` wraps the ones a guarded
+#: class inherits. ``__repr__`` is handled by ``Guarded`` itself.
+SPECIAL = (
+    "__call__",
+    "__len__",
+    "__length_hint__",
+    "__bool__",
+    "__contains__",
+    "__getitem__",
+    "__setitem__",
+    "__delitem__",
+    "__iter__",
+    "__next__",
+    "__enter__",
+    "__exit__",
+)
 
 
 def guard(ctx: Any) -> None:
@@ -75,10 +109,9 @@ def guard(ctx: Any) -> None:
 
     The file that calls ``guard`` (the problem's ``tests.py``) is trusted like the kit.
     """
-    global _solution_file, _test_file, _depth
+    global _solution_file, _test_file
     _solution_file = ctx.solution.__file__
     _test_file = sys._getframe(1).f_code.co_filename
-    _depth = 0
     _violations.clear()
 
 
@@ -99,29 +132,34 @@ def _violation(message: str) -> None:
     raise CheckFailure(message)
 
 
-def _asker(frame: types.FrameType | None) -> tuple[str, types.FrameType | None]:
-    """Whose code is asking: ``"solution"`` or ``"trusted"``, and the frame that decided.
+def _asker(frame: types.FrameType | None) -> str:
+    """Whose code touches a guarded object: ``"solution"``, ``"borrowed"``, or ``"trusted"``.
 
-    The nearest frame that belongs to the solution file, to the kit and the judge, or
-    to the test file decides. Frames of anything else (``copy``, ``operator``, a string
-    given to ``eval``, a framework) are looked through: they act for whoever called them.
+    Walking out from ``frame``, the first frame of the solution file or of a call made
+    through a guarded object decides. Frames of the kit, the judge, and the test file
+    are trusted, and frames of anything else (``copy``, ``operator``, a string given to
+    ``eval``, a framework) act for whoever called them:
+
+    - the solution file, with nothing trusted in between: ``"solution"``.
+    - the solution file, behind trusted code that it called some other way than through
+      the object (a kit method borrowed as a function, a callback): ``"borrowed"``.
+    - a call made through the object, or no solution frame at all: ``"trusted"``.
     """
+    trusted = False
     while frame is not None:
-        filename = frame.f_code.co_filename
-        if filename == _solution_file:
-            return "solution", frame
-        if filename == _test_file or filename.startswith(_PACKAGE):
-            return "trusted", frame
+        code = frame.f_code
+        if code.co_filename == _solution_file:
+            return "borrowed" if trusted else "solution"
+        if code in _THROUGH:
+            return "trusted"
+        if code.co_filename == _test_file or code.co_filename.startswith(_PACKAGE):
+            trusted = True
         frame = frame.f_back
-    return "trusted", None
+    return "trusted"
 
 
-def _solution_is_running(frame: types.FrameType | None) -> bool:
-    while frame is not None:
-        if frame.f_code.co_filename == _solution_file:
-            return True
-        frame = frame.f_back
-    return False
+def _owner(label: str) -> str:
+    return label + ("'" if label.endswith("s") else "'s")
 
 
 def _state(obj: Any) -> dict[str, Any]:
@@ -137,14 +175,20 @@ def _entering(function: Callable[..., Any]) -> Callable[..., Any]:
     """``function``, marked as a call made through a guarded object while it runs."""
 
     def call(*args: Any, **kwargs: Any) -> Any:
-        global _depth
-        _depth += 1
-        try:
-            return function(*args, **kwargs)
-        finally:
-            _depth -= 1
+        return function(*args, **kwargs)
 
     return call
+
+
+def _special(function: Callable[..., Any]) -> Callable[..., Any]:
+    """A special method of a guarded class: a call made through the object."""
+
+    @functools.wraps(function)
+    def method(*args: Any, **kwargs: Any) -> Any:
+        return function(*args, **kwargs)
+
+    method._through_the_object = True  # type: ignore[attr-defined]
+    return method
 
 
 class Guarded:
@@ -161,8 +205,10 @@ class Guarded:
         label: what the object is called in messages (the argument's name in the
             statement): ``"`store.counters` may not be used in this problem"``.
         refused: names the solution may not read, besides every private name
-            (``_x``): by default ``counters``, ``log``, ``with_framework``, ``__dict__``.
-            Extend it for a test-only method: ``refused = Guarded.refused | {"peek"}``.
+            (``_x``) and the object's machinery (``MACHINERY``): by default
+            ``counters``, ``log``, ``with_framework``. Extend it for a test-only method
+            or a setting that would rebuild the object:
+            ``refused = Guarded.refused | {"peek", "seed"}``.
         allowed: if set, the *only* names the solution may read; ``refused`` is then
             not consulted.
 
@@ -171,15 +217,41 @@ class Guarded:
     exception (borrowed methods) and for what the guard cannot stop.
 
     A subclass can record a rule of its own with ``self.violation(message)``, which
-    fails the case the same way. Python calls a special method (``len(store)``,
-    ``store[i]``) without going through an attribute, so one that reads restricted
-    names counts as a borrowed method and is refused while the solution runs. Only
-    ``__repr__`` is exempt: ``print(store)`` is a learner debugging.
+    fails the case the same way. The special methods in ``SPECIAL`` that the class
+    defines or inherits (``lm(tokens)``, ``len(file)``, ``file[a:b]``, ``with file:``)
+    are calls made through the object, like its other methods; so is ``__repr__``:
+    ``print(store)`` is a learner debugging. Any other special method that reads
+    restricted names counts as a borrowed method and is refused while the solution
+    runs.
     """
 
     label: ClassVar[str] = "the kit object"
-    refused: ClassVar[frozenset[str]] = frozenset({"counters", "log", "with_framework", "__dict__"})
+    refused: ClassVar[frozenset[str]] = frozenset({"counters", "log", "with_framework"})
     allowed: ClassVar[frozenset[str] | None] = None
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        for name in SPECIAL:
+            for base in cls.__mro__[:-1]:  # not `object`
+                function = vars(base).get(name)
+                if function is None:
+                    continue
+                wrapped = getattr(function, "_through_the_object", False)
+                if isinstance(function, types.FunctionType) and not wrapped:
+                    setattr(cls, name, _special(function))
+                break
+
+    @classmethod
+    def of(cls, plain: Any) -> Any:
+        """A guarded object with the attributes of ``plain``, for an object that a kit
+        factory built (``Experts.of(moe.experts(1))``, ``LM.of(draft)``).
+
+        The attributes are shared, not copied: the counters of the guarded object are
+        the counters of ``plain``.
+        """
+        new = object.__new__(cls)
+        _state(new).update(vars(plain))
+        return new
 
     @staticmethod
     def violation(message: str) -> None:
@@ -187,19 +259,21 @@ class Guarded:
         _violation(message)
 
     def __getattribute__(self, name: str) -> Any:
-        global _depth
         cls = type(self)
         if cls.allowed is not None:
             restricted = name not in cls.allowed
         else:
-            restricted = name in cls.refused or (name[:1] == "_" and name[:2] != "__")
+            restricted = (
+                name in cls.refused or name in MACHINERY or (name[:1] == "_" and name[:2] != "__")
+            )
         if restricted and _solution_file is not None:
-            who, frame = _asker(sys._getframe(1))
+            who = _asker(sys._getframe(1))
             if who == "solution":
                 _violation(f"`{cls.label}.{name}` may not be used in this problem")
-            if not _depth and frame is not None and _solution_is_running(frame.f_back):
+            if who == "borrowed":
                 _violation(
-                    f"`{cls.label}.{name}` may not be read outside the {cls.label}'s own methods"
+                    f"`{cls.label}.{name}` may not be read outside the {_owner(cls.label)} "
+                    "own methods"
                 )
         state = _state(self)
         if name == "__dict__":
@@ -207,26 +281,31 @@ class Guarded:
         if name in state:
             value = state[name]
         else:
-            _depth += 1  # a property of the class runs here: a call through the object
-            try:
-                value = object.__getattribute__(self, name)
-            finally:
-                _depth -= 1
+            # A property of the class runs under this frame: a call through the object.
+            value = object.__getattribute__(self, name)
         if isinstance(value, (types.MethodType, types.FunctionType)):
             return _entering(value)
         return value
 
+    def _may_set(self, name: str, frame: types.FrameType | None) -> None:
+        if _solution_file is None:
+            return
+        who = _asker(frame)
+        label = type(self).label
+        if who == "solution":
+            _violation(f"`{label}.{name}` may not be set in this problem")
+        if who == "borrowed":
+            _violation(f"`{label}.{name}` may not be set outside the {_owner(label)} own methods")
+
     def __setattr__(self, name: str, value: Any) -> None:
-        if _solution_file is not None and _asker(sys._getframe(1))[0] == "solution":
-            _violation(f"`{type(self).label}.{name}` may not be set in this problem")
+        Guarded._may_set(self, name, sys._getframe(1))
         if hasattr(getattr(type(self), name, None), "__set__"):
             object.__setattr__(self, name, value)  # a property with a setter
         else:
             _state(self)[name] = value
 
     def __delattr__(self, name: str) -> None:
-        if _solution_file is not None and _asker(sys._getframe(1))[0] == "solution":
-            _violation(f"`{type(self).label}.{name}` may not be set in this problem")
+        Guarded._may_set(self, name, sys._getframe(1))
         try:
             del _state(self)[name]
         except KeyError:
@@ -241,3 +320,8 @@ class Guarded:
         _violation(f"`{type(self).label}` may not be copied in this problem")
 
     __copy__ = __deepcopy__ = __reduce_ex__ = __reduce__ = _no_copy
+
+
+_THROUGH.update(
+    (_entering(len).__code__, _special(len).__code__, Guarded.__getattribute__.__code__)
+)
