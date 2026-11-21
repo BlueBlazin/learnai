@@ -878,10 +878,16 @@ check.cost(store.counters, "rows_read", at_most=int((idx >= 0).sum()), unit="row
 Keep the object's test-only methods (`reference`, the `*_ref` oracles) in `forbidden`
 as before, so that the message names the method, and say in the statement which
 attributes are the interface. Do not use `forbidden_source` for the counters or the
-private attributes (section 4.1). The cost problems written before `Guarded` hand
-their counting objects over unguarded; converting one means these lines, an allowlist
-if its public settings are enough to build a twin, and a check that its references
-are still accepted and its mutants still rejected.
+private attributes (section 4.1). The cost problems written before `Guarded` were
+converted on 2026-11-21. Eight cost problems have no guard because the solution is
+handed nothing that leads to the count: the cost is computed from what it returns
+(`dynamic-draft-length`, `reasoning-budget-processor`), or measured by a spy or a
+memory reading that the test owns (`mlx-weights-load`, `mlx-preallocated-kv-cache`,
+`mlx-dtype-discipline`, `mlx-memory-accounting`, `mlx-quantized-linear`,
+`capstone-quantized-runner`). A guard protects the object, not the measurement: when
+the solution is also given the data the object would be asked about (the vectors of
+a search problem, the public submodules of an `MLXTinyLM`), it can do the arithmetic
+by hand, and only a check on the result's cost elsewhere catches that.
 
 ### 5.5 speed
 
@@ -2627,9 +2633,13 @@ check.cost(model.counters, "encoder_tokens", exactly=P + (canvases - 1) * L, uni
 ### Guarded, guard, check_guard
 
 A mixin that makes a kit object safe to hand to a solution whose work is counted
-(`python/src/learnai/kit/guarded.py`). Used by `gathered-sparse-attention`,
-`indexer-cache-decode`, `shared-index-layers`, `gated-delta-chunked`, and
-`block-diffusion-decode`.
+(`python/src/learnai/kit/guarded.py`). Used by every problem that hands the solution
+an object whose count is judged: 51 problems as of 2026-11-21 (`grep -l "guard(ctx"
+problems/*/*/tests.py`, plus `mmap-lazy-loader`, which arms it as `guard(self.ctx)`).
+Short ones to copy from: `gathered-sparse-attention` (a store), `cached-greedy-decode`
+(a `TinyLM`), `moe-sparse-dispatch` (`.of` for an object a factory built),
+`mlx-compile-step` (an `mlx.nn.Module`), `tool-call-loop` (async methods),
+`block-diffusion-decode` (an allowlist and a rule of the test's own).
 
 ```python
 from learnai.kit import BlockDenoiser, CountingKV, DeltaMemory, Guarded, check_guard, guard
