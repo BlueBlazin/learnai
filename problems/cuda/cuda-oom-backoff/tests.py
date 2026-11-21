@@ -21,6 +21,10 @@ retries forever fails quickly instead of running into the time limit.
 
 The outputs are compared with one call of the same function on all items.
 
+The model is behind the kit's `Guarded`: a solution may call it, and call the
+`empty_cache` it was handed. The model's function, its capacity, its logs, and its
+counters are refused.
+
 The GPU case (`requires="cuda"`) was written from the PyTorch 2.15 documentation and
 has never run on the machine that validates the catalog. It runs the same contract
 on CUDA tensors with the real `torch.cuda.empty_cache`; it does not provoke a real
@@ -30,7 +34,7 @@ out-of-memory error, whose threshold depends on the machine.
 import torch
 
 from learnai.judge import case, check
-from learnai.kit import OOMModel
+from learnai.kit import Guarded, OOMModel, check_guard, guard
 
 FN = "run_batched"
 CALL_LIMIT = 80
@@ -41,8 +45,12 @@ def oom_error():
     return torch.OutOfMemoryError("CUDA out of memory. Tried to allocate 2.00 GiB (transient)")
 
 
-class Model(OOMModel):
+class Model(Guarded, OOMModel):
     """`OOMModel` with a limit on the number of calls."""
+
+    label = "model"
+    refused = Guarded.refused | {"fn", "max_items", "errors", "batch_sizes", "events"}
+    device = None  # a CUDA device: `empty_cache` then also empties the real cache
 
     def __call__(self, batch):
         check.that(
@@ -52,6 +60,11 @@ class Model(OOMModel):
             f"does not advance. batch sizes tried so far: {self.batch_sizes[:12]} ...",
         )
         return super().__call__(batch)
+
+    def empty_cache(self):
+        super().empty_cache()
+        if self.device is not None:
+            torch.cuda.empty_cache()
 
 
 def plan(n, batch_size, fails, grow_after=None):
@@ -87,12 +100,8 @@ def run(ctx, n, batch_size, max_items, *, grow_after=UNSET, transient=(), device
         return torch.tanh(batch @ weight)
 
     model = Model(fn, max_items, errors={index: oom_error() for index in transient})
-    cuda_calls = []
-
-    def empty_cache():
-        model.empty_cache()
-        if device is not None:
-            cuda_calls.append(torch.cuda.empty_cache())
+    model.device = device
+    empty_cache = model.empty_cache
 
     def fails(index, size):
         return index in transient or size > max_items
@@ -101,6 +110,7 @@ def run(ctx, n, batch_size, max_items, *, grow_after=UNSET, transient=(), device
     extra = () if grow_after is UNSET else (grow_after,)
     snapshot = items.clone()
     out = None
+    guard(ctx)
     if raises:
         check.raises(
             torch.OutOfMemoryError,
@@ -112,8 +122,10 @@ def run(ctx, n, batch_size, max_items, *, grow_after=UNSET, transient=(), device
             *extra,
             label=FN,
         )
+        check_guard()
     else:
         out = ctx.solution.run_batched(model, items, batch_size, empty_cache, *extra)
+        check_guard()
         check.that(isinstance(out, torch.Tensor), f"{FN}: returned a {type(out).__name__}")
         if device is not None:
             check.that(out.is_cuda, f"{FN}: the result is on {out.device}, not on the CUDA device")
@@ -194,14 +206,17 @@ def other_errors_propagate(ctx):
     items = torch.from_numpy(ctx.randn(12, 4))
     injected = RuntimeError("mat1 and mat2 shapes cannot be multiplied (4x4 and 5x3)")
     model = Model(lambda batch: batch @ weight, 100, errors={1: injected})
+    guard(ctx)
     try:
         ctx.solution.run_batched(model, items, 4, model.empty_cache)
     except RuntimeError as exc:
+        check_guard()
         check.that(
             exc is injected,
             f"{FN}: raised {type(exc).__name__}, which is not the exception the model raised",
         )
     else:
+        check_guard()
         check.that(False, f"{FN}: swallowed an exception of the model that is not out-of-memory")
     check.equal(model.batch_sizes, [4, 4], label="batch sizes tried")
     check.cost(model.counters, "empty_cache_calls", exactly=0, unit="calls")

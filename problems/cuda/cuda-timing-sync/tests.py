@@ -12,6 +12,10 @@ are therefore exact, and each timing mistake has an exact wrong value:
 
 A median hides one bad sample, so the last two are tested with n = 1 and n = 2.
 
+The fake device and the counting wrapper around `fn` are behind the kit's `Guarded`: a
+solution may call `fn()`, `device_api.sync()`, and `device_api.clock()`, and nothing
+else of either.
+
 The GPU case (`requires="cuda"`) was written from the PyTorch 2.15 documentation and
 has never run on the machine that validates the catalog.
 """
@@ -22,21 +26,36 @@ import time
 import torch
 
 from learnai.judge import case, check
-from learnai.kit import FakeDevice, RealDevice
+from learnai.kit import FakeDevice, Guarded, RealDevice, check_guard, guard
 from learnai.kit.counters import Counters
 
 FN = "time_region"
 
 
+class Device(Guarded, FakeDevice):
+    label = "device_api"
+    allowed = frozenset({"__class__", "sync", "clock"})
+
+
+class Counted(Guarded):
+    """`fn` with a counter of its calls: a solution may call it, and nothing else."""
+
+    label = "fn"
+    allowed = frozenset({"__class__", "__call__"})
+
+    def __init__(self, fn):
+        self.fn = fn
+        self.counters = Counters("fn_calls")
+
+    def __call__(self):
+        self.counters.add("fn_calls")
+        return self.fn()
+
+
 def counted(fn):
     """`fn` with a counter of its calls."""
-    counters = Counters("fn_calls")
-
-    def call():
-        counters.add("fn_calls")
-        return fn()
-
-    return call, counters
+    call = Counted(fn)
+    return call, call.counters
 
 
 def scripted(dev, durations):
@@ -55,7 +74,9 @@ def scripted(dev, durations):
 def measure(ctx, dev, fn, n, expected):
     """Run the solution; check the value, then the number of calls."""
     call, counters = counted(fn)
+    guard(ctx)
     seconds = ctx.solution.time_region(call, dev, n)
+    check_guard()
     check.that(
         isinstance(seconds, float),
         f"{FN}: returned a {type(seconds).__name__}, not a Python float",
@@ -74,7 +95,7 @@ def measure(ctx, dev, fn, n, expected):
 def worked_example(ctx):
     # Rejects no_sync_before_stop and sync_after_clock (they measure 0), host_clock
     # (a different clock), and warmup_every_sample (10 calls).
-    dev = FakeDevice()
+    dev = Device()
     fn = dev.kernel(0.004, first_call_s=0.050)
     measure(ctx, dev, fn, 5, 0.004)
 
@@ -82,7 +103,7 @@ def worked_example(ctx):
 @case("work was already queued when time_region is called, n = 1", public=True)
 def stale_work(ctx):
     # Rejects no_sync_before_start: its only sample is 0.100 + 0.050 + 0.004.
-    dev = FakeDevice()
+    dev = Device()
     fn = dev.kernel(0.004, first_call_s=0.050)
     dev.launch(0.100)  # someone else's work, still running
     measure(ctx, dev, fn, 1, 0.004)
@@ -91,16 +112,16 @@ def stale_work(ctx):
 @case("the first call is slow: it is the warm-up and is not a sample, n = 1 and n = 2", public=True)
 def warmup_excluded(ctx):
     # Rejects no_warmup: 0.050 for n = 1, (0.050 + 0.004) / 2 for n = 2.
-    dev = FakeDevice()
+    dev = Device()
     measure(ctx, dev, dev.kernel(0.004, first_call_s=0.050), 1, 0.004)
-    dev = FakeDevice()
+    dev = Device()
     measure(ctx, dev, dev.kernel(0.004, first_call_s=0.050), 2, 0.004)
 
 
 @case("calls of different durations: the median, not the mean", public=True)
 def median_of_samples(ctx):
     # Rejects mean_not_median and total_over_n (0.008) and unsorted_median (0.020).
-    dev = FakeDevice()
+    dev = Device()
     fn = scripted(dev, [0.030, 0.003, 0.001, 0.020, 0.002, 0.014])  # the first is the warm-up
     measure(ctx, dev, fn, 5, 0.003)
 
@@ -108,16 +129,16 @@ def median_of_samples(ctx):
 @case("an even number of samples: the mean of the two middle durations")
 def even_count(ctx):
     # Rejects upper_median (0.006).
-    dev = FakeDevice()
+    dev = Device()
     fn = scripted(dev, [0.010, 0.006, 0.001, 0.009, 0.004])
     measure(ctx, dev, fn, 4, 0.005)
-    dev = FakeDevice()
+    dev = Device()
     measure(ctx, dev, scripted(dev, [0.010, 0.002, 0.007]), 2, 0.0045)
 
 
 @case("stale work and a slow first call, with two samples")
 def stale_and_two(ctx):
-    dev = FakeDevice()
+    dev = Device()
     fn = scripted(dev, [0.040, 0.004, 0.006])
     dev.launch(0.250)
     measure(ctx, dev, fn, 2, 0.005)
@@ -132,7 +153,7 @@ def stale_and_two(ctx):
 @case("each call launches several kernels, and launching takes host time")
 def several_kernels(ctx):
     # The device works while the host launches: 3 ms + 2 ms of work, 0.2 ms per launch.
-    dev = FakeDevice(launch_s=0.0002)
+    dev = Device(launch_s=0.0002)
     first, second = dev.kernel(0.003, first_call_s=0.020), dev.kernel(0.002)
 
     def fn():
@@ -141,15 +162,15 @@ def several_kernels(ctx):
 
     measure(ctx, dev, fn, 3, 0.005)
     # When launching costs more than the work, the call is bound by the host.
-    dev = FakeDevice(launch_s=0.002)
+    dev = Device(launch_s=0.002)
     measure(ctx, dev, dev.kernel(0.0005), 3, 0.002)
 
 
 @case("a single sample, and many samples with one outlier")
 def sample_counts(ctx):
-    dev = FakeDevice()
+    dev = Device()
     measure(ctx, dev, scripted(dev, [0.001, 0.007]), 1, 0.007)
-    dev = FakeDevice()
+    dev = Device()
     durations = [0.002, *[0.004] * 10, 0.300, *[0.004] * 10]
     dev.launch(0.5)
     measure(ctx, dev, scripted(dev, durations), 21, 0.004)
@@ -160,7 +181,7 @@ def random_durations(ctx):
     for n in (3, 6, 9, 12):
         ms = [int(v) for v in ctx.rng.integers(1, 400, size=n + 1)]
         durations = [v / 1e4 for v in ms]
-        dev = FakeDevice()
+        dev = Device()
         dev.launch(float(ctx.rng.integers(1, 50)) / 1e3)
         measure(ctx, dev, scripted(dev, durations), n, statistics.median(durations[1:]))
 
@@ -202,7 +223,9 @@ def gpu_events(ctx):
 
     n = 5
     call, counters = counted(fn)
+    guard(ctx)
     seconds = ctx.solution.time_region(call, RealDevice(device), n)
+    check_guard()
     torch.cuda.synchronize(device)
     check.that(isinstance(seconds, float), f"{FN}: must return a Python float")
     check.cost(counters, "fn_calls", exactly=n + 1, unit="calls")

@@ -26,6 +26,11 @@ inputs. It checks:
 The wrapper must not run torch operations while the graph is capturing (they would be
 recorded), so it copies its inputs through NumPy.
 
+The graph and the wrapper are behind the kit's `Guarded`. A solution may use the
+graph's `capture_begin`, `capture_end`, `replay`, `reset`, `capturing`, `captured`, and
+`n_ops` (and `torch.cuda.graph(graph)`), and may call `step_fn`. The graph's counters,
+the wrapper's record of calls, and the function behind the wrapper are refused.
+
 The stateful case replays a decode step of a small transformer that writes into a
 static KV cache, next to an eager twin with a cache of its own.
 
@@ -40,18 +45,34 @@ import numpy as np
 import torch
 
 from learnai.judge import case, check
-from learnai.kit import FakeCudaGraph
+from learnai.kit import FakeCudaGraph, Guarded, check_guard, guard
 
 NAME = "GraphedStep"
 VOCAB, DIM, HEADS, LAYERS, MAX_LEN = 24, 16, 2, 2, 24
 
 
-class Harness:
-    """A step function under observation, the graph, and the GraphedStep built on them."""
+class Graph(Guarded, FakeCudaGraph):
+    label = "graph"
+    # `_ops` stays readable: the recorder appends to it under the solution's own tensor
+    # operations during the capture, which the guard cannot tell from the solution.
+    allowed = frozenset(
+        {"capture_begin", "capture_end", "replay", "reset", "capturing", "captured", "n_ops"}
+        | {"__class__", "_ops"}
+    )
+
+
+class Harness(Guarded):
+    """A step function under observation, the graph, and the GraphedStep built on them.
+
+    The solution is handed `self.step_fn`, and nothing of the harness can be read
+    through it."""
+
+    label = "step_fn"
+    allowed = frozenset({"__class__"})
 
     def __init__(self, ctx, fn, examples, warmup=None, graph=None):
         self.ctx, self.fn = ctx, fn
-        self.graph = FakeCudaGraph() if graph is None else graph
+        self.graph = Graph() if graph is None else graph
         self.fake = isinstance(self.graph, FakeCudaGraph)
         self.examples = tuple(examples)
         self.example_values = [x.detach().cpu().numpy().copy() for x in self.examples]
@@ -59,6 +80,7 @@ class Harness:
         self.calls = []  # (capturing, [input values], [input data_ptr])
         self.results = []  # (output or tuple of outputs, expected NumPy arrays)
         extra = {} if warmup is None else {"warmup": warmup}
+        guard(ctx)
         if self.fake:
             with self.graph.patched():
                 self.step = ctx.solution.GraphedStep(
@@ -66,6 +88,7 @@ class Harness:
                 )
         else:
             self.step = ctx.solution.GraphedStep(self.step_fn, self.examples, self.graph, **extra)
+        check_guard()
         self.check_construction()
 
     def step_fn(self, *inputs):
@@ -128,11 +151,19 @@ class Harness:
             )
         self.n_construction_calls = len(self.calls)
 
+    def run(self, *inputs):
+        """One call of the GraphedStep, with the guard armed before it and checked after."""
+        guard(self.ctx)
+        try:
+            return self.step(*inputs)
+        finally:
+            check_guard()
+
     def call(self, *inputs, label="replayed output"):
         """One call of the GraphedStep on fresh tensors; checked against eager."""
         given = [x.clone() for x in inputs]
         want = self.fn(*[x.clone() for x in inputs])
-        got = self.step(*inputs)
+        got = self.run(*inputs)
         single = isinstance(want, torch.Tensor)
         check.that(
             isinstance(got, torch.Tensor) if single else isinstance(got, tuple),
@@ -285,7 +316,7 @@ def decode_through_graph(ctx, batch, n_prompt, n_steps, device, graph=None):
         token = logits.argmax(dim=-1, keepdim=True)
         pos = torch.tensor(n_prompt + i, device=device)
         want = decoder(token, pos, eager_cache)[:, 0]
-        got = harness.step(token, pos)
+        got = harness.run(token, pos)
         check.that(
             isinstance(got, torch.Tensor) and tuple(got.shape) == (batch, VOCAB),
             f"{NAME}: the replayed decode step did not return logits of the expected shape",
@@ -366,7 +397,7 @@ def rejects_wrong_shapes(ctx):
         ((good_x, good_w, good_w), "too many inputs"),
     )
     for inputs, what in bad:
-        check.raises(ValueError, harness.step, *inputs, label=f"{NAME} called with {what}")
+        check.raises(ValueError, harness.run, *inputs, label=f"{NAME} called with {what}")
     check.cost(harness.graph.counters, "replays", exactly=1, unit="replays")
     harness.call(good_x, good_w)
     harness.finish()
@@ -414,7 +445,7 @@ def in_place_step(ctx):
     for _ in range(6):
         x = ctx.randn(5)
         expected += x
-        got = harness.step(tensor(x))
+        got = harness.run(tensor(x))
         check.allclose(got.numpy(), expected * 0.5, atol=1e-5, label="replayed output")
         harness.results.append(([got], [(expected * 0.5).copy()]))
     check.allclose(total.numpy(), expected, atol=1e-5, label="the step function's own buffer")

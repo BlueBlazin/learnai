@@ -23,6 +23,10 @@ is handed out and again after the loop.
 `fetch_results` gets a `HostLink`, defined below: a device-to-host copy that, when
 non-blocking, returns memory holding NaN (or -1 for integers) until `sync()` runs.
 
+The spy and the link are behind the kit's `Guarded`: a solution may call the `pin`,
+`to_device`, `to_host`, and `sync` it was handed and iterate its batches, and can read
+or change nothing of the objects behind them (the event log, the counts of waits).
+
 The GPU cases (`requires="cuda"`) were written from the PyTorch 2.15 documentation and
 have never run on the machine that validates the catalog.
 """
@@ -31,7 +35,7 @@ import numpy as np
 import torch
 
 from learnai.judge import case, check
-from learnai.kit import TransferSpy
+from learnai.kit import Guarded, TransferSpy, check_guard, guard
 
 CPU = torch.device("cpu")
 
@@ -39,6 +43,34 @@ CPU = torch.device("cpu")
 # --------------------------------------------------------------------------------------
 # Prefetcher
 # --------------------------------------------------------------------------------------
+
+
+class Hands(Guarded):
+    """What a Prefetcher is handed: `pin`, `to_device`, and a lazy source of batches.
+
+    All three record in the `TransferSpy` behind them, which the solution cannot reach.
+    """
+
+    label = "to_device"
+    allowed = frozenset({"__class__"})
+
+    def __init__(self, spy):
+        self.spy = spy
+        self.moved = []  # every tensor to_device returned
+
+    def pin(self, tensor):
+        return self.spy.pin(tensor)
+
+    def to_device(self, tensor, device, non_blocking=False):
+        out = self.spy.to_device(tensor, device, non_blocking=non_blocking)
+        self.moved.append(out)
+        return out
+
+    def taking(self, sources):
+        """The batches, one at a time, marking the moment each one is taken."""
+        for i, tensor in enumerate(sources):
+            self.spy.mark(("taken", i))
+            yield tensor
 
 
 def position(order, kind, label):
@@ -49,21 +81,14 @@ def position(order, kind, label):
 def drive(ctx, arrays, *, lazy=True):
     """Iterate a Prefetcher over `arrays`; check the batches, then the event log."""
     spy = TransferSpy()
+    hands = Hands(spy)
     sources = [spy.label(torch.from_numpy(a.copy()), i) for i, a in enumerate(arrays)]
     n = len(sources)
-    moved = []
-
-    def to_device(tensor, device, non_blocking=False):
-        out = spy.to_device(tensor, device, non_blocking=non_blocking)
-        moved.append(out)
-        return out
-
-    def generator():
-        for i, tensor in enumerate(sources):
-            spy.mark(("taken", i))
-            yield tensor
-
-    fetcher = ctx.solution.Prefetcher(generator() if lazy else sources, CPU, to_device, spy.pin)
+    moved = hands.moved
+    batches = hands.taking(sources) if lazy else sources
+    guard(ctx)
+    fetcher = ctx.solution.Prefetcher(batches, CPU, hands.to_device, hands.pin)
+    check_guard()
     spy.mark("constructed")
     check.that(
         iter(fetcher) is fetcher,
@@ -72,10 +97,13 @@ def drive(ctx, arrays, *, lazy=True):
 
     got = []
     while True:
+        guard(ctx)
         try:
             batch = next(fetcher)
         except StopIteration:
             break
+        finally:
+            check_guard()
         spy.mark(("handed out", len(got)))
         check.that(
             len(got) < n,
@@ -102,7 +130,9 @@ def drive(ctx, arrays, *, lazy=True):
         check.match(batch.numpy(), arrays[i], label=f"batch {i} after the loop")
         check.match(sources[i].numpy(), arrays[i], label=f"source batch {i}")
     for _ in range(2):
+        guard(ctx)
         check.raises(StopIteration, next, fetcher, label="next() after the last batch")
+        check_guard()
 
     # 2. What was handed out is what to_device returned.
     for i, batch in enumerate(got):
@@ -176,7 +206,7 @@ def token_batches(ctx, sizes, width=6):
 # --------------------------------------------------------------------------------------
 
 
-class HostLink:
+class HostLink(Guarded):
     """A device-to-host link whose non-blocking copies arrive at `sync()`.
 
     `to_host(tensor, non_blocking=False)` stands for `tensor.to("cpu", non_blocking=...)`
@@ -184,6 +214,9 @@ class HostLink:
     returns at once a tensor of the right shape whose contents are undefined (NaN here,
     -1 for integers) and are filled in, in place, by the next `sync()`.
     """
+
+    label = "to_host"
+    allowed = frozenset({"__class__"})
 
     def __init__(self):
         self.pending = []
@@ -215,7 +248,9 @@ class HostLink:
 def fetch(ctx, arrays):
     link = HostLink()
     outputs = [torch.from_numpy(a.copy()) for a in arrays]
+    guard(ctx)
     result = ctx.solution.fetch_results(outputs, link.to_host, link.sync)
+    check_guard()
     check.that(
         isinstance(result, torch.Tensor),
         f"fetch_results: returned a {type(result).__name__}, not a tensor",

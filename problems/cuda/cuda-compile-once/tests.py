@@ -26,6 +26,11 @@ Before every request the cache is filled with large finite garbage, so a step th
 attends to a slot it should not see, or a decode loop that starts at the wrong slot,
 changes the logits by orders of magnitude.
 
+The recording wrapper and the `torch.compile` wrapper are behind the kit's `Guarded`: a
+solution may call the `step` it was handed and `torch.compile`, and can read or change
+nothing of the objects behind them (the log, the unrecorded step, the record of
+`torch.compile` calls).
+
 `CompileCounter.compilations` reads Dynamo's `frames.ok` counter, which torch 2.15 does
 not increment under `fullgraph=True`; `CompileCounter.graphs` (graphs handed to the
 backend) counts in both settings. The judge uses the larger of the two.
@@ -42,7 +47,7 @@ import torch
 from torch._dynamo.exc import FailOnRecompileLimitHit
 
 from learnai.judge import case, check
-from learnai.kit import CompileCounter, DeviceSpy, SyncSpy
+from learnai.kit import CompileCounter, DeviceSpy, Guarded, SyncSpy, check_guard, guard
 
 CPU = torch.device("cpu")
 VOCAB, DIM, HEADS, LAYERS, MAX_LEN = 32, 16, 2, 2, 96
@@ -155,23 +160,25 @@ def oracle(model, prompt, n_new):
 # --------------------------------------------------------------------------------------
 
 
-class CompileSpy:
+class CompileSpy(Guarded):
     """Records every call of `torch.compile` made while the block is active."""
+
+    label = "torch.compile"
+    allowed = frozenset({"__class__"})
 
     def __init__(self, passthrough=True):
         self.calls = []
         self.passthrough = passthrough
 
+    def compile(self, model=None, **kwargs):
+        self.calls.append(kwargs)
+        if self.passthrough:
+            return self.real(model, **kwargs)
+        return model if model is not None else (lambda fn: fn)
+
     def __enter__(self):
         self.real = torch.compile
-
-        def compile(model=None, **kwargs):
-            self.calls.append(kwargs)
-            if self.passthrough:
-                return self.real(model, **kwargs)
-            return model if model is not None else (lambda fn: fn)
-
-        torch.compile = compile
+        torch.compile = self.compile
         return self
 
     def __exit__(self, *exc):
@@ -186,8 +193,11 @@ def describe_position(pos):
     return (f"Python {type(pos).__name__}", pos)
 
 
-class Session:
+class Session(Guarded):
     """One `make_step` and the requests played through it, under the spies."""
+
+    label = "step"
+    allowed = frozenset({"__class__"})
 
     def __init__(self, ctx, batch, compiles, counter):
         self.ctx, self.batch, self.compiles, self.counter = ctx, batch, compiles, counter
@@ -196,7 +206,9 @@ class Session:
         self.log = []  # one list of (tokens shape, position) per request
         self.requests = []  # (n_prompt, n_new, bucket) per request
         self.spies = []  # (SyncSpy, DeviceSpy) per request
+        guard(ctx)
         compiled = ctx.solution.make_step(self.model, self.cache, backend="eager")
+        check_guard()
         check.that(callable(compiled), "make_step: must return the compiled step function")
         self.compiled = compiled
 
@@ -220,6 +232,7 @@ class Session:
         self.log.append([])
         self.requests.append((n_prompt, n_new, 16 if bucket is None else bucket))
         extra = () if bucket is None else (bucket,)
+        guard(ctx)
         with DeviceSpy() as factories, SyncSpy() as syncs:
             try:
                 out = ctx.solution.generate(self.step, prompt, n_new, CPU, *extra)
@@ -231,6 +244,7 @@ class Session:
                     "reaching it an error)",
                     RECOMPILE_HINT,
                 )
+        check_guard()
         check.that(isinstance(out, torch.Tensor), "generate: must return a tensor")
         check.that(
             out.dtype == torch.int64 and tuple(out.shape) == (self.batch, n_new),
@@ -416,8 +430,10 @@ def compile_arguments(ctx):
     # Rejects default_dynamic and branch_without_fullgraph without compiling anything:
     # here the wrapper returns the function it was given.
     for backend, mode in (("inductor", "reduce-overhead"), ("eager", None)):
+        guard(ctx)
         with CompileSpy(passthrough=False) as compiles:
             ctx.solution.make_step(TinyDecoder(), new_cache(1), backend=backend, mode=mode)
+        check_guard()
         check_compile_calls(compiles, backend=backend, mode=mode)
 
 

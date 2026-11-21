@@ -18,6 +18,11 @@ Then the solution runs once under `SyncSpy` and `DeviceSpy`, and the case checks
 3. that every factory call passed `device=`;
 4. the work asked of the model: no call after the check that could have seen the EOS.
 
+The model the solution gets is behind the kit's `Guarded`: it may be called, put in
+evaluation mode, and asked for its sizes. Its counters and its weights are refused (a
+forward pass written out from the weights would not be counted), and it cannot be
+copied or rebuilt.
+
 The GPU cases (`requires="cuda"`) were written from the PyTorch 2.15 documentation and
 have never run on the machine that validates the catalog.
 """
@@ -29,7 +34,7 @@ import torch
 from torch import nn
 
 from learnai.judge import case, check
-from learnai.kit import DeviceSpy, SyncSpy
+from learnai.kit import DeviceSpy, Guarded, SyncSpy, check_guard, guard
 from learnai.kit.counters import Counters
 
 FN = "decode"
@@ -95,6 +100,16 @@ class StepLM(nn.Module):
         return h @ self.head.T, (k, v)
 
 
+class LM(Guarded, StepLM):
+    """The `StepLM` a solution is handed: `LM.of(StepLM(seed).to(device))`."""
+
+    label = "model"
+    allowed = frozenset(
+        {"__class__", "__call__", "forward", "eval", "train", "training", "to"}
+        | {"vocab_size", "dim", "max_context"}
+    )
+
+
 def plan(seed, prompt, n, check_every, rng, device=CPU, forced=(), eos_at=None):
     """Choose the tokens to generate and the uniforms that sample them.
 
@@ -138,11 +153,13 @@ def plan(seed, prompt, n, check_every, rng, device=CPU, forced=(), eos_at=None):
 def run(ctx, seed, prompt, n, check_every, device=CPU, **options):
     """Plan, call the solution once, and check tokens, synchronizations, and cost."""
     expected, uniforms, stop = plan(seed, prompt, n, check_every, ctx.rng, device, **options)
-    lm = StepLM(seed).to(device)
+    lm = LM.of(StepLM(seed).to(device))
+    guard(ctx)
     with SyncSpy() as syncs, DeviceSpy() as factories:
         out = ctx.solution.decode(
             lm, torch.tensor(prompt), n, torch.from_numpy(uniforms), device, EOS, check_every
         )
+    check_guard()
 
     # 1. The tokens.
     check.that(
