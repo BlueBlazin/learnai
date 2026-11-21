@@ -5,12 +5,12 @@ times, in float64 numpy. Every case compares the solution with it; two cases als
 compare with arrays computed by `torch_chunk_gated_delta_rule` of `transformers`
 (`fixtures/shipped.npz`, written by `fixtures/make.py`).
 
-The memory is handed over as a `DeltaMemory` (below; a local helper, not in the kit).
-It can be read and updated only through batched calls, each counted once whatever its
-number of rows, and every case checks the counts against the number of chunks: a
-token-by-token loop needs one read per token however it is written or compiled. One
-case uses keys wider than all the rows the limits allow, so the memory cannot be
-copied out and processed elsewhere.
+The memory is handed over as a `Memory`: the kit's `DeltaMemory` behind the kit's
+`Guarded`. It can be read and updated only through batched calls, each counted once
+whatever its number of rows, and every case checks the counts against the number of
+chunks: a token-by-token loop needs one read per token however it is written or
+compiled. One case uses keys wider than all the rows the limits allow, so the memory
+cannot be copied out and processed elsewhere.
 
 Inputs are what the layer produces: unit-length keys, queries of length Dk^-0.5, beta
 in [0, 1], log-decays at or below 0. Shapes are few because JAX compiles once per
@@ -20,7 +20,7 @@ shape, and chunks have at most 16 positions.
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit.counters import Counters
+from learnai.kit import DeltaMemory, Guarded, check_guard, guard
 
 FN = "gdn_chunked"
 TOL = {"rtol": 1e-3, "atol": 1e-4}  # the tolerance stated in Constraints
@@ -28,64 +28,11 @@ SMALL = (13, 3, 4, 5)  # T, H, Dk, Dv
 NAMES = ("q", "k", "v", "log_g", "beta", "S0")
 
 
-class DeltaMemory:
-    """The memory S of H heads, (H, Dv, Dk), reachable only through counted calls.
+class Memory(Guarded, DeltaMemory):
+    """The memory the solution gets: its counters, its array, and `peek` are refused."""
 
-    read(rows):                   rows (H, R, Dk) -> rows @ S^T, (H, R, Dv)
-    update(decay, values, keys):  a new memory holding decay * S + values^T keys, with
-                                  decay (H,), values (H, R, Dv), keys (H, R, Dk)
-
-    Both need 1 <= R <= max_rows. `counters.reads` and `counters.writes` count calls;
-    a memory made by `update` shares the counters of the one it came from.
-    """
-
-    def __init__(self, fw, state, max_rows):
-        self.fw = fw
-        self._state = np.array(state, dtype=np.float32)
-        self.max_rows = int(max_rows)
-        self.counters = Counters("reads", "writes")
-
-    @property
-    def shape(self):
-        return self._state.shape
-
-    def _rows(self, value, width, what):
-        rows = np.asarray(self.fw.numpy(value) if self.fw.is_tensor(value) else value, np.float32)
-        heads = self._state.shape[0]
-        if rows.ndim != 3 or rows.shape[0] != heads or rows.shape[2] != width:
-            raise ValueError(f"{what} must have shape ({heads}, R, {width}), got {rows.shape}")
-        if not 1 <= rows.shape[1] <= self.max_rows:
-            raise ValueError(
-                f"{what}: one call takes 1 to max_rows = {self.max_rows} rows, got {rows.shape[1]}"
-            )
-        return rows
-
-    def read(self, rows):
-        rows = self._rows(rows, self._state.shape[2], "rows")
-        self.counters.add("reads")
-        return self.fw.tensor(rows @ self._state.transpose(0, 2, 1))
-
-    def update(self, decay, values, keys):
-        heads, d_v, d_k = self._state.shape
-        values, keys = self._rows(values, d_v, "values"), self._rows(keys, d_k, "keys")
-        decay = np.asarray(self.fw.numpy(decay) if self.fw.is_tensor(decay) else decay, np.float32)
-        if decay.shape != (heads,) or values.shape[1] != keys.shape[1]:
-            raise ValueError(
-                f"decay must have shape ({heads},) and values and keys the same number of "
-                f"rows, got {decay.shape}, {values.shape}, {keys.shape}"
-            )
-        self.counters.add("writes")
-        new = object.__new__(DeltaMemory)
-        new.__dict__.update(self.__dict__)
-        new._state = self._state * decay[:, None, None] + values.transpose(0, 2, 1) @ keys
-        return new
-
-    def peek(self):
-        """The memory as a numpy copy, for tests. Not counted."""
-        return self._state.copy()
-
-    def __repr__(self):
-        return f"DeltaMemory(shape={self.shape}, max_rows={self.max_rows}, {self.counters!r})"
+    label = "memory"
+    refused = Guarded.refused | {"peek"}
 
 
 def step_loop(q, k, v, log_g, beta, memory):
@@ -120,11 +67,13 @@ def draw(ctx, steps, heads, d_k, d_v, *, slowest=0.4, zero_state=False):
 
 
 def call(ctx, args, chunk_size):
-    """Call the solution on a fresh DeltaMemory; returns Y, the final state, the counters."""
-    start = DeltaMemory(ctx.fw, args[5], max_rows=2 * chunk_size)
+    """Call the solution on a fresh Memory; returns Y, the final state, the counters."""
+    start = Memory(ctx.fw, args[5], max_rows=2 * chunk_size)
+    guard(ctx)
     got_y, memory = ctx.call(FN, *args[:5], start, chunk_size)
+    check_guard()
     check.that(
-        isinstance(memory, DeltaMemory) and memory.counters is start.counters,
+        isinstance(memory, Memory) and memory.counters is start.counters,
         "the second result is not a memory obtained from the given one by update calls",
     )
     check.allclose(start.peek(), args[5], rtol=0, atol=0, label="the memory passed in")
@@ -196,7 +145,9 @@ def wide_keys(ctx):
 def inputs_unchanged(ctx):
     args = draw(ctx, *SMALL)
     tensors = [ctx.fw.tensor(a) for a in args[:5]]
-    ctx.solution.gdn_chunked(*tensors, DeltaMemory(ctx.fw, args[5], max_rows=8), 4)
+    guard(ctx)
+    ctx.solution.gdn_chunked(*tensors, Memory(ctx.fw, args[5], max_rows=8), 4)
+    check_guard()
     for name, tensor, before in zip(NAMES, tensors, args, strict=False):
         check.allclose(ctx.fw.numpy(tensor), before, rtol=0, atol=0, label=f"{name} after the call")
 

@@ -8,77 +8,25 @@ The count is the point: a solution that reads every key and masks afterward retu
 the same numbers. It is caught wherever the store holds more rows than the call has
 valid slots, which is every case except the one that selects every visible token.
 
-The store is handed over as a `Store`, a guarded `CountingKV` (below): a solution that
-touches its counters, its private arrays, or `with_framework` fails.
+The store is handed over as a `Store`, a `CountingKV` behind the kit's `Guarded`: a
+solution that touches its counters, its private arrays, or `with_framework` fails.
 
 Shapes are few (JAX compiles once per shape): queries (4, 2, 8) with idx (4, 5), or a
 single query (1, 2, 8) with idx (1, 8).
 """
 
-import sys
-from typing import ClassVar
-
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.judge.errors import CheckFailure
-from learnai.kit import CountingKV
+from learnai.kit import CountingKV, Guarded, check_guard, guard
 
 FN = "sparse_attend"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints
 T, K, H, D, S = 4, 5, 2, 8, 40
 
 
-class Guarded:
-    """Mixin for a kit object handed to the solution (a local helper, not in the kit).
-
-    Code in the solution file may call the object's public methods and read its public
-    sizes. Its counters, its log, `with_framework`, every private attribute, `__dict__`,
-    and setting any attribute are refused: the access raises a failure and is recorded,
-    so catching the exception does not help. Kit and test code are not restricted.
-    """
-
-    refused: ClassVar[frozenset] = frozenset({"counters", "log", "with_framework", "__dict__"})
-    label = "the kit object"
-    solution_file = None  # set by `guard` before the solution is called
-    violations: ClassVar[list] = []  # shared by every guarded object
-
-    def _refuse(self, name, verb):
-        if sys._getframe(2).f_code.co_filename != Guarded.solution_file:
-            return
-        label = object.__getattribute__(self, "label")
-        message = f"`{label}.{name}` may not be {verb} in this problem"
-        Guarded.violations.append(message)
-        raise CheckFailure(message)
-
-    def __getattribute__(self, name):
-        private = name.startswith("_") and not name.startswith("__")
-        if private or name in Guarded.refused:
-            object.__getattribute__(self, "_refuse")(name, "used")
-        return object.__getattribute__(self, name)
-
-    def __setattr__(self, name, value):
-        object.__getattribute__(self, "_refuse")(name, "set")
-        object.__setattr__(self, name, value)
-
-
-def guard(ctx):
-    """Arm the guards for the solution of this run and forget earlier violations."""
-    Guarded.solution_file = ctx.solution.__file__
-    Guarded.violations.clear()
-
-
-def check_guard():
-    check.that(not Guarded.violations, Guarded.violations[0] if Guarded.violations else "")
-
-
 class Store(Guarded, CountingKV):
     label = "store"
-
-    def append(self, k, v):
-        longer = CountingKV.append(self, k, v)
-        longer.__class__ = type(self)  # the appended store is guarded too
-        return longer
 
 
 def dense_ref(q, keys, values, idx):
@@ -185,6 +133,7 @@ def inputs_unchanged(ctx):
     guard(ctx)
     q_t, idx_t = ctx.fw.tensor(q), ctx.fw.tensor(idx)
     ctx.solution.sparse_attend(q_t, store, idx_t)
+    check_guard()
     check.allclose(ctx.fw.numpy(q_t), q, rtol=0, atol=0, label="q after the call")
     check.equal(ctx.fw.numpy(idx_t), idx, label="idx after the call")
 

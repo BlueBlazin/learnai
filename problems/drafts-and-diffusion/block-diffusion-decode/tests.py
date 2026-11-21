@@ -14,10 +14,10 @@ Two oracles, neither of them this problem's reference:
   (`fixtures/make.py`), with the sizes of its encoder calls and its number of decoder
   calls.
 
-The model is handed to the solution behind a guard (`Guarded`, a local helper as in
-`indexer-cache-decode`): the solution may use `encode`, `denoise`, `vocab_size`,
-`eos_id`, and `pad_id`; every other attribute, every attribute set, a copy, and a cache
-the object did not return itself are refused and recorded. Work is also logged by the
+The model is handed to the solution behind the kit's `Guarded`: the solution may use
+`encode`, `denoise`, `vocab_size`, `eos_id`, and `pad_id`; every other attribute, every
+attribute set, a copy, and a cache the object did not return itself are refused and
+recorded. Work is also logged by the
 test's own subclass (`Denoiser.work`), which the kit's counters must agree with.
 
 Shapes are few, because JAX compiles once per shape: canvases of 8 tokens over the
@@ -25,14 +25,12 @@ toy's vocabulary of 32, the worked example's 4 tokens over 8, and one scenario w
 canvases of a single token over 4.
 """
 
-import sys
 from typing import ClassVar
 
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.judge.errors import CheckFailure
-from learnai.kit import BlockDenoiser
+from learnai.kit import BlockDenoiser, Guarded, check_guard, guard
 
 FN = "diffusion_generate"
 S1, S2, S3 = "1: one canvas", "2: canvases over a cached prefix", "3: cost"
@@ -58,57 +56,12 @@ LOOSE = {**SHIPPED, "t_min": 0.2, "t_max": 1.0, "entropy_bound": 1.0, "stability
 # -- the guard ------------------------------------------------------------------------
 
 
-class Guarded:
-    """Mixin for a kit object handed to the solution (a local helper, not in the kit).
-
-    Code in the solution file may use the names in `allowed` and nothing else: every
-    other attribute (the counters, `with_framework`, the settings a copy could be built
-    from, private attributes, `__dict__`) and every attribute set is refused. The access
-    raises a failure and is recorded, so catching the exception does not help. Kit and
-    test code are not restricted. It is a guard, not a sandbox: `object.__getattribute__`
-    goes around it, as the editorial says.
-    """
-
-    allowed: ClassVar[frozenset] = frozenset()
-    sealed: ClassVar[frozenset] = frozenset()  # readable by nobody unless `_open` is set
-    label = "the kit object"
-    solution_file = None  # set before the solution is called
-    violations: ClassVar[list] = []  # shared by every guarded object
-
-    def _refuse(self, name, verb):
-        if sys._getframe(2).f_code.co_filename != Guarded.solution_file:
-            return
-        label = object.__getattribute__(self, "label")
-        message = f"`{label}.{name}` may not be {verb} in this problem"
-        Guarded.violations.append(message)
-        raise CheckFailure(message)
-
-    def __getattribute__(self, name):
-        if name not in type(self).allowed:
-            object.__getattribute__(self, "_refuse")(name, "used")
-        if name in type(self).sealed and not object.__getattribute__(self, "_open"):
-            label = object.__getattribute__(self, "label")
-            message = f"`{label}.{name}` may not be read outside the model's own methods"
-            Guarded.violations.append(message)
-            raise CheckFailure(message)
-        return object.__getattribute__(self, name)
-
-    def __setattr__(self, name, value):
-        object.__getattribute__(self, "_refuse")(name, "set")
-        object.__setattr__(self, name, value)
-
-
-def violation(message):
-    Guarded.violations.append(message)
-    raise CheckFailure(message)
-
-
 class Denoiser(Guarded, BlockDenoiser):
     """The model the solution gets: guarded, and with a log of the work it did.
 
     `work` holds ("encode", tokens, cached before) and ("denoise", canvas length, cached,
-    self-conditioned) in call order. The weights can be read only while one of the
-    methods below is running, so the kit's arithmetic cannot be borrowed as an unbound
+    self-conditioned) in call order. `Guarded` lets the weights be read only inside a
+    call made through the model, so the kit's arithmetic cannot be borrowed as an unbound
     function (`BlockDenoiser._denoise(model, ...)`) without it showing in the log. A
     cache is accepted only if this very object returned it, so nothing computed on
     another instance can be mixed in.
@@ -118,26 +71,20 @@ class Denoiser(Guarded, BlockDenoiser):
     allowed: ClassVar[frozenset] = frozenset(
         {"encode", "denoise", "vocab_size", "eos_id", "pad_id"}
     )
-    sealed: ClassVar[frozenset] = frozenset({"_w"})
 
     def __init__(self, *args, **kwargs):
-        self._open = False
         BlockDenoiser.__init__(self, *args, **kwargs)
         self.work = []
         self._made = []  # the caches this object returned
 
     def _own(self, cache):
         if not any(cache is made for made in self._made):
-            violation("`model` was given a cache that it did not return itself")
+            self.violation("`model` was given a cache that it did not return itself")
 
     def encode(self, tokens, cache=None):
         if cache is not None:
             self._own(cache)
-        self._open = True
-        try:
-            longer = BlockDenoiser.encode(self, tokens, cache)
-        finally:
-            self._open = False
+        longer = BlockDenoiser.encode(self, tokens, cache)
         before = 0 if cache is None else cache.length
         self.work.append(("encode", longer.length - before, before))
         self._made.append(longer)
@@ -149,16 +96,7 @@ class Denoiser(Guarded, BlockDenoiser):
 
     def _denoise(self, ids, cache, previous):
         self.work.append(("denoise", len(ids), cache.length, previous is not None))
-        self._open = True
-        try:
-            return BlockDenoiser._denoise(self, ids, cache, previous)
-        finally:
-            self._open = False
-
-    def _no_copy(self, *args):
-        violation("`model` may not be copied in this problem")
-
-    __copy__ = __deepcopy__ = __reduce_ex__ = _no_copy
+        return BlockDenoiser._denoise(self, ids, cache, previous)
 
 
 # -- the loop of the statement, in float64 --------------------------------------------
@@ -358,10 +296,9 @@ class Scenario:
         """Call the solution on a fresh guarded model and compare the tokens."""
         ctx = self.ctx
         self.model = self.maker(Denoiser)
-        Guarded.solution_file = ctx.solution.__file__
-        Guarded.violations.clear()
+        guard(ctx)
         tokens = ctx.call(FN, self.model, list(self.prompt), dict(self.cfg), self.uniforms)
-        check.that(not Guarded.violations, Guarded.violations[0] if Guarded.violations else "")
+        check_guard()
         check.that(
             isinstance(tokens, (list, tuple, np.ndarray)),
             f"{FN}: the result is not a list of tokens",
@@ -666,12 +603,11 @@ def zero_stability_canvases(ctx):
 def inputs_unchanged(ctx):
     made = scenario(ctx, "three")
     model = made.maker(Denoiser)
-    Guarded.solution_file = ctx.solution.__file__
-    Guarded.violations.clear()
+    guard(ctx)
     prompt, cfg = list(made.prompt), dict(made.cfg)
     tensors = tuple(ctx.fw.tensor(u) for u in made.uniforms)
     tokens = ctx.fw.to_numpy(ctx.solution.diffusion_generate(model, prompt, cfg, tensors))
-    check.that(not Guarded.violations, Guarded.violations[0] if Guarded.violations else "")
+    check_guard()
     check.equal([int(token) for token in tokens], made.want["tokens"], label="tokens")
     check.equal(prompt, made.prompt, label="prompt after the call")
     check.that(cfg == made.cfg, "cfg was changed by the call")

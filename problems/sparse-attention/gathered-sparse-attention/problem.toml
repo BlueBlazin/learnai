@@ -14,4 +14,3 @@ forbidden = [
     "learnai.kit.sparse.CountingKV.reference",
     "learnai.kit.sparse.CountingKV.with_framework",
 ]
-forbidden_source = ["counters"]

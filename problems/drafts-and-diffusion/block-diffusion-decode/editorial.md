@@ -165,10 +165,10 @@ the tests keep their own log of the work, which must agree with the counters.
 `BlockDenoiser.with_framework` is also forbidden by the harness.
 
 That stops shortcuts, not a determined program. The solution runs in the judge's
-process, and Python has no private state there: `object.__getattribute__(model, ...)`
-goes around the guard, and with it a solution can rewrite the counters and the tests'
-log, copy the model's `__dict__` into a fresh instance, or read the weights. The tests
-do not try to stop that. The numbers are a check on honest work.
+process, and Python keeps nothing private there: a solution that imports the guard's
+own module, patches the model's class, or walks the objects the garbage collector
+tracks can reach the counters, the tests' log, or the weights. The tests do not try to
+stop that. The numbers are a check on honest work.
 
 ## Complexity
 

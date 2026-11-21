@@ -10,10 +10,4 @@ prerequisites = ["categorical-sample"]
 requires = "cpu"
 entry = ["step_temperature", "denoise_step"]
 time_limit_s = 10
-forbidden = [
-    "learnai.kit.ops.eb_accept",
-    "learnai.kit.ops._torch.eb_accept",
-    "learnai.kit.ops._jax.eb_accept",
-    "learnai.kit.ops._mlx.eb_accept",
-    "learnai.kit.ops._numpy.eb_accept",
-]
+forbidden = ["learnai.kit.ops.eb_accept"]

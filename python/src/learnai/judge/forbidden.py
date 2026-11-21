@@ -26,6 +26,11 @@ What a name can be:
 Because the stack is inspected, a forbidden function reached *through* another library
 function still counts (``torch.nn.Softmax()(x)`` calls ``torch.nn.functional.softmax``).
 
+A kit operation (``learnai.kit.ops.eb_accept``) is a dispatcher over one implementation
+per framework (``learnai.kit.ops._torch.eb_accept``, ``_jax``, ``_mlx``, ``_numpy``).
+Forbidding the operation guards those too, each as soon as its framework is loaded, and
+a violation names the operation the problem listed (see ``backend_names``).
+
 A method on a type that cannot be modified (``mlx.core.array`` is immutable) cannot be
 guarded at run time. For those names only, the solution's source is scanned instead:
 any ``<expression>.<method>`` attribute access that is not on an imported module counts
@@ -65,6 +70,9 @@ from learnai.judge.errors import CheckFailure
 #: ``package.attribute`` at least; every part a Python identifier.
 NAME_PATTERN = re.compile(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)+$")
 _MARK = "__learnai_forbidden__"
+_OPS = "learnai.kit.ops"
+#: The backend modules of the kit's ops, and the package each one needs.
+_OPS_BACKENDS = {"_torch": "torch", "_jax": "jax", "_mlx": "mlx", "_numpy": "numpy"}
 _CHECK_PREFIX = "@@FORBIDDEN@@ "
 
 
@@ -120,6 +128,29 @@ def resolve(name: str) -> tuple[Any, str, Any]:
     return container, parts[-1], value
 
 
+def backend_names(name: str) -> list[str]:
+    """The per-framework implementations behind a kit operation's name.
+
+        backend_names("learnai.kit.ops.eb_accept")
+        # ["learnai.kit.ops._torch.eb_accept", "learnai.kit.ops._jax.eb_accept", ...]
+
+    Empty for every other name. ``learnai.kit.ops.X`` only routes a call by the type of
+    its first argument, so a guard on it alone leaves ``learnai.kit.ops._torch.X`` open.
+    """
+    prefix, _, last = name.rpartition(".")
+    if prefix != _OPS or last.startswith("_"):
+        return []
+    return [f"{_OPS}.{backend}.{last}" for backend in _OPS_BACKENDS]
+
+
+def _needs(name: str) -> str:
+    """The package that must be loaded before ``name`` is guarded."""
+    parts = name.split(".")
+    if len(parts) == 5 and ".".join(parts[:3]) == _OPS and parts[3] in _OPS_BACKENDS:
+        return _OPS_BACKENDS[parts[3]]  # importing a backend imports its framework
+    return parts[0]
+
+
 class Guard:
     """Installs, enforces, and removes the guards for one run."""
 
@@ -138,7 +169,14 @@ class Guard:
         self.unresolved: dict[str, str] = {}
         #: method name -> forbidden name, for methods on immutable types (source scan).
         self.static: dict[str, str] = {}
-        self._pending = list(self.names)
+        #: backend name -> the listed kit operation it implements (guarded implicitly).
+        self._implied = {
+            backend: name
+            for name in self.names
+            for backend in backend_names(name)
+            if backend not in self.names
+        }
+        self._pending = [*self.names, *self._implied]
         self._undo: list[Callable[[], None]] = []
         #: id(original) -> (original, guard) for module-level functions.
         self._aliases: dict[int, tuple[Any, Any]] = {}
@@ -157,18 +195,22 @@ class Guard:
         needed instead; ``learnai validate`` uses it to check every name.
         """
         for name in list(self._pending):
-            if not import_roots and name.split(".")[0] not in sys.modules:
+            if not import_roots and _needs(name) not in sys.modules:
                 continue
             self._pending.remove(name)
             try:
-                self._install_one(name)
+                self._install_one(name, self._implied.get(name, name))
             except Unresolved as exc:
-                self.unresolved[name] = str(exc)
+                # An implied backend that is missing (its framework is not installed,
+                # or the operation has no such implementation) is not the author's error.
+                if name not in self._implied:
+                    self.unresolved[name] = str(exc)
         if self._aliases and len(sys.modules) != len(self._searched):
             self._guard_aliases()
 
-    def _install_one(self, name: str) -> None:
-        container, attr, value = resolve(name)
+    def _install_one(self, target: str, name: str) -> None:
+        """Guard ``target``; a violation is reported under ``name``."""
+        container, attr, value = resolve(target)
         if getattr(value, _MARK, None) is not None:
             return  # an alias of a name that is already guarded
         if isinstance(value, type):
@@ -287,7 +329,7 @@ class Guard:
             self._undo.pop()()
         self._aliases.clear()
         self._searched.clear()
-        self._pending = list(self.names)
+        self._pending = [*self.names, *self._implied]
         self.static.clear()
 
     # -- enforcing ----------------------------------------------------------------

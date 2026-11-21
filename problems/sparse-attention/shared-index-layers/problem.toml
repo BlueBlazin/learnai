@@ -18,4 +18,3 @@ forbidden = [
     "learnai.kit.sparse.TinyDSA.index_scores_ref",
     "learnai.kit.sparse.TinyDSA.with_framework",
 ]
-forbidden_source = ["counters"]

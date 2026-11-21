@@ -3,9 +3,9 @@
 `run` compares the output with the kit's stack oracle (`TinyDSA.forward_ref`), then the
 number of indexer calls with the number of full layers, then, through a log of the
 calls (`watch`), which indexer produced the indices each layer attended with.
-The model is handed over guarded (`Layers` below): a solution that touches its
-counters, private attributes, or `with_framework` fails. The error case must be
-raised before any kit call: `TinyDSA.attend` itself raises ValueError for a missing
+The model is handed over behind the kit's `Guarded` (`Layers` below): a solution that
+touches its counters, private attributes, or `with_framework` fails. The error case must
+be raised before any kit call: `TinyDSA.attend` itself raises ValueError for a missing
 selection, so without that rule the check would not be tested.
 
 One case compares that sharing pattern with the one `GlmMoeDsaModel` of `transformers`
@@ -18,62 +18,15 @@ different layers select differently (otherwise sharing could not be told from no
 sharing). Every sequence has 10 tokens.
 """
 
-import sys
-from typing import ClassVar
-
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.judge.errors import CheckFailure
-from learnai.kit import TinyDSA
+from learnai.kit import Guarded, TinyDSA, check_guard, guard
 
 FN = "forward_shared"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints
 STEPS = 10
 F, S = "full", "shared"
-
-
-class Guarded:
-    """Mixin for a kit object handed to the solution (a local helper, not in the kit).
-
-    Code in the solution file may call the object's public methods and read its public
-    sizes. Its counters, its log, `with_framework`, every private attribute, `__dict__`,
-    and setting any attribute are refused: the access raises a failure and is recorded,
-    so catching the exception does not help. Kit and test code are not restricted.
-    """
-
-    refused: ClassVar[frozenset] = frozenset({"counters", "log", "with_framework", "__dict__"})
-    label = "the kit object"
-    solution_file = None  # set by `guard` before the solution is called
-    violations: ClassVar[list] = []  # shared by every guarded object
-
-    def _refuse(self, name, verb):
-        if sys._getframe(2).f_code.co_filename != Guarded.solution_file:
-            return
-        label = object.__getattribute__(self, "label")
-        message = f"`{label}.{name}` may not be {verb} in this problem"
-        Guarded.violations.append(message)
-        raise CheckFailure(message)
-
-    def __getattribute__(self, name):
-        private = name.startswith("_") and not name.startswith("__")
-        if private or name in Guarded.refused:
-            object.__getattribute__(self, "_refuse")(name, "used")
-        return object.__getattribute__(self, name)
-
-    def __setattr__(self, name, value):
-        object.__getattribute__(self, "_refuse")(name, "set")
-        object.__setattr__(self, name, value)
-
-
-def guard(ctx):
-    """Arm the guards for the solution of this run and forget earlier violations."""
-    Guarded.solution_file = ctx.solution.__file__
-    Guarded.violations.clear()
-
-
-def check_guard():
-    check.that(not Guarded.violations, Guarded.violations[0] if Guarded.violations else "")
 
 
 class Layers(Guarded, TinyDSA):
@@ -247,6 +200,7 @@ def inputs_unchanged(ctx):
     tensor = ctx.fw.tensor(h)
     guard(ctx)
     got = ctx.fw.numpy(ctx.solution.forward_shared(dsa, tensor, types, 3))
+    check_guard()
     check.allclose(ctx.fw.numpy(tensor), h, rtol=0, atol=0, label="h after the call")
     check.allclose(got, dsa.forward_ref(h, types, 3), **TOL, label=FN)
 

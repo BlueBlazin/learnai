@@ -126,7 +126,7 @@ class CountingKV:
             raise ValueError(
                 f"k and v need the same number of rows, got {new_k.shape} and {new_v.shape}"
             )
-        longer = object.__new__(CountingKV)
+        longer = object.__new__(type(self))  # a guarded store stays guarded
         longer.__dict__.update(self.__dict__)
         if getattr(self, "_shapeless", False):
             longer._k, longer._v = new_k.copy(), new_v.copy()

@@ -8,7 +8,9 @@ Kit objects are small and meant to be read. Anything with instrumentation expose
     models       TinyLM, KVCache, draft_target_pair, LayeredLM, LayerCache, RecurrentLM,
                  RecurrentState, TinyMoE, CountingExperts, moe_route_ref, moe_dense_ref,
                  TinyEncoder, CountingScorer, TinyDSA, CountingKV, index_types,
-                 BlockDenoiser, DenoiserCache
+                 BlockDenoiser, DenoiserCache, DeltaMemory
+    guarding     Guarded, guard, check_guard (a counting object the solution cannot
+                 look inside)
     weights      DecoderConfig, decoder_params, layer_params, decoder_forward_ref,
                  decoder_block_ref, decoder_hidden_ref,
                  GDNConfig, gdn_params, gdn_gates_ref, gdn_step_ref, gdn_layer_ref,
@@ -73,12 +75,14 @@ from learnai.kit.decoder import (
     decoder_params,
     layer_params,
 )
+from learnai.kit.deltamemory import DeltaMemory
 from learnai.kit.dfa import DEAD, CharDFA
 from learnai.kit.diffusion import BlockDenoiser, DenoiserCache
 from learnai.kit.draft import draft_target_pair
 from learnai.kit.encoder import CountingScorer, TinyEncoder
 from learnai.kit.gdn import GDNConfig, gdn_gates_ref, gdn_layer_ref, gdn_params, gdn_step_ref
 from learnai.kit.grammar import Chars, Grammar, Ref
+from learnai.kit.guarded import Guarded, check_guard, guard
 from learnai.kit.hybrid import (
     HybridConfig,
     gated_attention_ref,
@@ -162,6 +166,7 @@ __all__ = [
     "CountingScorer",
     "DFAConstraint",
     "DecoderConfig",
+    "DeltaMemory",
     "DenoiserCache",
     "DeviceSpy",
     "EvalSpy",
@@ -169,6 +174,7 @@ __all__ = [
     "FakeDevice",
     "GDNConfig",
     "Grammar",
+    "Guarded",
     "HybridConfig",
     "KVCache",
     "LayerCache",
@@ -215,6 +221,7 @@ __all__ = [
     "Weights",
     "assemble",
     "bf16_to_f32",
+    "check_guard",
     "checkpoint_layout",
     "decoder_block_ref",
     "decoder_forward_ref",
@@ -227,6 +234,7 @@ __all__ = [
     "gdn_layer_ref",
     "gdn_params",
     "gdn_step_ref",
+    "guard",
     "hybrid_block_ref",
     "hybrid_forward_ref",
     "hybrid_params",

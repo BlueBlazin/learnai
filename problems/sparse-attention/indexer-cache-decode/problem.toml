@@ -22,4 +22,3 @@ forbidden = [
     "learnai.kit.sparse.CountingKV.with_framework",
     "learnai.kit.sparse.TinyDSA.with_framework",
 ]
-forbidden_source = ["counters"]

@@ -10,4 +10,3 @@ prerequisites = ["gated-delta-step"]
 requires = "cpu"
 entry = ["gdn_chunked"]
 time_limit_s = 20
-forbidden_source = ["_state", "peek", "counters"]

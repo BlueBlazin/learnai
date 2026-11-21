@@ -6,9 +6,9 @@ halves of the returned cache against the kit's own keys, and the rows read by th
 against the number of tokens its queries select. At the end it checks that every
 token's indexer key was computed exactly once.
 
-The model and the store are handed over guarded (`Layers`, `Store` below): a solution
-that touches their counters, private attributes, or `with_framework` fails, and a call
-must also have read at least the earlier-call tokens its queries select.
+The model and the store are handed over behind the kit's `Guarded` (`Layers`, `Store`
+below): a solution that touches their counters, private attributes, or `with_framework`
+fails, and a call must also have read at least the earlier-call tokens its queries select.
 
 Top-k is discontinuous, so sequences are drawn until no row's k-th and (k+1)-th index
 scores are closer than 1e-4 unless they are equal (`clear`); exact ties come from the
@@ -20,14 +20,10 @@ per shape: 8 tokens as one call, as 3 + 1 + 1 + 3, or token by token, and k = 3 
 in one case.
 """
 
-import sys
-from typing import ClassVar
-
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.judge.errors import CheckFailure
-from learnai.kit import CountingKV, TinyDSA
+from learnai.kit import CountingKV, Guarded, TinyDSA, check_guard, guard
 
 FN = "dsa_step"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints
@@ -35,56 +31,8 @@ N, K = 8, 3
 ONE_CALL, CHUNKS, TOKENS = [8], [3, 4, 5, 8], list(range(1, 9))
 
 
-class Guarded:
-    """Mixin for a kit object handed to the solution (a local helper, not in the kit).
-
-    Code in the solution file may call the object's public methods and read its public
-    sizes. Its counters, its log, `with_framework`, every private attribute, `__dict__`,
-    and setting any attribute are refused: the access raises a failure and is recorded,
-    so catching the exception does not help. Kit and test code are not restricted.
-    """
-
-    refused: ClassVar[frozenset] = frozenset({"counters", "log", "with_framework", "__dict__"})
-    label = "the kit object"
-    solution_file = None  # set by `guard` before the solution is called
-    violations: ClassVar[list] = []  # shared by every guarded object
-
-    def _refuse(self, name, verb):
-        if sys._getframe(2).f_code.co_filename != Guarded.solution_file:
-            return
-        label = object.__getattribute__(self, "label")
-        message = f"`{label}.{name}` may not be {verb} in this problem"
-        Guarded.violations.append(message)
-        raise CheckFailure(message)
-
-    def __getattribute__(self, name):
-        private = name.startswith("_") and not name.startswith("__")
-        if private or name in Guarded.refused:
-            object.__getattribute__(self, "_refuse")(name, "used")
-        return object.__getattribute__(self, name)
-
-    def __setattr__(self, name, value):
-        object.__getattribute__(self, "_refuse")(name, "set")
-        object.__setattr__(self, name, value)
-
-
-def guard(ctx):
-    """Arm the guards for the solution of this run and forget earlier violations."""
-    Guarded.solution_file = ctx.solution.__file__
-    Guarded.violations.clear()
-
-
-def check_guard():
-    check.that(not Guarded.violations, Guarded.violations[0] if Guarded.violations else "")
-
-
 class Store(Guarded, CountingKV):
     label = "store"
-
-    def append(self, k, v):
-        longer = CountingKV.append(self, k, v)
-        longer.__class__ = type(self)  # the appended store is guarded too
-        return longer
 
 
 class Layers(Guarded, TinyDSA):
@@ -304,6 +252,7 @@ def inputs_unchanged(ctx):
         check.allclose(
             ctx.fw.numpy(cache[0]), keys_before, rtol=0, atol=0, label="index_keys passed in"
         )
+    check_guard()
 
 
 # Rejects ties_to_highest_index: the ReLU makes scores that are exactly 0, and the

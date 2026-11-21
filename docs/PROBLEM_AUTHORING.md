@@ -594,6 +594,14 @@ How it works, so you can predict it:
   the method `torch.Tensor.softmax` are four functions. Aliases of one object
   (`jax.nn.logsumexp` is `jax.scipy.special.logsumexp`) need one entry, and listing
   both is harmless.
+- **A kit operation needs one entry.** `learnai.kit.ops.eb_accept` only routes the call
+  to `learnai.kit.ops._torch.eb_accept` (or `_jax`, `_mlx`, `_numpy`), and a solution
+  can call those directly. When a name is `learnai.kit.ops.<operation>`, the harness
+  guards the four functions behind it as well, each as soon as its framework is
+  loaded, and the message names the operation you listed. Do not list the backends
+  yourself. The guard is transitive here too: an allowed operation that is built on
+  the forbidden one inside a backend (`gated_delta_layer` calls `causal_conv1d`) is
+  refused with it.
 - `mlx.core.array` is an immutable type, so its methods cannot be guarded at run time.
   For those names only (`mlx.core.array.logsumexp`), the harness scans the solution's
   source before running anything and fails every case if it finds
@@ -626,6 +634,13 @@ accident (a dtype name, a package name such as `safetensors` or `tokenizers`), p
 `forbidden` whenever the thing is called, and never hand-roll a source scan in
 `tests.py`: `problems/foundations/bf16-decode` shows the supported way. The starter
 and the references must not contain the identifier either (docstrings may).
+
+**`forbidden_source` is for names that are never ordinary words.** `counters`, `peek`,
+`log`, `_state`, and `_k` are words a learner uses for their own variables, and a
+solution with `counters = {}` in it would fail every case with a message about a rule
+it did not break. What those entries were meant to protect, the attributes of a kit
+object handed to the solution, is protected at run time by `Guarded` (sections 5.4
+and 7), which refuses the access itself, whatever the name was spelled or computed as.
 
 Every problem with a `forbidden` or `forbidden_source` list needs a mutant that takes
 the shortcut (section 11), and the statement must still state the rule in words.
@@ -841,6 +856,32 @@ check.cost(target.counters, "tokens_processed", at_most=20, unit="tokens", metri
 
 The failure message uses the metric's name too
 (`target_tokens: 31 tokens exceeds the limit of 20 tokens`).
+
+**Guard the counting object.** A count is evidence only if the solution cannot reset
+the counter, read the arrays behind it, or build an uncounted twin. When the count is
+what separates the intended solution from one that returns the same numbers, hand the
+object over behind the kit's `Guarded` (section 7):
+
+```python
+from learnai.kit import CountingKV, Guarded, check_guard, guard
+
+class Store(Guarded, CountingKV):
+    label = "store"                     # the argument's name in the statement
+
+store = Store(ctx.fw, keys, values)
+guard(ctx)                              # before the solution is called
+got = ctx.call("sparse_attend", q, store, idx)
+check_guard()                           # right after, before the other checks
+check.cost(store.counters, "rows_read", at_most=int((idx >= 0).sum()), unit="rows")
+```
+
+Keep the object's test-only methods (`reference`, the `*_ref` oracles) in `forbidden`
+as before, so that the message names the method, and say in the statement which
+attributes are the interface. Do not use `forbidden_source` for the counters or the
+private attributes (section 4.1). The cost problems written before `Guarded` hand
+their counting objects over unguarded; converting one means these lines, an allowlist
+if its public settings are enough to build a twin, and a check that its references
+are still accepted and its mutants still rejected.
 
 ### 5.5 speed
 
@@ -2400,8 +2441,10 @@ store = store.append(k_new, v_new)                      # a longer store, same c
   `all(read <= k * shape[0] for shape, read in store.log)`.
 - `store.n` is the number of rows; `store.reference()` returns numpy copies of all
   keys and values and is not counted. It is for tests: list
-  `learnai.kit.sparse.CountingKV.reference` in `forbidden`, and
-  `forbidden_source = ["_k", "_v"]` rules out reading the arrays behind the counter.
+  `learnai.kit.sparse.CountingKV.reference` in `forbidden`, and hand the store over
+  as `class Store(Guarded, CountingKV)` (below), which keeps the counters, the log,
+  and the arrays behind them out of the solution's reach. A store made by `append`
+  has the class of the store it came from, so it stays guarded.
 
 ### TinyDSA
 
@@ -2455,8 +2498,9 @@ check.cost(dsa.counters, "index_key_rows", exactly=len(x), unit="rows")
   `...attend_ref`, `...forward_ref`, and for `indexer-cache-decode` also
   `learnai.kit.sparse.TinyDSA.indexer` and `...attend`). The oracles do not go through
   the public methods, so forbidding those does not break `ctx.expected` or a test
-  that calls an oracle. `forbidden_source = ["_layers", "_index_key", "_scores"]`
-  rules out the uncounted internals.
+  that calls an oracle. `class Layers(Guarded, TinyDSA)` (below) rules out the
+  counters and the uncounted internals, also when they are borrowed as plain
+  functions (`TinyDSA._index_key(dsa, ...)`).
 - **Top-k is discontinuous: choose fixtures with a margin.** The ReLU makes index
   scores that are exactly 0 (about 6% of the visible pairs with the default sizes),
   and exact ties are safe, the lowest index wins in every framework. A `k`-th and
@@ -2580,6 +2624,114 @@ check.cost(model.counters, "encoder_tokens", exactly=P + (canvases - 1) * L, uni
 - It is a toy with the interface and the qualitative behavior of DiffusionGemma, not a
   port: nothing in it was compared with the shipped denoiser. `ops.eb_accept` was.
 
+### Guarded, guard, check_guard
+
+A mixin that makes a kit object safe to hand to a solution whose work is counted
+(`python/src/learnai/kit/guarded.py`). Used by `gathered-sparse-attention`,
+`indexer-cache-decode`, `shared-index-layers`, `gated-delta-chunked`, and
+`block-diffusion-decode`.
+
+```python
+from learnai.kit import BlockDenoiser, CountingKV, DeltaMemory, Guarded, check_guard, guard
+
+class Store(Guarded, CountingKV):            # Guarded first
+    label = "store"
+
+class Memory(Guarded, DeltaMemory):
+    label = "memory"
+    refused = Guarded.refused | {"peek"}     # a test-only method on top of the defaults
+
+class Model(Guarded, BlockDenoiser):
+    label = "model"
+    allowed = frozenset({"encode", "denoise", "vocab_size", "eos_id", "pad_id"})
+
+guard(ctx)                                   # arm for this run's solution file
+got = ctx.call(FN, q, Store(ctx.fw, k, v), idx)
+check_guard()                                # the first refused access fails the case
+```
+
+- **What the solution may read.** By default every public attribute except the names
+  in `refused` (`counters`, `log`, `with_framework`, `__dict__`); private names
+  (`_x`) are always refused. A class that sets `allowed` turns this into an
+  allowlist: use it when the public settings would let a solution build a twin
+  (`type(model)(model.fw, seed=model.seed)`), as `block-diffusion-decode` does.
+- **What it may never do.** Set or delete an attribute, or copy the object (`copy`,
+  `deepcopy`, `pickle`).
+- **Messages**, the same on public and hidden cases: `` `store.counters` may not be
+  used in this problem ``, `` `store.plain` may not be set in this problem ``,
+  `` `model` may not be copied in this problem ``, and, for a borrowed method (next
+  point), `` `model._w` may not be read outside the model's own methods ``. `label`
+  is the argument's name in the statement.
+- **Who is asking is read from the call stack**, as for `forbidden`. The nearest frame
+  that belongs to the solution file, to `learnai`, or to the file that called
+  `guard(ctx)` (your `tests.py`) decides; frames of anything else (`operator`, a
+  string given to `eval`) act for their caller. So `getattr(store, "coun" + "ters")`
+  and `eval("store.counters")` are refused like `store.counters`.
+- **Kit and test code is not restricted**, with one exception that closes a hole.
+  While the solution is running, the restricted names can be read only inside a call
+  the solution made through the object (`store.gather(...)`, a property). The kit's
+  methods therefore work, and borrowing one as a plain function does not:
+  `CountingKV.reference(store)` and `TinyDSA._index_key(dsa, ...)` fail at the first
+  private attribute they read. Two consequences for test code: a callback of yours
+  that the solution reaches some other way than through the guarded object may not
+  read restricted names while the solution runs, and Python calls special methods
+  (`len(store)`) without going through an attribute, so a kit class's `__len__` that
+  reads private state is refused during the solution's call. `__repr__` is exempt:
+  `print(store)` is a learner debugging.
+- **Refusals are recorded.** The access raises `CheckFailure`, and `check_guard()`
+  raises the first one again, so a solution that catches the exception and falls
+  back to honest code still fails. Call `guard(ctx)` and `check_guard()` around
+  every call of the solution, also in a case that calls `ctx.solution.<fn>`
+  directly. A subclass adds a rule of its own with `self.violation(message)` (the
+  cache-ownership check of `block-diffusion-decode`).
+- **Introspection.** A guarded object's attributes are not stored in the instance but
+  in a table in the kit module, so `object.__getattribute__(store, "counters")`,
+  `object.__getattribute__(store, "__dict__")`, and a base class's
+  `__getattribute__` find nothing (`AttributeError`), and writes made that way are
+  never read. `vars(store)` is refused like `store.__dict__`. For test code,
+  `store.__dict__` and `vars(store)` are that table. A kit method that returns a new
+  version of its object must build it with `object.__new__(type(self))`, as
+  `CountingKV.append` and `DeltaMemory.update` do; a twin from `with_framework` is a
+  plain, unguarded object, for tests.
+- **It is a guard against taking the shortcut, not a sandbox.** The solution runs in
+  the judge's process. What still gets through: importing `learnai.kit.guarded` and
+  reading its table or replacing its functions, replacing a method on the guarded
+  class or `sys._getframe`, walking the garbage collector's object graph
+  (`gc.get_referrers`), and another thread. What it stops is plain and computed
+  attribute access, introspection of the instance, copies, and borrowed methods: the
+  cheats the reviews of the model-architecture problems found. The tests still have
+  to make sure the answer is right.
+
+### DeltaMemory
+
+The memory of a gated delta layer behind two counted calls, for `gated-delta-chunked`:
+a token-by-token loop returns the numbers of the chunked form, and needs one read per
+token however it is written or compiled.
+
+```python
+from learnai.kit import DeltaMemory
+
+memory = DeltaMemory(ctx.fw, state, max_rows=2 * chunk_size)   # state (H, Dv, Dk)
+out = memory.read(rows)                          # rows (H, R, Dk) -> (H, R, Dv): rows @ S^T
+memory = memory.update(decay, values, keys)      # decay * S + values^T keys; a new memory
+check.cost(memory.counters, "reads", at_most=chunks, unit="calls")
+```
+
+- `read` and `update` take `1 <= R <= max_rows` rows and count **one call whatever
+  `R`** (`counters.reads`, `counters.writes`); a wrong shape or too many rows raises
+  `ValueError` and counts nothing. `update(decay, values, keys)` takes `decay`
+  `(H,)`, `values` `(H, R, Dv)`, `keys` `(H, R, Dk)`, leaves the memory it was called
+  on unchanged, and returns one that **shares its counters**, so a test reads the
+  total from the memory it passed in.
+- Choose `max_rows` small against `Dk` in at least one case: with keys of width 64
+  and a limit of 6 reads of 8 rows, the memory cannot be read out whole and
+  processed elsewhere.
+- `shape`, `max_rows`, and `fw` are public. `peek()` is the memory as a numpy copy,
+  not counted, for tests; `with_framework(fw)` is a twin with fresh counters.
+- Hand it over guarded, with `peek` refused (the `Memory` class in the example
+  above). The counters, the array, `peek`, and `with_framework` are then out of the
+  solution's reach without a `forbidden_source` entry.
+
 ### Checked against the shipped code (milestone 6)
 
 The milestone 6 objects mirror `transformers` 5.23.0 and `mlx-lm` 0.32.2. Each was
@@ -2648,9 +2800,10 @@ The kit objects added for milestone 3 are documented where they are used:
 `CompileCounter`, `TransferSpy`, and `tritonshim` (section 18). Milestone 6 added the
 `ops` functions `softplus`, `l2norm`, `causal_conv1d`, `partial_rope`,
 `gated_delta_layer`, and `eb_accept`, and `GDNConfig`, `HybridConfig`, `CountingKV`,
-`TinyDSA`, the MTP parameters, and `BlockDenoiser`, all in this section, and for the
-real hybrid model `RealHybrid`, `RealHybridLM`, `checkpoint_layout`, `hybrid_block_ref`,
-and the asset `QWEN35` (section 15).
+`TinyDSA`, the MTP parameters, `BlockDenoiser`, `DeltaMemory`, and `Guarded` with
+`guard` and `check_guard`, all in this section, and for the real hybrid model
+`RealHybrid`, `RealHybridLM`, `checkpoint_layout`, `hybrid_block_ref`, and the asset
+`QWEN35` (section 15).
 
 **What milestone 5 left to problem-local test code**, after reading the specifications
 of its 90 problems for needs that two or more share: LRU and TTL bookkeeping (it is
@@ -2672,7 +2825,9 @@ write tests under `python/tests/`, and document it here. Requirements: determini
 (seeded), implemented once (numpy or plain Python), speaking the solution's framework
 at its boundary through an adapter passed as `fw`, functional (state in, state out), a
 `counters` attribute if it can measure work, and a `with_framework(fw)` method that
-returns a twin with fresh counters. Write it for a reader: learners will open the file.
+returns a twin with fresh counters. A method that returns a new version of its object
+builds it with `object.__new__(type(self))`, so that a guarded object stays guarded
+(see `Guarded` above). Write it for a reader: learners will open the file.
 
 ## 8. Statement house style
 
@@ -4080,7 +4235,10 @@ in the app.
   cases beyond "Hidden case N" and a message free of expected values.
 - If the statement forbids a call: `forbidden` lists every spelling of it in every
   framework, and a mutant takes the shortcut. If it forbids something that is not
-  called (a dtype, a package), `forbidden_source` names the identifier.
+  called (a dtype, a package), `forbidden_source` names the identifier, and no entry
+  is an ordinary word.
+- If a count decides the verdict: the counting object is handed over behind `Guarded`,
+  with `guard(ctx)` and `check_guard()` around every call of the solution.
 - If the problem has `requires` other than `cpu`: `LEARNAI_HARDWARE=cpu learnai submit
   <id> --reference` passes every case that still runs, skips the rest with a clear
   reason, and ends with "Not accepted: hardware missing" (section 14).

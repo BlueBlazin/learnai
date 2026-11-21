@@ -233,6 +233,84 @@ def test_methods_of_immutable_types_are_found_in_the_source(tmp_path):
     assert (5).bit_length() == 3 and math.floor(2.5) == 2
 
 
+def test_forbidding_a_kit_operation_guards_its_backends(tmp_path):
+    # `learnai.kit.ops.softmax` only routes the call; a reviewer's solution passed a
+    # problem by calling `learnai.kit.ops._torch.<name>` directly.
+    assert forbidden.backend_names("learnai.kit.ops.softmax") == [
+        f"learnai.kit.ops.{backend}.softmax" for backend in ("_torch", "_jax", "_mlx", "_numpy")
+    ]
+    assert forbidden.backend_names("learnai.kit.ops._numpy.softmax") == []
+    assert forbidden.backend_names("learnai.kit.gdn.gdn_step_ref") == []
+    assert forbidden.backend_names("torch.softmax") == []
+
+    import numpy as np
+
+    from learnai.kit import ops
+    from learnai.kit.ops import _numpy
+
+    path, _ = load(tmp_path, "x = 1")
+    guard = Guard(["learnai.kit.ops.softmax"], path)
+    original = _numpy.softmax
+    try:
+        guard.install()
+        assert not guard.unresolved
+        _, solution = load(
+            tmp_path,
+            """
+            import importlib
+            from learnai.kit import ops
+            from learnai.kit.ops import _numpy
+
+            def dispatcher(x): return ops.softmax(x)
+            def backend(x): return _numpy.softmax(x)
+            def late(x):
+                module = importlib.import_module("learnai.kit.ops." + "_numpy")
+                return getattr(module, "soft" + "max")(x)
+            def other(x): return ops.log_softmax(x)
+            """,
+        )
+        x = np.array([0.0, 1.0], np.float32)
+        for call in ("dispatcher", "backend", "late"):
+            with pytest.raises(ForbiddenCall) as info:
+                solution[call](x)
+            # The message names the operation the problem listed, not the backend.
+            assert info.value.message.startswith(
+                "`learnai.kit.ops.softmax` is not allowed in this problem (called at solution.py"
+            ), call
+            (violation,) = guard.take()
+            assert violation.name == "learnai.kit.ops.softmax" and violation.function == call
+        assert "_numpy" not in guard.rule_text()  # the rule shown is the list as written
+        # Everyone else, and the solution's use of another operation, are untouched.
+        np.testing.assert_allclose(ops.softmax(x).sum(), 1.0, rtol=1e-6)
+        np.testing.assert_allclose(_numpy.softmax(x).sum(), 1.0, rtol=1e-6)
+        np.testing.assert_allclose(np.exp(solution["other"](x)).sum(), 1.0, rtol=1e-6)
+        assert guard.take() == []
+    finally:
+        guard.uninstall()
+    assert _numpy.softmax is original
+
+
+def test_a_backend_waits_for_its_framework_and_a_missing_one_is_not_an_error(monkeypatch):
+    # Guarding `learnai.kit.ops._jax.softmax` imports JAX, so it waits until the run has
+    # loaded JAX, like any name of a package that is not loaded.
+    assert forbidden._needs("learnai.kit.ops._jax.softmax") == "jax"
+    assert forbidden._needs("learnai.kit.ops._numpy.softmax") == "numpy"
+    assert forbidden._needs("learnai.kit.ops.softmax") == "learnai"
+    monkeypatch.setitem(forbidden._OPS_BACKENDS, "_ws_absent", "ws_absent_framework")
+    guard = Guard(["learnai.kit.ops.softmax"], "x")
+    try:
+        guard.install()
+        assert "learnai.kit.ops._ws_absent.softmax" in guard._pending  # its package is not loaded
+        guard.install(import_roots=True)  # what `learnai validate` does
+        assert guard._pending == [] and guard.unresolved == {}
+    finally:
+        guard.uninstall()
+    # A listed name that does not exist is still reported, once, under its own name.
+    assert forbidden.check_names(["learnai.kit.ops.ws_no_such_op"]) == {
+        "learnai.kit.ops.ws_no_such_op": "`ws_no_such_op` does not exist"
+    }
+
+
 # -- through the harness -----------------------------------------------------------------
 
 

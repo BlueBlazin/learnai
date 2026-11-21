@@ -17,10 +17,6 @@ time_limit_s = 20
 # uses_kit_layer.
 forbidden = [
     "learnai.kit.ops.gated_delta_layer",
-    "learnai.kit.ops._torch.gated_delta_layer",
-    "learnai.kit.ops._jax.gated_delta_layer",
-    "learnai.kit.ops._mlx.gated_delta_layer",
-    "learnai.kit.ops._numpy.gated_delta_layer",
     "learnai.kit.gdn.gdn_layer_ref",
     "learnai.kit.gdn.gdn_step_ref",
     "learnai.kit.gdn.gdn_gates_ref",
