@@ -6,6 +6,12 @@ expected texts come from the oracle, fed from a twin vocabulary with its own cou
 the property cases restate the contract without the oracle, with Python's full decode
 and with the standard library's incremental UTF-8 decoder.
 
+A solution gets the vocabulary as `Vocab`, a `ToyVocab` behind the kit's `Guarded` that
+shares the counters of the test's own (`handed`): it may use `bytes`, `decode`,
+`is_special`, the size, and the special ids. The counters, `pieces`, `id_of`, `encode`,
+the seed, and `with_framework` are refused, so the count cannot be written and the
+token bytes cannot be had without it.
+
 The byte ED is left out of random token sequences: after ED, a second byte in A0..BF is
 the one corner the statement leaves open (see its note on surrogates).
 """
@@ -13,10 +19,40 @@ the one corner the statement leaves open (see its note on surrogates).
 import codecs
 
 from learnai.judge import case, check
-from learnai.kit import ToyVocab
+from learnai.kit import Guarded, ToyVocab, check_guard, guard
 
 FFFD = "�"
 TEXT = 'naïve café costs 5 €, 한국어 日本語 😀 {"a": true} '
+
+
+class Vocab(Guarded, ToyVocab):
+    """The vocabulary a solution gets: counted lookups, the size, the special ids."""
+
+    label = "vocab"
+    refused = Guarded.refused | {"seed", "pieces", "id_of", "encode"}
+
+    def __repr__(self):  # ToyVocab's shows the seed, which would rebuild the table
+        return f"ToyVocab(size={self.size})"
+
+
+_handed = {}
+
+
+def handed(vocab):
+    """The guarded vocabulary for one of the test's: always the same one, sharing its counters."""
+    if id(vocab) not in _handed:
+        _handed[id(vocab)] = (vocab, Vocab.of(vocab))  # keeps `vocab`, and so its id, alive
+    return _handed[id(vocab)][1]
+
+
+def call(ctx, fn, *args):
+    """Call `fn` of the solution (or the oracle) directly, with the guard armed."""
+    args = [handed(a) if isinstance(a, ToyVocab) else a for a in args]
+    guard(ctx)
+    try:
+        return fn(*args)
+    finally:
+        check_guard()
 
 
 def stream(ctx, vocab, ids, module=None):
@@ -24,7 +60,7 @@ def stream(ctx, vocab, ids, module=None):
     module = module or ctx.solution
     state, texts = None, []
     for step, token in enumerate(ids):
-        out = module.detok_step(state, token, vocab)
+        out = call(ctx, module.detok_step, state, token, vocab)
         check.that(
             isinstance(out, tuple) and len(out) == 2 and isinstance(out[1], str),
             "detok_step must return a tuple (state, text) with text a str",
@@ -32,7 +68,7 @@ def stream(ctx, vocab, ids, module=None):
         )
         state, text = out
         texts.append(text)
-    tail = module.detok_flush(state)
+    tail = call(ctx, module.detok_flush, state)
     check.that(isinstance(tail, str), "detok_flush must return a str", f"got {tail!r}")
     return texts, tail
 
@@ -113,7 +149,7 @@ def invalid_bytes(ctx):
     check.equal(texts, ["", FFFD, "€"], label="text per step (lead byte after lead byte)")
     check.equal(tail, "", label="detok_flush (lead byte after lead byte)")
 
-    check.equal(ctx.solution.detok_flush(None), "", label="detok_flush(None)")
+    check.equal(call(ctx, ctx.solution.detok_flush, None), "", label="detok_flush(None)")
 
 
 @case("cost: each token's bytes are looked up a bounded number of times", public=True)
@@ -172,8 +208,8 @@ def states_are_values(ctx):
     decoys = random_ids(ctx.rng, vocab, len(ids), special_rate=0.0)
     state = want_state = None
     for step, (token, decoy) in enumerate(zip(ids, decoys, strict=True)):
-        ctx.solution.detok_step(state, decoy, vocab)  # a branch that is thrown away
-        state, text = ctx.solution.detok_step(state, token, vocab)
+        call(ctx, ctx.solution.detok_step, state, decoy, vocab)  # a branch that is thrown away
+        state, text = call(ctx, ctx.solution.detok_step, state, token, vocab)
         want_state, want = ctx.oracle.detok_step(want_state, token, oracle_vocab)
         check.that(
             text == want,
@@ -181,8 +217,9 @@ def states_are_values(ctx):
             f"step {step}: expected {want!r}, got {text!r}\n"
             "detok_step must not modify the state it is given\n",
         )
-    check.equal(ctx.solution.detok_flush(state), ctx.oracle.detok_flush(want_state), label="flush")
-    check.equal(ctx.solution.detok_flush(state), ctx.oracle.detok_flush(want_state), label="flush")
+    flush = ctx.solution.detok_flush
+    check.equal(call(ctx, flush, state), ctx.oracle.detok_flush(want_state), label="flush")
+    check.equal(call(ctx, flush, state), ctx.oracle.detok_flush(want_state), label="flush")
 
 
 @case("two streams advanced in turn do not disturb each other")
@@ -195,14 +232,15 @@ def interleaved_streams(ctx):
     state_a = state_b = None
     got_a, got_b = [], []
     for a, b in zip(ids_a, ids_b, strict=True):
-        state_a, text = ctx.solution.detok_step(state_a, a, vocab)
+        state_a, text = call(ctx, ctx.solution.detok_step, state_a, a, vocab)
         got_a.append(text)
-        state_b, text = ctx.solution.detok_step(state_b, b, vocab)
+        state_b, text = call(ctx, ctx.solution.detok_step, state_b, b, vocab)
         got_b.append(text)
     check.equal(got_a, want_a, label="first stream: text per step")
     check.equal(got_b, want_b, label="second stream: text per step")
-    check.equal(ctx.solution.detok_flush(state_a), tail_a, label="first stream: detok_flush")
-    check.equal(ctx.solution.detok_flush(state_b), tail_b, label="second stream: detok_flush")
+    flush = ctx.solution.detok_flush
+    check.equal(call(ctx, flush, state_a), tail_a, label="first stream: detok_flush")
+    check.equal(call(ctx, flush, state_b), tail_b, label="second stream: detok_flush")
 
 
 @case("random token sequences from vocabularies of 64 and 282 tokens")

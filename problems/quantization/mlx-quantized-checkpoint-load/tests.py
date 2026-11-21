@@ -13,6 +13,9 @@ Three kinds of file, and the format is the same in all of them:
 
 Files on disk are handed over as a kit `CountingFile`, which charges every slice the
 solution takes, so reading more than the header and the layer's three tensors shows.
+It is behind the kit's `Guarded` (`File`): a solution may slice it, take its length,
+and read it as a file. Its counters, its path, and its private mapping are refused,
+so the count cannot be written and the file cannot be opened a second time.
 """
 
 import json
@@ -22,13 +25,32 @@ import struct
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import CountingFile, SafetensorsFile
+from learnai.kit import CountingFile, Guarded, SafetensorsFile, check_guard, guard
 
 FN = "load_quantized"
 ASSET = "granite-4.2-3b-mlx-8bit"
 REVISION = "7c630b526561db6b4641767c54595fe494176695"
 TOL = {"rtol": 1e-6, "atol": 1e-7}  # the tolerance stated in Constraints
 HEADER_READS = 3  # the byte limit allows the header to be read this many times
+
+
+class File(Guarded, CountingFile):
+    """The file a solution gets: slices, `len`, and reads, all counted."""
+
+    label = "buf"
+    refused = Guarded.refused | {"path"}
+
+    def __repr__(self):  # CountingFile's shows the path, which would open the file again
+        return "CountingFile(...)"
+
+
+def load(ctx, *args):
+    """`load_quantized` of the solution, with the guard armed."""
+    guard(ctx)
+    try:
+        return ctx.solution.load_quantized(*args)
+    finally:
+        check_guard()
 
 
 def bf16(values):
@@ -98,8 +120,8 @@ def byte_limit(path, name):
 
 
 def load_counted(ctx, path, name, bits, group_size, want, label, *, metric=False):
-    with CountingFile(path) as f:
-        got = ctx.solution.load_quantized(f, name, bits, group_size)
+    with File(path) as f:
+        got = load(ctx, f, name, bits, group_size)
         got = np.array(got) if isinstance(got, np.ndarray) else got  # outlives the mapping
         read = f.counters.bytes_read
     check_matrix(got, want, label)
@@ -128,7 +150,7 @@ def worked_example(ctx):
     tensors, want = layer("proj", EXAMPLE_CODES, [[0.5, -0.25]], [[-1.0, 2.0]], 8)
     check.that(bool((want == EXAMPLE_WANT).all()), "test setup: the example changed")
     data = build(tensors, {"format": "mlx"})
-    got = ctx.solution.load_quantized(data, "proj", 8, 4)
+    got = load(ctx, data, "proj", 8, 4)
     check_matrix(got, EXAMPLE_WANT, "load_quantized(example, 'proj', bits=8, group_size=4)")
 
 
@@ -170,24 +192,24 @@ def mlx_4bit(ctx):
 @case("KeyError for a layer that is not in the file, and for a tensor that is not quantized",
       assets=[])  # fmt: skip
 def missing_parts(ctx):
-    with CountingFile(ctx.fixture_path("tiny-8bit.safetensors")) as f:
+    with File(ctx.fixture_path("tiny-8bit.safetensors")) as f:
         for name in ("model.layers.2.self_attn.q_proj", "model.norm", "__metadata__",
                      "model.layers.1.self_attn.k_proj.weight"):  # fmt: skip
-            check.raises(KeyError, ctx.solution.load_quantized, f, name, 8, 64,
+            check.raises(KeyError, load, ctx, f, name, 8, 64,
                          label="load_quantized(a name without the three tensors)")  # fmt: skip
 
 
 @case("ValueError when bits or group_size do not fit the stored shapes", assets=[])
 def wrong_settings(ctx):
-    with CountingFile(ctx.fixture_path("tiny-8bit.safetensors")) as f:
+    with File(ctx.fixture_path("tiny-8bit.safetensors")) as f:
         name = "model.layers.0.self_attn.q_proj"
         for bits, group_size in ((4, 64), (8, 32), (8, 128), (2, 64)):
-            check.raises(ValueError, ctx.solution.load_quantized, f, name, bits, group_size,
+            check.raises(ValueError, load, ctx, f, name, bits, group_size,
                          label="load_quantized(settings that do not fit the file)")  # fmt: skip
     codes = np.arange(16).reshape(2, 8)
     tensors, _ = layer("a", codes, [[1.0, 2.0], [0.5, 4.0]], [[0.0, 1.0], [0.0, 0.0]], 8)
     tensors["a.weight"] = ("I32", tensors["a.weight"][1].astype("<i4"))
-    check.raises(ValueError, ctx.solution.load_quantized, build(tensors), "a", 8, 4,
+    check.raises(ValueError, load, ctx, build(tensors), "a", 8, 4,
                  label="load_quantized(a .weight that is not U32)")  # fmt: skip
 
 
@@ -206,9 +228,9 @@ def two_bits(ctx):
     mapped = mmap.mmap(-1, len(data))
     mapped[:] = data
     ctx.defer(mapped.close)
-    got = ctx.solution.load_quantized(mapped, "blocks.3.proj", 2, 16)
+    got = load(ctx, mapped, "blocks.3.proj", 2, 16)
     check_matrix(np.array(got), want, "load_quantized(2-bit layer)")
-    got = ctx.solution.load_quantized(mapped, "blocks.30.proj", 2, 32)
+    got = load(ctx, mapped, "blocks.30.proj", 2, 32)
     check_matrix(np.array(got), other_want, "load_quantized(2-bit layer, one group per row)")
 
 
@@ -223,8 +245,8 @@ def real(ctx, name, *, hidden):
     path = ctx.asset(ASSET, "model.safetensors")
     what = "a layer" if hidden else repr(name)
     label = f"load_quantized(granite-4.2-3b, {what}, bits=8, group_size=64)"
-    with CountingFile(path) as f:
-        got = ctx.solution.load_quantized(f, name, 8, 64)
+    with File(path) as f:
+        got = load(ctx, f, name, 8, 64)
         read = f.counters.bytes_read
     check.that(isinstance(got, np.ndarray), f"{label}: returned a {type(got).__name__}")
     check.shape(got, tuple(int(n) for n in fixture[f"shape/{name}"]), label=label)
@@ -265,6 +287,6 @@ def real_far_layer(ctx):
 
 @case("Granite 4.2 3B, 8-bit: model.norm has a .weight but is not quantized: KeyError")
 def real_not_quantized(ctx):
-    with CountingFile(ctx.asset(ASSET, "model.safetensors")) as f:
-        check.raises(KeyError, ctx.solution.load_quantized, f, "model.norm", 8, 64,
+    with File(ctx.asset(ASSET, "model.safetensors")) as f:
+        check.raises(KeyError, load, ctx, f, "model.norm", 8, 64,
                      label="load_quantized(a tensor that is not quantized)")  # fmt: skip
