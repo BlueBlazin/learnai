@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 218">
+  <title>The mask of one left-padded row</title>
+  <desc>A four by four mask with keys 0 and 1 as padding. Real queries see only earlier real keys, and padding queries see only themselves.</desc>
+  <!-- Geometry: column j is at x = 100 + 46 j, 44 wide; row i is at y = 52 + 30 i, 26 high. -->
+
+  <!-- Which keys are padding and which are real -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <path d="M100 26 v-4 H190 v4"/>
+    <path d="M192 26 v-4 H282 v4"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="145" y="14.5">padding</text>
+    <text x="237" y="14.5">real</text>
+  </g>
+  <!-- Key and query numbers -->
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="122" y="42.5">0</text>
+    <text x="168" y="42.5">1</text>
+    <text x="214" y="42.5">2</text>
+    <text x="260" y="42.5">3</text>
+  </g>
+  <g font-size="13" text-anchor="end" style="fill: var(--figure-muted)">
+    <text x="90" y="70.5">0</text>
+    <text x="90" y="100.5">1</text>
+    <text x="90" y="130.5">2</text>
+    <text x="90" y="160.5">3</text>
+  </g>
+  <g font-size="13" text-anchor="end" font-style="italic" style="font-family: var(--figure-serif)">
+    <text x="90" y="42.5" style="fill: var(--figure-muted)">j</text>
+    <text x="64" y="44.5" style="fill: var(--figure-muted)">i</text>
+  </g>
+  <!-- The cells: hidden by the future (dashed), hidden by padding (crossed), visible -->
+  <g fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)">
+    <rect x="146" y="52" width="44" height="26" rx="3"/>
+    <rect x="192" y="52" width="44" height="26" rx="3"/>
+    <rect x="238" y="52" width="44" height="26" rx="3"/>
+    <rect x="192" y="82" width="44" height="26" rx="3"/>
+    <rect x="238" y="82" width="44" height="26" rx="3"/>
+    <rect x="238" y="112" width="44" height="26" rx="3"/>
+  </g>
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <rect x="100" y="82" width="44" height="26" rx="3"/>
+    <path d="M104 104 L140 86"/>
+    <rect x="100" y="112" width="44" height="26" rx="3"/>
+    <path d="M104 134 L140 116"/>
+    <rect x="146" y="112" width="44" height="26" rx="3"/>
+    <path d="M150 134 L186 116"/>
+    <rect x="100" y="142" width="44" height="26" rx="3"/>
+    <path d="M104 164 L140 146"/>
+    <rect x="146" y="142" width="44" height="26" rx="3"/>
+    <path d="M150 164 L186 146"/>
+  </g>
+  <g stroke="currentColor" stroke-width="1" style="fill: var(--figure-attn)">
+    <rect x="192" y="112" width="44" height="26" rx="3"/>
+    <rect x="192" y="142" width="44" height="26" rx="3"/>
+    <rect x="238" y="142" width="44" height="26" rx="3"/>
+  </g>
+  <g stroke="currentColor" stroke-width="1" stroke-dasharray="3 2" fill-opacity="0.4" style="fill: var(--figure-attn)">
+    <rect x="100" y="52" width="44" height="26" rx="3"/>
+    <rect x="146" y="82" width="44" height="26" rx="3"/>
+  </g>
+  <!-- The kind of query of each row -->
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="296" y="70.5">padding query</text>
+    <text x="296" y="100.5">padding query</text>
+    <text x="296" y="130.5">real query</text>
+    <text x="296" y="160.5">real query</text>
+  </g>
+  <!-- Key -->
+  <g stroke="currentColor" stroke-width="1">
+    <rect x="100" y="190" width="14" height="12" rx="2" style="fill: var(--figure-attn)"/>
+    <rect x="226" y="190" width="14" height="12" rx="2" stroke-dasharray="3 2" fill-opacity="0.4" style="fill: var(--figure-attn)"/>
+    <rect x="344" y="190" width="14" height="12" rx="2" fill="none"/>
+    <path d="M346 200 L356 192" fill="none"/>
+  </g>
+  <g font-size="13">
+    <text x="120" y="200.5">may attend</text>
+    <text x="246" y="200.5">itself only</text>
+    <text x="364" y="200.5">padding key</text>
+  </g>
+</svg>

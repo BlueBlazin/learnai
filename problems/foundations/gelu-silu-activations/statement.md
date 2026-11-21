@@ -3,6 +3,8 @@ that checkpoints are trained with, and SiLU. The formulas are short. The work is
 telling the two GELUs apart, getting the constants right, and returning a number
 instead of NaN when an activation is large.
 
+![This problem is the activation inside the MLP of each block.](assets/map.svg)
+
 ## Specification
 
 ```python

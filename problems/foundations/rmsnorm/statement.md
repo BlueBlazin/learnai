@@ -3,6 +3,8 @@ its root mean square, then multiply by a learned gain. The formula is one line; 
 is in getting the epsilon in the right place and in returning the right answer for
 activations so large that their squares do not fit in float32.
 
+![This problem is RMSNorm, which a decoder-only transformer applies before attention, before the MLP, and before the output layer.](assets/map.svg)
+
 ## Specification
 
 ```python

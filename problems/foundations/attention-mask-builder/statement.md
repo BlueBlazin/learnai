@@ -3,6 +3,8 @@ attention scores, that hides the future from every token and hides padding from
 everything. The difficulty is in the corners: which axis the padding mask belongs on,
 where the padding is, and what happens to a row in which everything is hidden.
 
+![This problem is the mask that attention adds to its scores before the softmax.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -77,6 +79,8 @@ build_mask(lengths=[4, 2], T=4, padding_side="left")
 #  [0, 0, 0, -],           [-, -, 0, -],     <- real query 2: not the padding before it
 #  [0, 0, 0, 0]]           [-, -, 0, 0]]
 ```
+
+![Row 1 of the left-padded example: the padding keys are hidden from the real queries, and each padding query keeps only itself.](assets/padded-mask.svg)
 
 Row 0 is the plain causal mask in both cases. In row 1 with left padding, the columns
 of the padding keys 0 and 1 are hidden from the real queries 2 and 3. Without rule 2,

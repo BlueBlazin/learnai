@@ -19,6 +19,8 @@ mantissa bits:
 |---|---|---|---|
 | field | sign | exponent (8 bits, bias 127) | mantissa (7 bits) |
 
+![The 32 bits of $0.1$ in float32: bfloat16 keeps the top 16 ($h$), and the 16 dropped bits ($r$) decide the rounding.](assets/bits.svg)
+
 Zeros, subnormals, infinities, and NaN are encoded as in float32: exponent field 0 is
 zero or a subnormal, exponent field 255 is infinity (mantissa 0) or NaN (mantissa not
 0).

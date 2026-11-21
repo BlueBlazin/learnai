@@ -47,6 +47,41 @@
       "parts": ["panel", "norm1", "norm2", "add1", "add2", "wiring"],
       "marker": {"from": [292, 217.5], "length": 18},
       "desc": "The norms, additions, and wires inside the block are at full strength."
+    },
+    "foundations/stable-softmax": {
+      "parts": ["softmax"],
+      "marker": {"from": [242, 42], "length": 18},
+      "desc": "The softmax at the top is at full strength."
+    },
+    "foundations/rmsnorm": {
+      "parts": ["norm1", "norm2", "final-norm"],
+      "marker": {"from": [292, 196], "length": 18},
+      "desc": "The three RMSNorm blocks are at full strength."
+    },
+    "foundations/half-precision-rmsnorm": {
+      "parts": ["norm1", "norm2", "final-norm"],
+      "marker": {"from": [292, 196], "length": 18},
+      "desc": "The three RMSNorm blocks are at full strength."
+    },
+    "foundations/gelu-silu-activations": {
+      "parts": ["mlp"],
+      "marker": {"from": [292, 166], "length": 18},
+      "desc": "The SwiGLU MLP is at full strength."
+    },
+    "foundations/split-merge-heads": {
+      "parts": ["attn"],
+      "marker": {"from": [292, 256], "length": 18},
+      "desc": "The attention block is at full strength."
+    },
+    "foundations/attention-mask-builder": {
+      "parts": ["attn"],
+      "marker": {"from": [292, 256], "length": 18},
+      "desc": "The attention block is at full strength."
+    },
+    "foundations/last-token-gather": {
+      "parts": ["linear"],
+      "marker": {"from": [242, 72], "length": 18},
+      "desc": "The linear layer before the softmax is at full strength."
     }
   }
 }

@@ -2,6 +2,8 @@ Implement `softmax` and `log_softmax` along an axis so that they return correct,
 results for **any** float32 logits, including values like `1e4` or `-1e4` where the
 textbook formula overflows or underflows.
 
+![This problem is the softmax at the top of a decoder-only transformer, which turns logits into next-token probabilities.](assets/map.svg)
+
 ## Specification
 
 ```python

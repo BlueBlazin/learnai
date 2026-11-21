@@ -3,6 +3,8 @@ one: `split_heads`, which cuts the feature axis into heads and moves the head ax
 to the batch axis, and `merge_heads`, its inverse. Each is two operations, a reshape
 and a transpose, and the whole exercise is that these two are not interchangeable.
 
+![This problem is the reshape around attention: heads are split before it and merged after it.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -69,6 +71,8 @@ split_heads(x, 2)
 ```
 
 `merge_heads` of that result returns `x`.
+
+![The example's feature axis is cut into two bands, and each band becomes one head's sequence of $T$ vectors.](assets/heads.svg)
 
 Compare with reshaping `x` straight to `(1, 2, 3, 2)`, which has the right shape:
 

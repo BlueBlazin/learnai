@@ -40,7 +40,8 @@ def test_written_maps_are_up_to_date():
 def test_check_fails_on_a_stale_or_missing_file(tmp_path):
     spec = json.loads(SPECS[0].read_text(encoding="utf-8"))
     for problem in spec["problems"]:
-        directory = tmp_path / "problems" / spec["track"] / problem
+        track, _, name = problem.rpartition("/")
+        directory = tmp_path / "problems" / (track or spec["track"]) / name
         directory.mkdir(parents=True)
         (directory / "problem.toml").write_text("", encoding="utf-8")
     root = ["--root", str(tmp_path)]

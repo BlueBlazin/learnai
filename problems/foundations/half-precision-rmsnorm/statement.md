@@ -4,6 +4,8 @@ problem, but float16 tops out at 65504, so the square of any activation above 25
 infinite, and its smallest normal number is $6.1 \times 10^{-5}$, so squares of small
 activations and epsilon itself lose most of their bits.
 
+![This problem is the same RMSNorm, run in float16 at each of its three places.](assets/map.svg)
+
 ## Specification
 
 ```python

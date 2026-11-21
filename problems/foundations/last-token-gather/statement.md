@@ -3,6 +3,8 @@ token**: the vector that the next token is sampled from. It is one line of index
 and that line is the classic reason why batched generation gives garbage for the short
 prompts in a batch.
 
+![This problem is the step after the final linear layer: taking each row's last real token.](assets/map.svg)
+
 ## Specification
 
 ```python
