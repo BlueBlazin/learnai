@@ -4,6 +4,8 @@ into the sublayer's input, how to spread its output back over them, and an $N \t
 matrix that mixes the old streams, pushed toward a doubly stochastic matrix by a fixed
 number of Sinkhorn iterations. Implement the weights and the merge.
 
+![This problem is the residual connections around the two sublayers, which here carry several streams.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -58,6 +60,8 @@ $$
 
 so `comb` acts transposed: column $n$ of `comb` holds the weights of the old streams in
 new stream $n$. `streams` here are the streams the weights were computed from.
+
+![One hyper-connection around a sublayer, with the weights of the example below. Column $n$ of `comb` mixes the old streams into new stream $n$.](assets/streams.svg)
 
 `iters` is a Python int $\ge 1$ and `eps` a Python float $> 0$. `hc_weights` returns the
 tuple `(collapsed, post, comb)`. No function modifies a tensor it is given.

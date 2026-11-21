@@ -2,6 +2,8 @@ Implement attention in which one tensor per token is both the key and the value.
 tensor carries rotary positions on a slice of its channels, so the values are rotated
 too, and the output has to be rotated back by the query position.
 
+![This problem is attention and its RoPE, with one tensor read as both key and value.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -100,6 +102,8 @@ $0.415452$ and $0.584548$.
 
 Each row arrives turned by its distance to the query. With positions `[103, 104]` the
 result is the same.
+
+![The rotary pair for token 1 of the example. Each row is turned by its own position, and the weighted sum $o$ is turned back by the query position, 4.](assets/turn-back.svg)
 
 ## Constraints
 

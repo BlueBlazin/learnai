@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 246">
+  <title>The rotary pair of the example on the way into attention and on the way out</title>
+  <desc>Left: the pairs (1, 0) and (0, 1) turned by 3 and 4 radians, and their weighted sum o. Right: everything turned back by 4 radians, giving out.</desc>
+  <!-- Geometry: unit length is 78 around each center; angles are radians, counterclockwise. Query at position 4, weights 0.415452 and 0.584548. -->
+  <!-- In: each row turned by its own position -->
+  <g>
+    <text x="124" y="15" text-anchor="middle" font-size="13" style="font-family: var(--figure-mono)">rot(kv, pos_k)</text>
+    <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+      <line x1="20" y1="142" x2="228" y2="142"/>
+      <line x1="124" y1="48" x2="124" y2="236"/>
+      <circle cx="124" cy="142" r="78" stroke-dasharray="2 4"/>
+    </g>
+    <g font-size="13" style="font-family: var(--figure-serif); fill: var(--figure-muted)">
+      <text x="233" y="146"><tspan font-style="italic">x</tspan>₂</text>
+      <text x="124" y="41" text-anchor="middle"><tspan font-style="italic">x</tspan>₃</text>
+    </g>
+    <g stroke-width="1.5" stroke-linecap="round">
+      <line x1="124" y1="142" x2="193" y2="142" fill="none" stroke="currentColor"/>
+      <polygon points="202,142 193,145.2 193,138.8"/>
+      <line x1="124" y1="142" x2="124" y2="73" fill="none" stroke="currentColor"/>
+      <polygon points="124,64 127.2,73 120.8,73"/>
+      <line x1="124" y1="142" x2="55.7" y2="132.3" fill="none" style="stroke: var(--figure-accent)"/>
+      <polygon points="46.8,131 56.1,129.1 55.2,135.4" style="fill: var(--figure-accent)"/>
+      <line x1="124" y1="142" x2="176.2" y2="187.1" fill="none" style="stroke: var(--figure-accent)"/>
+      <polygon points="183,193 174.1,189.5 178.3,184.7" style="fill: var(--figure-accent)"/>
+      <line x1="124" y1="142" x2="125.6" y2="158.3" fill="none" style="stroke: var(--figure-straw)"/>
+      <polygon points="126.4,167.2 122.4,158.6 128.7,158" style="fill: var(--figure-straw)"/>
+    </g>
+    <!-- the turns: 3 radians for row 0, 4 for row 1 -->
+    <path d="M148 142 A24 24 0 0 0 101.5 133.8" fill="none" stroke="currentColor" stroke-width="1"/>
+    <polygon points="100.2,138.6 98.9,133.4 104,134.1"/>
+    <path d="M124 96 A46 46 0 1 0 155.3 175.7" fill="none" stroke="currentColor" stroke-width="1"/>
+    <polygon points="158.8,172.1 157.3,177.4 153.4,174"/>
+    <g font-size="13" style="font-family: var(--figure-serif)">
+      <text x="148" y="117">+3</text>
+      <text x="116" y="204" text-anchor="end">+4</text>
+      <text x="38.8" y="126" text-anchor="end" style="fill: var(--figure-accent)"><tspan font-style="italic">k̃</tspan>₀</text>
+      <text x="190" y="206" style="fill: var(--figure-accent)"><tspan font-style="italic">k̃</tspan>₁</text>
+      <text x="117" y="173" text-anchor="end" font-style="italic" style="fill: var(--figure-straw)">o</text>
+    </g>
+    <g font-size="13" style="font-family: var(--figure-mono)">
+      <text x="206" y="160">kv[0]</text>
+      <text x="134" y="58">kv[1]</text>
+    </g>
+  </g>
+  <!-- Out: the sum turned back by the query position, 4 -->
+  <g>
+    <text x="352" y="15" text-anchor="middle" font-size="13" style="font-family: var(--figure-mono)">rot(o, −pos_q)</text>
+    <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+      <line x1="248" y1="142" x2="456" y2="142"/>
+      <line x1="352" y1="48" x2="352" y2="236"/>
+      <circle cx="352" cy="142" r="78" stroke-dasharray="2 4"/>
+    </g>
+    <g font-size="13" style="font-family: var(--figure-serif); fill: var(--figure-muted)">
+      <text x="461" y="146"><tspan font-style="italic">x</tspan>₂</text>
+      <text x="352" y="41" text-anchor="middle"><tspan font-style="italic">x</tspan>₃</text>
+    </g>
+    <g stroke-width="1.5" stroke-linecap="round">
+      <line x1="352" y1="142" x2="389.3" y2="200.1" fill="none" style="stroke: var(--figure-accent)"/>
+      <polygon points="394.1,207.6 386.6,201.8 392,198.3" style="fill: var(--figure-accent)"/>
+      <line x1="352" y1="142" x2="352" y2="73" fill="none" style="stroke: var(--figure-accent)"/>
+      <polygon points="352,64 355.2,73 348.8,73" style="fill: var(--figure-accent)"/>
+      <line x1="352" y1="142" x2="353.6" y2="158.3" fill="none" stroke-dasharray="3 3" style="stroke: var(--figure-straw)"/>
+      <polygon points="354.4,167.2 350.4,158.6 356.7,158" style="fill: var(--figure-straw)"/>
+      <line x1="352" y1="142" x2="363.3" y2="130.2" fill="none" style="stroke: var(--figure-straw)"/>
+      <polygon points="369.5,123.7 365.6,132.4 361,128" style="fill: var(--figure-straw)"/>
+    </g>
+    <path d="M355.4 177.8 A36 36 0 1 1 373 112.8" fill="none" stroke="currentColor" stroke-width="1"/>
+    <polygon points="376.9,116 371.2,114.7 374.8,110.9"/>
+    <g font-size="13" style="font-family: var(--figure-serif)">
+      <text x="310" y="137" text-anchor="end">−4</text>
+      <text x="402" y="216" style="fill: var(--figure-accent)">3 − 4 = −1</text>
+      <text x="362" y="58" style="fill: var(--figure-accent)">4 − 4 = 0</text>
+      <text x="345" y="167" text-anchor="end" font-style="italic" style="fill: var(--figure-straw)">o</text>
+    </g>
+    <text x="386" y="121" font-size="13" style="font-family: var(--figure-mono); fill: var(--figure-straw)">out</text>
+  </g>
+</svg>

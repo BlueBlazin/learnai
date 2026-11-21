@@ -1,0 +1,85 @@
+{
+  "track": "block-components",
+  "file": "map.svg",
+  "title": "Where this problem sits in a decoder-only transformer",
+  "desc": "A decoder-only transformer drawn bottom to top, with a per-layer embedding added at the end of each block.",
+  "width": 480,
+  "height": 406,
+  "panel": {
+    "part": "panel",
+    "x": 58, "y": 121, "width": 234, "height": 233,
+    "label": "N ×", "label_at": [34, 237.5]
+  },
+  "blocks": [
+    {"part": "softmax", "role": "softmax", "label": "Softmax", "x": 104, "y": 32, "width": 132, "height": 20},
+    {"part": "linear", "role": "linear", "label": "Linear", "x": 104, "y": 62, "width": 132, "height": 20},
+    {"part": "final-norm", "role": "norm", "label": "RMSNorm", "x": 104, "y": 92, "width": 132, "height": 20},
+    {"part": "add3", "shape": "add", "at": [170, 150]},
+    {"part": "ple", "shape": "source", "role": "embed", "label": "PLE", "at": [262, 150], "arrow_to": [178, 150]},
+    {"part": "add2", "shape": "add", "at": [170, 178]},
+    {"part": "mlp", "role": "mlp", "label": "MLP or experts", "x": 104, "y": 196, "width": 132, "height": 20},
+    {"part": "norm2", "role": "norm", "label": "RMSNorm", "x": 104, "y": 226, "width": 132, "height": 20},
+    {"part": "add1", "shape": "add", "at": [170, 268]},
+    {"part": "attn", "role": "attn", "label": "Attention", "x": 104, "y": 286, "width": 132, "height": 20},
+    {"part": "rope", "shape": "source", "role": "embed", "label": "RoPE", "at": [262, 296], "arrow_to": [236, 296]},
+    {"part": "norm1", "role": "norm", "label": "RMSNorm", "x": 104, "y": 316, "width": 132, "height": 20},
+    {"part": "embed", "role": "embed", "label": "Token embedding", "x": 104, "y": 360, "width": 132, "height": 20}
+  ],
+  "wires": [
+    {"points": [[170, 390], [170, 380]], "arrow": true},
+    {"points": [[170, 360], [170, 336]], "arrow": true},
+    {"points": [[170, 316], [170, 306]], "arrow": true},
+    {"points": [[170, 286], [170, 276]], "arrow": true},
+    {"points": [[170, 260], [170, 246]], "arrow": true},
+    {"points": [[170, 226], [170, 216]], "arrow": true},
+    {"points": [[170, 196], [170, 186]], "arrow": true},
+    {"points": [[170, 170], [170, 158]], "arrow": true},
+    {"points": [[170, 142], [170, 112]], "arrow": true},
+    {"points": [[170, 92], [170, 82]], "arrow": true},
+    {"points": [[170, 62], [170, 52]], "arrow": true},
+    {"points": [[170, 32], [170, 22]], "arrow": true},
+    {"part": "skip", "points": [[170, 345], [80, 345], [80, 268], [162, 268]], "round": 8, "arrow": true, "tap": true},
+    {"part": "skip", "points": [[170, 253], [80, 253], [80, 178], [162, 178]], "round": 8, "arrow": true, "tap": true}
+  ],
+  "labels": [
+    {"text": "next-token probabilities", "at": [170, 10]},
+    {"text": "token ids", "at": [170, 398]}
+  ],
+  "problems": {
+    "partial-rope": {
+      "parts": ["rope"],
+      "marker": {"from": [292, 296], "length": 18},
+      "desc": "The RoPE source beside attention is at full strength."
+    },
+    "yarn-frequencies": {
+      "parts": ["rope"],
+      "marker": {"from": [292, 296], "length": 18},
+      "desc": "The RoPE source beside attention is at full strength."
+    },
+    "shared-kv-rotation": {
+      "parts": ["attn", "rope"],
+      "marker": {"from": [292, 296], "length": 18},
+      "desc": "The attention block and the RoPE source are at full strength."
+    },
+    "sigmoid-router-shared-expert": {
+      "parts": ["mlp"],
+      "marker": {"from": [292, 206], "length": 18},
+      "desc": "The block labeled MLP or experts is at full strength."
+    },
+    "latent-moe": {
+      "parts": ["mlp"],
+      "marker": {"from": [292, 206], "length": 18},
+      "desc": "The block labeled MLP or experts is at full strength."
+    },
+    "per-layer-embeddings": {
+      "parts": ["ple", "add3"],
+      "marker": {"from": [292, 150], "length": 18},
+      "desc": "The PLE source and the addition it enters are at full strength."
+    },
+    "hyper-connections": {
+      "parts": ["add1", "add2", "skip"],
+      "marker": {"from": [292, 223], "length": 18},
+      "desc": "The two residual additions and their skip wires are at full strength."
+    }
+  }
+}

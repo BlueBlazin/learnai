@@ -3,6 +3,8 @@ is a pack of one small vector per decoder layer, and each layer adds its own vec
 the residual stream as its last step. Implement the lookup, the injection, and one
 layer that uses them.
 
+![This problem is the per-layer embedding, which each block adds to the stream as its last step.](assets/map.svg)
+
 ## Specification
 
 ```python

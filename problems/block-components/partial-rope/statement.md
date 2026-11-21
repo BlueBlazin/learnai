@@ -2,6 +2,8 @@ Implement the two partial rotary embeddings that current open-weight models ship
 read the same head width, base, and `partial_rotary_factor` from a configuration, and
 they disagree on which channels rotate, how they are paired, and at what frequencies.
 
+![This problem is RoPE, applied here to only some channels of each head.](assets/map.svg)
+
 ## Specification
 
 ```python

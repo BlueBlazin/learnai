@@ -3,6 +3,8 @@ Implement YaRN, which lets a model trained on `original_max_positions` tokens ru
 frequency, slow pairs are divided by `factor`, and a linear ramp over the pair index
 blends the two.
 
+![This problem is RoPE, with its frequencies rescaled for a longer context.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -97,6 +99,8 @@ $\operatorname{boundary}(1) = 16 \ln(512 / 2\pi) / (2 \ln 10^4) = 3.8222$.
 | `truncate=False` | 0.8119 | 3.8222 | 0, 0.0625, 0.3947, 0.7269, 1, 1, 1, 1 | 1, 0.9453, 0.6546, 0.3640, 0.125, 0.125, 0.125, 0.125 |
 
 For pair 1 with truncation: $0.75 \cdot 0.316228 + 0.25 \cdot 0.316228 / 8 = 0.247053$.
+
+![The example with `truncate=True`, on a log scale. Pair 0 keeps $\theta_0$, and every pair from 4 on is divided by 8.](assets/frequencies.svg)
 
 ```python
 cos, sin = yarn_tables([0, 1, 100], yarn_inv_freq(16, 10000.0, 8.0, 512), 8.0)

@@ -3,6 +3,8 @@ model's width: project down once, run and mix the chosen experts there, normaliz
 mixture, and project back up, while the router and the shared expert stay at full
 width. The expert work is counted.
 
+![This problem is the feed-forward layer, built here from experts that work at a reduced width.](assets/map.svg)
+
 ## Specification
 
 ```python

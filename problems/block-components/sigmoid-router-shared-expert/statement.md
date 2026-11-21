@@ -2,6 +2,8 @@ Implement the expert router of DeepSeek-V3 and its successors, and the layer aro
 experts are scored independently, chosen by a biased score, weighted by the unbiased
 one, and joined by a shared expert that every token uses.
 
+![This problem is the feed-forward layer, built here from routed experts and one shared expert.](assets/map.svg)
+
 ## Specification
 
 ```python

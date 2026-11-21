@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 254">
+  <title>Plain and YaRN frequencies of the example, by pair index</title>
+  <desc>On a log scale the plain frequencies fall on a straight line. The YaRN curve meets it at pair 0 and runs 8 times lower from pair 4.</desc>
+  <!-- Geometry: pair i is at x = 74 + 36 i; frequency v is at y = 30 - 34 log10(v), so a decade is 34 units. -->
+
+  <!-- Axes -->
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <path d="M58 22 V204 H344"/>
+    <path d="M54 30 H58 M54 98 H58 M54 166 H58"/>
+  </g>
+  <g font-size="13" text-anchor="end" style="fill: var(--figure-muted)">
+    <text x="50" y="34.5">1</text>
+    <text x="50" y="102.5">10⁻²</text>
+    <text x="50" y="170.5">10⁻⁴</text>
+  </g>
+  <text x="58" y="12" font-size="13" style="fill: var(--figure-muted)">frequency, log scale</text>
+  <g font-size="13" text-anchor="middle">
+    <text x="74" y="220.5">0</text>
+    <text x="110" y="220.5">1</text>
+    <text x="146" y="220.5">2</text>
+    <text x="182" y="220.5">3</text>
+    <text x="218" y="220.5">4</text>
+    <text x="254" y="220.5">5</text>
+    <text x="290" y="220.5">6</text>
+    <text x="326" y="220.5">7</text>
+  </g>
+  <text x="352" y="220.5" font-size="13" style="fill: var(--figure-muted)">pair <tspan font-style="italic" style="font-family: var(--figure-serif)">i</tspan></text>
+
+  <!-- Plain RoPE: theta_i = 10^(-i/2) -->
+  <path d="M74 30 L110 47 L146 64 L182 81 L218 98 L254 115 L290 132 L326 149" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <!-- YaRN with truncate=True: inv_freq of the example -->
+  <path d="M74 30 L110 50.6 L146 72.5 L182 96.8 L218 128.7 L254 145.7 L290 162.7 L326 179.7" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+  <g style="fill: var(--figure-accent)">
+    <circle cx="74" cy="30" r="3.5"/>
+    <circle cx="110" cy="50.6" r="3.5"/>
+    <circle cx="146" cy="72.5" r="3.5"/>
+    <circle cx="182" cy="96.8" r="3.5"/>
+    <circle cx="218" cy="128.7" r="3.5"/>
+    <circle cx="254" cy="145.7" r="3.5"/>
+    <circle cx="290" cy="162.7" r="3.5"/>
+    <circle cx="326" cy="179.7" r="3.5"/>
+  </g>
+  <g>
+    <circle cx="74" cy="30" r="2"/>
+    <circle cx="110" cy="47" r="2"/>
+    <circle cx="146" cy="64" r="2"/>
+    <circle cx="182" cy="81" r="2"/>
+    <circle cx="218" cy="98" r="2"/>
+    <circle cx="254" cy="115" r="2"/>
+    <circle cx="290" cy="132" r="2"/>
+    <circle cx="326" cy="149" r="2"/>
+  </g>
+
+  <!-- The slow end: divided by factor = 8 -->
+  <path d="M338 149 h5 M340.5 149 V179.7 M338 179.7 h5" fill="none" stroke-width="1.5" style="stroke: var(--figure-straw)"/>
+  <text x="349" y="168.9" font-size="13" style="font-family: var(--figure-serif); fill: var(--figure-straw)">÷ 8</text>
+
+  <!-- The ramp: from low = 0 to high = 4 -->
+  <path d="M74 228 v5 H218 v-5" fill="none" stroke="currentColor" stroke-width="1"/>
+  <g font-size="13" text-anchor="middle">
+    <text x="74" y="249.5">low</text>
+    <text x="146" y="249.5">ramp</text>
+    <text x="218" y="249.5">high</text>
+  </g>
+
+  <!-- The key -->
+  <line x1="372" y1="40" x2="396" y2="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <circle cx="384" cy="40" r="2"/>
+  <text x="402" y="44.5" font-size="13" style="font-family: var(--figure-serif)">θᵢ</text>
+  <line x1="372" y1="62" x2="396" y2="62" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+  <circle cx="384" cy="62" r="3.5" style="fill: var(--figure-accent)"/>
+  <text x="402" y="66.5" font-size="13" style="font-family: var(--figure-mono)">inv_freq</text>
+</svg>
