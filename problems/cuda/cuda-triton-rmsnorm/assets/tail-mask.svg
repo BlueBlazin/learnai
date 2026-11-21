@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 224">
   <title>The last block of each row in the worked example hangs over the end of the row</title>
-  <desc>A strip of thirteen cells, the memory behind the pointer x: cells 0 to 4 are row 0, cells 5 to 9 are row 1, and cells 10 to 12, dashed, lie beyond the tensor. Below it, the second block of program 0 covers cells 4 to 7 and the second block of program 1 covers cells 9 to 12, each with mask 1, 0, 0, 0.</desc>
+  <desc>A strip of thirteen memory cells, two rows of five and three past the tensor. Each program's second block overhangs its row, with mask 1, 0, 0, 0.</desc>
 
   <!-- Flat element numbers, inside the cells -->
   <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">

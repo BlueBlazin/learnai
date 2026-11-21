@@ -23,7 +23,7 @@ The *root path* of node $i$ is the chain of nodes from depth 0 down to $i$; its
 number of ancestors. The model input is the $P$ prefix tokens followed by the $N$
 node tokens in index order: node $i$ sits at flat index $P + i$.
 
-![The example tree behind a prefix of two tokens (left), with the position id of every column underneath, and the mask of the flattened sequence (right): a node's row is filled for the prefix, for itself, and for its ancestors only.](assets/tree-mask.svg)
+![The example tree behind a prefix of two tokens, and the mask of the flattened sequence. A node's row is filled for the prefix, itself, and its ancestors only.](assets/tree-mask.svg)
 
 ### `tree_inputs`
 

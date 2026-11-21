@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 232">
   <title>A token tree behind a two-token prefix, and the attention mask of the flattened sequence</title>
-  <desc>Left: the prefix p0, p1 followed by a tree of six draft nodes, where nodes 0 and 1 continue the prefix, nodes 2 and 3 are children of node 0, node 4 is a child of node 1, and node 5 is a child of node 2. Right: the 8 by 8 attention mask, causal for the prefix rows, and for each node row filled in the two prefix columns, its own column, and the columns of its ancestors only.</desc>
+  <desc>Left, a two-token prefix followed by a tree of six draft nodes. Right, the 8 by 8 attention mask, where a node attends to the prefix, itself, and its ancestors.</desc>
   <!-- The tree: edges first, then nodes -->
   <g fill="none" stroke="currentColor" stroke-width="1">
     <line x1="35" y1="112" x2="49" y2="112"/>

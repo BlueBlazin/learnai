@@ -19,7 +19,7 @@ class SpeculativeEngine:
     def generate_batch(self, prompts, max_new_tokens): ...  # stage 5
 ```
 
-![A proposer (prompt lookup if it finds a match, otherwise the draft model through its cache) hands up to $k$ draft tokens to the target, which scores them all in one call. The verifier accepts a prefix and adds one token of the target's own; then both caches are rolled back to verified tokens and $k$ is adjusted.](assets/engine.svg)
+![One round. A proposer drafts up to $k$ tokens, the target scores them in one call, and the verifier accepts a prefix.](assets/engine.svg)
 
 The cases are grouped by stage, and each stage's cases use only what that stage and
 the ones before it specify: `uniforms` is `None` until stage 2, `adaptive` is `False`

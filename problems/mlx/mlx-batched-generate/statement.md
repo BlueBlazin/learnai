@@ -75,7 +75,7 @@ $g_{\max} = \max_b g_b$.
 6. **Stop** as soon as every row is finished. The model is called exactly
    $g_{\max}$ times, so the last token of the longest row is never fed.
 
-![The padded batch of the example and the mask of its second row. Left padding puts every row's last real token in the last column; positions restart at 0 after the padding; padding keys are hidden from every query except themselves.](assets/left-padding.svg)
+![The padded batch of the example and the mask of its second row. Every row's last real token is in the last column.](assets/left-padding.svg)
 
 **Evaluation rules.** The judge observes where your code evaluates (`EvalSpy`):
 

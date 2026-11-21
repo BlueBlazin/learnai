@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 236">
   <title>Blocking evaluation alternates GPU and Python; asynchronous evaluation overlaps them</title>
-  <desc>Two timelines, each with a GPU lane and a Python lane. With mx.eval then read, the GPU idles while Python detokenizes each token, and with mx.async_eval of the next step then read, the GPU computes steps 0 to 3 back to back while Python detokenizes token 0 during step 1, token 1 during step 2, and token 2 during step 3.</desc>
+  <desc>Two timelines, each with a GPU lane and a Python lane. With blocking evaluation the GPU idles during detokenizing, and with asynchronous evaluation it computes the next step meanwhile.</desc>
 
   <!-- Geometry: lanes start at x = 78. A step is 80 wide, a detokenization 60. -->
 

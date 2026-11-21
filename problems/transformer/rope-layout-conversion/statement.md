@@ -40,7 +40,7 @@ They differ only in which two features form pair $i$:
 The rotated members go back to the features they came from. `rope_interleaved` is
 the function `apply_rope` of the `rope` problem.
 
-![A head of width 8, where pair $i$ has the members $a_i$ and $b_i$. The interleaved layout keeps the two members of a pair side by side and the half-split layout stores all first members, then all second members; the lines show where `permute_qk` moves each feature.](assets/layouts.svg)
+![A head of width 8, where pair $i$ has the members $a_i$ and $b_i$. The lines show where `permute_qk` moves each feature.](assets/layouts.svg)
 
 - `x`: float32, shape `(B, H, T, D)`, `D` even.
 - `pos`: integer tensor, shape `(T,)`, values $\ge 0$; not necessarily starting at 0,

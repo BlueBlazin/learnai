@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 244">
   <title>Block tables of two sequences and the pool of physical KV blocks</title>
-  <desc>Six physical blocks of four token slots each. Sequence a holds 9 tokens in blocks 0, 1 and 3 and sequence b holds 3 tokens in block 2, with blocks 4 and 5 free, and each sequence's block table lists its block ids in logical order.</desc>
+  <desc>Six physical blocks of four token slots, with a block table per sequence. Sequence a holds blocks 0, 1, and 3, sequence b holds block 2, and two are free.</desc>
   <!-- Left: the block tables. One cell per logical block, holding the physical block id. -->
   <g font-size="13">
     <text x="12" y="15">Block tables</text>

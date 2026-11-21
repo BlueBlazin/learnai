@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 178">
   <title>A preallocated cache buffer with a length field, before and after a write</title>
-  <desc>Two rows of eight slots numbered 0 to 7, before and after a write of two tokens, each with a marker at the length: 5 in the first row, 7 in the second. Slots 5 and 6 are highlighted as new in the second row, and the shape of the buffer is the same in both rows.</desc>
+  <desc>Two rows of eight slots, before and after a write of two tokens. A marker shows the length moving from 5 to 7, and the buffer's shape stays the same.</desc>
   <!-- Geometry: slots are 44 x 30, starting at x = 108. Slot j spans x = 108 + 44 j. Row 1 at y = 40, row 2 at y = 114. -->
   <!-- Slot numbers -->
   <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">

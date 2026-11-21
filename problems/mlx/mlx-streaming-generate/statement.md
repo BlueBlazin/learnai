@@ -63,7 +63,7 @@ $t + 1$. The judge observes the following.
 4. Every yielded `logprob` has 0 pending operations: it was covered by an
    `mx.async_eval`.
 
-![The same three steps with blocking and with asynchronous evaluation. Scheduling step $t + 1$ before reading token $t$ lets the GPU compute it while Python turns token $t$ into text and the consumer uses it.](assets/overlap.svg)
+![The same three steps with blocking and with asynchronous evaluation. Scheduling step $t + 1$ before reading token $t$ keeps the GPU busy while Python detokenizes.](assets/overlap.svg)
 
 **Cost limits**, as in `cached-greedy-decode`: `model.counters.forward_calls` is at
 most $n$ and `model.counters.tokens_processed` is at most $P + n - 1$. If the consumer

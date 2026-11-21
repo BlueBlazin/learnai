@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 268">
   <title>Architecture of the gateway: admission, queue, dispatcher, replicas, and the autoscaling evaluation</title>
-  <desc>A request passes admission, which checks the tenant's token bucket and the bounds of the queue, and an admitted request waits in the gateway queue until the dispatcher pairs it with a ready replica that has a free slot. Of three replicas two are ready and one is starting, completions return to the dispatcher, and an evaluate step reads the queue and the cluster's metrics to scale the number of replicas.</desc>
+  <desc>A block diagram of the gateway. A request passes admission, waits in the queue, and is dispatched to one of three replicas, with an evaluate step that scales them.</desc>
 
   <!-- admission -->
   <g font-size="13">

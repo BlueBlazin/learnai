@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 190">
   <title>The storage layout of the inverted lists in the worked example</title>
-  <desc>Two rows of six cells, the ids 0, 2, 3, 1, 4, 5 and their vectors. The first three cells form list 0 and the next three form list 1, and the offsets 0, 3, 6, 6 mark the boundaries, so list 2 starts and ends at 6 and is empty.</desc>
+  <desc>Two rows of six cells, the ids and their vectors, grouped into lists. The offsets 0, 3, 6, 6 mark the boundaries, so list 2 is empty.</desc>
   <!-- list 1 is highlighted: it is the list a query near centroid 1 scans -->
   <rect x="250" y="34" width="180" height="88" style="fill: var(--figure-accent); fill-opacity: 0.14; stroke: none"/>
   <!-- cells -->

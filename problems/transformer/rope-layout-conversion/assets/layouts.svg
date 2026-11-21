@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 218">
   <title>Interleaved and half-split RoPE layouts for a head of width 8</title>
-  <desc>Two rows of eight features. In the interleaved row the two members of pair i sit at features 2i and 2i + 1, and in the half-split row the first members fill features 0 to 3 and the second members fill features 4 to 7; lines send feature 2i to i and feature 2i + 1 to 4 + i.</desc>
+  <desc>Two rows of eight features, the interleaved layout and the half-split layout. Lines send feature 2i to i and feature 2i + 1 to 4 + i.</desc>
   <!-- row labels -->
   <text x="0" y="55" font-size="13">interleaved</text>
   <text x="0" y="171" font-size="13">half-split</text>

@@ -43,7 +43,7 @@ to itself and to every earlier slot. The model applies it to the attention score
 over all `max_len` slots, setting the scores where the mask is `False` to $-\infty$
 before the softmax.
 
-![A cache with `max_len = 8` after `update(layer, k, v, pos=3)` with two new tokens, and the two rows of `mask(pos=3, n_new=2)`. The unused slots hold arbitrary values; only the mask keeps them out of the attention.](assets/static-cache-mask.svg)
+![A cache with `max_len = 8` after two tokens are written at `pos=3`, and the two mask rows. Only the mask keeps the unused slots out of attention.](assets/static-cache-mask.svg)
 
 **`reset()`** prepares the cache for the next request: it fills every buffer with
 zeros and returns `None`.

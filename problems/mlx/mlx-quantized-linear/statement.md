@@ -33,7 +33,7 @@ which cuts every row into `in / group_size` groups of consecutive inputs and ret
 In both cases `codes` is a uint32 array of shape `(out, in * bits / 32)`: the codes of
 a row packed `32 / bits` to a word, lowest bits first (Figure 1).
 
-![One row of 64 weights at 4 bits in one group. The 256 bytes of float32 become 8 words of codes plus one scale and one bias; inside a word, code 0 occupies the lowest four bits.](assets/packed-row.svg)
+![One row of 64 weights at 4 bits in one group. Its 256 bytes become 8 words of codes plus one scale and one bias.](assets/packed-row.svg)
 
 After construction the layer's parameters (`layer.parameters()`) are exactly these,
 under exactly these names, which are the names of the tensors in a quantized MLX

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 190">
   <title>One Granite 4.0 decoder block</title>
-  <desc>The residual stream runs left to right, and two branches leave it and rejoin it: RMSNorm, grouped-query attention, and a multiplication by 0.263; then RMSNorm, the fused SwiGLU MLP, and a multiplication by 0.263. Under the attention box are RoPE with theta ten million and scores times one over sixty-four, and under the MLP box is one input matrix whose first half of rows is the gate and second half is up.</desc>
+  <desc>The residual stream runs left to right with two branches that rejoin it. Each is an RMSNorm, then attention or the fused SwiGLU MLP, then a multiplication by 0.263.</desc>
   <!-- The residual stream -->
   <g fill="none" stroke="currentColor" stroke-width="1.5">
     <line x1="8" y1="40" x2="197" y2="40"/>

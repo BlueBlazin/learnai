@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 296">
   <title>Scaled dot-product attention with a causal mask</title>
-  <desc>Read from the bottom: q and k enter a matrix product, and the scores pass through a scale, a causal mask, and a softmax. A second matrix product applies the weights to v; each wire carries the shape of its tensor.</desc>
+  <desc>Read from the bottom, q and k enter a matrix product, then a scale, a causal mask, and a softmax. A second matrix product applies the weights to v.</desc>
   <!-- Geometry: the chain is the column x = 126, boxes 104 x 22 every 48 units. q and k enter at x = 106 and 146, v rises at x = 262 into the wide box at the top. -->
 
   <!-- Wires -->

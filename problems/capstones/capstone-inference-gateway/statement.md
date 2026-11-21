@@ -25,7 +25,7 @@ class Gateway:
     def evaluate(self) -> int: ...  # stage 5
 ```
 
-![A request passes admission (its tenant's token bucket, then the bounds of the queue) or is rejected at once; admitted requests wait in the gateway queue until a ready replica has a free slot, and the dispatcher then chooses which request leaves the queue and which replica gets it. Completions come back to the gateway, which also evaluates the autoscaling policy.](assets/architecture.svg)
+![A request passes admission or is rejected at once. The dispatcher pairs a queued request with a ready replica that has a free slot.](assets/architecture.svg)
 
 The cases are grouped by stage. Each stage's cases use only what that stage and the
 earlier ones specify: later features are off in `cfg` by default, and `evaluate` is

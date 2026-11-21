@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 268">
   <title>Which key slots two new tokens may attend to, in a full buffer and in a buffer with unused capacity</title>
-  <desc>Three grids with one row per query and one column per key slot, for two new tokens after three cached ones. A full buffer of five slots and a buffer of eight slots with an explicit mask both let query 0 read slots 0 to 3 and query 1 read slots 0 to 4, while the string mask "causal" on the buffer of eight is aligned with its end, so query 0 also reads unused slots 5 and 6 and query 1 reads unused slots 5 to 7.</desc>
+  <desc>Three grids of queries against key slots for two new tokens after three cached ones. The "causal" string mask on a buffer with unused capacity also exposes unused slots.</desc>
 
   <!-- Geometry: cells are 20 units square; every grid starts at x = 150. Filled cells may be attended to. -->
 

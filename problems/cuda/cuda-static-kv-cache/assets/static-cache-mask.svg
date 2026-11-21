@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 132">
   <title>A static cache of eight slots after a write of two tokens at position 3</title>
-  <desc>A buffer of eight slots numbered 0 to 7: slots 0 to 2 hold earlier tokens, slots 3 and 4 hold the two tokens just written, and slots 5 to 7 are unused, shown as question marks. Under it, the mask of the token in slot 3 has ones in columns 0 to 3, and the mask of the token in slot 4 has ones in columns 0 to 4.</desc>
+  <desc>A buffer of eight slots with three earlier tokens, two just written, and three unused. Below it, the two mask rows have ones up to each new token's own slot.</desc>
 
   <!-- Geometry: eight cells of width 44 from x = 104; rows at y = 24, 64, 96. -->
 

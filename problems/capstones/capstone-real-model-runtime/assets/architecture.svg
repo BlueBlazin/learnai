@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 330">
   <title>Architecture of the runtime: three files in, streamed text out</title>
-  <desc>Three files feed the runtime: model.safetensors through load_weights, tokenizer.json into a Tokenizer that turns messages into prompt ids, and config.json for the constants of the forward pass. Stage 4 runs prefill once and then alternates sample_token and decode_step against the cache, and stage 5 turns the tokens into bytes, then text, and holds back text that may still become a stop string.</desc>
+  <desc>A block diagram of the runtime in five stages. Three files feed weight loading, the tokenizer, and the forward pass, then cached generation and streaming turn tokens into text.</desc>
 
   <!-- files -->
   <g font-size="13">

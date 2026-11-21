@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 176">
   <title>The layout of a safetensors file</title>
-  <desc>A strip of three parts: 8 bytes holding the header length n, n bytes of JSON header, and the tensor data, which starts at byte 8 + n. A tensor in the data section is marked with begin and end offsets measured from the start of the data section, not of the file.</desc>
+  <desc>A strip of three parts, the 8-byte header length n, the JSON header of n bytes, and the tensor data. A tensor's offsets count from the data section.</desc>
   <!-- The file as a strip: length | header | data -->
   <g fill="none" stroke="currentColor" stroke-width="1.5">
     <rect x="10" y="52" width="46" height="40"/>

@@ -79,7 +79,7 @@ $$
 The layer's state is `(k, v)`: the keys **after the norm and the rotation** and the
 values, each of shape $(G, P + T, d)$.
 
-![The state of a four-layer model after four tokens. Each linear-attention layer keeps a pair of fixed size; the attention layer keeps a key and a value for every token, and the next token's position is the number of columns.](assets/two-kinds-of-state.svg)
+![The state of a four-layer model after four tokens. Each linear-attention layer keeps a pair of fixed size, and the attention layer keeps a key and a value per token.](assets/two-kinds-of-state.svg)
 
 Arguments and results:
 

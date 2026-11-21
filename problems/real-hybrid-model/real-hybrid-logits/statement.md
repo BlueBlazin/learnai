@@ -87,7 +87,7 @@ $d$ = `cfg.head_dim`:
    $\sigma(\text{gate})$ of the same token and head, merged to `(T, H * d)`, and
    multiplied by $W_o^\top$.
 
-![The layout of the query projection, and of one query head when it is rotated, in Qwen3.5 0.8B. The gate half of each head is not normalized or rotated; it only scales that head's output.](assets/query-head-layout.svg)
+![The output of the query projection and one rotated query head in Qwen3.5 0.8B. The gate half of each head only scales that head's output.](assets/query-head-layout.svg)
 
 Run the forward pass yourself. From the kit, `ops.rms_norm`, `ops.swiglu`,
 `ops.partial_rope`, `ops.attention`, `ops.l2norm`, `ops.softplus`, and

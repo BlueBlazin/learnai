@@ -5,7 +5,7 @@ component problems needed on its own: **who proposes** is one decision, **how a
 proposal is verified** is another, and **where each cache stands** is bookkeeping
 that neither of them should see.
 
-![A proposer hands up to $k$ draft tokens to the target, which scores them all in one call. The verifier accepts a prefix and adds one token of the target's own; then both caches are rolled back to verified tokens and $k$ is adjusted.](assets/engine.svg)
+![One round. A proposer drafts up to $k$ tokens, the target scores them in one call, and the verifier accepts a prefix.](assets/engine.svg)
 
 **The caches (stage 1).** `speculative-decode-loop` tracks two caches and two
 lengths by hand. Put a model, its cache, and "how many tokens of the sequence the

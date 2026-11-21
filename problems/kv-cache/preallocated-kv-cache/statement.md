@@ -19,7 +19,7 @@ A **cache** is a tuple `(k, v, length)`:
   the keys and values of the tokens written so far, oldest first. Slots `length` to
   `C - 1` are **unused**, and their contents are arbitrary.
 
-![A buffer of capacity $C = 8$ holding five tokens. A write of two tokens fills slots 5 and 6 and moves the length to 7; attention reads the slots below the length and nothing else.](assets/buffer-layout.svg)
+![A buffer of capacity $C = 8$ before and after a write of two tokens. Attention reads only the slots below the length.](assets/buffer-layout.svg)
 
 **`cache_init(capacity, batch, heads, dim)`** returns an empty cache: `k` and `v` are
 zeros of shape `(batch, heads, capacity, dim)`, and `length` is `0`.

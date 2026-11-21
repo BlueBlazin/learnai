@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 232">
   <title>Buffer length against tokens stored, for step allocation and for concatenation</title>
-  <desc>A plot of buffer length against tokens stored, both from 0 to 768. The step-allocated cache is a staircase of 256, 512, and 768 slots, three shapes in all, and concatenation is the dashed diagonal, a new shape for every token.</desc>
+  <desc>A plot of buffer length against tokens stored, up to 768. Step allocation is a staircase of three shapes, and concatenation is a dashed diagonal.</desc>
 
   <!-- Geometry: origin (60, 190); 768 tokens span 380 units in x and 160 units in y. -->
 

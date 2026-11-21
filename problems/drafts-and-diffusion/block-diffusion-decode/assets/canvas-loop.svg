@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 214" font-size="13">
   <title>Block diffusion over a cached prefix</title>
-  <desc>A row of four blocks, the prompt and three canvases, with a stack of thin bars above each canvas for its denoising steps, which read the prefix cache. An arrow labeled encode goes down from the prompt and the first two canvases into the cache, once each, and the third canvas has none.</desc>
+  <desc>The prompt and three canvases in a row above a prefix cache. Each canvas's denoising steps read the cache, and all but the last canvas are encoded into it.</desc>
 
   <!-- the text: prompt, then canvases -->
   <g fill="none" stroke="currentColor" stroke-width="1.5">

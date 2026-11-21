@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150">
   <title>is_causal aligns query i with slot i; with a cache the new tokens need an offset</title>
-  <desc>Two grids with two rows, the new tokens, and five columns, the slots: three cached and two new. With is_causal=True, new token i sees slots 0 to i; the mask that is needed lets it see slots 0 to 3 + i.</desc>
+  <desc>Two grids of two new-token rows by five slot columns. One shows what is_causal=True allows, and the other the mask needed after three cached tokens.</desc>
 
   <!-- Geometry: cells of 26 units; the left grid starts at x = 84, the right one at x = 318. -->
 

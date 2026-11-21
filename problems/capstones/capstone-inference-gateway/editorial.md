@@ -8,7 +8,7 @@ there are two choices, **which request** and **which replica**, and the stages a
 the policies behind those choices plus the two decisions at the edges: whether a
 request gets into the queue at all, and how many replicas there are.
 
-![A request passes admission (its tenant's token bucket, then the bounds of the queue) or is rejected at once; admitted requests wait in the gateway queue until a ready replica has a free slot, and the dispatcher then chooses which request leaves the queue and which replica gets it. Completions come back to the gateway, which also evaluates the autoscaling policy.](assets/architecture.svg)
+![A request passes admission or is rejected at once. The dispatcher pairs a queued request with a ready replica that has a free slot.](assets/architecture.svg)
 
 Why hold a queue in the gateway at all, when every replica has one? Because a
 request that has been sent can no longer be reordered or rerouted. Keeping each

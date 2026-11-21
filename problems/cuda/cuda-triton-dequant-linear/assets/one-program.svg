@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 252">
   <title>What the program for output row 0 and batch row 0 of the worked example reads, column by column</title>
-  <desc>Five aligned rows over eight columns: the activations of batch row 0, the eight 4-bit codes of output row 0 unpacked from the word 0xAF30F085, and the two groups with scale 0.1 and bias minus 0.5 and with scale 0.06 and bias 2.0. Then, dashed because it is never stored, the weight of each column, code times scale plus bias, and below it the single stored value, the sum of activation times weight, 4.08.</desc>
+  <desc>Five aligned rows over eight columns, the activations, the 4-bit codes, the two groups' scales and biases, the dashed weights that are never stored, and the single stored sum.</desc>
 
   <!-- Column numbers -->
   <text x="10" y="18" font-size="13" style="fill: var(--figure-muted)">column</text>

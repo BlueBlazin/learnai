@@ -75,7 +75,7 @@ F.scaled_dot_product_attention(
 5. Every tensor you create is created on the device of `q`: a factory call
    (`torch.arange`, `torch.ones`, ...) without `device=` fails the case.
 
-![Two new tokens after three cached ones. `is_causal=True` gives the first new token one slot and the second two; with a cache every new token must see the whole cache and the new tokens up to itself, which takes an explicit mask.](assets/causal-alignment.svg)
+![Two new tokens after three cached ones. `is_causal=True` hides most of the cache from them, so this case takes an explicit mask.](assets/causal-alignment.svg)
 
 ## Shapes
 

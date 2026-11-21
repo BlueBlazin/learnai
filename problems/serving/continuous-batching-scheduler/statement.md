@@ -85,7 +85,7 @@ request 0 `(0, 8, 4)`, request 1 `(0, 16, 2)`, request 2 `(5, 8, 3)`, request 3
 | 6 | 67 | `(5, 4)` | | 9 | first token of 5 |
 | 7 | 76 | | `5` | 9 | request 5 finishes |
 
-![The worked example, one row per request: a request waits (dashed) until a slot is free, is prefilled in one step (filled), and then decodes one token per step (outlined). Request 2 takes over the slot of request 1 at 24 ms while request 0 keeps decoding; nothing waits for a batch to end.](assets/timeline.svg)
+![The worked example, one row per request. Request 2 takes the slot of request 1 at 24 ms while request 0 keeps decoding.](assets/timeline.svg)
 
 Request 2 arrives at 5, during step 0, but both slots are taken until request 1
 finishes at 24; it joins step 2 next to the decode of request 0, which is the point of

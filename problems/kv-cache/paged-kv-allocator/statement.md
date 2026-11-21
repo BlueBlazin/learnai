@@ -53,7 +53,7 @@ only the last of them can have empty slots.
 `seq_id` is any hashable value (an int, a string, a tuple). `n_tokens` is an int
 $\ge 1$.
 
-![The pool after the first four calls of the example. Sequence `a` holds 9 tokens in physical blocks 0, 1, and 3, which are not adjacent, and only its last block has empty slots; sequence `b` holds 3 tokens in block 2, and blocks 4 and 5 are free.](assets/block-table.svg)
+![The pool after the first four calls of the example. The blocks of sequence `a` are not adjacent, and only its last block has empty slots.](assets/block-table.svg)
 
 ## Example
 

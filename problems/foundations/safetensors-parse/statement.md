@@ -14,7 +14,7 @@ def read_tensor(buf, name: str) -> np.ndarray: ...
 `buf` is the whole file: a `bytes`, a `bytearray`, a `memoryview` of bytes, or an
 `mmap.mmap`. A safetensors file has three parts.
 
-![The three parts of a safetensors file. The first 8 bytes hold the header length $n$; the header is $n$ bytes of JSON; the tensor data starts at byte $8 + n$, and every `data_offsets` pair counts from there.](assets/file-layout.svg)
+![The three parts of a safetensors file. Every `data_offsets` pair counts from the start of the tensor data, byte $8 + n$.](assets/file-layout.svg)
 
 1. **Bytes 0 to 7: the header length** $n$, an unsigned 64-bit **little-endian**
    integer.

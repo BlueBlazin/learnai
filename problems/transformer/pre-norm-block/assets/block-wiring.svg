@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 172">
   <title>Data flow of a pre-norm decoder block</title>
-  <desc>The residual stream runs straight from x to y. Two branches leave it and rejoin it at an addition: RMSNorm with the gain input_layernorm and then attention, and, from the point h after the first addition, RMSNorm with the gain post_attention_layernorm and then the SwiGLU MLP.</desc>
+  <desc>The residual stream runs straight from x to y. Two branches leave and rejoin it at additions, RMSNorm then attention, and RMSNorm then the SwiGLU MLP.</desc>
   <!-- Geometry: the stream is the line y = 40. Branches drop to y = 108, run right through two boxes, and rise into an adder on the stream. -->
 
   <!-- The residual stream -->

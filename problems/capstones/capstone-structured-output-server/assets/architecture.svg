@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 318">
   <title>Architecture of the structured-output server</title>
-  <desc>A validated request looks up its schema in the compilation cache, which compiles a missing entry once into an automaton and token index; the generation loop keeps the tokens the index allows from each row of logits and picks the best. The tokens pass through the tool-call parser into deltas that are streamed or folded into one message, and a disconnect watcher stops the loop and closes the model's stream.</desc>
+  <desc>A block diagram of the server. A request passes validation, the compilation cache, the masked generation loop, and the tool-call parser, with a disconnect watcher beside the loop.</desc>
 
   <!-- request and validation -->
   <g font-size="13">

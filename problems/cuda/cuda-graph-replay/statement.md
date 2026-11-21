@@ -52,7 +52,7 @@ It does three things, in this order:
 The inputs passed by the caller are not modified, and may be reused or overwritten
 by the caller between calls.
 
-![One call of the graphed step. The graph reads the static input and writes the static output at the addresses it recorded, so new values go in with `copy_` and results come out with `clone`.](assets/capture-replay.svg)
+![One call of the graphed step. New values go into the static input with `copy_`, and results leave the static output with `clone`.](assets/capture-replay.svg)
 
 > [!NOTE]
 > The starter contains `side_stream(device)`, a context manager that runs its block

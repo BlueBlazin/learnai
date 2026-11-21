@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 232" font-size="13">
   <title>The per-layer state of a four-layer hybrid decoder</title>
-  <desc>Four layers stacked from bottom to top: three linear-attention layers and one full-attention layer. Each linear-attention layer has a fixed-width state box holding conv_state and S, and the full-attention layer has a row of key and value columns, one per token seen, with a dashed outline where the next token goes.</desc>
+  <desc>Four stacked layers, three linear-attention and one full-attention. Each linear-attention layer has a fixed-width state box, and the full-attention layer has one key and value column per token.</desc>
 
   <!-- the stack, layer 0 at the bottom -->
   <g fill="none" stroke="currentColor" stroke-width="1.5">

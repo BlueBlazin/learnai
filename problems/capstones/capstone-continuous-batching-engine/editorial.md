@@ -7,7 +7,7 @@ more tokens (an admission, a decode), the allocator call happens at that moment,
 before the step runs. Then "how many blocks are available" is never a calculation
 with promises and reservations; it is `allocator.free_blocks()`.
 
-![Requests wait in one queue ordered by rank, and before every step the planner serves decodes, continues prompts that are being prefilled, and admits from the head of the queue. Every block comes from the allocator, whose block tables may point at shared blocks, and the kit's `SimEngine` runs the step and reports who finished.](assets/architecture.svg)
+![The planner builds each step from the queue and the allocator's blocks, and the kit's `SimEngine` runs it.](assets/architecture.svg)
 
 **Stage 1** is the allocator of `paged-kv-copy-on-write`: a min-heap of free ids, a
 reference count per block, a table and a token count per sequence. An append

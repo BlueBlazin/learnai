@@ -65,7 +65,7 @@ Details:
 The regular expression `(true|null)` compiles to an automaton with eight states.
 State 0 is the start, state 7 is the only accepting state.
 
-![The automaton of `(true|null)`, with solid arrows for its byte transitions. Dashed arcs show where the multi-byte tokens land when they are walked from state 0: a token is one jump along several transitions, and it may land in a state that is not accepting.](assets/token-jumps.svg)
+![Solid arrows are byte transitions. A dashed arc is one multi-byte token walked from state 0, and it may land in a state that is not accepting.](assets/token-jumps.svg)
 
 With `vocab = ToyVocab(size=64, seed=0)` the relevant tokens are `6 = b't'`,
 `19 = b'n'`, `30 = b'e'`, `33 = b'u'`, `40 = b'nul'`, `46 = b'tr'`, `47 = b'null'`,

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 232">
   <title>Prompts of three lengths padded on the right to the buckets 16, 32, and 64</title>
-  <desc>Three rows of token cells: prompts of 4, 20, and 40 tokens occupy the first cells of rows of 16, 32, and 64, and the rest of each row is padding. A marker in each row points at the last prompt token, position T minus 1, where the logits are read.</desc>
+  <desc>Three rows of token cells, prompts of 4, 20, and 40 tokens padded on the right to 16, 32, and 64. A marker points at each row's last prompt token.</desc>
 
   <!-- Geometry: cells are 6 wide and 16 tall and start at x = 92; rows at y = 44, 100, 156. -->
 

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300">
   <title>Architecture of the engine: queue, step planner, simulated engine, and block allocator</title>
-  <desc>Requests enter a waiting queue ordered by rank, the planner builds each step from decodes, prompts in progress, and admission from the queue head, and the simulated engine runs it and reports finished sequences; a preempted sequence returns to the queue. Every block comes from the allocator, a pool of ten blocks with one table per sequence, where the tables of sequences 0 and 2 share blocks 0 and 1.</desc>
+  <desc>A block diagram of the engine. Requests flow from a ranked queue through the step planner to the simulated engine, and a block allocator serves every sequence.</desc>
 
   <!-- waiting queue -->
   <g font-size="13">

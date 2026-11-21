@@ -56,7 +56,7 @@ $$
 4. Everything returned is already evaluated: 0 pending operations behind the `n`
    tokens and `logprob`. The caller can read them without triggering any work.
 
-![Three steps of the loop. Each step builds a small lazy graph; one `mx.eval` per token cuts it at the dashed line, so the cache, the token, and the running log-probability cross into the next step as computed arrays.](assets/eval-cuts.svg)
+![Three steps of the loop. One `mx.eval` per token cuts the lazy graph at each dashed line, so only computed arrays cross into the next step.](assets/eval-cuts.svg)
 
 **Cost limits**, as in `cached-greedy-decode`: `model.counters.forward_calls` is at
 most $n$ (the prompt in one call, then one call per generated token except the last,

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 212">
   <title>What a call of a graphed step does: copy in, replay, clone out</title>
-  <desc>Three boxes in a row: the static input, the captured graph, and the static output, where the graph reads the static input and writes the static output at the addresses recorded during capture. The caller's new input is copied down into the static input with copy_, and the result leaves the static output through clone, so the caller's tensors are separate memory.</desc>
+  <desc>Three boxes in a row, the static input, the captured graph, and the static output. The caller's input enters through copy_ and the result leaves through clone.</desc>
 
   <!-- The caller's new input -->
   <rect x="24" y="14" width="124" height="30" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>

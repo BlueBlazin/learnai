@@ -61,7 +61,7 @@ $c = 0, 1, \dots$, at most `max_canvases` of them:
 The draft of a canvas is the $d^{\,j}$ of the last step that ran, whether the canvas
 stopped or ran out of steps. It is not the canvas $x$ that the sampler left behind.
 
-![One call that generates three canvases. The encoder reads the prompt and the first two drafts, once each; every step of a canvas reads the whole prefix from the cache; the last draft is appended and never encoded.](assets/canvas-loop.svg)
+![One call that generates three canvases. Every denoising step reads the prefix from the cache, and the last draft is never encoded.](assets/canvas-loop.svg)
 
 - `prompt`: a list of $P \ge 1$ ints. `uniforms`: three float32 tensors, $0 \le u < 1$.
 - Returns a list of Python ints: the prompt followed by $L$ tokens for every canvas

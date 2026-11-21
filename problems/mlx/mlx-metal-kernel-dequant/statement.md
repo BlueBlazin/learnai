@@ -41,7 +41,7 @@ has `out` rows and `in` columns.
 Any of the three inputs may be a strided view, for example every second row of a
 layer.
 
-![The thread for row 0, column 37 of the worked example: it reads one word, shifts and masks to get its code, reads the scale and bias of its group, and writes one weight.](assets/one-thread.svg)
+![The thread for row 0, column 37 of the worked example. It reads one word and the scale and bias of its group, and writes one weight.](assets/one-thread.svg)
 
 **The rules of the exercise.**
 

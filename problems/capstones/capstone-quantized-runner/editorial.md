@@ -7,7 +7,7 @@ where the boundary between "format" and "model" runs. The answer that keeps ever
 stage short is two small accessors, and a forward pass that never touches a key of
 the checkpoint except through them.
 
-![Stages 1 and 4 turn float parameters into a checkpoint of packed codes, per-group scales and biases, and float gains. A step (stages 2 and 3) reads only the checkpoint: it dequantizes the embedding rows it looks up, multiplies by codes in every linear layer, and keeps rotated keys and values in the KV cache.](assets/runner.svg)
+![Left, the checkpoint that stages 1 and 4 write. Right, one step of stages 2 and 3, which reads only that checkpoint.](assets/runner.svg)
 
 **Stage 1** is `groupwise-4bit` per matrix plus `bit-packing` in bytes: reshape a row
 of codes to pairs and compute `low + 16 * high`. The result replaces the float

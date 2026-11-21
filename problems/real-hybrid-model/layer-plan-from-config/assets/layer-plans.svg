@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 262" font-size="13">
   <title>The layer plans of three published decoders</title>
-  <desc>Three rows of cells, one per layer with layer 0 on the left, with the filled layers marked: Qwen3.5 0.8B has 24 layers and every fourth one from layer 3 is full attention, the first 24 of the 78 layers of GLM-5.3 have filled layers 0, 1, 2 and every fourth from 6 that run their own indexer, and Gemma 4 E2B has 35 layers with every fifth one from layer 4 full attention. In Gemma, layers 13 and 14 store their keys and values and layers 15 to 34 reuse them.</desc>
+  <desc>Three rows of layer cells, one per model, for Qwen3.5 0.8B, GLM-5.3, and Gemma 4 E2B. Filled cells mark each model's special layers, which recur at regular intervals.</desc>
 
   <!-- Qwen3.5 0.8B: filled = full attention -->
   <text x="24" y="24">Qwen3.5 0.8B: <tspan style="fill: var(--figure-accent)">full attention</tspan> every 4th, counted from 1</text>

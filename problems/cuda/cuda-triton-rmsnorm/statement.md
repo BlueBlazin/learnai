@@ -52,7 +52,7 @@ $$
   own output row exactly once. It touches no element outside the three tensors and
   no element of another row's output.
 
-![The worked example in memory: two rows of five elements, read in blocks of four. The second block of each program covers three elements that are not part of its row; the mask keeps them from being read or written.](assets/tail-mask.svg)
+![Two rows of five elements, read in blocks of four. The mask keeps each program's second block from touching the three elements past its row.](assets/tail-mask.svg)
 
 **`rms_norm(x, weight, eps, block)`** applies the kernel to a tensor.
 

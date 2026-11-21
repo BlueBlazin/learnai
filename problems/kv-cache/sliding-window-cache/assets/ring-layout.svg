@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 212">
   <title>The layout of a rotating cache with two sink slots, and the temporal order read from it</title>
-  <desc>A buffer of eight slots after eleven tokens with max_size 8 and keep 2: slots 0 and 1 hold the sink tokens 0 and 1, and slots 2 to 7 are a wrapped ring holding tokens 8, 9, 10, 5, 6, 7, with slot 5 outlined as the oldest ring token and the next write. Below, the returned keys in temporal order are tokens 0, 1, 5, 6, 7, 8, 9, 10.</desc>
+  <desc>A buffer of eight slots after eleven tokens, two sink slots and a wrapped ring of six. Below it, the returned keys in temporal order.</desc>
   <!-- Geometry: slots are 44 x 30 starting at x = 108; slot j is centered at x = 130 + 44 j. Buffer row at y = 52, returned row at y = 150. -->
   <g font-size="13" text-anchor="middle">
     <text x="152" y="14">sinks (<tspan style="font-family: var(--figure-mono)">keep</tspan> = 2)</text>

@@ -30,7 +30,7 @@ the lower id. It returns the tuple `(centroids, offsets, ids, vectors)`:
 - `vectors`: the `(N, D)` tensor `corpus[ids]`: the corpus reordered so that each
   list is one contiguous block.
 
-![The index of the worked example. `ids` and `vectors` hold the corpus grouped by list, and `offsets` marks where each list begins and ends; a search that probes list 1 reads positions 3 to 5 and nothing else.](assets/list-layout.svg)
+![The index of the worked example. A search that probes list 1 reads positions 3 to 5 and nothing else.](assets/list-layout.svg)
 
 **`search(q, index, k, nprobe, distance)`** finds near neighbors of one query `q`
 of shape `(D,)`. `distance` is a kit `CountingDistance` with the metric `"l2"`:

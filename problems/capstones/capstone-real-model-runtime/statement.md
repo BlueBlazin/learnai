@@ -31,7 +31,7 @@ def stream_chat(
 ): ...  # stage 5: a generator of str
 ```
 
-![The runtime. Stage 1 turns the checkpoint into float32 tensors, stage 2 turns a conversation into token ids, stage 3 is the forward pass, stage 4 wraps it in a cache and a sampler, and stage 5 turns the sampled tokens into text that is held back while it may still become a stop string.](assets/architecture.svg)
+![Three files go in and streamed text comes out. Each box is labeled with its stage.](assets/architecture.svg)
 
 **Two models.** Every stage is tested on two model directories with the same three
 files, `config.json`, `tokenizer.json`, and `model.safetensors`:

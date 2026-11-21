@@ -18,7 +18,7 @@ allocator **reserves** large segments from the driver and carves the blocks that
 tensors occupy out of them; memory occupied by tensors is **allocated**. When a
 tensor is freed its block stays reserved, as cache, and is handed out again.
 
-![The memory of a device: tensors occupy the allocated part, and the rest of the reserved memory is cache. `empty_cache()` can return whole free segments to the device, but not a free block that shares its segment with a tensor.](assets/allocated-reserved.svg)
+![Reserved memory is the allocated part plus cache. `empty_cache()` returns whole free segments, but not a free block that shares its segment with a tensor.](assets/allocated-reserved.svg)
 
 **`predicted_allocated(shapes, dtype)`** predicts what the allocator will report as
 allocated for a list of tensors. The allocator hands out memory in multiples of 512

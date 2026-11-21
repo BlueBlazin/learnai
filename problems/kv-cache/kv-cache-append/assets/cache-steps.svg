@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 206">
   <title>The cache and the mask over four calls of attend_step</title>
-  <desc>Four frames. Each shows a strip of seven cache entries, with the cached ones and the ones this call appends marked, and under it the mask of the call: one row per new query, one column per entry of K.</desc>
+  <desc>Four frames, one per call of attend_step. Each shows a strip of seven cache entries and, under it, the mask of that call.</desc>
   <!-- Geometry: column j is at x = 100 + 46 j, 44 wide. The strip is the row y = 24..50; mask row i is at y = 92 + 30 i, 26 high. -->
   <!-- Frames are the groups step-1 to step-4; the app shows one at a time. Their desc is the note of the step. -->
 

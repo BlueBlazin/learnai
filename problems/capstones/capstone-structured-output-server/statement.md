@@ -25,7 +25,7 @@ import. The starter also names the functions of the earlier problems that the st
 need (`schema_to_regex`, `build_index`, `parse_step`, ...): they are a suggested
 layout, not an interface.
 
-![The request is validated and its schema, if any, is looked up in the compilation cache or compiled once. The loop takes one row of logits per step from the model, masks it with the token index, and picks the best allowed token; the tool-call parser and the renderer turn the tokens into deltas, which are either streamed as chunks or folded into one message.](assets/architecture.svg)
+![The path of one request. The token index masks each row of logits inside the loop, and the parser turns the chosen tokens into deltas.](assets/architecture.svg)
 
 The cases are grouped into four stages, and each stage's cases send only requests
 that this stage and the earlier ones define: stage 1 never sends `response_format` or

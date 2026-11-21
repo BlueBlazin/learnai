@@ -45,7 +45,7 @@ again.
 An empty source is valid: nothing is pinned or transferred, and the first `next`
 raises `StopIteration`.
 
-![The copy of batch $i + 1$ starts at the moment `next()` returns batch $i$, so it runs while the model is busy with batch $i$. The first copy is started by the constructor.](assets/prefetch-timeline.svg)
+![The copy of batch $i + 1$ starts when `next()` returns batch $i$, so it runs while the model works on batch $i$.](assets/prefetch-timeline.svg)
 
 **`fetch_results(outputs, to_host, sync)`** takes a list of $n \ge 1$ tensors on a
 device, of shapes $(b_i, \dots)$ with equal trailing dimensions and one dtype, and

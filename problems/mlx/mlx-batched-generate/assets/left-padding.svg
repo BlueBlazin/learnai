@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 236">
   <title>The left-padded batch of the worked example and the attention mask of its second row</title>
-  <desc>Left: three left-padded rows of five cells, with the RoPE position under each token: row 0 holds 5, 17, 42, 9, 3, row 1 holds three pads and then 8, 1, and row 2 holds two pads and then 30, 31, 32, so the last real token of every row is in the last column. Right: the five by five mask of row 1, where each pad query may attend only itself, query 3 may attend key 3, and query 4 may attend keys 3 and 4.</desc>
+  <desc>Left, three left-padded rows of five cells with the RoPE position under each token. Right, the five by five attention mask of row 1.</desc>
   <!-- The padded batch -->
   <text x="10" y="14" font-size="13">tokens, RoPE position below</text>
   <text x="10" y="50" font-size="13" style="fill: var(--figure-muted)">row 0</text>

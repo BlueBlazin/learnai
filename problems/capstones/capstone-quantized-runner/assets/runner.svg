@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 318">
   <title>The quantized runner: checkpoint layout and the cached forward step</title>
-  <desc>Left: float parameters are quantized into a checkpoint of packed codes, one scale and one bias per group, and float norm gains; the float matrices are not stored. Right: a step reads only that checkpoint, from the embedding rows through blocks that multiply by codes and append to the KV cache to a head that reuses the embedding codes and yields logits.</desc>
+  <desc>Left, float parameters become a checkpoint of packed codes, group scales and biases, and float gains. Right, a cached forward step reads that checkpoint to produce logits.</desc>
 
   <!-- float parameters -->
   <g font-size="13">

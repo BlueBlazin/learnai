@@ -42,7 +42,7 @@ Both counts are the Python expressions shown, evaluated on floats:
 `int(D * factor)`, and `int(factor * D // 2)` with the product first and the floor
 division by 2 second.
 
-![A head of width 16 with `factor = 0.5`. `partial_rope` rotates channels 0 to 7 and pairs channel $i$ with $i + 4$; `proportional_rope` rotates channels 0 to 3 and 8 to 11 and pairs channel $i$ with $i + 8$, and its frequency exponents have different denominators.](assets/channel-map.svg)
+![A head of width 16 with `factor = 0.5`. `partial_rope` rotates the first eight channels, and `proportional_rope` rotates two blocks of four.](assets/channel-map.svg)
 
 - `x`: float32, shape `(B, H, T, D)`, `D` even.
 - `positions`: integer tensor, shape `(T,)`, values $\ge 0$; not necessarily starting

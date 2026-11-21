@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 196">
   <title>Sliding windows over a text of seven tokens</title>
-  <desc>Three rows, one per window. Window 0 covers positions 0 to 3 and scores 1, 2, 3, window 1 covers 2 to 5 and scores 4 and 5, and window 2 covers 4 to 6 and scores 6, the other tokens of each window being context only.</desc>
+  <desc>Three rows, one per sliding window over seven tokens. Each window marks the tokens it scores and the ones it uses only as context.</desc>
 
   <!-- position axis -->
   <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">

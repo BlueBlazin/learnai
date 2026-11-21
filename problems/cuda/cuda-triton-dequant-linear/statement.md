@@ -66,7 +66,7 @@ The language is the one introduced in `cuda-triton-rmsnorm`. New here:
 offsets such as `ptr + cols // 8`, which read one element per entry of the block
 even when entries repeat.
 
-![Output row 0 and batch row 0 of the worked example. Each column takes its code from the word, its scale and bias from its group, and contributes one product; the weights in the dashed row are never stored.](assets/one-program.svg)
+![Output row 0 and batch row 0 of the worked example, column by column. The weights in the dashed row are never stored.](assets/one-program.svg)
 
 **`qlinear(x, words, scales, biases, group_size, block)`** applies the kernel.
 

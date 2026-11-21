@@ -49,7 +49,7 @@ cache.
 numpy. It is called once per layer in the middle of a forward pass, and the result
 is evaluated with the rest of that pass.
 
-![Buffer length as tokens are appended one at a time. With steps of 256 the buffers take three shapes on the way to 768 tokens; with concatenation they take a new shape at every token.](assets/growth.svg)
+![Buffer length as tokens are appended one at a time. Steps of 256 give three shapes on the way to 768 tokens, where concatenation gives 768.](assets/growth.svg)
 
 ## Shapes
 

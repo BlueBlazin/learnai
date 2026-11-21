@@ -27,7 +27,7 @@ and returns $y$. Read the two equations closely:
   output is added to $h$.
 - The two norms have different gains.
 
-![The residual stream runs straight from $x$ to $y$ and is only ever added to. Each sublayer reads a normalized copy of the stream at the point where its branch leaves, and no norm sits on the stream itself.](assets/block-wiring.svg)
+![The residual stream runs straight from $x$ to $y$, and no norm sits on it. Each sublayer reads a normalized copy where its branch leaves.](assets/block-wiring.svg)
 
 The pieces, with `params` holding the weights under the names a checkpoint uses:
 

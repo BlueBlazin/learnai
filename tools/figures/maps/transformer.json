@@ -2,7 +2,7 @@
   "track": "transformer",
   "file": "map.svg",
   "title": "Where this problem sits in a decoder-only transformer",
-  "desc": "A decoder-only transformer drawn bottom to top: token embedding, a repeated block of RMSNorm, attention, RMSNorm, and SwiGLU MLP with a skip around each pair, then a final RMSNorm, a linear layer, and a softmax.",
+  "desc": "A decoder-only transformer drawn bottom to top, from the token embedding through a repeated block to the softmax.",
   "width": 480,
   "height": 366,
   "panel": {
@@ -46,7 +46,7 @@
     "pre-norm-block": {
       "parts": ["panel", "norm1", "norm2", "add1", "add2", "wiring"],
       "marker": {"from": [292, 217.5], "length": 18},
-      "desc": "The two RMSNorm blocks, the two additions, and the wires inside the repeated block are at full strength; the rest is dimmed."
+      "desc": "The norms, additions, and wires inside the block are at full strength."
     }
   }
 }
