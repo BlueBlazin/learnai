@@ -79,6 +79,7 @@ def solve(tmp_path):
     yield make
     guarded_module._solution_file = None
     guarded_module._may_build = False
+    guarded_module._built_early.clear()
     guarded_module._violations.clear()
 
 
@@ -481,10 +482,13 @@ class Shelf:
     def __exit__(self, *exc):
         self.open = False
 
-    def __eq__(self, other):  # not in SPECIAL: it stays a borrowed method
+    def __eq__(self, other):
         return self._values == other
 
     __hash__ = None
+
+    def __lt__(self, other):  # not in SPECIAL: it stays a borrowed method
+        return self._values < other
 
 
 class GuardedShelf(Guarded, Shelf):
@@ -498,7 +502,7 @@ def test_special_methods_are_calls_made_through_the_object(solve):
             with shelf as same:
                 opened = same.open
             total = shelf(0) + shelf[1] + shelf.__call__(2) + len(shelf) + sum(shelf)
-            return total, 3 in shelf, opened, shelf.open, callable(shelf)
+            return total, 3 in shelf, opened, shelf.open, callable(shelf) and shelf == [1, 2, 3]
         """
     )
     shelf = GuardedShelf([1, 2, 3])
@@ -513,7 +517,7 @@ def test_a_borrowed_special_method_is_refused(solve):
     solution = solve(
         """
         def borrowed(shelf): return type(shelf).__mro__[2].__call__(shelf, 0)
-        def compared(shelf): return shelf == [1, 2, 3]
+        def compared(shelf): return shelf < [1, 2, 4]
         def through_the_class(shelf): return type(shelf).__call__(shelf, 0)
         """
     )
@@ -650,6 +654,57 @@ def test_the_solution_cannot_build_a_counting_object_of_its_own(solve, fw):
             solution=types.SimpleNamespace(__file__=guarded_module._solution_file)
         )
     )
+
+
+def test_a_counting_object_built_while_the_solution_was_imported_fails_every_case(tmp_path, fw):
+    # Before the guard is armed nothing is refused, so who built is remembered.
+    assert guarded_module._solution_file is None
+    path = tmp_path / "solution.py"
+    path.write_text(
+        "from learnai.judge import frameworks\n"
+        "from learnai.kit import TinyLM\n"
+        f"TWINS = [TinyLM(frameworks.get({fw.name!r}), seed=s) for s in range(3)]\n"
+        "def decode(lm, tokens): return TWINS[1](tokens)[0]\n"
+    )
+    namespace = {}
+    exec(compile(path.read_text(), str(path), "exec"), namespace)  # noqa: S102
+    ctx = types.SimpleNamespace(solution=types.SimpleNamespace(__file__=str(path)))
+    lm = TinyLM(fw, seed=1)  # the test's own, also before the guard: not the solution's file
+    try:
+        for _ in range(2):  # every case, not only the first
+            guard(ctx)
+            namespace["decode"](lm, [0, 17])
+            with pytest.raises(CheckFailure, match="may not build a counting object"):
+                check_guard()
+        guard(ctx, may_build=True)
+        check_guard()
+    finally:
+        guarded_module._solution_file = None
+        guarded_module._may_build = False
+        guarded_module._built_early.clear()
+        guarded_module._violations.clear()
+
+
+def test_a_refused_counting_object_is_remembered_for_the_calls_that_follow(solve):
+    solution = solve(
+        """
+        from learnai.kit import Counters
+        KEPT = []
+        def build(meter):
+            try:
+                KEPT.append(Counters("mine"))
+            except Exception:
+                pass
+        def later(meter): return meter.read(0)
+        """
+    )
+    meter = GuardedMeter([1])
+    solution["build"](meter)
+    path = guarded_module._solution_file
+    guard(types.SimpleNamespace(solution=types.SimpleNamespace(__file__=path)))  # the next call
+    assert solution["later"](meter) == 1
+    with pytest.raises(CheckFailure, match="may not build a counting object"):
+        check_guard()
 
 
 def test_of_guards_an_object_that_was_built_elsewhere(solve):

@@ -388,6 +388,23 @@ class LazyClock:
         return self.now
 
 
+class _Window:
+    """What a slice of a ``CountingFile`` exports: its own bytes and nothing else.
+
+    A slice of a ``memoryview`` keeps the exporter in ``.obj``, and for a view of an
+    ``mmap`` that is the whole mapping: one counted slice of eight bytes would hand
+    over the file. A view taken from this object has an opaque ``.obj``.
+    """
+
+    __slots__ = ("_view",)
+
+    def __init__(self, view: memoryview) -> None:
+        self._view = view
+
+    def __buffer__(self, flags: int) -> memoryview:
+        return self._view
+
+
 class CountingFile:
     """A read-only file that counts what is read from it, as a file or as a mapping.
 
@@ -406,7 +423,8 @@ class CountingFile:
     tensor is charged for the whole file, and one that slices only the tensors it
     needs is charged for those. ``page_size`` defaults to 16 KiB, the page size of
     Apple silicon. Counting is by the ranges requested, not by faults the operating
-    system observed, so it is exact and the same on every machine.
+    system observed, so it is exact and the same on every machine. The view covers
+    the requested range only: its ``.obj`` does not lead back to the mapping.
     """
 
     def __init__(self, path: Any, page_size: int = 16384) -> None:
@@ -444,7 +462,7 @@ class CountingFile:
             if step != 1:
                 raise ValueError("CountingFile slices must be contiguous (step 1)")
             self._charge(start, stop)
-            return self._view[start:stop]
+            return memoryview(_Window(self._view[start:stop]))
         position = index if index >= 0 else len(self._view) + index
         self._charge(position, position + 1)
         return self._view[position]

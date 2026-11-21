@@ -1,5 +1,6 @@
 """The MLX kit: MLXTinyLM, EvalSpy, TraceCounter, mlx_memory; and CountingFile."""
 
+import mmap
 import textwrap
 
 import numpy as np
@@ -349,3 +350,19 @@ def test_compare_speed_times_a_compiled_step_after_warmup(solution):
     assert metrics["slowdown"]["limit"] == 10 and metrics["tokens_per_s"]["value"] > 0
     # However many times the loop ran, each compiled step was traced exactly once.
     assert [lm.counters.forward_calls for lm in models] == [1, 1]
+
+
+def test_a_slice_of_a_counting_file_does_not_lead_back_to_the_mapping(tmp_path):
+    path = tmp_path / "data.bin"
+    path.write_bytes(bytes(range(256)) * 4)
+    with CountingFile(path) as f:
+        view = f[16:32]
+        assert bytes(view) == bytes(range(16, 32)) and view.readonly and len(view) == 16
+        words = np.frombuffer(view, dtype="<u2")  # still zero-copy
+        assert words[0] == 0x1110 and np.shares_memory(words, np.frombuffer(f._view, np.uint8))
+        assert f.counters.snapshot() == {"bytes_read": 16, "reads": 1}
+        # The exporter of the view is opaque: not the mapping, and not a buffer.
+        assert not isinstance(view.obj, (mmap.mmap, memoryview, bytes))
+        with pytest.raises(TypeError):
+            memoryview(view.obj)
+        assert view[2:6].obj is not f._map and words.base.obj is not f._map

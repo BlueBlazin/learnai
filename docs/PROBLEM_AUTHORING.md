@@ -2670,7 +2670,9 @@ check_guard()                                # the first refused access fails th
   object that counts work makes its `Counters` when it is built, so this stops the
   twin whose settings were guessed (`TinyLM(lm.fw, seed=s)` for every `s`), a second
   `MLXTinyLM` filled with the first one's parameters, and `with_framework` borrowed
-  from the class, without a `forbidden` entry. Test code builds what it likes, except
+  from the class, without a `forbidden` entry. One built while the solution was
+  imported, before the guard was first armed, is remembered and fails every case,
+  and a refused one is remembered for the calls that follow. Test code builds what it likes, except
   in a callback that the solution calls directly (make it a method of a guarded
   object). A problem whose solution is meant to build such objects (it compiles its
   own `CharDFA`, say) arms the guard with `guard(ctx, may_build=True)`.
@@ -2698,15 +2700,16 @@ check_guard()                                # the first refused access fails th
   other way than through the guarded object may not read restricted names while the
   solution runs; such a callback cannot build a guarded object either (make the
   factory a method of a guarded object); and a special method outside the list of
-  the next point (`__eq__`, say) that reads private state is refused during the
+  the next point (`__lt__`, say) that reads private state is refused during the
   solution's call.
 - **Special methods are calls made through the object.** Python calls `lm(tokens)`,
   `len(file)`, `file[a:b]`, and `with file:` on the class, without asking for an
   attribute. `Guarded` wraps the special methods a guarded class defines or inherits
   (`guarded.SPECIAL`: `__call__`, `__len__`, `__length_hint__`, `__bool__`,
   `__contains__`, `__getitem__`, `__setitem__`, `__delitem__`, `__iter__`,
-  `__next__`, `__enter__`, `__exit__`, and the four `__a...__` names of async
-  iteration and `async with`) when the class is made, so `class LM(Guarded,
+  `__next__`, `__enter__`, `__exit__`, the four `__a...__` names of async
+  iteration and `async with`, `__buffer__`, `__eq__`, `__ne__`, `__hash__`) when
+  the class is made, so `class LM(Guarded,
   TinyLM)` and `class Experts(Guarded, CountingExperts)` are called as before, and
   the base class's method borrowed as a plain function (`TinyLM.__call__(lm, ...)`)
   is refused at its first private read. `__repr__` is exempt too: `print(store)` is
@@ -3448,7 +3451,8 @@ def reads_one_tensor(ctx):
 from it, usable as a file (`read`, `seek`, `tell`, `readinto`) and as a mapping
 (`len(f)`, `f[a:b]`). A slice is a zero-copy `memoryview` of the memory-mapped file
 (`np.frombuffer(f[a:b], dtype)` wraps it without copying) and is charged as `b - a`
-bytes. `f.counters.bytes_read` and `f.counters.reads` are the totals;
+bytes. The view covers that range only: its `.obj` is opaque and does not lead back
+to the mapping, so one counted slice does not hand over the file. `f.counters.bytes_read` and `f.counters.reads` are the totals;
 `f.pages_touched` is the number of distinct pages the requested ranges cover. Counting
 is by the ranges asked for, not by page faults the operating system saw, so it is
 exact and identical on every machine: a loader that takes `f[:]` or `f.read()` and

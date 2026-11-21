@@ -35,8 +35,10 @@ Three rules, all about *who is asking* (the call stack decides, as for ``forbidd
    every kit object that counts work makes a ``Counters``, and a ``Counters`` made by
    the solution, or by kit code the solution called some other way than through a
    guarded object (``TinyLM(lm.fw, seed=3)``), is refused. That is the twin whose
-   settings were guessed. ``guard(ctx, may_build=True)`` lifts the rule for a problem
-   whose solution is meant to build such objects.
+   settings were guessed. One built before the guard was first armed, when the
+   solution was imported, is remembered and fails every case. ``guard(ctx,
+   may_build=True)`` lifts the rule for a problem whose solution is meant to build
+   such objects.
 
 Python calls a special method without asking for an attribute: ``lm(tokens)``,
 ``len(file)``, ``file[a:b]``, ``with file:``. The special methods a guarded class
@@ -80,6 +82,14 @@ _STATE: dict[int, dict[str, Any]] = {}
 _violations: list[str] = []
 _solution_file: str | None = None
 _may_build = False
+#: Files whose code was on the stack when a ``Counters`` was made before the guard was
+#: armed (the solution's file, if it built one while it was imported), and the
+#: solution's file once it has been refused one.
+_built_early: set[str] = set()
+_BUILT = (
+    "the solution may not build a counting object of the kit in this problem: "
+    "the work is counted on the object it was given"
+)
 _test_file: str | None = None
 #: Names of the object's machinery: restricted in every guarded class, whatever its
 #: ``refused``. Each one is a way around the rules: ``store.__init__(...)`` starts the
@@ -106,6 +116,10 @@ SPECIAL = (
     "__anext__",
     "__aenter__",
     "__aexit__",
+    "__buffer__",
+    "__eq__",
+    "__ne__",
+    "__hash__",
 )
 _LATER = inspect.CO_COROUTINE | inspect.CO_GENERATOR | inspect.CO_ASYNC_GENERATOR
 
@@ -129,6 +143,8 @@ def guard(ctx: Any, *, may_build: bool = False) -> None:
     _test_file = sys._getframe(1).f_code.co_filename
     _may_build = may_build
     _violations.clear()
+    if not may_build and _solution_file in _built_early:
+        _violations.append(_BUILT)
 
 
 def building_counters() -> None:
@@ -138,13 +154,18 @@ def building_counters() -> None:
     ``with_framework``, so this is where a second, uncounted object shows, whatever
     class it is and however its settings were found.
     """
-    if _solution_file is None or _may_build:
+    frame: types.FrameType | None = sys._getframe(1)
+    if _solution_file is None:  # not armed yet: remember who was building
+        while frame is not None:
+            if not frame.f_code.co_filename.startswith(_PACKAGE):
+                _built_early.add(frame.f_code.co_filename)
+            frame = frame.f_back
         return
-    if _asker(sys._getframe(1)) != "trusted":
-        _violation(
-            "the solution may not build a counting object of the kit in this problem: "
-            "the work is counted on the object it was given"
-        )
+    if _may_build:
+        return
+    if _asker(frame) != "trusted":
+        _built_early.add(_solution_file)  # also for the calls that follow
+        _violation(_BUILT)
 
 
 def check_guard() -> None:
@@ -307,9 +328,9 @@ class Guarded:
         super().__init_subclass__(**kwargs)
         for name in SPECIAL:
             for base in cls.__mro__[:-1]:  # not `object`
-                function = vars(base).get(name)
-                if function is None:
+                if name not in vars(base):
                     continue
+                function = vars(base)[name]  # may be None: `__hash__ = None`
                 wrapped = getattr(function, "_through_the_object", False)
                 if isinstance(function, types.FunctionType) and not wrapped:
                     setattr(cls, name, _special(function))
