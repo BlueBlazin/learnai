@@ -5,6 +5,11 @@ against the kit's dense oracle (`moe_dense_ref`), `expert_rows` (exactly k * N),
 `expert_calls` (at most the number of experts that some token selected), and the call
 log against the group sizes of the oracle routing (`moe_route_ref`).
 
+The experts are handed over as `Experts`, a `CountingExperts` behind the kit's `Guarded`:
+a solution may call them and read their sizes. Their counters, call log, weights, seed,
+and `reference` are refused, so the counts cannot be written and the arithmetic cannot
+be done anywhere the counts do not see.
+
 Top-k selection is discontinuous, so inputs are drawn until every token has a clear
 margin between its k-th and (k+1)-th router logit (`clear`); exact ties are built from
 small integers, whose products and sums are exact in float32 in any order.
@@ -13,11 +18,26 @@ small integers, whose products and sums are exact in float32 in any order.
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import CountingExperts, TinyMoE, moe_dense_ref, moe_route_ref
+from learnai.kit import (
+    CountingExperts,
+    Guarded,
+    TinyMoE,
+    check_guard,
+    guard,
+    moe_dense_ref,
+    moe_route_ref,
+)
 
 FN = "moe_sparse"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints
 MARGIN = 1e-3
+
+
+class Experts(Guarded, CountingExperts):
+    """The experts the solution gets: `experts(e, rows)` and the sizes, nothing else."""
+
+    label = "experts"
+    refused = Guarded.refused | {"seed", "weights", "calls", "reference"}
 
 
 def clear(x, w_router, k, ties=False):
@@ -40,7 +60,9 @@ def dispatch(ctx, x, w_router, experts, k, ties=False):
     sizes = np.bincount(chosen.reshape(-1), minlength=experts.n_experts)
     plan = sorted((e, int(n)) for e, n in enumerate(sizes) if n)
 
-    y = ctx.call(FN, x, w_router, experts, k)
+    guard(ctx)
+    y = ctx.call(FN, x, w_router, Experts.of(experts), k)  # shares the counters and the log
+    check_guard()
     check.allclose(y, moe_dense_ref(x, w_router, experts, k), **TOL, label=FN)
     check.cost(experts.counters, "expert_rows", exactly=k * len(x), unit="rows")
     check.cost(experts.counters, "expert_calls", at_most=len(plan), unit="calls")
