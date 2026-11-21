@@ -1,0 +1,16 @@
+id = "mtp-chain-draft"
+title = "Drafting with a Chained Multi-Token-Prediction Module"
+track = "drafts-and-diffusion"
+order = 10
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["speculative-decoding", "multi-token-prediction", "draft", "mtp", "deepseek", "qwen"]
+prerequisites = ["greedy-speculative-verify", "pre-norm-block"]
+requires = "cpu"
+entry = ["mtp_chain_draft"]
+time_limit_s = 10
+forbidden = [
+    "learnai.kit.mtp.mtp_draft_ref",
+    "learnai.kit.decoder.decoder_block_ref",
+]

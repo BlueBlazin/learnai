@@ -6,4 +6,5 @@ core = [
     "partial-rope",
     "yarn-frequencies",
     "sigmoid-router-shared-expert",
+    "per-layer-embeddings",
 ]

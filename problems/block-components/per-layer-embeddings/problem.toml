@@ -1,0 +1,12 @@
+id = "per-layer-embeddings"
+title = "Per-Layer Embeddings"
+track = "block-components"
+order = 60
+difficulty = "medium"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["embeddings", "per-layer-embeddings", "gemma", "residual-stream", "rmsnorm"]
+prerequisites = ["pre-norm-block"]
+requires = "cpu"
+entry = ["ple_inputs", "ple_inject", "ple_layer"]
+time_limit_s = 10

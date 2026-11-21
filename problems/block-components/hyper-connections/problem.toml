@@ -1,0 +1,12 @@
+id = "hyper-connections"
+title = "Hyper-Connections: Several Residual Streams"
+track = "block-components"
+order = 70
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["residual-stream", "hyper-connections", "sinkhorn", "doubly-stochastic", "deepseek"]
+prerequisites = ["pre-norm-block"]
+requires = "cpu"
+entry = ["hc_weights", "hc_merge"]
+time_limit_s = 10
