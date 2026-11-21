@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 214">
+  <title>One gated delta step on the example memory</title>
+  <desc>Three frames of one step for one head: decay, write, and read, with the numbers of the worked example.</desc>
+  <!-- Geometry: grids are 2 x 2 cells of 50 x 30 at y = 48..108; the arrow runs at y = 78. -->
+  <!-- In every frame: the constants of the example -->
+  <text x="240.0" y="176.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">g = 0.5   β = 1</text>
+  <text x="240.0" y="196.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">k = (0.6, 0.8)   v = (1, −1)   q = (1, 0)</text>
+  <g id="step-1">
+    <desc>Decay multiplies every entry of S by g = 0.5.</desc>
+    <text x="90.0" y="36" font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)"><tspan font-style="italic">S</tspan></text>
+    <rect x="40.0" y="48" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="65.0" y="68.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+    <rect x="90.0" y="48" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="115.0" y="68.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="40.0" y="78" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="65.0" y="98.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="90.0" y="78" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="115.0" y="98.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">2</text>
+    <text x="390.0" y="36" font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)"><tspan font-style="italic">S̄</tspan></text>
+    <rect x="340.0" y="48" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="365.0" y="68.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.5</text>
+    <rect x="390.0" y="48" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="415.0" y="68.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="340.0" y="78" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="365.0" y="98.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="390.0" y="78" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="415.0" y="98.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+    <line x1="150.0" y1="78.0" x2="330.0" y2="78.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="330.0,78.0 323.5,81.3 323.5,74.7"/>
+    <text x="240" y="68" font-size="13" text-anchor="middle">× <tspan font-style="italic" style="font-family: var(--figure-serif)">g</tspan></text>
+  </g>
+  <g id="step-2">
+    <desc>The write replaces what the decayed memory returns for k, (0.3, 0.8), with v, so S′ returns (1, −1).</desc>
+    <text x="90.0" y="36" font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)"><tspan font-style="italic">S̄</tspan></text>
+    <rect x="40.0" y="48" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="65.0" y="68.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.5</text>
+    <rect x="90.0" y="48" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="115.0" y="68.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="40.0" y="78" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="65.0" y="98.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="90.0" y="78" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="115.0" y="98.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+    <text x="390.0" y="36" font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)"><tspan font-style="italic">S′</tspan></text>
+    <rect x="340.0" y="48" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="365.0" y="68.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.92</text>
+    <rect x="390.0" y="48" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="415.0" y="68.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.56</text>
+    <rect x="340.0" y="78" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="365.0" y="98.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">−1.08</text>
+    <rect x="390.0" y="78" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="415.0" y="98.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">−0.44</text>
+    <line x1="150.0" y1="78.0" x2="330.0" y2="78.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="330.0,78.0 323.5,81.3 323.5,74.7"/>
+    <text x="240" y="68" font-size="13" text-anchor="middle">+ <tspan font-style="italic" style="font-family: var(--figure-serif)">β</tspan> (<tspan font-style="italic" style="font-family: var(--figure-serif)">v</tspan> − <tspan font-style="italic" style="font-family: var(--figure-serif)">S̄</tspan><tspan font-style="italic" style="font-family: var(--figure-serif)">k</tspan>) <tspan font-style="italic" style="font-family: var(--figure-serif)">k</tspan>ᵀ</text>
+    <text x="240.0" y="100.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">S̄k = (0.3, 0.8)</text>
+    <text x="240.0" y="120.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">v − S̄k = (0.7, −1.8)</text>
+  </g>
+  <g id="step-3">
+    <desc>The read uses q = (1, 0), so y is the first column of S′: (0.92, −1.08).</desc>
+    <text x="90.0" y="36" font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)"><tspan font-style="italic">S′</tspan></text>
+    <rect x="40.0" y="48" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="65.0" y="68.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.92</text>
+    <rect x="90.0" y="48" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="115.0" y="68.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.56</text>
+    <rect x="40.0" y="78" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="65.0" y="98.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">−1.08</text>
+    <rect x="90.0" y="78" width="50" height="30" stroke="currentColor" stroke-width="1" fill-opacity="0.45" style="fill: var(--figure-cache)"/>
+    <text x="115.0" y="98.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">−0.44</text>
+    <rect x="40" y="48" width="50" height="60" fill="none" stroke-width="2.5" style="stroke: var(--figure-accent)"/>
+    <line x1="150.0" y1="78.0" x2="330.0" y2="78.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="330.0,78.0 323.5,81.3 323.5,74.7"/>
+    <text x="240" y="68" font-size="13" text-anchor="middle">× <tspan font-style="italic" style="font-family: var(--figure-serif)">q</tspan></text>
+    <text x="375.0" y="36" font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)"><tspan font-style="italic">y</tspan></text>
+    <rect x="350" y="48" width="50" height="30" fill="none" stroke="currentColor" stroke-width="1"/>
+    <text x="375.0" y="68.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.92</text>
+    <rect x="350" y="78" width="50" height="30" fill="none" stroke="currentColor" stroke-width="1"/>
+    <text x="375.0" y="98.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">−1.08</text>
+    
+  </g>
+</svg>

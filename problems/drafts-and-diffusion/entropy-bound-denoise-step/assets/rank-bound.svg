@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 258">
+  <title>The four positions of the example in rank order</title>
+  <desc>Bars of the entropy H and of the running sum S for four positions, with a dashed line at the bound 0.5. The first two positions are accepted.</desc>
+  <!-- Geometry: slots are 105 wide, centered at x = 100, 205, 310, 415; value 0 is y = 170 and one nat is 70 units. -->
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="48" y1="170" x2="470" y2="170"/>
+    <line x1="48" y1="30" x2="48" y2="170"/>
+    <line x1="44" y1="100" x2="48" y2="100"/>
+    <line x1="44" y1="30" x2="48" y2="30"/>
+  </g>
+  <text x="40" y="174.5" font-size="13" text-anchor="end" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0</text>
+  <text x="40" y="104.5" font-size="13" text-anchor="end" style="font-family: var(--figure-mono); fill: var(--figure-muted)">1</text>
+  <text x="40" y="34.5" font-size="13" text-anchor="end" style="font-family: var(--figure-mono); fill: var(--figure-muted)">2</text>
+  <text x="6" y="16" font-size="13" style="fill: var(--figure-muted)">nats, positions in rank order</text>
+  <rect x="72.0" y="142.4" width="24" height="27.6" stroke="currentColor" stroke-width="1.5" fill-opacity="0.3" style="fill: var(--figure-accent)"/>
+  <line x1="104" y1="170" x2="128" y2="170" stroke-width="2.5" style="stroke: var(--figure-straw)"/>
+  <rect x="177.0" y="142.4" width="24" height="27.6" stroke="currentColor" stroke-width="1.5" fill-opacity="0.3" style="fill: var(--figure-accent)"/>
+  <rect x="209" y="142.4" width="24" height="27.6" stroke="currentColor" stroke-width="1.5" fill-opacity="0.3" style="fill: var(--figure-straw)"/>
+  <rect x="282.0" y="97.2" width="24" height="72.8" stroke="currentColor" stroke-width="1.5" fill-opacity="0.3" style="fill: var(--figure-accent)"/>
+  <rect x="314" y="114.8" width="24" height="55.2" stroke="currentColor" stroke-width="1.5" fill-opacity="0.3" style="fill: var(--figure-straw)"/>
+  <rect x="387.0" y="93.8" width="24" height="76.2" stroke="currentColor" stroke-width="1.5" fill-opacity="0.3" style="fill: var(--figure-accent)"/>
+  <rect x="419" y="42.0" width="24" height="128.0" stroke="currentColor" stroke-width="1.5" fill-opacity="0.3" style="fill: var(--figure-straw)"/>
+  <line x1="48" y1="135.0" x2="470" y2="135.0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="54" y="129.0" font-size="13">bound 0.5</text>
+  <text x="100" y="190" font-size="13" text-anchor="middle">position 1</text>
+  <text x="100" y="208" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-accent)">H 0.3944</text>
+  <text x="100" y="226" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-straw)">S 0</text>
+  <text x="100" y="246" font-size="13" text-anchor="middle">accepted</text>
+  <text x="205" y="190" font-size="13" text-anchor="middle">position 3</text>
+  <text x="205" y="208" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-accent)">H 0.3944</text>
+  <text x="205" y="226" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-straw)">S 0.3944</text>
+  <text x="205" y="246" font-size="13" text-anchor="middle">accepted</text>
+  <text x="310" y="190" font-size="13" text-anchor="middle">position 2</text>
+  <text x="310" y="208" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-accent)">H 1.0397</text>
+  <text x="310" y="226" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-straw)">S 0.7888</text>
+  <text x="310" y="246" font-size="13" text-anchor="middle">renoised</text>
+  <text x="415" y="190" font-size="13" text-anchor="middle">position 0</text>
+  <text x="415" y="208" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-accent)">H 1.0889</text>
+  <text x="415" y="226" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-straw)">S 1.8285</text>
+  <text x="415" y="246" font-size="13" text-anchor="middle">renoised</text>
+</svg>

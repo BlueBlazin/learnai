@@ -39,6 +39,8 @@ $$
 - $\operatorname{rms}(x, g)$ is `ops.rms_norm(x, g, cfg.norm_eps)` from `learnai.kit`,
   and $[a\,;b]$ concatenates along the last axis, giving width $2D$.
 
+![Two chained stages. Stage 1 reads the states $h^1$ of stage 0 and embeds the token that stage 0 drafted.](assets/mtp-stages.svg)
+
 $\operatorname{Block}_j$ is the pre-norm block of the kit decoder, with the weights
 under `mtp.layers.{j}.mtp_block.`:
 

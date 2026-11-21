@@ -90,6 +90,8 @@ entropy, higher index), position 2, position 0, with
 $S = 0,\ 0.3944,\ 0.7888,\ 1.8285$: the first two are within the bound 0.5. Positions
 0 and 2 are renoised to $\lfloor 0.9 \cdot 3 \rfloor = 2$ and $\lfloor 0.4 \cdot 3 \rfloor = 1$.
 
+![The example's four positions in rank order. A position is accepted when the sum $S$ of the entropies ranked before it is at most the bound.](assets/rank-bound.svg)
+
 With `entropy_bound = 0.3` only position 1 is accepted, although its own entropy
 exceeds the bound, and the canvas is `[2, 0, 1, 1]`.
 

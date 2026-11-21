@@ -93,6 +93,8 @@ gdn_step(S, q, k, v, g=[0.5], beta=[1.0])
 # S = [[[0.92, 0.56], [-1.08, -0.44]]]
 ```
 
+![The example step on $S$: decay by $g$, write toward $v$ under $k$, then read with $q$.](assets/delta-step.svg)
+
 Decay gives $\bar S = [[0.5, 0], [0, 1]]$, which returns $\bar S k = (0.3, 0.8)$ for
 the key. The correction is $v - \bar S k = (0.7, -1.8)$, and adding its outer product
 with $k$ gives $S'$. Now $S' k = (0.552 + 0.448,\; -0.648 - 0.352) = (1, -1) = v$: the

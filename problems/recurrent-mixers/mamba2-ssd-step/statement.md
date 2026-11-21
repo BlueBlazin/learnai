@@ -106,6 +106,8 @@ ssd_matrix(dt, B, C, A_log=[log(log(2.0))])
 #   [0.0625, -0.125, 1.0]]]
 ```
 
+![The matrix $M$ of the three-token example. Each cell fades with the decay from input token $s$ to output token $t$; above the diagonal it is zero.](assets/ssd-matrix.svg)
+
 $M_{2,0} = (C_2 \cdot B_0) \cdot 2^{-(1 + 2)} \cdot \Delta_0 = 1 \cdot 0.125 \cdot 0.5$: the
 input of token 0 has decayed through the steps of tokens 1 and 2, not through its own.
 $M_{2,1} = -0.5 \cdot 2^{-2} \cdot 1$, and the diagonal carries no decay.

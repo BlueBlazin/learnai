@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 454">
+  <title>Two stages of the MTP chain</title>
+  <desc>Two stages, each joining a normed embedding and hidden state, then a block and a head. The drafted token and new hidden states feed the next stage.</desc>
+  <!-- Geometry: stage 0 is centered at x = 100 and stage 1 at x = 355; near column cx - 52 (embedding), far column cx + 52 (hidden). -->
+  <g>
+    <line x1="48.0" y1="392.0" x2="48.0" y2="358.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="48.0,358.0 51.3,364.5 44.7,364.5"/>
+    <polyline points="48.0,336.0 48.0,306.0 100.0,306.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polyline points="152.0,336.0 152.0,306.0 100.0,306.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle cx="100.0" cy="306.0" r="2.5"/>
+    <line x1="100.0" y1="306.0" x2="100.0" y2="272.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="100.0,272.0 103.3,278.5 96.7,278.5"/>
+    <line x1="100.0" y1="250.0" x2="100.0" y2="220.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="100.0,220.0 103.3,226.5 96.7,226.5"/>
+    <line x1="100.0" y1="198.0" x2="100.0" y2="168.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="100.0,168.0 103.3,174.5 96.7,174.5"/>
+    <line x1="100.0" y1="146.0" x2="100.0" y2="112.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="100.0,112.0 103.3,118.5 96.7,118.5"/>
+    <circle cx="100.0" cy="126.0" r="2.5"/>
+    <line x1="100.0" y1="90.0" x2="100.0" y2="62.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="100.0,62.0 103.3,68.5 96.7,68.5"/>
+    <line x1="303.0" y1="392.0" x2="303.0" y2="358.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="303.0,358.0 306.3,364.5 299.7,364.5"/>
+    <polyline points="303.0,336.0 303.0,306.0 355.0,306.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polyline points="407.0,336.0 407.0,306.0 355.0,306.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle cx="355.0" cy="306.0" r="2.5"/>
+    <line x1="355.0" y1="306.0" x2="355.0" y2="272.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="355.0,272.0 358.3,278.5 351.7,278.5"/>
+    <line x1="355.0" y1="250.0" x2="355.0" y2="220.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="355.0,220.0 358.3,226.5 351.7,226.5"/>
+    <line x1="355.0" y1="198.0" x2="355.0" y2="168.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="355.0,168.0 358.3,174.5 351.7,174.5"/>
+    <line x1="355.0" y1="146.0" x2="355.0" y2="112.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="355.0,112.0 358.3,118.5 351.7,118.5"/>
+    <circle cx="355.0" cy="126.0" r="2.5"/>
+    <line x1="355.0" y1="90.0" x2="355.0" y2="62.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="355.0,62.0 358.3,68.5 351.7,68.5"/>
+    <line x1="48.0" y1="430.0" x2="48.0" y2="414.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="48.0,414.0 51.3,420.5 44.7,420.5"/>
+    <line x1="152.0" y1="428.0" x2="152.0" y2="358.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="152.0,358.0 155.3,364.5 148.7,364.5"/>
+    <polyline points="100.0,126.0 212.0,126.0 212.0,444.0 407.0,444.0 407.0,358.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="407.0,358.0 410.3,364.5 403.7,364.5"/>
+    <polyline points="150.0,51.0 236.0,51.0 236.0,428.0 303.0,428.0 303.0,414.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="303.0,414.0 306.3,420.5 299.7,420.5"/>
+    <line x1="355.0" y1="40.0" x2="355.0" y2="28.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="355.0,28.0 358.3,34.5 351.7,34.5"/>
+    <polyline points="355.0,126.0 435.0,126.0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <polygon points="435.0,126.0 428.5,129.3 428.5,122.7"/>
+  </g>
+  <g>
+  <rect x="6.0" y="392.0" width="84.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-embed)"/>
+  <text x="48.0" y="407.5" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">E</tspan></text>
+  <rect x="6.0" y="336.0" width="84.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-norm)"/>
+  <text x="48.0" y="351.5" font-size="13" text-anchor="middle">rms enorm</text>
+  <rect x="110.0" y="336.0" width="84.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-norm)"/>
+  <text x="152.0" y="351.5" font-size="13" text-anchor="middle">rms hnorm</text>
+  <rect x="50.0" y="250.0" width="100.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-linear)"/>
+  <text x="100.0" y="265.5" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">eh</tspan><tspan dy="-3"></tspan></text>
+  <rect x="50.0" y="198.0" width="100.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  <text x="100.0" y="213.5" font-size="13" text-anchor="middle">Block<tspan dy="3">0</tspan><tspan dy="-3"></tspan></text>
+  <rect x="50.0" y="146.0" width="100.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-norm)"/>
+  <text x="100.0" y="161.5" font-size="13" text-anchor="middle">post_norm</text>
+  <rect x="50.0" y="90.0" width="100.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-linear)"/>
+  <text x="100.0" y="105.5" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">head</tspan><tspan dy="-3"></tspan></text>
+  <rect x="50.0" y="40.0" width="100.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  <text x="100.0" y="55.5" font-size="13" text-anchor="middle">argmax</text>
+  <rect x="261.0" y="392.0" width="84.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-embed)"/>
+  <text x="303.0" y="407.5" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">E</tspan></text>
+  <rect x="261.0" y="336.0" width="84.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-norm)"/>
+  <text x="303.0" y="351.5" font-size="13" text-anchor="middle">rms enorm</text>
+  <rect x="365.0" y="336.0" width="84.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-norm)"/>
+  <text x="407.0" y="351.5" font-size="13" text-anchor="middle">rms hnorm</text>
+  <rect x="305.0" y="250.0" width="100.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-linear)"/>
+  <text x="355.0" y="265.5" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">eh</tspan><tspan dy="-3"></tspan></text>
+  <rect x="305.0" y="198.0" width="100.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  <text x="355.0" y="213.5" font-size="13" text-anchor="middle">Block<tspan dy="3">1</tspan><tspan dy="-3"></tspan></text>
+  <rect x="305.0" y="146.0" width="100.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-norm)"/>
+  <text x="355.0" y="161.5" font-size="13" text-anchor="middle">post_norm</text>
+  <rect x="305.0" y="90.0" width="100.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-linear)"/>
+  <text x="355.0" y="105.5" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">head</tspan><tspan dy="-3"></tspan></text>
+  <rect x="305.0" y="40.0" width="100.0" height="22" rx="5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  <text x="355.0" y="55.5" font-size="13" text-anchor="middle">argmax</text>
+  </g>
+  <text x="55.0" y="380.0" font-size="13" text-anchor="start" style="font-family: var(--figure-mono); fill: var(--figure-muted)">(T, D)</text>
+  <text x="107.0" y="295.0" font-size="13" text-anchor="start" style="font-family: var(--figure-mono); fill: var(--figure-muted)">(T, 2D)</text>
+  <text x="92" y="298" font-size="13" text-anchor="end" style="fill: var(--figure-muted)">concat</text>
+  <text x="107.0" y="240.0" font-size="13" text-anchor="start" style="font-family: var(--figure-mono); fill: var(--figure-muted)">(T, D)</text>
+  <text x="107.0" y="188.0" font-size="13" text-anchor="start" style="font-family: var(--figure-mono); fill: var(--figure-muted)">(T, D)</text>
+  <text x="107" y="80" font-size="13"><tspan font-style="italic" style="font-family: var(--figure-serif)">ℓ</tspan><tspan dy="-5">0</tspan><tspan dy="5" style="font-family: var(--figure-mono); fill: var(--figure-muted)"> (V,)</tspan></text>
+  <text x="310.0" y="380.0" font-size="13" text-anchor="start" style="font-family: var(--figure-mono); fill: var(--figure-muted)">(T, D)</text>
+  <text x="362.0" y="295.0" font-size="13" text-anchor="start" style="font-family: var(--figure-mono); fill: var(--figure-muted)">(T, 2D)</text>
+  <text x="347" y="298" font-size="13" text-anchor="end" style="fill: var(--figure-muted)">concat</text>
+  <text x="362.0" y="240.0" font-size="13" text-anchor="start" style="font-family: var(--figure-mono); fill: var(--figure-muted)">(T, D)</text>
+  <text x="362.0" y="188.0" font-size="13" text-anchor="start" style="font-family: var(--figure-mono); fill: var(--figure-muted)">(T, D)</text>
+  <text x="362" y="80" font-size="13"><tspan font-style="italic" style="font-family: var(--figure-serif)">ℓ</tspan><tspan dy="-5">1</tspan><tspan dy="5" style="font-family: var(--figure-mono); fill: var(--figure-muted)"> (V,)</tspan></text>
+  <text x="48" y="446" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">t</tspan><tspan dy="3">1</tspan><tspan dy="-3"></tspan> … <tspan font-style="italic" style="font-family: var(--figure-serif)">t</tspan><tspan dy="3">T</tspan><tspan dy="-3"></tspan></text>
+  <text x="152" y="446" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">h</tspan><tspan dy="-5">0</tspan></text>
+  <text x="219" y="250" font-size="13"><tspan font-style="italic" style="font-family: var(--figure-serif)">h</tspan><tspan dy="-5">1</tspan></text>
+  <text x="243.0" y="330.0" font-size="13" text-anchor="start" style="font-family: var(--figure-mono)">41</text>
+  <text x="355.0" y="16.0" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">25</text>
+  <text x="441" y="131" font-size="13"><tspan font-style="italic" style="font-family: var(--figure-serif)">h</tspan><tspan dy="-5">2</tspan></text>
+  <text x="6" y="14" font-size="13" style="fill: var(--figure-muted)">stage 0</text>
+  <text x="261" y="14" font-size="13" style="fill: var(--figure-muted)">stage 1</text>
+</svg>

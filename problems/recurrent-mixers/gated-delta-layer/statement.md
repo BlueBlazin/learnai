@@ -53,6 +53,8 @@ o = \gamma \odot \frac{y}{\sqrt{\tfrac{1}{d_v}\sum_i y_i^2 + \texttt{cfg.norm\_e
 \qquad \text{out} = \operatorname{flatten}(o)\,W_{out}^\top .
 $$
 
+![The token mixer, bottom to top. The two shaded blocks are the saved state: the convolution rows and the memory $S$.](assets/layer.svg)
+
 - `x`: float32, shape `(T, cfg.d_model)`, $T \ge 1$.
 - `state`: `None` for a new sequence (both parts are zeros), or the pair
   `(conv_state, S)` returned by the call that read the tokens before `x`.
