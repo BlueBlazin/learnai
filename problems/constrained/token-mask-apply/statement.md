@@ -5,6 +5,8 @@ what is left. The catch is in the corners: the model may put nearly all of its
 probability on tokens it is not allowed to produce, and a row in which nothing is
 allowed must be reported, not turned into NaN.
 
+![This problem is Mask, which removes the disallowed tokens from the logits.](assets/map.svg)
+
 ## Specification
 
 ```python

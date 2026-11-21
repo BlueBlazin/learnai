@@ -7,6 +7,8 @@ content in the tag's own language, up to the tag's end string; then it is free
 again. Implement this dispatcher as a token constraint. The triggers, the tags, and
 the tokens all have their own boundaries, and none of them line up.
 
+![This problem is Allowed tokens and Advance state, free outside a tag and constrained inside one.](assets/map.svg)
+
 ## Specification
 
 ```python

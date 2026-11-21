@@ -4,6 +4,8 @@ special marker with no text at all. Implement the bridge: given the automaton of
 regular expression and its current state, compute which tokens may be generated next,
 and move the automaton forward once a token has been chosen.
 
+![This problem is Allowed tokens and Advance state, found by walking a token's bytes through the automaton.](assets/map.svg)
+
 ## Specification
 
 ```python

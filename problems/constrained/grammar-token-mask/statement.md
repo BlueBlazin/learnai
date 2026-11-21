@@ -5,6 +5,8 @@ an unbounded amount of context: how many lists are open, which rule is in progre
 and, when the grammar is ambiguous, several readings of the text at once. Build the
 matcher that answers it, token by token, for any grammar the kit can parse.
 
+![This problem is Allowed tokens and Advance state, here for a context-free grammar.](assets/map.svg)
+
 ## Specification
 
 ```python

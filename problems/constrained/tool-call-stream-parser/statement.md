@@ -7,6 +7,8 @@ incremental parser. It must forward text as soon as it is certain to be text, ne
 forward something that may yet turn out to be a tag, and produce the same result
 however the stream is cut.
 
+![This problem is Parse tool calls, which turns the generated text into streaming events.](assets/map.svg)
+
 ## Specification
 
 ```python

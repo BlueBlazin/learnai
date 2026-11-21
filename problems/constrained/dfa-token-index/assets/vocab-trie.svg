@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 228">
+  <title>The trie of nine tokens, walked from state 0 of (true|null)</title>
+  <desc>A trie with the chains t, tr, tru, true and n, nu, nul, null, and the leaf u. Each node has the state reached from state 0.</desc>
+  <!-- Geometry: a node is a box 50 wide and 22 high, centered at x = 140, 240, 340, 440 by depth and y = 21, 99, 177 by row. -->
+  <!-- Under a node: the state its bytes reach from state 0, then the id of the token with those bytes. -->
+
+  <!-- Edges, parent to child: one dfa.step each -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <path d="M165 21 L210 21"/>
+    <path d="M265 21 L310 21"/>
+    <path d="M365 21 L410 21"/>
+    <path d="M165 99 L210 99"/>
+    <path d="M265 99 L310 99"/>
+    <path d="M365 99 L410 99"/>
+    <path d="M65 21 L110 21"/>
+    <path d="M90 21 V91 Q90 99 98 99 L110 99"/>
+  </g>
+  <g>
+    <polygon points="215,21 208.5,24.3 208.5,17.7"/>
+    <polygon points="315,21 308.5,24.3 308.5,17.7"/>
+    <polygon points="415,21 408.5,24.3 408.5,17.7"/>
+    <polygon points="215,99 208.5,102.3 208.5,95.7"/>
+    <polygon points="315,99 308.5,102.3 308.5,95.7"/>
+    <polygon points="415,99 408.5,102.3 408.5,95.7"/>
+    <polygon points="115,21 108.5,24.3 108.5,17.7"/>
+    <polygon points="115,99 108.5,102.3 108.5,95.7"/>
+    <circle cx="90" cy="21" r="2.5"/>
+  </g>
+
+  <!-- The edge of a byte that dies in state 0 -->
+  <path d="M90 99 V169 Q90 177 98 177 L110 177" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-muted)"/>
+  <polygon points="115,177 108.5,180.3 108.5,173.7" style="fill: var(--figure-muted)"/>
+
+  <!-- The root: no byte read, the automaton in state 0 -->
+  <rect x="15" y="10" width="50" height="22" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="40" y="25.5" font-size="13" text-anchor="middle">root</text>
+  <text x="40" y="48.5" font-size="13" text-anchor="middle">state 0</text>
+
+  <!-- Nodes: the bytes read so far; under each, the state reached and the token -->
+  <rect x="115" y="10" width="50" height="22" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="140" y="25.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">t</text>
+  <text x="140" y="48.5" font-size="13" text-anchor="middle">state 2</text>
+  <text x="140" y="64.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">token 6</text>
+  <rect x="215" y="10" width="50" height="22" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="240" y="25.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">tr</text>
+  <text x="240" y="48.5" font-size="13" text-anchor="middle">state 4</text>
+  <text x="240" y="64.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">token 46</text>
+  <rect x="315" y="10" width="50" height="22" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="340" y="25.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">tru</text>
+  <text x="340" y="48.5" font-size="13" text-anchor="middle">state 6</text>
+  <text x="340" y="64.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">token 54</text>
+  <rect x="415" y="10" width="50" height="22" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="440" y="25.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">true</text>
+  <text x="440" y="48.5" font-size="13" text-anchor="middle">state 7</text>
+  <text x="440" y="64.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">token 49</text>
+  <rect x="115" y="88" width="50" height="22" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="140" y="103.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">n</text>
+  <text x="140" y="126.5" font-size="13" text-anchor="middle">state 1</text>
+  <text x="140" y="142.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">token 19</text>
+  <rect x="215" y="88" width="50" height="22" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="240" y="103.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">nu</text>
+  <text x="240" y="126.5" font-size="13" text-anchor="middle">state 3</text>
+  <text x="240" y="142.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">token 53</text>
+  <rect x="315" y="88" width="50" height="22" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="340" y="103.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">nul</text>
+  <text x="340" y="126.5" font-size="13" text-anchor="middle">state 5</text>
+  <text x="340" y="142.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">token 40</text>
+  <rect x="415" y="88" width="50" height="22" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="440" y="103.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">null</text>
+  <text x="440" y="126.5" font-size="13" text-anchor="middle">state 7</text>
+  <text x="440" y="142.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">token 47</text>
+
+  <!-- A dead leaf: no entry in the index -->
+  <rect x="115" y="166" width="50" height="22" rx="5" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-muted)"/>
+  <text x="140" y="181.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">u</text>
+  <text x="140" y="204.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">DEAD</text>
+  <text x="140" y="220.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">token 33</text>
+</svg>

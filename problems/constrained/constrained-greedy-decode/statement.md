@@ -4,6 +4,8 @@ end-of-sequence is permitted only once the output is complete. The constraint te
 you what is allowed; the loop has to ask it at the right moments, keep its state in
 step with the tokens, and still run each token through the model only once.
 
+![This problem is the decode loop, which masks, picks, and advances the state once per token.](assets/map.svg)
+
 ## Specification
 
 ```python

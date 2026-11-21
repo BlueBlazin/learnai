@@ -5,6 +5,8 @@ says which tokens may come next. The subtle part is the end: the end-of-sequence
 token must be allowed exactly when the output is a complete choice, also when that
 choice is the beginning of a longer one.
 
+![This problem is Allowed tokens and Advance state, here a walk down a trie of the choices.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -65,6 +67,8 @@ allowed_next(trie, [9, 4, 3])     # [10]
 allowed_next(trie, [12])          # []         no choice starts with " please"
 allowed_next(trie, [7, 9])        # []
 ```
+
+![The trie of the example. Under each node is what `allowed_next` returns there, with EOS where a choice ends.](assets/trie.svg)
 
 At the start EOS is not allowed, because the empty output is not a choice. After
 `[9, 4]` the output reads `not`, a proper prefix of `not sure` only, so the model must

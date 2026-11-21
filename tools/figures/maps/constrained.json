@@ -1,0 +1,101 @@
+{
+  "track": "constrained",
+  "file": "map.svg",
+  "title": "Where this problem sits in constrained generation",
+  "desc": "Constrained generation drawn bottom to top, from a JSON schema and prompt ids to text and tool calls.",
+  "width": 480,
+  "height": 278,
+  "panel": {
+    "part": "panel",
+    "x": 4, "y": 62, "width": 358, "height": 96,
+    "label": "per token", "label_at": [189, 140]
+  },
+  "blocks": [
+    {"part": "parse", "label": "Parse tool calls", "x": 236, "y": 30, "width": 118, "height": 20},
+    {"part": "advance", "role": "cache", "label": "Advance state", "x": 10, "y": 70, "width": 122, "height": 20},
+    {"part": "pick", "role": "softmax", "label": "Pick token", "x": 248, "y": 70, "width": 94, "height": 20},
+    {"part": "allowed", "label": "Allowed tokens", "x": 10, "y": 100, "width": 122, "height": 20},
+    {"part": "mask", "role": "embed", "label": "Mask", "x": 248, "y": 100, "width": 94, "height": 20},
+    {"part": "logits", "label": "Model logits", "x": 248, "y": 130, "width": 94, "height": 20},
+    {"part": "index", "role": "cache", "label": "Token index", "x": 10, "y": 170, "width": 122, "height": 20},
+    {"part": "dfa", "label": "Regex to DFA", "x": 10, "y": 200, "width": 122, "height": 20},
+    {"part": "schema", "label": "Schema to regex", "x": 10, "y": 230, "width": 122, "height": 20}
+  ],
+  "wires": [
+    {"points": [[71, 260], [71, 250]], "arrow": true},
+    {"points": [[71, 230], [71, 220]], "arrow": true},
+    {"points": [[71, 200], [71, 190]], "arrow": true},
+    {"points": [[71, 170], [71, 120]], "arrow": true},
+    {"part": "state", "points": [[71, 90], [71, 100]], "arrow": true},
+    {"part": "loop", "points": [[132, 110], [248, 110]], "arrow": true},
+    {"part": "loop", "points": [[248, 80], [132, 80]], "arrow": true},
+    {"points": [[295, 260], [295, 150]], "arrow": true},
+    {"part": "loop", "points": [[295, 130], [295, 120]], "arrow": true},
+    {"part": "loop", "points": [[295, 100], [295, 90]], "arrow": true},
+    {"points": [[295, 70], [295, 50]], "arrow": true},
+    {"points": [[295, 30], [295, 20]], "arrow": true},
+    {"part": "loop", "points": [[342, 80], [354, 80], [354, 140], [342, 140]], "round": 5, "arrow": true}
+  ],
+  "labels": [
+    {"text": "text and tool calls", "at": [295, 9]},
+    {"text": "JSON schema", "at": [71, 268]},
+    {"text": "prompt ids", "at": [295, 268]}
+  ],
+  "problems": {
+    "token-mask-apply": {
+      "parts": ["mask"],
+      "marker": {"from": [362, 110], "length": 18},
+      "desc": "The Mask block is at full strength."
+    },
+    "choice-trie-constraint": {
+      "parts": ["allowed", "advance", "state"],
+      "marker": {"from": [138, 95], "length": 14},
+      "desc": "The Allowed tokens and Advance state blocks are at full strength."
+    },
+    "dfa-token-mask": {
+      "parts": ["allowed", "advance", "state"],
+      "marker": {"from": [138, 95], "length": 14},
+      "desc": "The Allowed tokens and Advance state blocks are at full strength."
+    },
+    "dfa-token-index": {
+      "parts": ["index"],
+      "marker": {"from": [138, 180], "length": 18},
+      "desc": "The Token index block is at full strength."
+    },
+    "constrained-greedy-decode": {
+      "parts": ["panel", "advance", "pick", "allowed", "mask", "logits", "state", "loop"],
+      "marker": {"from": [362, 110], "length": 18},
+      "desc": "The per-token panel and every block in it are at full strength."
+    },
+    "regex-to-dfa": {
+      "parts": ["dfa"],
+      "marker": {"from": [138, 210], "length": 18},
+      "desc": "The Regex to DFA block is at full strength."
+    },
+    "json-schema-regex": {
+      "parts": ["schema"],
+      "marker": {"from": [138, 240], "length": 18},
+      "desc": "The Schema to regex block is at full strength."
+    },
+    "jump-forward-decode": {
+      "parts": ["panel", "advance", "pick", "allowed", "mask", "logits", "state", "loop"],
+      "marker": {"from": [362, 110], "length": 18},
+      "desc": "The per-token panel and every block in it are at full strength."
+    },
+    "tool-call-stream-parser": {
+      "parts": ["parse"],
+      "marker": {"from": [360, 40], "length": 18},
+      "desc": "The Parse tool calls block is at full strength."
+    },
+    "grammar-token-mask": {
+      "parts": ["allowed", "advance", "state"],
+      "marker": {"from": [138, 95], "length": 14},
+      "desc": "The Allowed tokens and Advance state blocks are at full strength."
+    },
+    "structural-tag-dispatch": {
+      "parts": ["allowed", "advance", "state"],
+      "marker": {"from": [138, 95], "length": 14},
+      "desc": "The Allowed tokens and Advance state blocks are at full strength."
+    }
+  }
+}

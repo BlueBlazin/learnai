@@ -5,6 +5,8 @@ to its allowed tokens and their next states, so that a decoding step is a lookup
 build itself must not waste work either: tokens that begin with the same bytes share
 those steps.
 
+![This problem is Token index, built once so that a decoding step is a lookup.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -96,6 +98,8 @@ advance_from_index(index, 1, 53)       # raises ValueError: b'nu' cannot follow 
 allowed_from_index(index, 7)           # []
                                        # dfa.counters.steps is still 310
 ```
+
+![Nine of these tokens as a trie, walked from state 0. Each arrow is one `dfa.step`, and a byte that reaches `DEAD` gets no entry.](assets/vocab-trie.svg)
 
 Where 310 comes from: this vocabulary has 59 tokens with bytes, and their byte strings
 have 60 distinct prefixes, 38 of which are single bytes. From state 0 the live pairs

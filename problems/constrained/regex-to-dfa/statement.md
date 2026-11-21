@@ -5,6 +5,8 @@ with choices, the subset construction, minimization); what makes it an inference
 problem is that tokens are byte strings, so the automaton must be right about
 multi-byte characters, and that its size is what the decoder pays for.
 
+![This problem is Regex to DFA, which compiles a pattern into a byte automaton.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -153,6 +155,8 @@ first digit `1`–`9`" and "after further digits" are found as two different set
 positions in the pattern, although both are accepting and both loop on every digit.
 Merging equivalent states leaves four. A complete textbook table would add one more,
 a dead state that every missing entry leads to; here it must not exist.
+
+![An automaton with choices for this pattern, and below it the five sets of its states that the subset construction finds. The two framed states are equivalent.](assets/automata.svg)
 
 ## Constraints
 

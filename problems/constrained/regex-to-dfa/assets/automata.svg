@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 280">
+  <title>From -?(0|[1-9]\d*) to an automaton with ε moves and to its subset automaton</title>
+  <desc>Above, an automaton of six states a to f with ε moves. Below, the five sets of those states that the subset construction reaches; the last two are equivalent.</desc>
+  <!-- Above: states a to f are circles of radius 11 on y = 70 (e above d); f, with the double circle, is the exit. -->
+  <!-- Below: one box per reachable set of states, 60 wide and 22 high; a set that contains f is accepting and has a second outline. -->
+
+  <!-- The automaton with choices: an edge reads one byte of its set, or nothing (ε) -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <path d="M10 70 L24 70"/>
+    <path d="M51 70 L114 70"/>
+    <path d="M141 70 L204 70"/>
+    <path d="M231 70 L294 70"/>
+    <path d="M321 70 L421 70"/>
+    <path d="M47.8 77.8 Q85 106 118.2 80.8"/>
+    <path d="M137.8 77.8 Q285 150 425.6 82.1"/>
+    <path d="M302.2 62.2 Q284 45 298.6 31.2"/>
+    <path d="M317.8 27.8 Q336 45 321.4 58.8"/>
+  </g>
+  <g>
+    <polygon points="29,70 22.5,73.3 22.5,66.7"/>
+    <polygon points="119,70 112.5,73.3 112.5,66.7"/>
+    <polygon points="209,70 202.5,73.3 202.5,66.7"/>
+    <polygon points="299,70 292.5,73.3 292.5,66.7"/>
+    <polygon points="426,70 419.5,73.3 419.5,66.7"/>
+    <polygon points="122.2,77.8 119,84.4 115,79.1"/>
+    <polygon points="430.1,79.9 425.7,85.7 422.8,79.8"/>
+    <polygon points="302.2,27.8 299.7,34.7 295.2,29.9"/>
+    <polygon points="317.8,62.2 320.3,55.3 324.8,60.1"/>
+  </g>
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <circle cx="40" cy="70" r="11"/>
+    <circle cx="130" cy="70" r="11"/>
+    <circle cx="220" cy="70" r="11"/>
+    <circle cx="310" cy="70" r="11"/>
+    <circle cx="310" cy="20" r="11"/>
+    <circle cx="440" cy="70" r="11"/>
+    <circle cx="440" cy="70" r="14" stroke-width="1"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="40" y="74.5">a</text>
+    <text x="130" y="74.5">b</text>
+    <text x="220" y="74.5">c</text>
+    <text x="310" y="74.5">d</text>
+    <text x="310" y="24.5">e</text>
+    <text x="440" y="74.5">f</text>
+  </g>
+  <!-- What each edge reads -->
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="85" y="64.5">-</text>
+    <text x="175" y="64.5">1–9</text>
+    <text x="285" y="131.5">0</text>
+    <text x="276" y="49.5">0–9</text>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)">
+    <text x="85" y="107.5">ε</text>
+    <text x="265" y="64.5">ε</text>
+    <text x="375" y="64.5">ε</text>
+    <text x="340" y="49.5">ε</text>
+  </g>
+
+  <!-- The subset construction: each box is the set of states the automaton above can be in -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <path d="M6 200 L21 200"/>
+    <path d="M86 200 L141 200"/>
+    <path d="M206 194 L275.2 173.4"/>
+    <path d="M206 206 L275.2 226.6"/>
+    <path d="M56 189 Q140 128 275.1 161.8"/>
+    <path d="M56 211 Q140 272 275.1 238.2"/>
+    <path d="M340 232 L385 232"/>
+    <path d="M410 221 C404 196 436 196 431.2 216.1"/>
+  </g>
+  <g>
+    <polygon points="26,200 19.5,203.3 19.5,196.7"/>
+    <polygon points="146,200 139.5,203.3 139.5,196.7"/>
+    <polygon points="280,172 274.7,177 272.8,170.7"/>
+    <polygon points="280,228 272.8,229.3 274.7,223"/>
+    <polygon points="280,163 272.9,164.6 274.5,158.2"/>
+    <polygon points="280,237 274.5,241.8 272.9,235.4"/>
+    <polygon points="390,232 383.5,235.3 383.5,228.7"/>
+    <polygon points="430,221 428.3,213.9 434.7,215.4"/>
+  </g>
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="26" y="189" width="60" height="22" rx="5"/>
+    <rect x="146" y="189" width="60" height="22" rx="5"/>
+    <rect x="280" y="157" width="60" height="22" rx="5"/>
+    <rect x="280" y="221" width="60" height="22" rx="5"/>
+    <rect x="390" y="221" width="60" height="22" rx="5"/>
+  </g>
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <rect x="283" y="160" width="54" height="16" rx="3"/>
+    <rect x="283" y="224" width="54" height="16" rx="3"/>
+    <rect x="393" y="224" width="54" height="16" rx="3"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="56" y="204.5">{a,b}</text>
+    <text x="176" y="204.5">{b}</text>
+    <text x="310" y="172.5">{f}</text>
+    <text x="310" y="236.5">{c,d,f}</text>
+    <text x="420" y="236.5">{d,e,f}</text>
+  </g>
+  <!-- What each edge reads -->
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="116" y="194.5">-</text>
+    <text x="238" y="177.5">0</text>
+    <text x="232" y="233.5">1–9</text>
+    <text x="150" y="146.5">0</text>
+    <text x="150" y="266.5">1–9</text>
+    <text x="365" y="226.5">0–9</text>
+    <text x="455" y="206.5">0–9</text>
+  </g>
+
+  <!-- The two states that minimization merges -->
+  <rect x="272" y="190" width="202" height="62" rx="8" fill="none" stroke-width="1" stroke-dasharray="5 3" style="stroke: var(--figure-accent)"/>
+  <text x="373" y="268.5" font-size="13" text-anchor="middle" style="fill: var(--figure-accent)">equivalent</text>
+</svg>

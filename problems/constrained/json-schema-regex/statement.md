@@ -4,6 +4,8 @@ expression is compiled to an automaton, and the automaton masks tokens. JSON's g
 is easy; the work is in what a regular expression cannot say directly, above all
 properties that may be absent without leaving a comma behind.
 
+![This problem is Schema to regex, the first stage of compiling a schema.](assets/map.svg)
+
 ## Specification
 
 ```python

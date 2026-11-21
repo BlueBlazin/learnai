@@ -1,0 +1,223 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 112">
+  <title>The stack of open containers while the example text is read</title>
+  <desc>Five frames. Each shows how much of the example text is read, the stack of open containers, and the value of json_complete.</desc>
+  <!-- Geometry: character i of the text is centered at x = 42 + 12 i; a stack cell is 26 wide and 22 high, the bottom of the stack on the left. -->
+  <!-- Frames are the groups step-1 to step-5; the app shows one at a time. Their desc is the note of the step. -->
+
+  <!-- In every frame: the names of the two rows -->
+  <text x="36" y="66.5" font-size="13">stack</text>
+  <text x="36" y="100.5" font-size="13" style="font-family: var(--figure-mono)">json_complete</text>
+
+  <g id="step-1">
+    <desc>Before any character is read the stack is empty, and the empty text is not complete.</desc>
+    <!-- the characters not read yet -->
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+      <text x="42" y="24.5">{</text>
+      <text x="54" y="24.5">&quot;</text>
+      <text x="66" y="24.5">a</text>
+      <text x="78" y="24.5">&quot;</text>
+      <text x="90" y="24.5">:</text>
+      <text x="114" y="24.5">[</text>
+      <text x="126" y="24.5">1</text>
+      <text x="138" y="24.5">,</text>
+      <text x="162" y="24.5">2</text>
+      <text x="174" y="24.5">.</text>
+      <text x="186" y="24.5">5</text>
+      <text x="198" y="24.5">e</text>
+      <text x="210" y="24.5">3</text>
+      <text x="222" y="24.5">,</text>
+      <text x="246" y="24.5">t</text>
+      <text x="258" y="24.5">r</text>
+      <text x="270" y="24.5">u</text>
+      <text x="282" y="24.5">e</text>
+      <text x="294" y="24.5">]</text>
+      <text x="306" y="24.5">,</text>
+      <text x="330" y="24.5">&quot;</text>
+      <text x="342" y="24.5">b</text>
+      <text x="354" y="24.5">&quot;</text>
+      <text x="366" y="24.5">:</text>
+      <text x="390" y="24.5">n</text>
+      <text x="402" y="24.5">u</text>
+      <text x="414" y="24.5">l</text>
+      <text x="426" y="24.5">l</text>
+      <text x="438" y="24.5">}</text>
+    </g>
+    <!-- the stack and the verdict -->
+    <text x="150" y="66.5" font-size="13" style="fill: var(--figure-muted)">empty</text>
+    <text x="150" y="100.5" font-size="13" style="font-family: var(--figure-mono)">False</text>
+  </g>
+
+  <g id="step-2">
+    <desc>The brace pushes an object and the bracket pushes an array on top of it.</desc>
+    <!-- the characters read; a bracket that is still open is marked -->
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+      <text x="42" y="24.5" style="fill: var(--figure-accent)" font-weight="600">{</text>
+      <text x="54" y="24.5">&quot;</text>
+      <text x="66" y="24.5">a</text>
+      <text x="78" y="24.5">&quot;</text>
+      <text x="90" y="24.5">:</text>
+      <text x="114" y="24.5" style="fill: var(--figure-accent)" font-weight="600">[</text>
+      <text x="126" y="24.5">1</text>
+    </g>
+    <line x1="36" y1="34" x2="132" y2="34" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <!-- the characters not read yet -->
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+      <text x="138" y="24.5">,</text>
+      <text x="162" y="24.5">2</text>
+      <text x="174" y="24.5">.</text>
+      <text x="186" y="24.5">5</text>
+      <text x="198" y="24.5">e</text>
+      <text x="210" y="24.5">3</text>
+      <text x="222" y="24.5">,</text>
+      <text x="246" y="24.5">t</text>
+      <text x="258" y="24.5">r</text>
+      <text x="270" y="24.5">u</text>
+      <text x="282" y="24.5">e</text>
+      <text x="294" y="24.5">]</text>
+      <text x="306" y="24.5">,</text>
+      <text x="330" y="24.5">&quot;</text>
+      <text x="342" y="24.5">b</text>
+      <text x="354" y="24.5">&quot;</text>
+      <text x="366" y="24.5">:</text>
+      <text x="390" y="24.5">n</text>
+      <text x="402" y="24.5">u</text>
+      <text x="414" y="24.5">l</text>
+      <text x="426" y="24.5">l</text>
+      <text x="438" y="24.5">}</text>
+    </g>
+    <!-- the stack and the verdict -->
+    <rect x="150" y="51" width="26" height="22" rx="3" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-cache)"/>
+    <text x="163" y="66.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">{</text>
+    <rect x="180" y="51" width="26" height="22" rx="3" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-cache)"/>
+    <text x="193" y="66.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">[</text>
+    <text x="150" y="100.5" font-size="13" style="font-family: var(--figure-mono)">False</text>
+  </g>
+
+  <g id="step-3">
+    <desc>The closing bracket pops the array, the innermost open container.</desc>
+    <!-- the characters read; a bracket that is still open is marked -->
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+      <text x="42" y="24.5" style="fill: var(--figure-accent)" font-weight="600">{</text>
+      <text x="54" y="24.5">&quot;</text>
+      <text x="66" y="24.5">a</text>
+      <text x="78" y="24.5">&quot;</text>
+      <text x="90" y="24.5">:</text>
+      <text x="114" y="24.5">[</text>
+      <text x="126" y="24.5">1</text>
+      <text x="138" y="24.5">,</text>
+      <text x="162" y="24.5">2</text>
+      <text x="174" y="24.5">.</text>
+      <text x="186" y="24.5">5</text>
+      <text x="198" y="24.5">e</text>
+      <text x="210" y="24.5">3</text>
+      <text x="222" y="24.5">,</text>
+      <text x="246" y="24.5">t</text>
+      <text x="258" y="24.5">r</text>
+      <text x="270" y="24.5">u</text>
+      <text x="282" y="24.5">e</text>
+      <text x="294" y="24.5">]</text>
+    </g>
+    <line x1="36" y1="34" x2="300" y2="34" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <!-- the characters not read yet -->
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+      <text x="306" y="24.5">,</text>
+      <text x="330" y="24.5">&quot;</text>
+      <text x="342" y="24.5">b</text>
+      <text x="354" y="24.5">&quot;</text>
+      <text x="366" y="24.5">:</text>
+      <text x="390" y="24.5">n</text>
+      <text x="402" y="24.5">u</text>
+      <text x="414" y="24.5">l</text>
+      <text x="426" y="24.5">l</text>
+      <text x="438" y="24.5">}</text>
+    </g>
+    <!-- the stack and the verdict -->
+    <rect x="150" y="51" width="26" height="22" rx="3" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-cache)"/>
+    <text x="163" y="66.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">{</text>
+    <text x="150" y="100.5" font-size="13" style="font-family: var(--figure-mono)">False</text>
+  </g>
+
+  <g id="step-4">
+    <desc>The second member is read with only the object open, so the stack stays as it was.</desc>
+    <!-- the characters read; a bracket that is still open is marked -->
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+      <text x="42" y="24.5" style="fill: var(--figure-accent)" font-weight="600">{</text>
+      <text x="54" y="24.5">&quot;</text>
+      <text x="66" y="24.5">a</text>
+      <text x="78" y="24.5">&quot;</text>
+      <text x="90" y="24.5">:</text>
+      <text x="114" y="24.5">[</text>
+      <text x="126" y="24.5">1</text>
+      <text x="138" y="24.5">,</text>
+      <text x="162" y="24.5">2</text>
+      <text x="174" y="24.5">.</text>
+      <text x="186" y="24.5">5</text>
+      <text x="198" y="24.5">e</text>
+      <text x="210" y="24.5">3</text>
+      <text x="222" y="24.5">,</text>
+      <text x="246" y="24.5">t</text>
+      <text x="258" y="24.5">r</text>
+      <text x="270" y="24.5">u</text>
+      <text x="282" y="24.5">e</text>
+      <text x="294" y="24.5">]</text>
+      <text x="306" y="24.5">,</text>
+      <text x="330" y="24.5">&quot;</text>
+      <text x="342" y="24.5">b</text>
+      <text x="354" y="24.5">&quot;</text>
+      <text x="366" y="24.5">:</text>
+      <text x="390" y="24.5">n</text>
+      <text x="402" y="24.5">u</text>
+      <text x="414" y="24.5">l</text>
+      <text x="426" y="24.5">l</text>
+    </g>
+    <line x1="36" y1="34" x2="432" y2="34" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <!-- the characters not read yet -->
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+      <text x="438" y="24.5">}</text>
+    </g>
+    <!-- the stack and the verdict -->
+    <rect x="150" y="51" width="26" height="22" rx="3" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-cache)"/>
+    <text x="163" y="66.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">{</text>
+    <text x="150" y="100.5" font-size="13" style="font-family: var(--figure-mono)">False</text>
+  </g>
+
+  <g id="step-5">
+    <desc>The closing brace pops the object, and with nothing open the text is complete.</desc>
+    <!-- the characters read; a bracket that is still open is marked -->
+    <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+      <text x="42" y="24.5">{</text>
+      <text x="54" y="24.5">&quot;</text>
+      <text x="66" y="24.5">a</text>
+      <text x="78" y="24.5">&quot;</text>
+      <text x="90" y="24.5">:</text>
+      <text x="114" y="24.5">[</text>
+      <text x="126" y="24.5">1</text>
+      <text x="138" y="24.5">,</text>
+      <text x="162" y="24.5">2</text>
+      <text x="174" y="24.5">.</text>
+      <text x="186" y="24.5">5</text>
+      <text x="198" y="24.5">e</text>
+      <text x="210" y="24.5">3</text>
+      <text x="222" y="24.5">,</text>
+      <text x="246" y="24.5">t</text>
+      <text x="258" y="24.5">r</text>
+      <text x="270" y="24.5">u</text>
+      <text x="282" y="24.5">e</text>
+      <text x="294" y="24.5">]</text>
+      <text x="306" y="24.5">,</text>
+      <text x="330" y="24.5">&quot;</text>
+      <text x="342" y="24.5">b</text>
+      <text x="354" y="24.5">&quot;</text>
+      <text x="366" y="24.5">:</text>
+      <text x="390" y="24.5">n</text>
+      <text x="402" y="24.5">u</text>
+      <text x="414" y="24.5">l</text>
+      <text x="426" y="24.5">l</text>
+      <text x="438" y="24.5">}</text>
+    </g>
+    <line x1="36" y1="34" x2="444" y2="34" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <!-- the stack and the verdict -->
+    <text x="150" y="66.5" font-size="13" style="fill: var(--figure-muted)">empty</text>
+    <text x="150" y="100.5" font-size="13" style="font-family: var(--figure-mono)">True</text>
+  </g>
+</svg>

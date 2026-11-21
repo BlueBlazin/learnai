@@ -100,6 +100,8 @@ Reading `{"a": [1, 2.5e3, true], "b": null}` character by character never raises
 From the final state a space is accepted (and the text stays complete), and any other
 character raises `Invalid`.
 
+![Five rows of the table. The stack holds the open containers, the innermost one last.](assets/stack-steps.svg)
+
 ```python
 state = json_start()
 for ch in '{"a": [1, 2.5e3, true':

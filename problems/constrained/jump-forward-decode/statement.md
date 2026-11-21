@@ -6,6 +6,8 @@ appended without running the model, and the model is called only when it has a r
 choice to make, in one call that also catches it up on everything it skipped. The
 output must be exactly what the ordinary constrained loop produces.
 
+![This problem is the decode loop, which here skips the model when only one token is allowed.](assets/map.svg)
+
 ## Specification
 
 ```python
