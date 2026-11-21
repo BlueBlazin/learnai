@@ -11,6 +11,11 @@ compute the whole layer in one place and pass the result through `all_reduce`. T
 local subclass `SpyDevices` therefore records the tensors handed to every collective,
 and the test compares the tensor of device i with the partial output of device i's
 shard. Nothing else is added to the kit object.
+
+`SpyDevices` is behind the kit's `Guarded`: a solution may use the operations and read
+`n_devices`, the budgets, and what is stored. The counters, the message log, the
+recorded parts, and `with_framework` are refused, and so is a `SimDevices` built by
+the solution, so the ledger cannot be written and nothing is reduced out of its sight.
 """
 
 from itertools import pairwise
@@ -18,15 +23,19 @@ from itertools import pairwise
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import SimDevices
+from learnai.kit import Guarded, SimDevices, check_guard, guard
 from learnai.kit.simdevices import OutOfDeviceMemory
 
 NAMES = ("up", "up_bias", "down", "down_bias")
 RTOL, ATOL = 1e-4, 1e-5
 
 
-class SpyDevices(SimDevices):
-    """SimDevices that remembers the parts handed to all_reduce and all_gather."""
+class SpyDevices(Guarded, SimDevices):
+    """SimDevices that remembers the parts handed to all_reduce and all_gather, and
+    keeps its ledger from the solution."""
+
+    label = "devs"
+    refused = Guarded.refused | {"messages", "reduced", "gathered"}
 
     def __init__(self, fw, memory_bytes):
         super().__init__(fw, memory_bytes=memory_bytes)
@@ -128,7 +137,9 @@ def check_tp(ctx, layer, n, x, *, shards=None):
     placed = devs.counters.bytes_placed
     setup = describe(layer, n, x)
 
+    guard(ctx)
     y = ctx.call("tp_mlp", x, devs)
+    check_guard()
     want = silu(x @ w_up.T + b_up) @ w_down.T + b_down
     check.allclose(y, want, rtol=RTOL, atol=ATOL, label="tp_mlp", dtype=True)
 

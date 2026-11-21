@@ -9,15 +9,45 @@ the sum of model latency plus the longest tool of each step). The expected side 
 computed here by `prescribed`, a plain synchronous restatement of the rules, so it
 does not come from the reference. All latencies are multiples of 1/64 s: every time
 is exact.
+
+The model and the tools are handed over behind the kit's `Guarded` (`Model`, `Tool`).
+A solution may call the model and await a tool, and read their names and latencies.
+The model's script, counters, and logs, and a tool's function, run log, and counters
+are refused, so a reply cannot be read before its call and a run cannot go unrecorded.
 """
 
 import copy
 import json
 
 from learnai.judge import case, check
-from learnai.kit import Counters, ScriptedChatModel, ScriptedTool, reply, tool_call
+from learnai.kit import (
+    Counters,
+    Guarded,
+    ScriptedChatModel,
+    ScriptedTool,
+    check_guard,
+    guard,
+    reply,
+    tool_call,
+)
 
 MODEL_S = 1.0
+
+
+class Model(Guarded, ScriptedChatModel):
+    """The model a solution gets: the call; not the script, the counters, or the logs."""
+
+    label = "model"
+    refused = Guarded.refused | {"script", "calls", "replies", "violations"}
+
+
+class Tool(Guarded, ScriptedTool):
+    """The tool a solution gets: `await tool(**arguments)`; not its function or its log."""
+
+    label = "tool"
+    refused = Guarded.refused | {"fn", "runs"}
+
+
 WEATHER = {"Paris": 21, "Oslo": 4, "Cairo": 33, "Lima": 18}
 
 
@@ -57,7 +87,7 @@ TOOLBOX = {
 
 def make_tools(names=None):
     names = TOOLBOX if names is None else names
-    return {n: ScriptedTool(n, TOOLBOX[n][0], delay_s=TOOLBOX[n][1]) for n in names}
+    return {n: Tool(n, TOOLBOX[n][0], delay_s=TOOLBOX[n][1]) for n in names}
 
 
 def error(text):
@@ -131,10 +161,12 @@ def play(ctx, script, messages, max_steps, *, names=None):
     want, want_calls, want_steps, want_elapsed = prescribed(script, names, messages, max_steps)
 
     sim = ctx.simclock()
-    model = ScriptedChatModel(script, delay_s=MODEL_S)
+    model = Model(script, delay_s=MODEL_S)
     tools = make_tools(names)
     given = copy.deepcopy(messages)
+    guard(ctx)  # the solution's code runs from here to the end of `run_until_complete`
     got = sim.run_until_complete(ctx.solution.run_agent(model, tools, given, max_steps))
+    check_guard()
     elapsed = sim.now()
 
     check.that(

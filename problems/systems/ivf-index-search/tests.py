@@ -7,7 +7,10 @@ oracle's index, so a wrong build does not hide a right search; one case runs the
 solution's own build and search end to end.
 
 Search distances come from the kit's `CountingDistance`, which is also the cost
-meter. The main corpus and its queries are module constants, so that the candidate
+meter. It is handed over behind the kit's `Guarded` (`Distance`): a solution may call
+it and read `metric` and `fw`. Its counters and `with_framework` are refused, and so
+is a second `CountingDistance` built by the solution, so the count cannot be written.
+The main corpus and its queries are module constants, so that the candidate
 counts (and with them the shapes JAX compiles for) repeat across cases.
 """
 
@@ -16,9 +19,15 @@ from itertools import pairwise
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import vectors
+from learnai.kit import Guarded, check_guard, guard, vectors
 
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints
+
+
+class Distance(Guarded, vectors.CountingDistance):
+    """The distance function a solution gets: the call, `metric`, and `fw`."""
+
+    label = "distance"
 
 
 def sq_dists(a, b):
@@ -82,8 +91,10 @@ def oracle_index(ctx, corpus, centroids):
 
 def check_search(ctx, q, index, k, nprobe, *, metric=False, label=None):
     label = label or f"search(k={k}, nprobe={nprobe})"
-    distance = vectors.CountingDistance(ctx.fw, metric="l2")
+    distance = Distance(ctx.fw, metric="l2")
+    guard(ctx)
     got = ctx.call("search", q, index, k, nprobe, distance)
+    check_guard()
     check.that(
         isinstance(got, tuple) and len(got) == 2,
         f"{label}: must return a tuple (ids, distances)",
@@ -152,8 +163,10 @@ def worked_example(ctx):
         label = f"search(k={k}, nprobe={nprobe})"
         ids = check_search(ctx, EXAMPLE_Q, index, k, nprobe, metric=True, label=label)
         check.equal(ids, np.array(want_ids), label=f"{label}: ids")
+        guard(ctx)
         got = ctx.call("search", EXAMPLE_Q, index, k, nprobe,
-                       vectors.CountingDistance(ctx.fw, metric="l2"))  # fmt: skip
+                       Distance(ctx.fw, metric="l2"))  # fmt: skip
+        check_guard()
         check.allclose(got[1], want_dists, **TOL, label=f"{label}: distances")
 
 

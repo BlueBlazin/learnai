@@ -6,6 +6,10 @@ is a view of the map, whether it is aligned, whether it is the cached object), a
 `bytes_read` against the statement's budget, the header plus the distinct tensors
 requested so far. The expected arrays come from the kit's own reader, `SafetensorsFile`.
 
+The file is handed over behind the kit's `Guarded` (`File`): a solution may slice it,
+take its length, and read it as a file. Its counters and its private mapping are
+refused, in the constructor and in every later call, so the count cannot be written.
+
 Two files are committed (`fixtures/example.safetensors`, `fixtures/mini.safetensors`,
 written by `fixtures/make.py`); the hidden cases also write random files to a
 temporary directory.
@@ -19,7 +23,14 @@ from pathlib import Path
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import CountingFile, SafetensorsFile, bf16_to_f32
+from learnai.kit import (
+    CountingFile,
+    Guarded,
+    SafetensorsFile,
+    bf16_to_f32,
+    check_guard,
+    guard,
+)
 
 #: safetensors dtype name -> numpy dtype of the stored elements.
 STORED = {
@@ -27,6 +38,12 @@ STORED = {
     "I32": "<i4", "U64": "<u8", "I64": "<i8", "F16": "<f2", "BF16": "<u2", "F32": "<f4",
     "F64": "<f8",
 }  # fmt: skip
+
+
+class File(Guarded, CountingFile):
+    """The file a solution gets: slices, `len`, and reads, all counted."""
+
+    label = "file"
 
 
 def build(tensors, metadata=None, *, layout=None, align=8):
@@ -61,14 +78,22 @@ class Session:
     def __init__(self, ctx, path):
         self.ctx = ctx
         self.truth = SafetensorsFile(path)
-        self.file = CountingFile(path)
+        self.file = File(path)
         self.file.path = "<the counting file>"  # everything must go through `file`
         ctx.defer(self.file.close)
         self.header_bytes = self.truth.data_start
         self.requested: set[str] = set()
         self.seen: dict[str, np.ndarray] = {}
-        self.ckpt = ctx.solution.LazyCheckpoint(self.file)
+        self.ckpt = self.call(ctx.solution.LazyCheckpoint, self.file)
         self.check_budget("LazyCheckpoint(file)")
+
+    def call(self, fn, *args):
+        """`fn(*args)` of the solution, with the guard armed (the checkpoint keeps the file)."""
+        guard(self.ctx)
+        try:
+            return fn(*args)
+        finally:
+            check_guard()
 
     def stored_bytes(self, name):
         begin, end = self.truth.info(name)["data_offsets"]
@@ -138,7 +163,7 @@ class Session:
 
     def get(self, name, *, metric=False):
         label = f"get({name!r})"
-        got = self.ckpt.get(name)
+        got = self.call(self.ckpt.get, name)
         self.requested.add(name)
         self.check_array(name, got, label)
         self.check_budget(label, metric=metric)
@@ -146,7 +171,7 @@ class Session:
 
     def load_subset(self, names, *, metric=False):
         label = f"load_subset({list(names)!r})"
-        got = self.ckpt.load_subset(names)
+        got = self.call(self.ckpt.load_subset, names)
         self.requested.update(names)
         check.that(isinstance(got, dict), f"{label}: returned a {type(got).__name__}, not a dict")
         check.equal(list(got), list(dict.fromkeys(names)), label=f"{label}: keys, in order")
@@ -157,7 +182,7 @@ class Session:
 
     def check_keys(self):
         before = self.file.counters.bytes_read
-        keys = self.ckpt.keys()
+        keys = self.call(self.ckpt.keys)
         check.equal(keys, self.truth.names(), label="keys()")
         check.that(
             self.file.counters.bytes_read == before, "keys() read from the file; it must not"
@@ -165,7 +190,7 @@ class Session:
 
     def check_key_error(self, call, *args, label):
         before = self.file.counters.bytes_read
-        check.raises(KeyError, call, *args, label=label)
+        check.raises(KeyError, self.call, call, *args, label=label)
         read = self.file.counters.bytes_read - before
         check.that(
             read == 0,
@@ -280,7 +305,7 @@ def odd_tensors(ctx):
     s.get("empty")
     check.equal(int(s.get("step")), 123456, label="get('step')")
     names = ["positions", "empty", "step"]
-    got = s.ckpt.load_subset(name for name in names)
+    got = s.call(s.ckpt.load_subset, (name for name in names))
     s.requested.update(names)
     check.equal(list(got), names, label="load_subset(a generator): keys, in order")
     s.check_budget("load_subset(a generator)", metric=True)

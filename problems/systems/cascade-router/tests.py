@@ -4,18 +4,30 @@ Every case builds scripted models, runs the solution, and compares the result, t
 calls each model received, and the spend with what the statement's rule gives. The
 rule is restated here in `expected` (so the expected values do not come from the
 reference), and the worked example is compared with literal values.
+
+The models are handed over behind the kit's `Guarded` (`Model`): a solution may read
+`name` and `cost` and call `complete`. The script (the replies before they are paid
+for), the counters, the logs of calls and replies, and `with_framework` are refused,
+so a call cannot be hidden and no reply is seen without its call.
 """
 
 from learnai.judge import case, check
-from learnai.kit import Counters, ScriptedChatModel, reply
+from learnai.kit import Counters, Guarded, ScriptedChatModel, check_guard, guard, reply
 
 KEYS = ["answer", "model", "confidence", "cost", "accepted"]
 
 
+class Model(Guarded, ScriptedChatModel):
+    """The model a solution gets: `name`, `cost`, and the call; not the script or the logs."""
+
+    label = "model"
+    refused = Guarded.refused | {"script", "calls", "replies", "violations"}
+
+
 def make_models(specs):
-    """specs: [(name, cost, {prompt: (content, logprobs)})] -> ScriptedChatModel list."""
+    """specs: [(name, cost, {prompt: (content, logprobs)})] -> a list of guarded models."""
     return [
-        ScriptedChatModel(
+        Model(
             {p: reply(content, logprobs=lps) for p, (content, lps) in script.items()},
             name=name,
             cost=cost,
@@ -54,7 +66,9 @@ def run(ctx, prompt, specs, thresholds, budget, totals=None):
     models = make_models(specs)
     want, want_called = expected(prompt, specs, thresholds, budget)
     setup = describe(prompt, specs, thresholds, budget)
+    guard(ctx)
     got = ctx.call("cascade", prompt, models, list(thresholds), budget)
+    check_guard()
 
     check.that(isinstance(got, dict), "cascade: must return a dict", f"got: {type(got).__name__}")
     check.equal(sorted(got), sorted(KEYS), label="keys of the result")

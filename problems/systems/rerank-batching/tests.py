@@ -3,12 +3,24 @@
 Scores are compared with the kit scorer's own (uncounted) score of each truncated
 pair, so the expected values do not come from the reference. The cost limits are
 what the statement's batching rule produces, computed here by `plan`.
+
+The scorer is handed over behind the kit's `Guarded` (`Scorer`): a solution may call
+it and read `max_length`, `max_batch`, and `vocab_size`. Its counters, the log of its
+batches, its seed, the uncounted `score`, and `with_framework` are refused, so the
+ledger cannot be written and no pair is scored where it does not see it.
 """
 
 from learnai.judge import case, check
-from learnai.kit import CountingScorer
+from learnai.kit import CountingScorer, Guarded, check_guard, guard
 
 FN = "rerank"
+
+
+class Scorer(Guarded, CountingScorer):
+    """The scorer a solution gets: the call and the limits, not the ledger or the oracle."""
+
+    label = "scorer"
+    refused = Guarded.refused | {"seed", "score", "batches"}
 
 
 def truncated(query, docs, scorer):
@@ -34,9 +46,11 @@ def plan(lengths, max_batch, max_tokens):
 def run(ctx, query, docs, *, max_batch, top_n, max_tokens=None, max_length=48, seed=1,
         cost=True):  # fmt: skip
     """Call the solution, check scores, ranking, and (with `cost`) the scorer's counters."""
-    scorer = CountingScorer(seed=seed, max_length=max_length, max_batch=max_batch)
+    scorer = Scorer(seed=seed, max_length=max_length, max_batch=max_batch)
     before = ([*query], [[*doc] for doc in docs])
+    guard(ctx)
     got = ctx.solution.rerank(query, docs, scorer, max_batch, top_n, max_tokens)
+    check_guard()
     check.that(
         isinstance(got, tuple) and len(got) == 2,
         "rerank: must return a tuple (scores, ranking)",

@@ -3,7 +3,10 @@
 Codes, indices, and Hamming distances are exact and are compared with numpy
 (`np.packbits`, a brute-force popcount) as well as with the oracle. The rescoring
 scores come from the kit's `CountingDistance`, which also counts how many rows the
-solution asked it to score.
+solution asked it to score. It is handed over behind the kit's `Guarded` (`Distance`):
+a solution may call it and read `metric` and `fw`. Its counters and `with_framework`
+are refused, and so is a second `CountingDistance` built by the solution, so the count
+cannot be written and no row is scored where the count does not see it.
 
 Shapes are shared across cases for JAX's sake: the corpus is (2000, 64) with
 (2000, 8) codes, or the tiny ones of the worked example and the tie cases.
@@ -12,10 +15,16 @@ Shapes are shared across cases for JAX's sake: the corpus is (2000, 64) with
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import vectors
+from learnai.kit import Guarded, check_guard, guard, vectors
 
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints
 POPCOUNT = np.array([byte.bit_count() for byte in range(256)])
+
+
+class Distance(Guarded, vectors.CountingDistance):
+    """The distance function a solution gets: the call, `metric`, and `fw`."""
+
+    label = "distance"
 
 
 def to_int8(corpus):
@@ -60,8 +69,10 @@ def check_hamming(ctx, q_bits, corpus_bits, m):
 
 def check_search(ctx, q, corpus_bits, corpus_int8, k, oversample, *, metric=False):
     label = f"search(k={k}, oversample={oversample})"
-    distance = vectors.CountingDistance(ctx.fw, metric="dot")
+    distance = Distance(ctx.fw, metric="dot")
+    guard(ctx)
     got = ctx.call("search", q, corpus_bits, corpus_int8, k, oversample, distance)
+    check_guard()
     check.that(
         isinstance(got, tuple) and len(got) == 2,
         f"{label}: must return a tuple (indices, scores)",
@@ -117,10 +128,12 @@ def worked_example(ctx):
         (2, 2): ([1, 4], [78.125, 43.75]),
     }.items():
         label = f"search(k={k}, oversample={oversample})"
-        distance = vectors.CountingDistance(ctx.fw, metric="dot")
+        distance = Distance(ctx.fw, metric="dot")
+        guard(ctx)
         indices, scores = ctx.call(
             "search", EXAMPLE_Q, EXAMPLE_BITS, EXAMPLE_INT8, k, oversample, distance
         )
+        check_guard()
         check.equal(indices, np.array(want_indices), label=f"{label}: indices")
         check.allclose(scores, want_scores, **TOL, label=f"{label}: scores")
         check.cost(distance.counters, "distances", at_most=k * oversample, unit="vectors",
