@@ -7,6 +7,11 @@ output against `dense`, `expert_rows` (exactly k * N), `expert_calls` (at most t
 number of experts that some token chose), and the call log against the group sizes of
 the routing.
 
+The experts are handed over as `Experts`, a `CountingExperts` behind the kit's `Guarded`:
+a solution may call them and read their sizes. Their counters, call log, weights, seed,
+and `reference` are refused, so the counts cannot be written and the arithmetic cannot
+be done anywhere the counts do not see.
+
 Top-k selection is discontinuous, so inputs are drawn until every token has a clear
 margin between its k-th and (k+1)-th score (`layer`); exact ties are built from small
 integers, whose products and sums are exact in float32 in any order.
@@ -15,12 +20,19 @@ integers, whose products and sums are exact in float32 in any order.
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import CountingExperts, ops
+from learnai.kit import CountingExperts, Guarded, check_guard, guard, ops
 
 FN, COUNT = "latent_moe", "expert_params"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints
 N, D, L, E, HID = 12, 16, 8, 8, 12  # the sizes most cases share
 MARGIN = 1e-3
+
+
+class Experts(Guarded, CountingExperts):
+    """The experts the solution gets: `experts(e, rows)` and the sizes, nothing else."""
+
+    label = "experts"
+    refused = Guarded.refused | {"seed", "weights", "calls", "reference"}
 
 
 def route_np(x, w_router, k):
@@ -73,7 +85,9 @@ def run_layer(ctx, p, experts, k):
     sizes = np.bincount(chosen.reshape(-1), minlength=experts.n_experts)
     plan = sorted((e, int(n)) for e, n in enumerate(sizes) if n)
 
+    guard(ctx)
     y = ctx.call(FN, *args, experts, p["shared_w"], k)
+    check_guard()
     check.allclose(y, dense(*args, experts, p["shared_w"], k), **TOL, label=FN)
     check.cost(experts.counters, "expert_rows", exactly=k * len(p["x"]), unit="rows")
     check.cost(experts.counters, "expert_calls", at_most=len(plan), unit="calls")
@@ -86,7 +100,7 @@ def run_layer(ctx, p, experts, k):
 
 
 def latent_experts(ctx, seed, e=E, latent=L):
-    return CountingExperts(ctx.fw, seed=seed, n_experts=e, d_model=latent, d_hidden=HID)
+    return Experts(ctx.fw, seed=seed, n_experts=e, d_model=latent, d_hidden=HID)
 
 
 @case("the worked example: the parameter counts of Kimi K3.1's routed experts", public=True)

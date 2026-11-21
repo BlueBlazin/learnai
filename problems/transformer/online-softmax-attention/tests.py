@@ -9,6 +9,9 @@ block is requested and keeps only weak references to them, so it can tell which
 earlier blocks the solution still holds. `peak_blocks_held` is the largest number of
 earlier blocks alive at a request (including the request that ends the iteration).
 A loop `for k, v, mask in kv_blocks` holds exactly one: the block it just processed.
+The stream is behind the kit's `Guarded`: a solution may iterate it (`for`, `iter`,
+`next`) and nothing else, so it cannot read the arrays of all blocks at once, build a
+second stream from them, or write what the stream measured.
 
 Most cases use D = 4, so the score scale 1 / sqrt(D) = 0.5 is exact; cases with
 scores in the hundreds use integer-valued queries and keys, for which the scores are
@@ -21,6 +24,7 @@ from itertools import pairwise
 import numpy as np
 
 from learnai.judge import case, check
+from learnai.kit import Guarded, check_guard, guard
 
 FN = "blockwise_attention"
 TOL = {"rtol": 1e-4, "atol": 1e-5}  # the tolerance stated in Constraints
@@ -28,8 +32,11 @@ T, D, DV, N = 5, 4, 6, 16
 PARTITIONS = [[16], [8, 8], [4, 4, 4, 4], [2] * 8, [8, 4, 2, 2], [2, 2, 4, 8], [1, 1, 2, 4, 8]]
 
 
-class BlockStream:
+class BlockStream(Guarded):
     """A one-pass iterator of (k, v, mask) blocks that knows which ones are still alive."""
+
+    label = "kv_blocks"
+    allowed = frozenset({"__class__", "__iter__", "__next__"})
 
     def __init__(self, fw, blocks):
         self.fw = fw
@@ -79,7 +86,9 @@ def dense(q, blocks):
 def attend(ctx, q, blocks):
     """Run the solution over a stream of blocks; check the output and what it held."""
     stream = BlockStream(ctx.fw, blocks)
+    guard(ctx)
     out = ctx.call(FN, q, stream)
+    check_guard()
     check.that(
         stream.blocks_read == len(blocks),
         f"{FN}: returned after reading {stream.blocks_read} blocks, before the iterator ended",
