@@ -1,0 +1,16 @@
+id = "block-diffusion-decode"
+title = "Block Text Diffusion over a Cached Prefix"
+track = "drafts-and-diffusion"
+order = 30
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "cost"]
+tags = ["text-diffusion", "block-diffusion", "prefix-cache", "self-conditioning", "diffusiongemma"]
+prerequisites = ["entropy-bound-denoise-step", "kv-cache-append"]
+requires = "cpu"
+entry = ["diffusion_generate"]
+time_limit_s = 30
+# The cost limits are counted by the model. An uncounted twin is off limits; the tests
+# hand the model over behind a guard that refuses its counters (see tests.py). There is no
+# forbidden_source entry: a learner may call a variable of their own `counters`.
+forbidden = ["learnai.kit.diffusion.BlockDenoiser.with_framework"]

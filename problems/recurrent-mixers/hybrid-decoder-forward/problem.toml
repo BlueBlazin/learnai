@@ -1,0 +1,17 @@
+id = "hybrid-decoder-forward"
+title = "A Hybrid Decoder: Three Recurrent Layers to One Attention Layer"
+track = "recurrent-mixers"
+order = 60
+difficulty = "hard"
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["hybrid-decoder", "gated-delta-net", "gated-attention", "kv-cache", "recurrent-state", "qwen"]
+prerequisites = ["gated-delta-layer", "kv-cache-append", "decoder-forward"]
+requires = "cpu"
+entry = ["layer_types", "hybrid_forward"]
+time_limit_s = 30
+# The statement's rule, enforced by the harness: the kit's oracles are not building blocks.
+forbidden = [
+    "learnai.kit.hybrid.hybrid_forward_ref",
+    "learnai.kit.hybrid.gated_attention_ref",
+]

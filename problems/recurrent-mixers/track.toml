@@ -6,4 +6,5 @@ core = [
     "gated-delta-step",
     "gated-delta-layer",
     "mamba2-ssd-step",
+    "hybrid-decoder-forward",
 ]

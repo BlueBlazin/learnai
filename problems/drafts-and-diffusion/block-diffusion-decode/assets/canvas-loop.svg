@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 214" font-size="13">
+  <title>Block diffusion over a cached prefix</title>
+  <desc>A row of four blocks: the prompt and three canvases. Below the prompt and the first two canvases, an arrow goes down to the prefix cache, labeled encode, once each; the third canvas has none. Above each canvas a stack of thin bars stands for its denoising steps, which read the cache.</desc>
+
+  <!-- the text: prompt, then canvases -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="16" y="92" width="96" height="30" rx="3"/>
+    <rect x="124" y="92" width="104" height="30" rx="3" style="stroke: var(--figure-accent)"/>
+    <rect x="240" y="92" width="104" height="30" rx="3" style="stroke: var(--figure-accent)"/>
+    <rect x="356" y="92" width="104" height="30" rx="3" style="stroke: var(--figure-accent)"/>
+  </g>
+  <text x="38" y="112">prompt (P)</text>
+  <g style="fill: var(--figure-accent)">
+    <text x="146" y="112">draft 0 (L)</text>
+    <text x="262" y="112">draft 1 (L)</text>
+    <text x="378" y="112">draft 2 (L)</text>
+  </g>
+
+  <!-- denoising steps above each canvas -->
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-accent)">
+    <line x1="136" y1="78" x2="216" y2="78"/>
+    <line x1="136" y1="68" x2="216" y2="68"/>
+    <line x1="136" y1="58" x2="216" y2="58"/>
+    <line x1="136" y1="48" x2="216" y2="48"/>
+    <line x1="252" y1="78" x2="332" y2="78"/>
+    <line x1="252" y1="68" x2="332" y2="68"/>
+    <line x1="368" y1="78" x2="448" y2="78"/>
+    <line x1="368" y1="68" x2="448" y2="68"/>
+    <line x1="368" y1="58" x2="448" y2="58"/>
+  </g>
+  <text x="136" y="34" style="fill: var(--figure-muted)">noise at the top, one denoise call per step,</text>
+  <text x="136" y="18" style="fill: var(--figure-muted)">until stable and confident or out of steps</text>
+
+  <!-- encoder calls into the cache -->
+  <g stroke="currentColor" stroke-width="1" fill="none">
+    <line x1="64" y1="122" x2="64" y2="158"/>
+    <line x1="176" y1="122" x2="176" y2="158"/>
+    <line x1="292" y1="122" x2="292" y2="158"/>
+  </g>
+  <polygon points="64,164 60,156 68,156"/>
+  <polygon points="176,164 172,156 180,156"/>
+  <polygon points="292,164 288,156 296,156"/>
+  <text x="70" y="146" style="fill: var(--figure-muted)">encode</text>
+  <text x="182" y="146" style="fill: var(--figure-muted)">encode</text>
+  <text x="298" y="146" style="fill: var(--figure-muted)">encode</text>
+  <text x="372" y="146" style="fill: var(--figure-muted)">not encoded</text>
+
+  <!-- the cache -->
+  <rect x="16" y="166" width="328" height="24" fill="none" style="stroke: var(--figure-faint)" stroke-width="1"/>
+  <text x="24" y="183" style="fill: var(--figure-muted)">prefix cache: P + 2 L tokens, each encoded once</text>
+</svg>
