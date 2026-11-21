@@ -5,6 +5,8 @@ The starter is a working first-come-first-served scheduler; the work is the thre
 counter rules, of which the least obvious one keeps an idle tenant from saving up
 credit.
 
+![This problem is the Waiting queue, where the tenant with the smallest counter goes first.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -87,6 +89,8 @@ request 3 at 5 and requests 4, 5 at 60.
 | 114 | request 6 done ($c_a = 48$). `b` is smaller: request 5 admitted | 48 | 52 |
 | 133 | request 5 done. Request 7 admitted | 56 | 56 |
 | 152 | request 7 done | 60 | 56 |
+
+![The counters of the example. Tenant `b` sends nothing from 38 to 60 ms and returns lifted from 20 to 32, the counter of tenant `a`.](assets/counters.svg)
 
 The admissions are 0, 3, 1, 2, 4, 6, 5, 7. Between 38 and 60 tenant `b` sent nothing
 while `a` kept being served. Without the lift at 60, `b` would return with a counter of

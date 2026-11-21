@@ -3,6 +3,8 @@ and still never starves anyone: a request's priority improves by one level for e
 `aging_ms` it has waited. The loop is given; the work is the selection rule, whose
 answer changes with time.
 
+![This problem is the Waiting queue, ordered by a priority that improves with waiting.](assets/map.svg)
+
 ## Specification
 
 ```python

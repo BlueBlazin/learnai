@@ -4,6 +4,8 @@ budget allows. The policy runs on a simulated clock, and the difficulty is in th
 edges: what exactly happens at a deadline, at a full queue, and at the moment the model
 becomes free.
 
+![This problem is the Engine loop, here the decision of when to run a batch.](assets/map.svg)
+
 ## Specification
 
 ```python

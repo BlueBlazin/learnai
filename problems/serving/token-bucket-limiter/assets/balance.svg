@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 264">
+  <title>The balance of the example bucket over its first 1.5 seconds</title>
+  <desc>A plot of the balance against time. It falls at each grant, rises at 64 tokens per second, and jumps at the refund; B and C wait.</desc>
+  <!-- Geometry: x = 62 + 250 * t (s); y = 222 - 0.75 * balance. rate_per_s = 64, burst = 256. -->
+  <!-- axes, and the cap at burst -->
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="50" y1="24" x2="50" y2="222"/>
+    <line x1="50" y1="222" x2="446" y2="222"/>
+    <line x1="50" y1="30" x2="446" y2="30" stroke-dasharray="5 3"/>
+    <line x1="46" y1="174" x2="50" y2="174"/>
+    <line x1="46" y1="126" x2="50" y2="126"/>
+    <line x1="62" y1="222" x2="62" y2="226"/>
+    <line x1="187" y1="222" x2="187" y2="226"/>
+    <line x1="312" y1="222" x2="312" y2="226"/>
+    <line x1="343.2" y1="222" x2="343.2" y2="226"/>
+    <line x1="437" y1="222" x2="437" y2="226"/>
+  </g>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="8" y="14">balance</text>
+    <text x="446" y="22" text-anchor="end">burst = 256</text>
+    <text x="44" y="226.5" text-anchor="end">0</text>
+    <text x="44" y="178.5" text-anchor="end">64</text>
+    <text x="44" y="130.5" text-anchor="end">128</text>
+    <text x="44" y="34.5" text-anchor="end">256</text>
+    <text x="62" y="240" text-anchor="middle">0</text>
+    <text x="187" y="240" text-anchor="middle">0.5</text>
+    <text x="312" y="240" text-anchor="middle">1</text>
+    <text x="343.2" y="240" text-anchor="middle">1.125</text>
+    <text x="437" y="240" text-anchor="middle">1.5</text>
+    <text x="250" y="258" text-anchor="middle">time (s)</text>
+  </g>
+  <!-- what the waiting calls need: B from 0 to 1, C from 0.5 to 1.125 -->
+  <g fill="none" stroke-width="1.5" stroke-dasharray="3 3" style="stroke: var(--figure-straw)">
+    <line x1="62" y1="126" x2="312" y2="126"/>
+    <line x1="187" y1="210" x2="343.2" y2="210"/>
+  </g>
+  <g style="fill: var(--figure-straw)">
+    <circle cx="62" cy="126" r="2.5"/>
+    <circle cx="187" cy="210" r="2.5"/>
+  </g>
+  <g font-size="13" style="fill: var(--figure-straw)">
+    <text x="120" y="121">B needs 128</text>
+    <text x="193" y="205">C needs 16</text>
+  </g>
+  <!-- the balance: 256, A takes 192, refill to 128, B, refill to 8, refund to 40, C, refill to 48, 40 taken -->
+  <polyline points="62,30 62,174 312,126 312,222 343.2,216 343.2,192 343.2,204 437,186 437,216" fill="none" stroke-width="1.5" stroke-linejoin="round" style="stroke: var(--figure-accent)"/>
+  <g font-size="13">
+    <text x="68" y="80">A −192</text>
+    <text x="180" y="172" style="font-family: var(--figure-mono)">rate_per_s = 64</text>
+    <text x="318" y="181">refund +32</text>
+    <text x="443" y="205">−40</text>
+  </g>
+</svg>

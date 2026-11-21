@@ -4,6 +4,8 @@ histogram in the Prometheus text format. The format is a few lines of text; the 
 is in the conventions a scraper relies on (cumulative buckets, `+Inf`, series that
 exist before their first event) and in keeping the numbers right when requests fail.
 
+![This problem is Metrics, the counters and histogram a scraper reads from the replica.](assets/map.svg)
+
 ## Specification
 
 ```python

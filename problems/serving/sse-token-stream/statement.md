@@ -3,6 +3,8 @@ as a raw ASGI application with no web framework. Producing the right bytes is th
 part; the work is in flushing every token the moment it exists, rejecting bad requests
 before the stream starts, and stopping generation when the client hangs up.
 
+![This problem is the Token stream, here server-sent events flushed one token at a time.](assets/map.svg)
+
 ## Specification
 
 ```python

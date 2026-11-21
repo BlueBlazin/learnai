@@ -4,6 +4,8 @@ running batch at the next step and a finished one leaves at once. The difficulty
 the bookkeeping around a step: who may be decoded, when a slot is free, and what the
 loop does when there is nothing to do.
 
+![This problem is the Engine loop, which picks the sequences of every forward pass.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -89,7 +91,7 @@ request 0 `(0, 8, 4)`, request 1 `(0, 16, 2)`, request 2 `(5, 8, 3)`, request 3
 
 Request 2 arrives at 5, during step 0, but both slots are taken until request 1
 finishes at 24; it joins step 2 next to the decode of request 0, which is the point of
-continuous batching (Figure 1). Request 3 arrives at exactly 45, the instant step 3
+continuous batching (Figure 2). Request 3 arrives at exactly 45, the instant step 3
 ends and frees the slot of request 0, and is admitted into step 4. Request 4 has a
 single output token, so it finishes at the end of its prefill step. Request 5 arrives
 at 60, during step 5, when both slots are taken; at 67 both are free and it runs alone.

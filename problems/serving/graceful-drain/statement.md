@@ -3,6 +3,8 @@ stop taking requests, let the ones in the house finish, cut off whatever is stil
 running when the grace period ends, and say "done" only when the engine is really
 idle. The starter is a working server that never stops; the work is `drain`.
 
+![This problem is one replica as a whole, shutting down without dropping accepted requests.](assets/map.svg)
+
 ## Specification
 
 ```python

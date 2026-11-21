@@ -4,6 +4,8 @@ easy half. The policy is judged by what it does while new replicas are still
 starting, and by whether it keeps replicas through a lull that ends ten seconds
 later.
 
+![This problem is the Autoscaler, which sets the number of replicas from the metrics.](assets/map.svg)
+
 ## Specification
 
 ```python

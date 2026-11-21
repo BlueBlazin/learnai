@@ -5,6 +5,8 @@ running sequence, and give it back later by computing that sequence's keys and
 values again. The starter is the loop of `continuous-batching-scheduler`, which
 knows nothing about memory.
 
+![This problem is the Engine loop, here with a KV cache that can run out of blocks.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -93,6 +95,8 @@ condition only states what the arithmetic already implies.
 | 63.5 | `(3, 5)` | `2` | -, -, 2, 2 | request 0 finished. Request 3 returns: its prompt and its one token, 5 tokens |
 | 73.75 | | `2` | -, -, 3, - | request 3 finished with its second token |
 | 82.75 | | `2` | -, -, 3, - | request 2 finishes at 91.75 |
+
+![The worked example, one row per request. Request 3 is preempted at 53.5 ms, waits first in line, and returns at 63.5 ms with a 5-token prefill.](assets/preempt-timeline.svg)
 
 Request 3 produced token 0 at 53.5 and token 1 at 73.75: it was not started over.
 The 5 tokens prefilled at 63.5 are the cost of the preemption (*recomputed

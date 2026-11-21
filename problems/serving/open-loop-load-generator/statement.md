@@ -3,6 +3,8 @@ Poisson process, whatever the server does with them, and measures each latency f
 the moment the request was *due*. Both halves are easy to get subtly wrong, and both
 mistakes make an overloaded server look healthy.
 
+![This problem is the Client, here a benchmark that sends on a fixed schedule.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -90,6 +92,8 @@ With `max_in_flight=1`, requests 1 and 2 have to wait for request 0:
 | 1 | 0.75 | 1.5 | 1.75 | 1.0 |
 | 2 | 1.0 | 1.75 | 2.0 | 1.0 |
 | 3 | 2.0 | 2.0 | 2.25 | 0.25 |
+
+![The example without a limit and with `max_in_flight=1`. With the limit, requests 1 and 2 wait for request 0, and their latency of 1.0 s includes the wait.](assets/send-times.svg)
 
 Three of the four requests took a second from the moment their user wanted an
 answer. Measured from `sent_s` instead, the latencies would be 1.0, 0.25, 0.25, 0.25:

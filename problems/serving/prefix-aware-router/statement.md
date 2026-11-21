@@ -4,6 +4,8 @@ without letting a popular prefix pile every request onto one replica. The router
 cannot see the replicas' caches: it keeps its own record of what it sent where, and
 it has to decide when a match is worth following and when load wins.
 
+![This problem is the Router, sending a request to the replica that likely has its prefix cached.](assets/map.svg)
+
 ## Specification
 
 ```python

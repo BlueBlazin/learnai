@@ -1,0 +1,143 @@
+{
+  "track": "serving",
+  "file": "map.svg",
+  "title": "Where this problem sits on the path of a request",
+  "desc": "The path of a request through a serving cluster, bottom to top, from the client to the tokens.",
+  "width": 480,
+  "height": 278,
+  "panel": {
+    "part": "panel",
+    "x": 4, "y": 26, "width": 350, "height": 186,
+    "label": "one replica", "label_at": [302, 44]
+  },
+  "blocks": [
+    {"part": "stream", "label": "Token stream", "x": 12, "y": 34, "width": 120, "height": 20},
+    {"part": "loop", "label": "Engine loop", "x": 12, "y": 64, "width": 120, "height": 20},
+    {"part": "queue", "label": "Waiting queue", "x": 12, "y": 94, "width": 120, "height": 20},
+    {"part": "admission", "label": "Admission", "x": 12, "y": 124, "width": 120, "height": 20},
+    {"part": "ratelimit", "label": "Rate limit", "x": 12, "y": 154, "width": 120, "height": 20},
+    {"part": "endpoint", "label": "Endpoint", "x": 12, "y": 184, "width": 120, "height": 20},
+    {"part": "metrics", "label": "Metrics", "x": 258, "y": 184, "width": 88, "height": 20},
+    {"part": "router", "label": "Router", "x": 12, "y": 224, "width": 120, "height": 20},
+    {"part": "autoscaler", "label": "Autoscaler", "x": 258, "y": 224, "width": 88, "height": 20},
+    {"part": "client", "label": "Client", "x": 12, "y": 254, "width": 120, "height": 20}
+  ],
+  "wires": [
+    {"points": [[72, 254], [72, 244]], "arrow": true},
+    {"points": [[72, 224], [72, 204]], "arrow": true},
+    {"part": "path", "points": [[72, 184], [72, 174]], "arrow": true},
+    {"part": "path", "points": [[72, 154], [72, 144]], "arrow": true},
+    {"part": "path", "points": [[72, 124], [72, 114]], "arrow": true},
+    {"part": "queue-loop", "points": [[72, 94], [72, 84]], "arrow": true},
+    {"part": "path", "points": [[72, 64], [72, 54]], "arrow": true},
+    {"points": [[72, 34], [72, 18]], "arrow": true},
+    {"points": [[302, 204], [302, 224]], "arrow": true},
+    {"points": [[302, 244], [302, 256]], "arrow": true}
+  ],
+  "labels": [
+    {"text": "tokens", "at": [72, 9]},
+    {"text": "replica count", "at": [302, 266]}
+  ],
+  "problems": {
+    "dynamic-batcher": {
+      "parts": ["loop"],
+      "marker": {"from": [138, 74], "length": 18},
+      "desc": "The Engine loop block is at full strength."
+    },
+    "sse-token-stream": {
+      "parts": ["stream"],
+      "marker": {"from": [138, 44], "length": 18},
+      "desc": "The Token stream block is at full strength."
+    },
+    "token-bucket-limiter": {
+      "parts": ["ratelimit"],
+      "marker": {"from": [138, 164], "length": 18},
+      "desc": "The Rate limit block is at full strength."
+    },
+    "admission-control": {
+      "parts": ["admission"],
+      "marker": {"from": [138, 134], "length": 18},
+      "desc": "The Admission block is at full strength."
+    },
+    "metrics-endpoint": {
+      "parts": ["metrics"],
+      "marker": {"from": [360, 194], "length": 18},
+      "desc": "The Metrics block is at full strength."
+    },
+    "continuous-batching-scheduler": {
+      "parts": ["loop"],
+      "marker": {"from": [138, 74], "length": 18},
+      "desc": "The Engine loop block is at full strength."
+    },
+    "priority-scheduler": {
+      "parts": ["queue"],
+      "marker": {"from": [138, 104], "length": 18},
+      "desc": "The Waiting queue block is at full strength."
+    },
+    "deadline-cancellation": {
+      "parts": ["queue", "loop", "queue-loop"],
+      "marker": {"from": [138, 89], "length": 14},
+      "desc": "The Waiting queue and Engine loop blocks are at full strength."
+    },
+    "chunked-prefill-scheduling": {
+      "parts": ["loop"],
+      "marker": {"from": [138, 74], "length": 18},
+      "desc": "The Engine loop block is at full strength."
+    },
+    "vtc-fair-scheduler": {
+      "parts": ["queue"],
+      "marker": {"from": [138, 104], "length": 18},
+      "desc": "The Waiting queue block is at full strength."
+    },
+    "openai-chat-endpoint": {
+      "parts": ["endpoint"],
+      "marker": {"from": [138, 194], "length": 18},
+      "desc": "The Endpoint block is at full strength."
+    },
+    "least-loaded-balancer": {
+      "parts": ["router"],
+      "marker": {"from": [138, 234], "length": 18},
+      "desc": "The Router block is at full strength."
+    },
+    "retry-backoff-client": {
+      "parts": ["client"],
+      "marker": {"from": [138, 264], "length": 18},
+      "desc": "The Client block is at full strength."
+    },
+    "graceful-drain": {
+      "parts": ["panel", "stream", "loop", "queue", "admission", "ratelimit", "endpoint", "metrics", "path", "queue-loop"],
+      "marker": {"from": [360, 119], "length": 18},
+      "desc": "The one-replica panel and every block in it are at full strength."
+    },
+    "streaming-backpressure": {
+      "parts": ["stream"],
+      "marker": {"from": [138, 44], "length": 18},
+      "desc": "The Token stream block is at full strength."
+    },
+    "open-loop-load-generator": {
+      "parts": ["client"],
+      "marker": {"from": [138, 264], "length": 18},
+      "desc": "The Client block is at full strength."
+    },
+    "slo-deadline-scheduler": {
+      "parts": ["queue"],
+      "marker": {"from": [138, 104], "length": 18},
+      "desc": "The Waiting queue block is at full strength."
+    },
+    "prefix-aware-router": {
+      "parts": ["router"],
+      "marker": {"from": [138, 234], "length": 18},
+      "desc": "The Router block is at full strength."
+    },
+    "autoscaler-policy": {
+      "parts": ["autoscaler"],
+      "marker": {"from": [352, 234], "length": 18},
+      "desc": "The Autoscaler block is at full strength."
+    },
+    "preemption-recompute": {
+      "parts": ["loop"],
+      "marker": {"from": [138, 74], "length": 18},
+      "desc": "The Engine loop block is at full strength."
+    }
+  }
+}

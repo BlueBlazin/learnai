@@ -4,6 +4,8 @@ and costs the other requests nothing. The starter is a working streaming server 
 buffers grow without limit; the work is the bound: who pauses, who is cut off, and
 how the loop keeps going when the only thing it could do is wait for a client.
 
+![This problem is the Token stream, here a bounded buffer for each client.](assets/map.svg)
+
 ## Specification
 
 ```python

@@ -3,6 +3,8 @@ the queue stays within a bound on requests and a bound on prompt tokens, and tel
 rejected client when it is worth coming back. A server without this gate never says
 no; under overload its queue, and with it everyone's latency, grows without limit.
 
+![This problem is Admission, which rejects a request when the queue is over its bounds.](assets/map.svg)
+
 ## Specification
 
 ```python

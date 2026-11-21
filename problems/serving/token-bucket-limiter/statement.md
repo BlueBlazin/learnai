@@ -4,6 +4,8 @@ serves callers strictly in arrival order, and a `refund` for tokens that were re
 and not used. The arithmetic is two lines; the work is in when a waiting caller wakes
 up, and in never letting a small request slip past a large one.
 
+![This problem is the Rate limit, a token bucket charged in LLM tokens.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -82,6 +84,8 @@ use.
 | 1.5 | `try_acquire(40)` | `True`: 24 + 24 accrued = 48 | 8 |
 | 10 | `try_acquire(256)` | `True`: the balance was capped at 256 | 0 |
 | 10 | `try_acquire(1)` | `False` | 0 |
+
+![The balance of the example up to 1.5 s. B is served when the balance reaches 128, and C waits behind it although 16 tokens are there.](assets/balance.svg)
 
 Without the refund, C would have returned at 1.25, when 16 tokens had accrued after B.
 `acquire(300)` or `try_acquire(300)` would raise `ValueError` at any time.

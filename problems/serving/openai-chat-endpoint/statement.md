@@ -4,6 +4,8 @@ JSON response and as a stream of chunks. Generating text is the model's job; the
 endpoint's job is the protocol, and clients break on its details: the finish reason,
 the token usage, where the role goes in a stream, the usage chunk, and `[DONE]`.
 
+![This problem is the Endpoint, which speaks the Chat Completions protocol.](assets/map.svg)
+
 ## Specification
 
 ```python

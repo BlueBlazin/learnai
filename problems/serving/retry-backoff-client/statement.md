@@ -3,6 +3,8 @@ wait and try again, in a way that helps the server recover instead of keeping it
 down. A retry loop is ten lines. Each of the ten has a wrong version that looks
 reasonable in a test with one client and causes an outage with a thousand.
 
+![This problem is the Client, retrying when the server is overloaded.](assets/map.svg)
+
 ## Specification
 
 ```python

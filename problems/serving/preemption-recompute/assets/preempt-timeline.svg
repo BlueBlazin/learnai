@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 192">
+  <title>Timeline of the worked example: four requests, one of them preempted and recomputed</title>
+  <desc>One row per request over nine engine steps. Request 3 is prefilled, preempted one step later, waits one step, and is prefilled again.</desc>
+  <!-- Geometry: x = 50 + 4.38 * t (ms); one row of 24 units per request, bars 14 high. -->
+  <!-- legend -->
+  <g font-size="13">
+    <rect x="52" y="6" width="22" height="12" stroke-width="1.5" style="fill: var(--figure-accent); stroke: var(--figure-accent)"/>
+    <text x="80" y="17">prefill + first token</text>
+    <rect x="222" y="6" width="22" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="250" y="17">decode, one token</text>
+    <line x1="378" y1="12" x2="400" y2="12" fill="none" stroke-width="1.5" stroke-dasharray="3 3" style="stroke: var(--figure-straw)"/>
+    <text x="406" y="17" style="fill: var(--figure-straw)">waiting</text>
+    <rect x="52" y="24" width="22" height="12" stroke-width="1.5" stroke-dasharray="4 2" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <text x="80" y="35">prefill again + next token</text>
+    <polygon points="389,25.5 393.5,30 389,34.5 384.5,30" style="fill: var(--figure-straw)"/>
+    <text x="406" y="35" style="fill: var(--figure-straw)">preempted</text>
+  </g>
+  <!-- step boundaries -->
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="50" y1="46" x2="50" y2="150"/>
+    <line x1="102.6" y1="46" x2="102.6" y2="150"/>
+    <line x1="146.4" y1="46" x2="146.4" y2="150"/>
+    <line x1="190.2" y1="46" x2="190.2" y2="150"/>
+    <line x1="234" y1="46" x2="234" y2="150"/>
+    <line x1="284.3" y1="46" x2="284.3" y2="150"/>
+    <line x1="328.1" y1="46" x2="328.1" y2="150"/>
+    <line x1="373" y1="46" x2="373" y2="150"/>
+    <line x1="412.4" y1="46" x2="412.4" y2="150"/>
+    <line x1="451.9" y1="46" x2="451.9" y2="150"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="50" y="166">0</text>
+    <text x="102.6" y="166">12</text>
+    <text x="146.4" y="166">22</text>
+    <text x="190.2" y="166">32</text>
+    <text x="234" y="166">42</text>
+    <text x="284.3" y="166">53.5</text>
+    <text x="328.1" y="166">63.5</text>
+    <text x="373" y="166">73.75</text>
+    <text x="451.9" y="166">91.75</text>
+    <text x="251" y="184">time (ms); vertical lines are step boundaries</text>
+  </g>
+  <!-- request 0 -->
+  <g>
+    <text x="8" y="68" font-size="13">req 0</text>
+    <rect x="51.5" y="56" width="49.6" height="14" stroke-width="1.5" style="fill: var(--figure-accent); stroke: var(--figure-accent)"/>
+    <rect x="104.1" y="56" width="40.8" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <rect x="147.9" y="56" width="40.8" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <rect x="191.7" y="56" width="40.8" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <rect x="235.5" y="56" width="47.4" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <rect x="285.8" y="56" width="40.8" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle cx="50" cy="63" r="2.5" style="fill: var(--figure-straw)"/>
+  </g>
+  <!-- request 1 -->
+  <g>
+    <text x="8" y="92" font-size="13">req 1</text>
+    <rect x="51.5" y="80" width="49.6" height="14" stroke-width="1.5" style="fill: var(--figure-accent); stroke: var(--figure-accent)"/>
+    <rect x="104.1" y="80" width="40.8" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <rect x="147.9" y="80" width="40.8" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <rect x="191.7" y="80" width="40.8" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle cx="50" cy="87" r="2.5" style="fill: var(--figure-straw)"/>
+  </g>
+  <!-- request 2 -->
+  <g>
+    <text x="8" y="116" font-size="13">req 2</text>
+    <line x1="67.5" y1="111" x2="234" y2="111" fill="none" stroke-width="1.5" stroke-dasharray="3 3" style="stroke: var(--figure-straw)"/>
+    <rect x="235.5" y="104" width="47.4" height="14" stroke-width="1.5" style="fill: var(--figure-accent); stroke: var(--figure-accent)"/>
+    <rect x="285.8" y="104" width="40.8" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <rect x="329.6" y="104" width="41.9" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <rect x="374.5" y="104" width="36.4" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <rect x="413.9" y="104" width="36.4" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle cx="67.5" cy="111" r="2.5" style="fill: var(--figure-straw)"/>
+  </g>
+  <!-- request 3 -->
+  <g>
+    <text x="8" y="140" font-size="13">req 3</text>
+    <line x1="181.4" y1="135" x2="234" y2="135" fill="none" stroke-width="1.5" stroke-dasharray="3 3" style="stroke: var(--figure-straw)"/>
+    <rect x="235.5" y="128" width="47.4" height="14" stroke-width="1.5" style="fill: var(--figure-accent); stroke: var(--figure-accent)"/>
+    <line x1="284.3" y1="135" x2="328.1" y2="135" fill="none" stroke-width="1.5" stroke-dasharray="3 3" style="stroke: var(--figure-straw)"/>
+    <rect x="329.6" y="128" width="41.9" height="14" stroke-width="1.5" stroke-dasharray="4 2" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <circle cx="181.4" cy="135" r="2.5" style="fill: var(--figure-straw)"/>
+    <polygon points="284.3,130.5 288.8,135 284.3,139.5 279.8,135" style="fill: var(--figure-straw)"/>
+  </g>
+</svg>

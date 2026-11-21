@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 190">
+  <title>How each step of the example spends its budget of 32 tokens</title>
+  <desc>One bar per step, 32 tokens wide. Decodes fill it from the left, one token each, and prefill chunks take what is left.</desc>
+  <!-- Geometry: one token is 11 units, from x = 84; one row of 28 units per step, bars 20 high. -->
+  <!-- legend -->
+  <g font-size="13">
+    <rect x="84" y="6" width="11" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="101" y="17">decode, by id</text>
+    <rect x="212" y="6" width="22" height="12" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <text x="240" y="17">prefill chunk, (id, tokens)</text>
+  </g>
+  <text x="76" y="36" font-size="13" text-anchor="end" style="fill: var(--figure-muted)">starts</text>
+  <!-- the step that starts at 0 ms -->
+  <g>
+    <text x="76" y="58.5" font-size="13" text-anchor="end">0 ms</text>
+    <rect x="84" y="44" width="352" height="20" fill="none" stroke-width="1" style="stroke: var(--figure-faint)"/>
+    <rect x="84" y="44" width="176" height="20" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <text x="172" y="58.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">(0, 16)</text>
+    <rect x="260" y="44" width="176" height="20" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <text x="348" y="58.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">(1, 16)</text>
+  </g>
+  <!-- the step that starts at 16 ms -->
+  <g>
+    <text x="76" y="86.5" font-size="13" text-anchor="end">16 ms</text>
+    <rect x="84" y="72" width="352" height="20" fill="none" stroke-width="1" style="stroke: var(--figure-faint)"/>
+    <rect x="84" y="72" width="11" height="20" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="89.5" y="86.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="95" y="72" width="264" height="20" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <text x="227" y="86.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">(1, 24)</text>
+    <rect x="359" y="72" width="77" height="20" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <text x="397.5" y="86.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">(2, 7)</text>
+  </g>
+  <!-- the step that starts at 32.75 ms -->
+  <g>
+    <text x="76" y="114.5" font-size="13" text-anchor="end">32.75 ms</text>
+    <rect x="84" y="100" width="352" height="20" fill="none" stroke-width="1" style="stroke: var(--figure-faint)"/>
+    <rect x="84" y="100" width="11" height="20" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="89.5" y="114.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="95" y="100" width="11" height="20" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="100.5" y="114.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+    <rect x="106" y="100" width="11" height="20" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22; stroke: var(--figure-accent)"/>
+    <text x="123" y="114.5" font-size="13" style="font-family: var(--figure-mono)">(2, 1)</text>
+  </g>
+  <!-- the step that starts at 43 ms -->
+  <g>
+    <text x="76" y="142.5" font-size="13" text-anchor="end">43 ms</text>
+    <rect x="84" y="128" width="352" height="20" fill="none" stroke-width="1" style="stroke: var(--figure-faint)"/>
+    <rect x="84" y="128" width="11" height="20" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="89.5" y="142.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="95" y="128" width="11" height="20" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="100.5" y="142.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">2</text>
+  </g>
+  <!-- the token axis -->
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="84" y="166">0</text>
+    <text x="260" y="166">16</text>
+    <text x="436" y="166">32</text>
+    <text x="260" y="184">tokens in the step, of a budget of 32</text>
+  </g>
+</svg>

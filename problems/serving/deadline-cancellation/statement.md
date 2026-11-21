@@ -4,6 +4,8 @@ engine at that very instant, whether it is waiting for a slot or in the middle o
 forward pass, and its client must be told. The starter is a working scheduler that
 serves every request to the end; the work is everything that can end a request early.
 
+![This problem is the Waiting queue and the Engine loop, where a canceled or late request has to stop.](assets/map.svg)
+
 ## Specification
 
 ```python

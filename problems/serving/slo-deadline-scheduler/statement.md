@@ -3,6 +3,8 @@ the request whose first token is due soonest, and refuse, at once, a request who
 first token can no longer arrive in time. The loop is given; the work is one function
 that decides, before every step, who is admitted, who is shed, and who waits.
 
+![This problem is the Waiting queue, served earliest deadline first with late requests refused.](assets/map.svg)
+
 ## Specification
 
 ```python

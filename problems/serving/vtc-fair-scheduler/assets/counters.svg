@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 238">
+  <title>The two counters of the example over time</title>
+  <desc>Two step lines that rise with each charge. Tenant b is idle from 38 to 60 ms and is then lifted from 20 to 32, the counter of tenant a.</desc>
+  <!-- Geometry: x = 40 + 2.75 * t (ms); y = 196 - 2.6 * counter. Ticks are the admission times. -->
+  <!-- legend -->
+  <g font-size="13">
+    <line x1="50" y1="12" x2="72" y2="12" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+    <text x="78" y="17">counter of tenant a</text>
+    <line x1="230" y1="12" x2="252" y2="12" fill="none" stroke-width="1.5" stroke-dasharray="5 3" style="stroke: var(--figure-straw)"/>
+    <text x="258" y="17">counter of tenant b</text>
+  </g>
+  <!-- axes and grid -->
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="40" y1="34" x2="40" y2="196"/>
+    <line x1="40" y1="196" x2="458" y2="196"/>
+    <line x1="40" y1="144" x2="458" y2="144"/>
+    <line x1="40" y1="92" x2="458" y2="92"/>
+    <line x1="40" y1="40" x2="458" y2="40"/>
+    <line x1="40" y1="196" x2="40" y2="200"/>
+    <line x1="92.2" y1="196" x2="92.2" y2="200"/>
+    <line x1="144.5" y1="196" x2="144.5" y2="200"/>
+    <line x1="196.8" y1="196" x2="196.8" y2="200"/>
+    <line x1="249" y1="196" x2="249" y2="200"/>
+    <line x1="301.2" y1="196" x2="301.2" y2="200"/>
+    <line x1="353.5" y1="196" x2="353.5" y2="200"/>
+    <line x1="405.8" y1="196" x2="405.8" y2="200"/>
+    <line x1="458" y1="196" x2="458" y2="200"/>
+  </g>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="34" y="200.5" text-anchor="end">0</text>
+    <text x="34" y="148.5" text-anchor="end">20</text>
+    <text x="34" y="96.5" text-anchor="end">40</text>
+    <text x="34" y="44.5" text-anchor="end">60</text>
+    <text x="40" y="214" text-anchor="middle">0</text>
+    <text x="92.2" y="214" text-anchor="middle">19</text>
+    <text x="144.5" y="214" text-anchor="middle">38</text>
+    <text x="196.8" y="214" text-anchor="middle">57</text>
+    <text x="249" y="214" text-anchor="middle">76</text>
+    <text x="301.2" y="214" text-anchor="middle">95</text>
+    <text x="353.5" y="214" text-anchor="middle">114</text>
+    <text x="405.8" y="214" text-anchor="middle">133</text>
+    <text x="458" y="214" text-anchor="middle">152</text>
+    <text x="249" y="232" text-anchor="middle">time (ms)</text>
+  </g>
+  <!-- tenant a: +8 at each admission, +2 at each token -->
+  <path d="M40 196 H40 V175.2 H67.5 V170 H92.2 V164.8 H144.5 V144 H172 V138.8 H196.8 V112.8 H224.2 V107.6 H249 V102.4 H301.2 V81.6 H328.8 V76.4 H353.5 V71.2 H405.8 V50.4 H433.2 V45.2 H458 V40 H458" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+  <!-- tenant b; its two lifts, at 5 and at 60, are drawn again below as arrows -->
+  <path d="M53.8 175.2 H92.2 V154.4 H119.8 V149.2 H144.5 V144 H205 V112.8 H249 V92 H276.5 V86.8 H301.2 V81.6 H353.5 V60.8 H381 V55.6 H405.8 V50.4 H458" fill="none" stroke-width="1.5" stroke-dasharray="5 3" style="stroke: var(--figure-straw)"/>
+  <!-- the lifts: 0 to 8 at 5 ms, 20 to 32 at 60 ms -->
+  <line x1="53.8" y1="196" x2="53.8" y2="180.2" fill="none" stroke-width="1.5" style="stroke: var(--figure-straw)"/>
+  <polygon points="53.8,175.2 57,181.7 50.5,181.7" style="fill: var(--figure-straw)"/>
+  <line x1="205" y1="144" x2="205" y2="117.8" fill="none" stroke-width="1.5" style="stroke: var(--figure-straw)"/>
+  <polygon points="205,112.8 208.3,119.3 201.7,119.3" style="fill: var(--figure-straw)"/>
+  <g font-size="13">
+    <text x="59.8" y="190">lift</text>
+    <text x="174.8" y="160" text-anchor="middle">b idle</text>
+    <text x="211" y="140">lift: 20 → 32</text>
+  </g>
+</svg>

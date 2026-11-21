@@ -3,6 +3,8 @@ budget: every step may process at most `max_batch_tokens` tokens, running sequen
 are decoded first, and prompts get what is left, in chunks. A long prompt is spread
 over several steps and never makes the sequences that are already generating wait.
 
+![This problem is the Engine loop, here the plan of one step under a token budget.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -92,6 +94,8 @@ tokens, output tokens): request 0 `(0, 16, 4)`, request 1 `(0, 40, 2)`, request 
 | 16 | `0` | `(1, 24)` | `(2, 8)` | `(1, 24), (2, 7)` | `0` | 8 + 7.75 + 1 = 16.75 |
 | 32.75 | `0, 1` | `(2, 1)` | | `(2, 1)` | `0, 1` | 8 + 0.25 + 2 = 10.25 |
 | 43 | `0, 2` | | | | `0, 2` | 10 |
+
+![The four steps of the example, each against the budget of 32 tokens. Decodes come first, and request 1's 40-token prompt enters as chunks of 16 and 24.](assets/step-budget.svg)
 
 At time 0 the budget is 32: request 0 takes its whole prompt (16), and request 1 is
 capped by the 16 tokens that are left. At 16 the decode of request 0 costs one token,

@@ -4,6 +4,8 @@ Then make it work when the load information is old. The rule is three lines; the
 parts that decide whether it balances are how the two draws are made, who wins a tie,
 and what the balancer believes between load reports.
 
+![This problem is the Router, choosing the less loaded of two random replicas.](assets/map.svg)
+
 ## Specification
 
 ```python
