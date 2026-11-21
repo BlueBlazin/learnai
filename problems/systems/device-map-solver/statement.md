@@ -88,6 +88,8 @@ solve_device_map(modules, {0: 2000, 1: 1000, "cpu": 900}, {"Block"}, {"lm_head":
 # {"embed": 0, "lm_head": 0, "layers.0": 0, "layers.1": 1, "layers.2": "cpu", "norm": "cpu"}
 ```
 
+![The example's devices, each bar filled in module order. Device 0 keeps 800 bytes in reserve, so its budget is 1200.](assets/device-map.svg)
+
 The largest indivisible module is a `Block` of 800 bytes, so device 0 has a budget
 of $2000 - 800 = 1200$.
 

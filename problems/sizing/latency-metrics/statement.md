@@ -68,6 +68,8 @@ returns
 }
 ```
 
+![The example request. TTFT is the wait for the first token; TPOT is the span from $t_1$ to $t_n$ divided by $n - 1$.](assets/latency-timeline.svg)
+
 Half of this request's second was spent waiting for the first token. The three ways of
 averaging tell three stories about the same stream:
 

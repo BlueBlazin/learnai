@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 206">
+  <title>A stored sequence and a new prompt, with the checkpoint to resume from</title>
+  <desc>Saved states after 4, 8, 10, and 12 tokens against a prompt that shares six of them. The state after 4 tokens is resumed.</desc>
+  <!-- Geometry: token j is the cell x = 88 + 30 j, 26 wide; a state after c tokens sits on the boundary x = 88 + 30 c - 2. -->
+  <!-- Legend -->
+  <circle cx="92" cy="8" r="4.5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-cache)"/>
+  <text x="102" y="13" font-size="13">saved state</text>
+  <g font-size="13" text-anchor="end"><text x="82" y="70.5">stored</text><text x="82" y="132.5">prompt</text></g>
+  <!-- The stored sequence: the prompt of the first request and the two tokens it generated -->
+  <g stroke="currentColor" stroke-width="1.5" fill="none">
+    <rect x="88" y="54" width="26" height="24" rx="3"/>
+    <rect x="118" y="54" width="26" height="24" rx="3"/>
+    <rect x="148" y="54" width="26" height="24" rx="3"/>
+    <rect x="178" y="54" width="26" height="24" rx="3"/>
+    <rect x="208" y="54" width="26" height="24" rx="3"/>
+    <rect x="238" y="54" width="26" height="24" rx="3"/>
+  </g>
+  <g stroke="currentColor" stroke-width="1" stroke-dasharray="2 3" stroke-opacity="0.6" fill="none">
+    <rect x="268" y="54" width="26" height="24" rx="3"/>
+    <rect x="298" y="54" width="26" height="24" rx="3"/>
+    <rect x="328" y="54" width="26" height="24" rx="3"/>
+    <rect x="358" y="54" width="26" height="24" rx="3"/>
+    <rect x="388" y="54" width="26" height="24" rx="3"/>
+    <rect x="418" y="54" width="26" height="24" rx="3"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="101" y="70.5">0</text>
+    <text x="131" y="70.5">17</text>
+    <text x="161" y="70.5">42</text>
+    <text x="191" y="70.5">5</text>
+    <text x="221" y="70.5">9</text>
+    <text x="251" y="70.5">33</text>
+    <text x="281" y="70.5" style="font-family: var(--figure-mono); fill-opacity: 0.6">12</text>
+    <text x="311" y="70.5" style="font-family: var(--figure-mono); fill-opacity: 0.6">60</text>
+    <text x="341" y="70.5" style="font-family: var(--figure-mono); fill-opacity: 0.6">21</text>
+    <text x="371" y="70.5" style="font-family: var(--figure-mono); fill-opacity: 0.6">7</text>
+    <text x="401" y="70.5" style="font-family: var(--figure-mono); fill-opacity: 0.6">26</text>
+    <text x="431" y="70.5" style="font-family: var(--figure-mono); fill-opacity: 0.6">6</text>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="206" y="36">4</text>
+    <text x="326" y="36">8</text>
+    <text x="386" y="36">10</text>
+    <text x="446" y="36">12</text>
+  </g>
+  <!-- Saved states of the store: only the state after 4 tokens is a prefix of the prompt -->
+  <circle cx="206" cy="46" r="5.5" stroke="currentColor" stroke-width="2" style="fill: var(--figure-cache)"/>
+  <circle cx="326" cy="46" r="4.5" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.5" style="fill: var(--figure-cache); fill-opacity: 0.5"/>
+  <circle cx="386" cy="46" r="4.5" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.5" style="fill: var(--figure-cache); fill-opacity: 0.5"/>
+  <circle cx="446" cy="46" r="4.5" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.5" style="fill: var(--figure-cache); fill-opacity: 0.5"/>
+  <!-- The common prefix -->
+  <polyline points="88,84 88,90 264,90 264,84" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="176" y="108" font-size="13" text-anchor="middle">common prefix: 6 tokens</text>
+  <!-- The prompt -->
+  <g stroke="currentColor" stroke-width="1.5" fill="none">
+    <rect x="88" y="116" width="26" height="24" rx="3"/>
+    <rect x="118" y="116" width="26" height="24" rx="3"/>
+    <rect x="148" y="116" width="26" height="24" rx="3"/>
+    <rect x="178" y="116" width="26" height="24" rx="3"/>
+    <rect x="208" y="116" width="26" height="24" rx="3"/>
+    <rect x="238" y="116" width="26" height="24" rx="3"/>
+    <rect x="268" y="116" width="26" height="24" rx="3"/>
+    <rect x="298" y="116" width="26" height="24" rx="3"/>
+    <rect x="328" y="116" width="26" height="24" rx="3"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="101" y="132.5">0</text>
+    <text x="131" y="132.5">17</text>
+    <text x="161" y="132.5">42</text>
+    <text x="191" y="132.5">5</text>
+    <text x="221" y="132.5">9</text>
+    <text x="251" y="132.5">33</text>
+    <text x="281" y="132.5">50</text>
+    <text x="311" y="132.5">8</text>
+    <text x="341" y="132.5">3</text>
+  </g>
+  <!-- The state resumed from (r = 4) and the two states saved while feeding -->
+  <circle cx="206" cy="150" r="5.5" stroke="currentColor" stroke-width="2" style="fill: var(--figure-cache)"/>
+  <circle cx="326" cy="150" r="4.5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-cache)"/>
+  <circle cx="356" cy="150" r="4.5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-cache)"/>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="206" y="171">r = 4</text><text x="326" y="171">8</text><text x="356" y="171">9</text>
+  </g>
+  <!-- The segments fed after the resumed state -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <polyline points="208,179 208,184 324,184 324,179"/>
+    <polyline points="328,179 328,184 354,184 354,179"/>
+  </g>
+  <text x="82" y="200" font-size="13" text-anchor="end">fed</text>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="266" y="200">b[4:8]</text><text x="343" y="200">b[8:9]</text>
+  </g>
+</svg>

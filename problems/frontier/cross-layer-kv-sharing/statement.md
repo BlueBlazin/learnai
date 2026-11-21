@@ -99,6 +99,8 @@ cache.lengths  # (5, 5, 0, 0)
 # layer_tokens: 4                     layer_calls: 4
 ```
 
+![Prefill with $s = 2$ of $L = 4$ layers. Layers 2 and 3 store nothing, read layer 1's keys and values, and run on the last position only.](assets/kv-sharing.svg)
+
 | | positions run by layers 0, 1 | positions run by layers 2, 3 | layer-tokens |
 |---|---|---|---|
 | `prefill_shared` | 0, 1, 2, 3 | 3 | $2 \cdot 4 + 2 \cdot 1 = 10$ |

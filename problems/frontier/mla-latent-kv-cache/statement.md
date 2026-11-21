@@ -81,6 +81,8 @@ cached ones.
   `(B, T, d)`; the new cache covers $S + T$ tokens. The cache passed in is not
   modified.
 
+![The cache holds only $c$ and $k^R$. The key and value up-projections are folded into $W^{QK}$ and $W^{OV}$ instead of being applied to the cache.](assets/mla-step.svg)
+
 The cache therefore holds exactly $d_c + d_r$ floats per token (per layer and
 sequence), whatever the number of heads.
 

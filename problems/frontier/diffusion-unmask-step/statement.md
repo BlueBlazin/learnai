@@ -96,6 +96,8 @@ unmask_step(tokens, logits, 4, 3, 1.0, uniforms)  # [3, 0, M, 1, 1, 1]
 | 4 | `M` | `[0.10, 0.60, 0.20, 0.10]` | 0.3 | 1 | 0.60 | committed: 1 |
 | 5 | `M` | `[0.50, 0.30, 0.10, 0.10]` | 0.6 | 1 | 0.30 | committed: 1 |
 
+![One step of the example. Four masked positions each draw a candidate, and the three most confident commit.](assets/unmask-steps.svg)
+
 Position 2: the cumulative sums are `[0.25, 0.50, 0.90, 1.00]` and $u = 0.95$, so the
 draw is token 3, an unlikely one. Its confidence is 0.10, the probability of token 3,
 not 0.40, the probability of the favorite the draw did not pick; it ranks last and

@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 296">
+  <title>Cross-layer KV sharing in the prefill of the example</title>
+  <desc>Four layers, read from the bottom. Layers 0 and 1 store their own keys and values; layers 2 and 3 read layer 1's and run on the last position only.</desc>
+  <!-- Geometry: layer boxes are 140 x 22 at x = 130, cache boxes 90 x 22 at x = 330; the read bus is x = 375. -->
+  <g style="fill: var(--figure-panel)">
+    <rect x="8" y="26" width="462" height="100" rx="6"/>
+    <rect x="8" y="142" width="462" height="96" rx="6"/>
+  </g>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="16" y="70">readers</text><text x="16" y="86">of layer 1</text>
+    <text x="16" y="186">stores</text><text x="16" y="202">own KV</text>
+  </g>
+  <!-- Wires -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <line x1="200" y1="276" x2="200" y2="232.5"/>
+    <line x1="200" y1="204" x2="200" y2="180.5"/>
+    <line x1="200" y1="152" x2="200" y2="122.5"/>
+    <line x1="200" y1="94" x2="200" y2="74.5"/>
+    <line x1="200" y1="46" x2="200" y2="24.5"/>
+    <line x1="270" y1="215" x2="323.5" y2="215"/>
+    <line x1="270" y1="163" x2="323.5" y2="163"/>
+    <polyline points="375,152 375,57 276.5,57"/>
+    <line x1="375" y1="105" x2="276.5" y2="105"/>
+  </g>
+  <circle cx="375" cy="105" r="2.5"/>
+  <g>
+    <polygon points="200,226 203.3,232.5 196.7,232.5"/>
+    <polygon points="200,174 203.3,180.5 196.7,180.5"/>
+    <polygon points="200,116 203.3,122.5 196.7,122.5"/>
+    <polygon points="200,68 203.3,74.5 196.7,74.5"/>
+    <polygon points="200,18 203.3,24.5 196.7,24.5"/>
+    <polygon points="330,215 323.5,218.3 323.5,211.7"/><polygon points="330,163 323.5,166.3 323.5,159.7"/>
+    <polygon points="270,57 276.5,60.3 276.5,53.7"/><polygon points="270,105 276.5,108.3 276.5,101.7"/>
+  </g>
+  <!-- Blocks -->
+  <g stroke="currentColor" stroke-width="1.5">
+    <rect x="130" y="204" width="140" height="22" rx="5" style="fill: var(--figure-attn)"/>
+    <rect x="130" y="152" width="140" height="22" rx="5" style="fill: var(--figure-attn)"/>
+    <rect x="130" y="94" width="140" height="22" rx="5" style="fill: var(--figure-attn)"/>
+    <rect x="130" y="46" width="140" height="22" rx="5" style="fill: var(--figure-attn)"/>
+    <rect x="330" y="204" width="90" height="22" rx="5" style="fill: var(--figure-cache)"/>
+    <rect x="330" y="152" width="90" height="22" rx="5" style="fill: var(--figure-cache)"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="200" y="219.5">layer 0 attention</text>
+    <text x="200" y="167.5">layer 1 attention</text>
+    <text x="200" y="109.5">layer 2 attention</text>
+    <text x="200" y="61.5">layer 3 attention</text>
+    <text x="375" y="219.5">KV₀</text><text x="375" y="167.5">KV₁</text>
+    <text x="300" y="210">store</text><text x="300" y="158">store</text>
+    <text x="322" y="52">read</text><text x="322" y="100">read</text>
+    <text x="200" y="12.5">logits</text><text x="200" y="292.5">prompt</text>
+  </g>
+  <!-- The shape of the tensor on each wire -->
+  <g font-size="13" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="207" y="254">(4, d)</text>
+    <text x="207" y="193">(4, d)</text>
+    <text x="207" y="138">(1, d)</text>
+    <text x="207" y="85">(1, d)</text>
+    <text x="207" y="38">(vocab_size,)</text>
+  </g>
+</svg>

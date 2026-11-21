@@ -125,6 +125,8 @@ key of 4 tokens is. $r = 4$, and that entry moves to the end. The prompt is fed 
 are fed (lengths 10 and 11, no multiple of 4). That is $2 + 2 = 4$ calls and
 $5 + 2 = 7$ tokens instead of $9 + 2 = 11$.
 
+![The prompt shares six tokens with the stored sequence. Only the state after 4 tokens is a prefix of it, so that one is resumed.](assets/checkpoint-resume.svg)
+
 The store now has six entries, in order: `a[:8]`, `a`, `a + [26, 6]`, `a[:4]`,
 `b[:8]`, `b`. The budget is 4, so the first two are removed.
 

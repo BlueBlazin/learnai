@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 330">
+  <title>The tensor-parallel MLP on two devices</title>
+  <desc>Each device applies its rows of W_up, SiLU, and its columns of W_down. An all-reduce sums the partial outputs, then b_down is added.</desc>
+  <!-- Geometry: device columns at x = 130 and x = 350; boxes 22 high; the add is the circle at (240, 40). -->
+  <!-- Device grounds -->
+  <g style="fill: var(--figure-panel)">
+    <rect x="30" y="104" width="200" height="168" rx="6"/>
+    <rect x="250" y="104" width="200" height="168" rx="6"/>
+  </g>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="38" y="120">device 0</text>
+    <text x="258" y="120">device 1</text>
+  </g>
+  <!-- Wires -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <line x1="240" y1="308" x2="240" y2="290"/>
+    <line x1="130" y1="290" x2="350" y2="290"/>
+    <line x1="130" y1="290" x2="130" y2="256.5"/>
+    <line x1="130" y1="228" x2="130" y2="206.5"/>
+    <line x1="130" y1="178" x2="130" y2="156.5"/>
+    <line x1="130" y1="128" x2="130" y2="100.5"/>
+    <line x1="350" y1="290" x2="350" y2="256.5"/>
+    <line x1="350" y1="228" x2="350" y2="206.5"/>
+    <line x1="350" y1="178" x2="350" y2="156.5"/>
+    <line x1="350" y1="128" x2="350" y2="100.5"/>
+    <line x1="240" y1="72" x2="240" y2="55.5"/>
+    <line x1="240" y1="31" x2="240" y2="24.5"/>
+    <line x1="296" y1="40" x2="255.5" y2="40"/>
+  </g>
+  <circle cx="240" cy="290" r="2.5"/>
+  <g>
+    <polygon points="130,250 133.3,256.5 126.7,256.5"/>
+    <polygon points="130,200 133.3,206.5 126.7,206.5"/>
+    <polygon points="130,150 133.3,156.5 126.7,156.5"/>
+    <polygon points="130,94 133.3,100.5 126.7,100.5"/>
+    <polygon points="350,250 353.3,256.5 346.7,256.5"/>
+    <polygon points="350,200 353.3,206.5 346.7,206.5"/>
+    <polygon points="350,150 353.3,156.5 346.7,156.5"/>
+    <polygon points="350,94 353.3,100.5 346.7,100.5"/>
+    <polygon points="240,49 243.3,55.5 236.7,55.5"/>
+    <polygon points="240,18 243.3,24.5 236.7,24.5"/>
+    <polygon points="249,40 255.5,43.3 255.5,36.7"/>
+  </g>
+  <!-- The add -->
+  <circle cx="240" cy="40" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <g fill="none" stroke="currentColor" stroke-width="1.5"><line x1="235" y1="40" x2="245" y2="40"/><line x1="240" y1="35" x2="240" y2="45"/></g>
+  <!-- Blocks -->
+  <rect x="60" y="72" width="360" height="22" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <g stroke="currentColor" stroke-width="1.5">
+    <rect x="65" y="128" width="130" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="65" y="228" width="130" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="95" y="178" width="70" height="22" rx="5" fill="none"/>
+    <rect x="285" y="128" width="130" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="285" y="228" width="130" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="315" y="178" width="70" height="22" rx="5" fill="none"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="240" y="87.5">all-reduce: p₀ + p₁</text>
+    <text x="130" y="143.5"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">down</tspan><tspan dy="-3"> cols 0–1</tspan></text>
+    <text x="130" y="193.5">SiLU</text>
+    <text x="130" y="243.5"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">up</tspan><tspan dy="-3"> rows 0–1</tspan></text>
+    <text x="350" y="143.5"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">down</tspan><tspan dy="-3"> cols 2–3</tspan></text>
+    <text x="350" y="193.5">SiLU</text>
+    <text x="350" y="243.5"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">up</tspan><tspan dy="-3"> rows 2–3</tspan></text>
+  </g>
+  <text x="300" y="44.5" font-size="13"><tspan font-style="italic" style="font-family: var(--figure-serif)">b</tspan><tspan dy="3">down</tspan></text>
+  <g font-size="13" font-style="italic" text-anchor="middle" style="font-family: var(--figure-serif)">
+    <text x="240" y="326.5">x</text>
+    <text x="240" y="12.5">y</text>
+  </g>
+  <!-- The shape of the tensor on each wire -->
+  <g font-size="13" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="247" y="303.5">(..., d)</text>
+    <text x="247" y="64">(..., d_out)</text>
+    <text x="247" y="28.5">(..., d_out)</text>
+    <text x="137" y="284.5">(..., d)</text>
+    <text x="137" y="222">(..., h_i)</text>
+    <text x="137" y="172">(..., h_i)</text>
+    <text x="137" y="116">(..., d_out)</text>
+    <text x="357" y="284.5">(..., d)</text>
+    <text x="357" y="222">(..., h_i)</text>
+    <text x="357" y="172">(..., h_i)</text>
+    <text x="357" y="116">(..., d_out)</text>
+  </g>
+</svg>

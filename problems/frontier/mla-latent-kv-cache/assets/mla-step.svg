@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 366">
+  <title>One cached step of Multi-Head Latent Attention</title>
+  <desc>The cache holds the latent c and the rotated key k_R. W_QK acts on the query and W_OV on the output, so no per-head keys or values are built.</desc>
+  <!-- Geometry: query path at x = 60 and 190, latent c at x = 290, shared key at x = 380; boxes are 22 high. -->
+  <!-- Wires -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <line x1="290" y1="346" x2="290" y2="336"/>
+    <line x1="60" y1="336" x2="380" y2="336"/>
+    <line x1="60" y1="336" x2="60" y2="318.5"/>
+    <line x1="290" y1="336" x2="290" y2="318.5"/>
+    <line x1="380" y1="336" x2="380" y2="318.5"/>
+    <line x1="60" y1="290" x2="60" y2="268"/>
+    <line x1="60" y1="268" x2="190" y2="268"/>
+    <line x1="60" y1="268" x2="60" y2="254.5"/>
+    <line x1="190" y1="268" x2="190" y2="254.5"/>
+    <line x1="290" y1="290" x2="290" y2="198.5"/>
+    <line x1="380" y1="290" x2="380" y2="254.5"/>
+    <line x1="380" y1="226" x2="380" y2="198.5"/>
+    <line x1="60" y1="226" x2="60" y2="120.5"/>
+    <line x1="190" y1="226" x2="190" y2="198.5"/>
+    <line x1="190" y1="170" x2="190" y2="120.5"/>
+    <line x1="290" y1="170" x2="290" y2="120.5"/>
+    <line x1="380" y1="170" x2="380" y2="120.5"/>
+    <line x1="290" y1="92" x2="290" y2="62.5"/>
+    <line x1="290" y1="34" x2="290" y2="24.5"/>
+  </g>
+  <g>
+    <circle cx="290" cy="336" r="2.5"/><circle cx="60" cy="268" r="2.5"/>
+    <polygon points="60,312 63.3,318.5 56.7,318.5"/>
+    <polygon points="290,312 293.3,318.5 286.7,318.5"/>
+    <polygon points="380,312 383.3,318.5 376.7,318.5"/>
+    <polygon points="60,248 63.3,254.5 56.7,254.5"/>
+    <polygon points="190,248 193.3,254.5 186.7,254.5"/>
+    <polygon points="380,248 383.3,254.5 376.7,254.5"/>
+    <polygon points="290,192 293.3,198.5 286.7,198.5"/>
+    <polygon points="380,192 383.3,198.5 376.7,198.5"/>
+    <polygon points="190,192 193.3,198.5 186.7,198.5"/>
+    <polygon points="60,114 63.3,120.5 56.7,120.5"/>
+    <polygon points="190,114 193.3,120.5 186.7,120.5"/>
+    <polygon points="290,114 293.3,120.5 286.7,120.5"/>
+    <polygon points="380,114 383.3,120.5 376.7,120.5"/>
+    <polygon points="290,56 293.3,62.5 286.7,62.5"/>
+    <polygon points="290,18 293.3,24.5 286.7,24.5"/>
+  </g>
+  <!-- Blocks -->
+  <g stroke="currentColor" stroke-width="1.5">
+    <rect x="20" y="290" width="80" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="250" y="290" width="80" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="345" y="290" width="70" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="20" y="226" width="80" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="150" y="226" width="80" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="245" y="34" width="90" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="20" y="92" width="430" height="22" rx="5" style="fill: var(--figure-attn)"/>
+    <rect x="245" y="170" width="180" height="22" rx="5" style="fill: var(--figure-cache)"/>
+    <rect x="155" y="170" width="70" height="22" rx="5" fill="none"/>
+    <rect x="345" y="226" width="70" height="22" rx="5" fill="none"/>
+  </g>
+  <line x1="335" y1="170" x2="335" y2="192" fill="none" stroke="currentColor" stroke-width="1"/>
+  <g font-size="13" text-anchor="middle">
+    <text x="60" y="305.5" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">DQ</tspan></text>
+    <text x="290" y="305.5" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">DKV</tspan></text>
+    <text x="380" y="305.5" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">KR</tspan></text>
+    <text x="60" y="241.5" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">QK</tspan></text>
+    <text x="190" y="241.5" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">QR</tspan></text>
+    <text x="290" y="49.5" font-size="13" text-anchor="middle"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">OV</tspan></text>
+    <text x="190" y="185.5">RoPE</text><text x="380" y="241.5">RoPE</text>
+    <text x="235" y="107.5">attention, per head</text>
+    <text x="290" y="185.5" font-style="italic" style="font-family: var(--figure-serif)">c</text>
+    <text x="380" y="185.5"><tspan font-style="italic" style="font-family: var(--figure-serif)">k</tspan><tspan dy="3">R</tspan></text>
+    <text x="290" y="13" font-style="italic" style="font-family: var(--figure-serif)">u</text>
+    <text x="290" y="362.5" font-style="italic" style="font-family: var(--figure-serif)">x</text>
+  </g>
+  <text x="432" y="185.5" font-size="13">cache</text>
+  <!-- The shape of the tensor on each wire -->
+  <g font-size="13" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="297" y="350">(T, d)</text>
+    <text x="387" y="274">(T, d_r)</text>
+    <text x="297" y="214">(T, d_c)</text>
+    <text x="387" y="214">(T, d_r)</text>
+    <text x="197" y="214">(T, d_r)</text>
+    <text x="67" y="140">(T, d_c)</text>
+    <text x="197" y="140">(T, d_r)</text>
+    <text x="297" y="152">(S+T, d_c)</text>
+    <text x="387" y="132">(S+T, d_r)</text>
+    <text x="297" y="80">(T, d_c)</text>
+    <text x="297" y="30">(T, d)</text>
+    <text x="125" y="262" text-anchor="middle">(T, d_q)</text>
+  </g>
+</svg>

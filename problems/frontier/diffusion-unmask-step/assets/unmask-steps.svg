@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 192">
+  <title>One unmask step on the six positions of the example</title>
+  <desc>Four frames: the masked sequence, a candidate drawn for each masked position, the confidence of each candidate, and the three most confident committed.</desc>
+  <!-- Geometry: position i is the column x = 92 + 62 i, 56 wide. Rows: tokens y = 24, candidate y = 80, after y = 152. -->
+  <!-- In every frame: positions and the tokens before the step; a masked position is filled -->
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="120" y="16"><tspan font-style="italic" style="font-family: var(--figure-serif)">i</tspan> = 0</text>
+    <text x="182" y="16"><tspan font-style="italic" style="font-family: var(--figure-serif)">i</tspan> = 1</text>
+    <text x="244" y="16"><tspan font-style="italic" style="font-family: var(--figure-serif)">i</tspan> = 2</text>
+    <text x="306" y="16"><tspan font-style="italic" style="font-family: var(--figure-serif)">i</tspan> = 3</text>
+    <text x="368" y="16"><tspan font-style="italic" style="font-family: var(--figure-serif)">i</tspan> = 4</text>
+    <text x="430" y="16"><tspan font-style="italic" style="font-family: var(--figure-serif)">i</tspan> = 5</text>
+  </g>
+  <text x="84" y="40.5" font-size="13" text-anchor="end">tokens</text>
+  <rect x="92" y="24" width="56" height="24" rx="3" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  <text x="120" y="40.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">3</text>
+  <rect x="154" y="24" width="56" height="24" rx="3" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-embed)"/>
+  <text x="182" y="40.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">M</text>
+  <rect x="216" y="24" width="56" height="24" rx="3" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-embed)"/>
+  <text x="244" y="40.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">M</text>
+  <rect x="278" y="24" width="56" height="24" rx="3" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  <text x="306" y="40.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+  <rect x="340" y="24" width="56" height="24" rx="3" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-embed)"/>
+  <text x="368" y="40.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">M</text>
+  <rect x="402" y="24" width="56" height="24" rx="3" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-embed)"/>
+  <text x="430" y="40.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">M</text>
+  <g id="step-1">
+    <desc>Positions 1, 2, 4, and 5 are masked; positions 0 and 3 already hold committed tokens.</desc>
+    <text x="92" y="96.5" font-size="13" style="font-family: var(--figure-mono); fill: var(--figure-muted)">n_unmask = 3, temperature = 1</text>
+  </g>
+  <g id="step-2">
+    <desc>Each masked position draws a candidate token from its own row, using its own uniform number.</desc>
+    <text x="84" y="70" font-size="13" text-anchor="end"><tspan font-style="italic" style="font-family: var(--figure-serif)">u</tspan></text>
+    <text x="182" y="70" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0.5</text>
+    <text x="244" y="70" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0.95</text>
+    <text x="368" y="70" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0.3</text>
+    <text x="430" y="70" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0.6</text>
+    <text x="84" y="96.5" font-size="13" text-anchor="end">candidate</text>
+    <rect x="154" y="80" width="56" height="24" rx="3" stroke="currentColor" fill="none" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="182" y="96.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="216" y="80" width="56" height="24" rx="3" stroke="currentColor" fill="none" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="244" y="96.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">3</text>
+    <rect x="340" y="80" width="56" height="24" rx="3" stroke="currentColor" fill="none" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="368" y="96.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+    <rect x="402" y="80" width="56" height="24" rx="3" stroke="currentColor" fill="none" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="430" y="96.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+  </g>
+  <g id="step-3">
+    <desc>Confidence is the model's probability of the token that was drawn: position 2's draw has only 0.10.</desc>
+    <text x="84" y="70" font-size="13" text-anchor="end"><tspan font-style="italic" style="font-family: var(--figure-serif)">u</tspan></text>
+    <text x="182" y="70" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0.5</text>
+    <text x="244" y="70" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0.95</text>
+    <text x="368" y="70" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0.3</text>
+    <text x="430" y="70" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0.6</text>
+    <text x="84" y="96.5" font-size="13" text-anchor="end">candidate</text>
+    <rect x="154" y="80" width="56" height="24" rx="3" stroke="currentColor" fill="none" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="182" y="96.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="216" y="80" width="56" height="24" rx="3" stroke="currentColor" fill="none" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="244" y="96.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">3</text>
+    <rect x="340" y="80" width="56" height="24" rx="3" stroke="currentColor" fill="none" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="368" y="96.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+    <rect x="402" y="80" width="56" height="24" rx="3" stroke="currentColor" fill="none" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="430" y="96.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+    <text x="84" y="126" font-size="13" text-anchor="end">confidence</text>
+    <text x="182" y="126" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.70</text>
+    <rect x="154" y="132" width="39.2" height="8" stroke="currentColor" stroke-width="1" fill="none"/>
+    <text x="244" y="126" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.10</text>
+    <rect x="216" y="132" width="5.6" height="8" stroke="currentColor" stroke-width="1" fill="none"/>
+    <text x="368" y="126" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.60</text>
+    <rect x="340" y="132" width="33.6" height="8" stroke="currentColor" stroke-width="1" fill="none"/>
+    <text x="430" y="126" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.30</text>
+    <rect x="402" y="132" width="16.8" height="8" stroke="currentColor" stroke-width="1" fill="none"/>
+  </g>
+  <g id="step-4">
+    <desc>With n_unmask = 3, positions 1, 4, and 5 take their candidates; position 2 stays masked.</desc>
+    <text x="84" y="70" font-size="13" text-anchor="end"><tspan font-style="italic" style="font-family: var(--figure-serif)">u</tspan></text>
+    <text x="182" y="70" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0.5</text>
+    <text x="244" y="70" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0.95</text>
+    <text x="368" y="70" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0.3</text>
+    <text x="430" y="70" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0.6</text>
+    <text x="84" y="96.5" font-size="13" text-anchor="end">candidate</text>
+    <rect x="154" y="80" width="56" height="24" rx="3" stroke="currentColor" fill="none" stroke-width="1.5"/>
+    <text x="182" y="96.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="216" y="80" width="56" height="24" rx="3" stroke="currentColor" fill="none" stroke-dasharray="3 3" stroke-opacity="0.5" stroke-width="1"/>
+    <text x="244" y="96.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">3</text>
+    <rect x="340" y="80" width="56" height="24" rx="3" stroke="currentColor" fill="none" stroke-width="1.5"/>
+    <text x="368" y="96.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+    <rect x="402" y="80" width="56" height="24" rx="3" stroke="currentColor" fill="none" stroke-width="1.5"/>
+    <text x="430" y="96.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+    <text x="84" y="126" font-size="13" text-anchor="end">confidence</text>
+    <text x="182" y="126" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.70</text>
+    <rect x="154" y="132" width="39.2" height="8" stroke="currentColor" stroke-width="1" style="fill: var(--figure-accent)"/>
+    <text x="244" y="126" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.10</text>
+    <rect x="216" y="132" width="5.6" height="8" stroke="currentColor" stroke-width="1" fill="none" stroke-dasharray="3 3"/>
+    <text x="368" y="126" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.60</text>
+    <rect x="340" y="132" width="33.6" height="8" stroke="currentColor" stroke-width="1" style="fill: var(--figure-accent)"/>
+    <text x="430" y="126" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.30</text>
+    <rect x="402" y="132" width="16.8" height="8" stroke="currentColor" stroke-width="1" style="fill: var(--figure-accent)"/>
+    <text x="84" y="168.5" font-size="13" text-anchor="end">after</text>
+    <rect x="92" y="152" width="56" height="24" rx="3" stroke="currentColor" stroke-width="1.5" fill="none"/>
+    <text x="120" y="168.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">3</text>
+    <rect x="154" y="152" width="56" height="24" rx="3" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22"/>
+    <text x="182" y="168.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="216" y="152" width="56" height="24" rx="3" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-embed)"/>
+    <text x="244" y="168.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">M</text>
+    <rect x="278" y="152" width="56" height="24" rx="3" stroke="currentColor" stroke-width="1.5" fill="none"/>
+    <text x="306" y="168.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+    <rect x="340" y="152" width="56" height="24" rx="3" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22"/>
+    <text x="368" y="168.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+    <rect x="402" y="152" width="56" height="24" rx="3" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.22"/>
+    <text x="430" y="168.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
+  </g>
+</svg>

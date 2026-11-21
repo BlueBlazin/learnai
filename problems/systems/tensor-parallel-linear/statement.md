@@ -106,6 +106,8 @@ shard_weights(w_up, b_up, w_down, b_down, 2)
 # device 1: up [[1, 1], [1, -1]], up_bias [0, 3],  down [[1, 0], [0, -1]], down_bias [10, 20]
 ```
 
+![The example on two devices. Each device turns its hidden units into a partial output; one all-reduce sums them, and $b_\text{down}$ is added once.](assets/tp-mlp.svg)
+
 For `x = [1, 2]`:
 
 - Device 0: pre-activations `[1, 1]`, hidden `[0.731059, 0.731059]`, partial output

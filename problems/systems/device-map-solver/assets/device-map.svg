@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 254">
+  <title>Where the example places each module</title>
+  <desc>One bar per device, filled in module order. Device 0 holds embed and layers.0 within its budget of 1200, device 1 holds layers.1, and the CPU holds layers.2 and norm.</desc>
+  <!-- Geometry: x = 64 + 0.15 * bytes; one row of 56 units per device, bars 38 high. -->
+  <g font-size="13" text-anchor="end">
+    <text x="54" y="60">0</text>
+    <text x="54" y="116">1</text>
+    <text x="54" y="172">cpu</text>
+    <text x="54" y="228">disk</text>
+  </g>
+  <!-- Device capacities; disk has no limit -->
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <rect x="64" y="36" width="300" height="38"/>
+    <rect x="64" y="92" width="150" height="38"/>
+    <rect x="64" y="148" width="135" height="38"/>
+    <polyline points="194,204 64,204 64,242 194,242" stroke-dasharray="4 3"/>
+  </g>
+  <!-- The reserve: the largest indivisible module, kept free on device 0 -->
+  <rect x="244" y="36" width="120" height="38" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="304" y="59" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">reserve 800</text>
+  <!-- Placed modules, in forward order -->
+  <rect x="64" y="36" width="60" height="38" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-embed)"/>
+  <rect x="124" y="36" width="120" height="38" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  <rect x="64" y="92" width="120" height="38" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  <rect x="64" y="148" width="120" height="38" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  <rect x="184" y="148" width="1.5" height="38" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-norm)"/>
+  <g font-size="13" text-anchor="middle">
+    <text x="94" y="52">embed</text>
+    <text x="184" y="52">layers.0</text>
+    <text x="124" y="108">layers.1</text>
+    <text x="124" y="164">layers.2</text>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="94" y="68">400</text>
+    <text x="184" y="68">800</text>
+    <text x="124" y="124">800</text>
+    <text x="124" y="180">800</text>
+  </g>
+  <text x="64" y="31" font-size="13" style="font-family: var(--figure-mono)">+ lm_head</text>
+  <text x="179.5" y="143" font-size="13">norm 10</text>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="372" y="59">max 2000</text>
+    <text x="222" y="115">max 1000</text>
+    <text x="207" y="171">max 900</text>
+    <text x="202" y="227">no limit</text>
+  </g>
+</svg>
