@@ -2663,6 +2663,17 @@ check_guard()                                # the first refused access fails th
   `"__class__"` unless you mean that.
 - **What it may never do.** Set or delete an attribute, or copy the object (`copy`,
   `deepcopy`, `pickle`).
+- **No counting object of its own.** While the guard is armed, a `Counters` made by
+  the solution, or by kit code the solution called some other way than through a
+  guarded object, is refused: `` the solution may not build a counting object of the
+  kit in this problem: the work is counted on the object it was given ``. Every kit
+  object that counts work makes its `Counters` when it is built, so this stops the
+  twin whose settings were guessed (`TinyLM(lm.fw, seed=s)` for every `s`), a second
+  `MLXTinyLM` filled with the first one's parameters, and `with_framework` borrowed
+  from the class, without a `forbidden` entry. Test code builds what it likes, except
+  in a callback that the solution calls directly (make it a method of a guarded
+  object). A problem whose solution is meant to build such objects (it compiles its
+  own `CharDFA`, say) arms the guard with `guard(ctx, may_build=True)`.
 - **Messages**, the same on public and hidden cases: `` `store.counters` may not be
   used in this problem ``, `` `store.plain` may not be set in this problem ``,
   `` `model` may not be copied in this problem ``, and, for a borrowed method (next

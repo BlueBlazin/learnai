@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from learnai.kit import guarded
+
 
 class Counters:
     """Named integer counters that a kit object increments as it does work.
@@ -11,9 +13,13 @@ class Counters:
         lm.counters.reset()               # back to zero
 
     Tests assert on them with ``check.cost(lm.counters, "tokens_processed", at_most=12)``.
+
+    In a problem that arms the kit's guard (``guard(ctx)``), the solution cannot make
+    one, directly or by building a kit object that has one: see ``learnai.kit.guarded``.
     """
 
     def __init__(self, *names: str) -> None:
+        guarded.building_counters()
         self._names = names
         self.reset()
 

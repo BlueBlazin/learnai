@@ -78,6 +78,7 @@ def solve(tmp_path):
 
     yield make
     guarded_module._solution_file = None
+    guarded_module._may_build = False
     guarded_module._violations.clear()
 
 
@@ -607,6 +608,48 @@ def test_coroutines_and_generators_of_a_guarded_object_run_through_it(solve):
     with pytest.raises(CheckFailure, match=r"`line.counters` may not be used in this problem"):
         asyncio.run(solution["counters"](line))
     assert line.counters.asked == 4
+
+
+def test_the_solution_cannot_build_a_counting_object_of_its_own(solve, fw):
+    class LM(Guarded, TinyLM):
+        label = "lm"
+        refused = Guarded.refused | {"seed"}
+
+    source = """
+        from learnai.kit import Counters, CountingExperts, TinyLM
+
+        def honest(lm, tokens): return lm(tokens)[0]
+        def guessed(lm, tokens): return TinyLM(lm.fw, seed=3)(tokens)[0]
+        def subclass(lm, tokens): return type(lm)(lm.fw, 3)(tokens)[0]
+        def other(lm, tokens): return CountingExperts(lm.fw, seed=1)
+        def bare(lm, tokens): return Counters("mine")
+        """
+    solution = solve(source)
+    lm = LM(fw, seed=3)
+    message = "the solution may not build a counting object of the kit in this problem"
+    solution["honest"](lm, [0, 17])
+    check_guard()
+    for name in ("guessed", "other", "bare"):
+        assert refused(solution[name], lm, [0, 17]).startswith(message)
+    # A second object of the guarded class is stopped earlier, at its first attribute.
+    assert refused(solution["subclass"], lm, [0, 17]).startswith("`lm.fw` may not be set outside")
+    assert lm.counters.forward_calls == 1
+    assert isinstance(lm.with_framework(fw), TinyLM) and TinyLM(fw, seed=4)  # the test may
+
+    solution = solve(source)  # a problem whose solution is meant to build them
+    guard(
+        types.SimpleNamespace(
+            solution=types.SimpleNamespace(__file__=guarded_module._solution_file)
+        ),
+        may_build=True,
+    )
+    assert fw.numpy(solution["guessed"](lm, [0, 17])).shape == (2, 64)
+    check_guard()
+    guard(
+        types.SimpleNamespace(
+            solution=types.SimpleNamespace(__file__=guarded_module._solution_file)
+        )
+    )
 
 
 def test_of_guards_an_object_that_was_built_elsewhere(solve):

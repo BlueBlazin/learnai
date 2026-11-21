@@ -31,6 +31,12 @@ Three rules, all about *who is asking* (the call stack decides, as for ``forbidd
    Nor does code the solution has such a call run for it: a callback, or the special
    method of an argument it passed in.
 3. A guarded object cannot be copied.
+4. While the guard is armed, the solution cannot build a counting object of its own:
+   every kit object that counts work makes a ``Counters``, and a ``Counters`` made by
+   the solution, or by kit code the solution called some other way than through a
+   guarded object (``TinyLM(lm.fw, seed=3)``), is refused. That is the twin whose
+   settings were guessed. ``guard(ctx, may_build=True)`` lifts the rule for a problem
+   whose solution is meant to build such objects.
 
 Python calls a special method without asking for an attribute: ``lm(tokens)``,
 ``len(file)``, ``file[a:b]``, ``with file:``. The special methods a guarded class
@@ -73,6 +79,7 @@ _PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.sep 
 _STATE: dict[int, dict[str, Any]] = {}
 _violations: list[str] = []
 _solution_file: str | None = None
+_may_build = False
 _test_file: str | None = None
 #: Names of the object's machinery: restricted in every guarded class, whatever its
 #: ``refused``. Each one is a way around the rules: ``store.__init__(...)`` starts the
@@ -103,7 +110,7 @@ SPECIAL = (
 _LATER = inspect.CO_COROUTINE | inspect.CO_GENERATOR | inspect.CO_ASYNC_GENERATOR
 
 
-def guard(ctx: Any) -> None:
+def guard(ctx: Any, *, may_build: bool = False) -> None:
     """Arm the guards for the solution of this run and forget earlier violations.
 
     Call it in the test, right before the solution is called::
@@ -113,11 +120,31 @@ def guard(ctx: Any) -> None:
         check_guard()
 
     The file that calls ``guard`` (the problem's ``tests.py``) is trusted like the kit.
+    With ``may_build=True`` the solution may build counting objects of the kit (rule 4
+    of the module docstring): for a problem whose solution compiles its own ``CharDFA``,
+    say.
     """
-    global _solution_file, _test_file
+    global _solution_file, _test_file, _may_build
     _solution_file = ctx.solution.__file__
     _test_file = sys._getframe(1).f_code.co_filename
+    _may_build = may_build
     _violations.clear()
+
+
+def building_counters() -> None:
+    """Called by ``Counters`` when one is made: refuse it if the solution is building it.
+
+    Kit objects that count work make their ``Counters`` in ``__init__`` and in
+    ``with_framework``, so this is where a second, uncounted object shows, whatever
+    class it is and however its settings were found.
+    """
+    if _solution_file is None or _may_build:
+        return
+    if _asker(sys._getframe(1)) != "trusted":
+        _violation(
+            "the solution may not build a counting object of the kit in this problem: "
+            "the work is counted on the object it was given"
+        )
 
 
 def check_guard() -> None:
