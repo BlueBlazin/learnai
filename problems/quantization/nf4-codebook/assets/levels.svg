@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 196">
+  <title>The 16 NF4 levels over a normal density, and 16 uniform levels</title>
+  <desc>A bell curve over the block-normalized weight from −1 to 1. Beneath it, the 16 NF4 levels crowd around zero; below those, 16 evenly spaced levels.</desc>
+  <!-- Geometry: weight v is at x = 250 + 180 v. The curve has the standard deviation 1 / 1.848 and peaks at y = 36 over the baseline y = 100. NF4 ticks are y = 112..132, uniform ticks y = 148..168. -->
+  <!-- Baseline and the density -->
+  <line x1="70" y1="100" x2="430" y2="100" fill="none" stroke-width="1" style="stroke: var(--figure-faint)"/>
+  <path d="M70.0 88.4 L79.0 86.3 L88.0 83.9 L97.0 81.4 L106.0 78.5 L115.0 75.5 L124.0 72.3 L133.0 68.9 L142.0 65.4 L151.0 61.8 L160.0 58.2 L169.0 54.7 L178.0 51.3 L187.0 48.1 L196.0 45.1 L205.0 42.5 L214.0 40.2 L223.0 38.4 L232.0 37.1 L241.0 36.3 L250.0 36.0 L259.0 36.3 L268.0 37.1 L277.0 38.4 L286.0 40.2 L295.0 42.5 L304.0 45.1 L313.0 48.1 L322.0 51.3 L331.0 54.7 L340.0 58.2 L349.0 61.8 L358.0 65.4 L367.0 68.9 L376.0 72.3 L385.0 75.5 L394.0 78.5 L403.0 81.4 L412.0 83.9 L421.0 86.3 L430.0 88.4" fill="none" stroke-width="1.5" style="stroke: var(--figure-muted)"/>
+  <text x="346" y="48.5" font-size="13" style="fill: var(--figure-muted)">normal density</text>
+  <!-- NF4 levels -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <line x1="70.0" y1="112" x2="70.0" y2="132"/>
+    <line x1="124.7" y1="112" x2="124.7" y2="132"/>
+    <line x1="155.5" y1="112" x2="155.5" y2="132"/>
+    <line x1="178.9" y1="112" x2="178.9" y2="132"/>
+    <line x1="198.8" y1="112" x2="198.8" y2="132"/>
+    <line x1="216.7" y1="112" x2="216.7" y2="132"/>
+    <line x1="233.6" y1="112" x2="233.6" y2="132"/>
+    <line x1="250.0" y1="112" x2="250.0" y2="132"/>
+    <line x1="264.3" y1="112" x2="264.3" y2="132"/>
+    <line x1="279.0" y1="112" x2="279.0" y2="132"/>
+    <line x1="294.3" y1="112" x2="294.3" y2="132"/>
+    <line x1="310.8" y1="112" x2="310.8" y2="132"/>
+    <line x1="329.3" y1="112" x2="329.3" y2="132"/>
+    <line x1="351.3" y1="112" x2="351.3" y2="132"/>
+    <line x1="380.1" y1="112" x2="380.1" y2="132"/>
+    <line x1="430.0" y1="112" x2="430.0" y2="132"/>
+  </g>
+  <!-- Uniform levels -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-straw)">
+    <line x1="70.0" y1="148" x2="70.0" y2="168"/>
+    <line x1="94.0" y1="148" x2="94.0" y2="168"/>
+    <line x1="118.0" y1="148" x2="118.0" y2="168"/>
+    <line x1="142.0" y1="148" x2="142.0" y2="168"/>
+    <line x1="166.0" y1="148" x2="166.0" y2="168"/>
+    <line x1="190.0" y1="148" x2="190.0" y2="168"/>
+    <line x1="214.0" y1="148" x2="214.0" y2="168"/>
+    <line x1="238.0" y1="148" x2="238.0" y2="168"/>
+    <line x1="262.0" y1="148" x2="262.0" y2="168"/>
+    <line x1="286.0" y1="148" x2="286.0" y2="168"/>
+    <line x1="310.0" y1="148" x2="310.0" y2="168"/>
+    <line x1="334.0" y1="148" x2="334.0" y2="168"/>
+    <line x1="358.0" y1="148" x2="358.0" y2="168"/>
+    <line x1="382.0" y1="148" x2="382.0" y2="168"/>
+    <line x1="406.0" y1="148" x2="406.0" y2="168"/>
+    <line x1="430.0" y1="148" x2="430.0" y2="168"/>
+  </g>
+  <!-- Axis -->
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="70" y1="174" x2="430" y2="174"/>
+    <line x1="70.0" y1="174" x2="70.0" y2="178"/>
+    <line x1="250.0" y1="174" x2="250.0" y2="178"/>
+    <line x1="430.0" y1="174" x2="430.0" y2="178"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="70.0" y="192.5">−1</text>
+    <text x="250.0" y="192.5">0</text>
+    <text x="430.0" y="192.5">1</text>
+  </g>
+  <g font-size="13" text-anchor="end"><text x="62" y="126.5">NF4</text><text x="62" y="162.5">uniform</text></g>
+</svg>

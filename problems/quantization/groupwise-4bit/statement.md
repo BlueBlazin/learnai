@@ -85,6 +85,8 @@ bias   # [[-0.5,  2.0 ],
 
 Each row has two groups of four, and 4 bits give $L = 15$ steps.
 
+![The example matrix, each row cut into two groups of four along the input axis, with the scale and bias of every group.](assets/groups.svg)
+
 The first group of row 0 spans $[-0.5, 1.0]$, so $\text{scale} = 1.5 / 15 = 0.1$ and
 $\text{bias} = -0.5$:
 

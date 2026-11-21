@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 192">
+  <title>The example weight matrix cut into groups along the input axis</title>
+  <desc>Two rows of eight weights, each cut into two groups of four along the input axis. Under every group are its scale and its bias.</desc>
+  <!-- Geometry: column j is the cell x = 88 + 44 j, 44 wide. Row 0 is y = 36..62 and row 1 is y = 96..122. A group is four cells. -->
+  <!-- Group names and row names -->
+  <g font-size="13" text-anchor="middle">
+    <text x="176" y="22.5">group 0</text>
+    <text x="352" y="22.5">group 1</text>
+  </g>
+  <g font-size="13" text-anchor="end"><text x="80" y="54.5">row 0</text><text x="80" y="114.5">row 1</text></g>
+  <!-- Row 0 -->
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="132" y1="36" x2="132" y2="62"/>
+    <line x1="176" y1="36" x2="176" y2="62"/>
+    <line x1="220" y1="36" x2="220" y2="62"/>
+    <line x1="308" y1="36" x2="308" y2="62"/>
+    <line x1="352" y1="36" x2="352" y2="62"/>
+    <line x1="396" y1="36" x2="396" y2="62"/>
+  </g>
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="88" y="36" width="176" height="26"/>
+    <rect x="264" y="36" width="176" height="26"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="110" y="54.5">0.0</text>
+    <text x="154" y="54.5">0.33</text>
+    <text x="198" y="54.5">−0.5</text>
+    <text x="242" y="54.5">1.0</text>
+    <text x="286" y="54.5">2.0</text>
+    <text x="330" y="54.5">2.2</text>
+    <text x="374" y="54.5">2.9</text>
+    <text x="418" y="54.5">2.6</text>
+    <text x="176" y="80.5">scale <tspan style="font-family: var(--figure-mono)">0.1</tspan>  bias <tspan style="font-family: var(--figure-mono)">−0.5</tspan></text>
+    <text x="352" y="80.5">scale <tspan style="font-family: var(--figure-mono)">0.06</tspan>  bias <tspan style="font-family: var(--figure-mono)">2.0</tspan></text>
+  </g>
+  <!-- Row 1 -->
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <line x1="132" y1="96" x2="132" y2="122"/>
+    <line x1="176" y1="96" x2="176" y2="122"/>
+    <line x1="220" y1="96" x2="220" y2="122"/>
+    <line x1="308" y1="96" x2="308" y2="122"/>
+    <line x1="352" y1="96" x2="352" y2="122"/>
+    <line x1="396" y1="96" x2="396" y2="122"/>
+  </g>
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="88" y="96" width="176" height="26"/>
+    <rect x="264" y="96" width="176" height="26"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="110" y="114.5">−1.0</text>
+    <text x="154" y="114.5">−1.0</text>
+    <text x="198" y="114.5">−1.0</text>
+    <text x="242" y="114.5">−1.0</text>
+    <text x="286" y="114.5">0.5</text>
+    <text x="330" y="114.5">−0.25</text>
+    <text x="374" y="114.5">0.1</text>
+    <text x="418" y="114.5">0.3</text>
+    <text x="176" y="140.5">scale <tspan style="font-family: var(--figure-mono)">1.0</tspan>  bias <tspan style="font-family: var(--figure-mono)">−1.0</tspan></text>
+    <text x="352" y="140.5">scale <tspan style="font-family: var(--figure-mono)">0.05</tspan>  bias <tspan style="font-family: var(--figure-mono)">−0.25</tspan></text>
+  </g>
+  <!-- The input axis -->
+  <line x1="88" y1="164" x2="439.5" y2="164" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <polygon points="446,164 439.5,167.3 439.5,160.7"/>
+  <text x="267" y="186.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">input axis</text>
+</svg>

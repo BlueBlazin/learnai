@@ -83,6 +83,8 @@ $$
 The second word holds the remaining codes 15, 2, 8 and five padding zeros:
 `0x0000082F`. Unpacking with `n = 11` returns the eleven codes and not the padding.
 
+![The two words of the example. Code $c_0$ sits in the lowest four bits of word 0, and the five unused fields of word 1 are zero.](assets/word-layout.svg)
+
 ## Constraints
 
 - All comparisons are **exact**.

@@ -102,6 +102,8 @@ Row 0, column by column:
 | 1 | $1.4$ | $2.8$ | $3$ | $1.5$ | $-0.1$ | $[\,\cdot\,,\ \cdot\,,\ -0.7 + 0.1 \cdot 0.5] = [\,\cdot\,,\ \cdot\,,\ -0.65]$ |
 | 2 | $-0.65$ | $-1.3$ | $-1$ | $-0.5$ | | |
 
+![Row 0 of the example, quantized one column at a time. The error of each column is added to the columns after it.](assets/column-steps.svg)
+
 Rounding each weight on its own would give $[1, 3, -2]$: the last weight, $-0.8$,
 is $1.6$ steps from zero. GPTQ rounds it to $-1$ instead, because the first two
 columns were rounded in directions whose effect on the output is best cancelled by

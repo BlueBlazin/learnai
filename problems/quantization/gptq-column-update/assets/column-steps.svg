@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 166">
+  <title>GPTQ on row 0 of the example, one column at a time</title>
+  <desc>Four frames over the three weights of row 0. Each column is quantized in turn and its error is added to the columns after it.</desc>
+  <!-- Geometry: column j is the cell x = 90 + 120 j, 100 wide, y = 30..62. The error bus runs at y = 84. -->
+  <!-- In every frame: column names, the row, the scale, and the key -->
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="140" y="18.5"><tspan font-style="italic" style="font-family: var(--figure-serif)">j</tspan> = 0</text><text x="260" y="18.5"><tspan font-style="italic" style="font-family: var(--figure-serif)">j</tspan> = 1</text><text x="380" y="18.5"><tspan font-style="italic" style="font-family: var(--figure-serif)">j</tspan> = 2</text>
+  </g>
+  <g font-size="13" text-anchor="end"><text x="82" y="50.5">row 0</text></g>
+  <g font-size="13" text-anchor="end" style="fill: var(--figure-muted)"><text x="82" y="68.5">scale 0.5</text></g>
+  <!-- Key -->
+  <rect x="90" y="146" width="20" height="12" stroke="currentColor" stroke-width="1" fill-opacity="0.3" style="fill: var(--figure-accent)"/>
+  <text x="116" y="156.5" font-size="13">quantized</text>
+  <rect x="210" y="146" width="20" height="12" stroke="currentColor" stroke-width="1.5" fill-opacity="0.3" style="fill: var(--figure-straw)"/>
+  <text x="236" y="156.5" font-size="13">current</text>
+  <rect x="320" y="146" width="20" height="12" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+  <text x="346" y="156.5" font-size="13">remaining</text>
+  <g id="step-1">
+    <desc>Column 0 rounds to 1 with error 0.2, which moves the two remaining columns to 1.4 and −0.7.</desc>
+    <rect x="90" y="30" width="100" height="32" stroke="currentColor" stroke-width="1.5" fill-opacity="0.3" style="fill: var(--figure-straw)"/>
+    <text x="140" y="51.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.7</text>
+    <text x="140" y="104.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">q = 1</text>
+    <text x="140" y="122.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">e = 0.2</text>
+    <rect x="210" y="30" width="100" height="32" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <text x="260" y="51.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1.5</text>
+    <text x="260" y="104.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1.5 → 1.4</text>
+    <rect x="330" y="30" width="100" height="32" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <text x="380" y="51.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">−0.8</text>
+    <text x="380" y="104.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">−0.8 → −0.7</text>
+    <polyline points="140,62 140,84 380,84" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <g fill="none" stroke="currentColor" stroke-width="1.5">
+      <line x1="260" y1="84" x2="260" y2="75.5"/>
+      <line x1="380" y1="84" x2="380" y2="75.5"/>
+    </g>
+    <polygon points="260,68 263.3,74.5 256.7,74.5"/>
+    <polygon points="380,68 383.3,74.5 376.7,74.5"/>
+  </g>
+  <g id="step-2">
+    <desc>Column 1 is now 1.4 and rounds to 3 with error −0.1, which moves the last column from −0.7 to −0.65.</desc>
+    <rect x="90" y="30" width="100" height="32" stroke="currentColor" stroke-width="1" fill-opacity="0.3" style="fill: var(--figure-accent)"/>
+    <text x="140" y="51.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.5</text>
+    <text x="140" y="104.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">q = 1</text>
+    <rect x="210" y="30" width="100" height="32" stroke="currentColor" stroke-width="1.5" fill-opacity="0.3" style="fill: var(--figure-straw)"/>
+    <text x="260" y="51.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1.4</text>
+    <text x="260" y="104.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">q = 3</text>
+    <text x="260" y="122.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">e = −0.1</text>
+    <rect x="330" y="30" width="100" height="32" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
+    <text x="380" y="51.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">−0.7</text>
+    <text x="380" y="104.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">−0.7 → −0.65</text>
+    <polyline points="260,62 260,84 380,84" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <g fill="none" stroke="currentColor" stroke-width="1.5">
+      <line x1="380" y1="84" x2="380" y2="75.5"/>
+    </g>
+    <polygon points="380,68 383.3,74.5 376.7,74.5"/>
+  </g>
+  <g id="step-3">
+    <desc>Column 2 is now −0.65 and rounds to −1; no column is left to receive its error.</desc>
+    <rect x="90" y="30" width="100" height="32" stroke="currentColor" stroke-width="1" fill-opacity="0.3" style="fill: var(--figure-accent)"/>
+    <text x="140" y="51.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.5</text>
+    <text x="140" y="104.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">q = 1</text>
+    <rect x="210" y="30" width="100" height="32" stroke="currentColor" stroke-width="1" fill-opacity="0.3" style="fill: var(--figure-accent)"/>
+    <text x="260" y="51.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1.5</text>
+    <text x="260" y="104.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">q = 3</text>
+    <rect x="330" y="30" width="100" height="32" stroke="currentColor" stroke-width="1.5" fill-opacity="0.3" style="fill: var(--figure-straw)"/>
+    <text x="380" y="51.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">−0.65</text>
+    <text x="380" y="104.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">q = −1</text>
+  </g>
+  <g id="step-4">
+    <desc>All three columns are quantized to 1, 3, and −1, where rounding each weight alone gives 1, 3, and −2.</desc>
+    <rect x="90" y="30" width="100" height="32" stroke="currentColor" stroke-width="1" fill-opacity="0.3" style="fill: var(--figure-accent)"/>
+    <text x="140" y="51.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0.5</text>
+    <text x="140" y="104.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">q = 1</text>
+    <rect x="210" y="30" width="100" height="32" stroke="currentColor" stroke-width="1" fill-opacity="0.3" style="fill: var(--figure-accent)"/>
+    <text x="260" y="51.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1.5</text>
+    <text x="260" y="104.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">q = 3</text>
+    <rect x="330" y="30" width="100" height="32" stroke="currentColor" stroke-width="1" fill-opacity="0.3" style="fill: var(--figure-accent)"/>
+    <text x="380" y="51.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">−0.5</text>
+    <text x="380" y="104.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">q = −1</text>
+  </g>
+</svg>

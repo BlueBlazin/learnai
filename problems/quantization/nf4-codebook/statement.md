@@ -115,6 +115,8 @@ to level 10 ($0.2461$) and comes back as $0.2461 \cdot 0.04 = 0.009844$.
 The levels are dense near zero and sparse near $\pm 1$: the gap between levels 7 and 8
 is $0.080$, the gap between levels 14 and 15 is $0.277$.
 
+![Block-normalized weights follow a bell curve. The 16 NF4 levels crowd near zero and include an exact zero; 16 uniform levels are spread evenly.](assets/levels.svg)
+
 ## Constraints
 
 - $1 \le \text{out} \le 64$, $1 \le \text{in} \le 1024$, and `block_size` divides

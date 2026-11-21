@@ -29,6 +29,8 @@ y_i \;=\; \sum_{j} x_j \, \hat W_{i,j}
 \;+\; \text{bias}_{i,g} \sum_{j \in g} x_j \Big).
 $$
 
+![One group $g$ of the sum: the codes meet $x_g$ and the scale, the sum of $x_g$ meets the bias, and the groups add up to $y$.](assets/grouped-product.svg)
+
 - `x`: float32 activations of shape `(..., in)` with one to three dimensions. The last
   axis is the input axis; all other axes are batch axes.
 - `codes`: a uint8 tensor of shape `(out, in)`. Any value from 0 to 255 may appear.

@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 228">
+  <title>One Q4_K superblock</title>
+  <desc>A superblock of 256 weights: eight blocks of 32 4-bit codes, a 6-bit scale and minimum for each block, and one float16 pair, d and dmin, with the example values.</desc>
+  <!-- Geometry: block b is the column x = 64 + 52 b, 48 wide. d, dmin y = 22..44; scales y = 76..98; mins y = 98..120; codes y = 152..176. -->
+  <text x="64" y="14.5" font-size="13" style="fill: var(--figure-muted)"><tspan font-style="italic" style="font-family: var(--figure-serif)">d</tspan>, <tspan font-style="italic" style="font-family: var(--figure-serif)">d</tspan><tspan dy="3">min</tspan><tspan dy="-3">: float16</tspan></text>
+  <text x="64" y="68.5" font-size="13" style="fill: var(--figure-muted)">scales and mins, 6 bits each</text>
+  <text x="64" y="144.5" font-size="13" style="fill: var(--figure-muted)">codes, 32 per block, 4 bits each</text>
+  <!-- The float16 pair -->
+  <g stroke="currentColor" stroke-width="1.5" fill="none">
+    <rect x="64" y="22" width="130" height="22" rx="5"/>
+    <rect x="204" y="22" width="130" height="22" rx="5"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="129" y="37.5"><tspan font-style="italic" style="font-family: var(--figure-serif)">d</tspan> = <tspan style="font-family: var(--figure-mono)">0.0031738</tspan></text>
+    <text x="269" y="37.5"><tspan font-style="italic" style="font-family: var(--figure-serif)">d</tspan><tspan dy="3">min</tspan><tspan dy="-3"> = </tspan><tspan style="font-family: var(--figure-mono)">0.015869</tspan></text>
+  </g>
+  <!-- Scales and mins -->
+  <g stroke="currentColor" stroke-width="1" fill="none">
+    <rect x="64" y="76" width="48" height="22"/>
+    <rect x="64" y="98" width="48" height="22"/>
+    <rect x="116" y="76" width="48" height="22"/>
+    <rect x="116" y="98" width="48" height="22"/>
+    <rect x="168" y="76" width="48" height="22"/>
+    <rect x="168" y="98" width="48" height="22"/>
+    <rect x="220" y="76" width="48" height="22"/>
+    <rect x="220" y="98" width="48" height="22"/>
+    <rect x="272" y="76" width="48" height="22"/>
+    <rect x="272" y="98" width="48" height="22"/>
+    <rect x="324" y="76" width="48" height="22"/>
+    <rect x="324" y="98" width="48" height="22"/>
+    <rect x="376" y="76" width="48" height="22"/>
+    <rect x="376" y="98" width="48" height="22"/>
+    <rect x="428" y="76" width="48" height="22"/>
+    <rect x="428" y="98" width="48" height="22"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="88" y="91.5">63</text>
+    <text x="88" y="113.5">63</text>
+    <text x="140" y="91.5">21</text>
+    <text x="140" y="113.5">0</text>
+    <text x="192" y="91.5">0</text>
+    <text x="192" y="113.5">25</text>
+    <text x="244" y="91.5">0</text>
+    <text x="244" y="113.5">0</text>
+    <text x="296" y="91.5">0</text>
+    <text x="296" y="113.5">0</text>
+    <text x="348" y="91.5">0</text>
+    <text x="348" y="113.5">0</text>
+    <text x="400" y="91.5">0</text>
+    <text x="400" y="113.5">0</text>
+    <text x="452" y="91.5">0</text>
+    <text x="452" y="113.5">0</text>
+  </g>
+  <g font-size="13" text-anchor="end"><text x="58" y="91.5">scales</text><text x="58" y="113.5">mins</text><text x="58" y="193.5" style="fill: var(--figure-muted)">block</text></g>
+  <!-- Codes -->
+  <g stroke="currentColor" stroke-width="1" fill-opacity="0.3" style="fill: var(--figure-accent)">
+    <rect x="64" y="152" width="48" height="24"/>
+    <rect x="116" y="152" width="48" height="24"/>
+    <rect x="168" y="152" width="48" height="24"/>
+    <rect x="220" y="152" width="48" height="24"/>
+    <rect x="272" y="152" width="48" height="24"/>
+    <rect x="324" y="152" width="48" height="24"/>
+    <rect x="376" y="152" width="48" height="24"/>
+    <rect x="428" y="152" width="48" height="24"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="88" y="168.5">32</text>
+    <text x="140" y="168.5">32</text>
+    <text x="192" y="168.5">32</text>
+    <text x="244" y="168.5">32</text>
+    <text x="296" y="168.5">32</text>
+    <text x="348" y="168.5">32</text>
+    <text x="400" y="168.5">32</text>
+    <text x="452" y="168.5">32</text>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="88" y="193.5">0</text>
+    <text x="140" y="193.5">1</text>
+    <text x="192" y="193.5">2</text>
+    <text x="244" y="193.5">3</text>
+    <text x="296" y="193.5">4</text>
+    <text x="348" y="193.5">5</text>
+    <text x="400" y="193.5">6</text>
+    <text x="452" y="193.5">7</text>
+  </g>
+  <path d="M64 202 v5 H476 v-5" fill="none" stroke="currentColor" stroke-width="1"/>
+  <text x="270" y="223.5" font-size="13" text-anchor="middle">superblock, 256 weights</text>
+</svg>

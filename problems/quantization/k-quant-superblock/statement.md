@@ -121,6 +121,8 @@ q4k_decode(codes, scales, mins, d, dmin)
 # [0, 64:96] = -0.39673
 ```
 
+![The encoded superblock of the example: the float16 pair, the 6-bit scale and minimum of each block, and the 32 4-bit codes of each block.](assets/superblock.svg)
+
 **Step 1.** Block 0 spans $[-1, 2]$: scale $3 / 15 = 0.2$, minimum $1$. Block 1 has
 only non-negative weights, so its $lo$ is clamped to $0$: scale $1 / 15$, minimum
 $0$. Block 2 is constant at $-0.4$: its range is 0, so its scale is 0 and its
