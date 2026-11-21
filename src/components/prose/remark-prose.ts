@@ -18,11 +18,25 @@
  * as the author wrote it (Markdown: it may hold math and emphasis), `data-alt`
  * the same as plain text. An image inside a sentence stays an inline image.
  *
+ * A figure whose URL is `interactive:<name>` is one the app draws itself:
+ *
+ *     ![The caption.](interactive:sampler-order)
+ *
+ * It is numbered like any other and also carries `data-interactive="<name>"`.
+ *
  * And punctuation that follows inline math is bound to it (`bindMathPunctuation`).
  */
 
 /** Image URLs under this prefix name a file in the problem's `assets/` directory. */
 export const ASSET_PREFIX = "assets/";
+
+/** Image URLs under this prefix name an interactive figure built into the app. */
+export const INTERACTIVE_PREFIX = "interactive:";
+
+/** The name in `interactive:<name>`, or null for any other URL. The name may be one the app does not have. */
+export function interactiveName(url: string): string | null {
+  return url.startsWith(INTERACTIVE_PREFIX) ? url.slice(INTERACTIVE_PREFIX.length) : null;
+}
 
 interface Node {
   type: string;
@@ -66,6 +80,7 @@ function visit(node: Node, counter: State): void {
   const image = soleImage(node);
   if (image) {
     counter.figures += 1;
+    const interactive = interactiveName(image.url ?? "");
     node.children = [];
     node.data = {
       ...node.data,
@@ -75,6 +90,7 @@ function visit(node: Node, counter: State): void {
         "data-number": counter.figures,
         "data-alt": image.alt ?? "",
         "data-caption": captionSource(image, counter.source),
+        ...(interactive === null ? {} : { "data-interactive": interactive }),
       },
     };
     return;

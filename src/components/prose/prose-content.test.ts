@@ -57,6 +57,23 @@ describe("ProseContent", () => {
     expect(html).toContain('<p>An inline <img src="assets/mark.png" alt="mark"/> stays inline.</p>');
   });
 
+  it("draws interactive figures from the registry, numbered with the others", () => {
+    const html = render(
+      [
+        "![Ten tokens under $k$.](interactive:sampler-order)",
+        "![Never built.](interactive:no-such-figure)",
+        "![A plot](https://example.com/plot.png)",
+      ].join("\n\n"),
+    );
+    expect(html.match(/<figure class="figure">/g)?.length).toBe(3);
+    expect(html).toMatch(/Figure 1\.<\/span> Ten tokens under <span class="katex">/);
+    expect(html).toContain("There is no interactive figure named <code>no-such-figure</code>.");
+    expect(html).toContain("Figure 2.</span> Never built.");
+    expect(html).toContain("Figure 3.</span> A plot");
+    // The name is never treated as a URL to load.
+    expect(html).not.toContain('src="interactive:');
+  });
+
   it("renders the same document repeatedly without growing the tree", () => {
     const first = render(SAMPLE);
     for (let i = 0; i < 5; i++) expect(render(SAMPLE)).toBe(first);

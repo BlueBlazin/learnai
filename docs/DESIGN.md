@@ -37,8 +37,9 @@ binding component rules in `docs/ARCHITECTURE.md` section 5.
 6. **Pictures set a mood; they do not explain.** A scene is a place on the
    route, not a diagram of the module's topic. Icons that tried to depict a KV
    cache or a GPU were tried and dropped: illustration of abstract technical
-   ideas reads as clip art. Teaching figures belong in statements, drawn by
-   authors (`Figure`).
+   ideas reads as clip art. Teaching figures belong in statements (`Figure`):
+   drawn by authors, some of them stepped, and a few interactive ones built in
+   the app.
 
 What this deliberately is not: an untouched shadcn neutral theme, Inter or
 Geist everywhere, gradients, glass or blur, emoji as icons, card grids, pill
@@ -109,8 +110,12 @@ steps of roughly 1.2.
   author's SVG is sanitized (shapes and text only) and inlined, so its
   `currentColor` ink and the figure palette follow the theme. It is scaled to
   the measure, to at most 4/3 of its natural size: a drawing 480 units wide
-  fills the 640px measure, and text drawn at 13 units stays between about 12
-  and 17 pixels across pane widths.
+  fills the 640px measure. Its lettering scales with it up to 14px and stops
+  there while the shapes keep scaling, so text drawn at 13 units stays between
+  about 12 and 14 pixels across pane widths.
+- A figure that changes over steps is one SVG with a frame per step. The app
+  shows one frame at a time with Previous and Next, a "Step 2 of 4" count, and
+  the note of the step in the interface sans beneath the drawing.
 
 ## 3. Color
 
@@ -147,6 +152,25 @@ other temper color at a strength that reads as a line (`0.56 0.115 72` light,
 `0.82 0.105 84` dark). Blue and straw differ in lightness as well as hue, and
 figures label their series, so the pair survives color-vision deficiency.
 `--figure-sans`, `--figure-serif`, and `--figure-mono` are the three families.
+
+Blocks in a figure are filled with role colors, and each color has one meaning
+in every figure of the catalog. They are fills only: outlines, arrows, and
+lettering stay ink (`currentColor`). The light values are pale enough for ink
+lettering and the dark values deep enough for light lettering.
+
+| Token | Light | Dark | Meaning |
+|---|---|---|---|
+| `--figure-attn` | `0.88 0.085 68` | `0.45 0.085 62` | attention |
+| `--figure-mlp` | `0.89 0.055 232` | `0.43 0.075 240` | feed-forward |
+| `--figure-norm` | `0.94 0.09 104` | `0.47 0.075 100` | normalization, scaling |
+| `--figure-embed` | `0.90 0.055 12` | `0.43 0.08 12` | embedding, mask |
+| `--figure-linear` | `0.88 0.05 296` | `0.43 0.075 296` | linear layer, matrix product |
+| `--figure-softmax` | `0.90 0.07 152` | `0.44 0.075 155` | softmax, sampling |
+| `--figure-cache` | `0.89 0.06 196` | `0.44 0.07 200` | cache, state |
+| `--figure-panel` | `0.955 0.004 255` | `0.24 0 0` | the ground behind a group of blocks |
+
+A block that is not the subject of the figure is dimmed with `fill-opacity` and
+`stroke-opacity`, not with another color.
 
 The listing surface is exposed to Tailwind as `listing`, not `code`: `text-code`
 is the code type size, and a color token of the same name would make that one
@@ -297,7 +321,8 @@ Composed components, by area (all shown in their states at
 | Area | Components |
 |---|---|
 | `app/` | `AppShell`, `CommandPalette`, `AppLink`, `InlineButton`, `IconButton`, `ActionButton`, `CopyButton`, `ConfirmDialog`, `ShortcutHint`, `Page`, `PageHeader`, `Section`, `ScreenMessage`, `MetaList` / `MetaItem`, `RuledList`, `DisclosureChevron`, `Notice`, `EmptyState`, `ErrorState`, `LoadingLines`, `PixelIcon` |
-| `prose/` | `Prose`, `CodeBlock` (both lazy; `CodeFrame` is the block they share with their fallbacks), `Figure`, `SvgFigureBody`, `ProblemFigures` |
+| `prose/` | `Prose`, `CodeBlock` (both lazy; `CodeFrame` is the block they share with their fallbacks), `Figure`, `SvgFigureBody`, `FigureDrawing`, `ProblemFigures` |
+| `figures/` | `InteractiveFigure` and the registry of interactive figures behind it (lazy); the first is `SamplerOrder` (`sampler-order`) |
 | `editor/` | `CodeEditor` (with the completion list, documentation card, signature help, and diagnostics it draws; see below) |
 | `problem/` | `DifficultyMark`, `StatusMark`, `JudgeList`, `FrameworkList`, `FrameworkSwitcher`, `ProgressRule`, `ProblemTable`, `ProblemRowList`, `ProblemHeader`, `PrerequisiteList`, `PrerequisiteNote`, `HintList`, `EditorialPanel`, `SubmissionList`, `SubmissionView` |
 | `results/` | `ResultsPanel`, `VerdictHeader`, `VerdictMark`, `CaseMark`, `CaseList`, `MetricList`, `OutputBlock`, `RunProgress` |
@@ -321,9 +346,13 @@ Patterns that recur, and the one component that owns each:
 - Nothing here, failed, or loading: `EmptyState`, `ErrorState`, `LoadingLines`;
   for a whole screen, inside `ScreenMessage`.
 - A numbered, captioned drawing: `Figure`; an author's SVG inside it:
-  `SvgFigureBody`. `ProblemFigures` wraps the prose of one problem so that
-  `assets/...` images resolve through the backend; `Prose` itself knows nothing
-  about problems.
+  `SvgFigureBody`, which also steps through a file that has step groups.
+  `ProblemFigures` wraps the prose of one problem so that `assets/...` images
+  resolve through the backend; `Prose` itself knows nothing about problems.
+- A figure the reader operates: `InteractiveFigure`, named in a statement as
+  `interactive:<name>` and looked up in `figures/registry.ts`. Its drawing sits
+  in a `FigureDrawing`, which gives it the sizing and the text cap of an
+  author's SVG; its controls are shadcn primitives (`Slider`, `ToggleGroup`).
 - One thing in Settings on one line (its name, at most one line of help, its
   status, its control), with what follows under it and detail behind its name:
   `SettingRow`, inside a `SettingList`. Where such a row stands, as a shape and

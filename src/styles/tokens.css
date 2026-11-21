@@ -169,6 +169,18 @@
   --figure-serif: var(--font-serif);
   --figure-mono: var(--font-mono);
 
+  /* Figure role colors: fills only, one meaning each in every figure of the
+     catalog. Outlines, arrows, and lettering stay currentColor. Light values are
+     pale enough for ink lettering; dark values are deep enough for light lettering. */
+  --figure-attn: oklch(0.88 0.085 68);
+  --figure-mlp: oklch(0.89 0.055 232);
+  --figure-norm: oklch(0.94 0.09 104);
+  --figure-embed: oklch(0.9 0.055 12);
+  --figure-linear: oklch(0.88 0.05 296);
+  --figure-softmax: oklch(0.9 0.07 152);
+  --figure-cache: oklch(0.89 0.06 196);
+  --figure-panel: oklch(0.955 0.004 255);
+
   /* The streak's flame: one warm orange, a touch darker on light paper. */
   --flame: light-dark(color-mix(in oklch, #ec6f2a, black 4%), #ec6f2a);
 
@@ -220,6 +232,14 @@
   --shadow-float: 0 1px 2px oklch(0 0 0 / 35%), 0 10px 28px oklch(0 0 0 / 45%);
 
   --figure-straw: oklch(0.82 0.105 84);
+  --figure-attn: oklch(0.45 0.085 62);
+  --figure-mlp: oklch(0.43 0.075 240);
+  --figure-norm: oklch(0.47 0.075 100);
+  --figure-embed: oklch(0.43 0.08 12);
+  --figure-linear: oklch(0.43 0.075 296);
+  --figure-softmax: oklch(0.44 0.075 155);
+  --figure-cache: oklch(0.44 0.07 200);
+  --figure-panel: oklch(0.24 0 0);
 
   color-scheme: dark;
 }

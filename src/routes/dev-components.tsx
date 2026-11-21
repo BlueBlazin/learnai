@@ -28,6 +28,7 @@ import { ModuleRowList } from "@/components/curriculum/module-row-list";
 import { ModuleSwatch } from "@/components/curriculum/module-swatch";
 import { SceneBanner } from "@/components/curriculum/scene-banner";
 import { CodeEditor } from "@/components/editor/code-editor";
+import { InteractiveFigure } from "@/components/figures/interactive-figure";
 import { ActivityCalendar } from "@/components/home/activity-calendar";
 import { ContinueEntry } from "@/components/home/continue-entry";
 import { GettingStarted } from "@/components/home/getting-started";
@@ -298,6 +299,78 @@ const SAMPLE_FIGURE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 
     <text x="12" y="90" style="fill: var(--figure-muted)">muted, on a faint axis</text>
   </g>
   <script>window.figureScriptRan = true</script>
+</svg>`;
+
+/** The role colors as an author uses them: a fill through style, ink outlines, and a block dimmed with the two opacities. */
+const ROLE_FIGURE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 124">
+  <g stroke="currentColor" stroke-width="1.2">
+    <rect x="6" y="8" width="108" height="28" rx="5" style="fill: var(--figure-attn)"/>
+    <rect x="126" y="8" width="108" height="28" rx="5" style="fill: var(--figure-mlp)"/>
+    <rect x="246" y="8" width="108" height="28" rx="5" style="fill: var(--figure-norm)"/>
+    <rect x="366" y="8" width="108" height="28" rx="5" style="fill: var(--figure-embed)"/>
+    <rect x="6" y="48" width="108" height="28" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="126" y="48" width="108" height="28" rx="5" style="fill: var(--figure-softmax)"/>
+    <rect x="246" y="48" width="108" height="28" rx="5" style="fill: var(--figure-cache)"/>
+    <rect x="366" y="48" width="108" height="28" rx="5" style="fill: var(--figure-panel)"/>
+    <rect x="6" y="88" width="108" height="28" rx="5" fill-opacity="0.4" stroke-opacity="0.4" style="fill: var(--figure-attn)"/>
+  </g>
+  <g font-size="11" text-anchor="middle" dominant-baseline="central">
+    <text x="60" y="22">Attention</text>
+    <text x="180" y="22">Feed-forward</text>
+    <text x="300" y="22">Norm, scale</text>
+    <text x="420" y="22">Embedding, mask</text>
+    <text x="60" y="62">Linear, matmul</text>
+    <text x="180" y="62">Softmax, sampling</text>
+    <text x="300" y="62">Cache, state</text>
+    <text x="420" y="62">Panel</text>
+    <text x="60" y="102" style="fill: var(--figure-muted)">Dimmed</text>
+  </g>
+</svg>`;
+
+/** A stepped figure: the dashed slots show in every frame, and each step group carries its note in a desc. */
+const STEPPED_FIGURE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 84">
+  <text x="80" y="37" font-size="13" text-anchor="end" dominant-baseline="central">K, V</text>
+  <g fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)">
+    <rect x="92" y="24" width="40" height="26" rx="3"/>
+    <rect x="136" y="24" width="40" height="26" rx="3"/>
+    <rect x="180" y="24" width="40" height="26" rx="3"/>
+    <rect x="224" y="24" width="40" height="26" rx="3"/>
+    <rect x="268" y="24" width="40" height="26" rx="3"/>
+  </g>
+  <g id="step-1">
+    <desc>The first call caches one key and one value.</desc>
+    <g stroke="currentColor" stroke-width="1.2">
+      <rect x="92" y="24" width="40" height="26" rx="3" style="fill: var(--figure-cache)"/>
+    </g>
+    <text x="92" y="74" font-size="11" style="fill: var(--figure-muted)">S = 1</text>
+  </g>
+  <g id="step-2">
+    <desc>The second call appends one more; the first entry is not touched.</desc>
+    <g stroke="currentColor" stroke-width="1.2">
+      <rect x="92" y="24" width="40" height="26" rx="3" style="fill: var(--figure-cache)"/>
+      <rect x="136" y="24" width="40" height="26" rx="3" style="fill: var(--figure-cache)"/>
+    </g>
+    <text x="92" y="74" font-size="11" style="fill: var(--figure-muted)">S = 2</text>
+  </g>
+  <g id="step-3">
+    <desc>After three calls the cache holds three entries, in arrival order.</desc>
+    <g stroke="currentColor" stroke-width="1.2">
+      <rect x="92" y="24" width="40" height="26" rx="3" style="fill: var(--figure-cache)"/>
+      <rect x="136" y="24" width="40" height="26" rx="3" style="fill: var(--figure-cache)"/>
+      <rect x="180" y="24" width="40" height="26" rx="3" style="fill: var(--figure-cache)"/>
+    </g>
+    <text x="92" y="74" font-size="11" style="fill: var(--figure-muted)">S = 3</text>
+  </g>
+</svg>`;
+
+/** Text at three sizes, to watch the 14px cap at two widths. */
+const TEXT_CAP_FIGURE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 72">
+  <rect x="6" y="8" width="468" height="56" rx="5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+  <g dominant-baseline="central">
+    <text x="20" y="26" font-size="22">22 units: capped</text>
+    <text x="250" y="26" font-size="13">13 units: capped when wide</text>
+    <text x="20" y="50" font-size="9">9 units: never capped</text>
+  </g>
 </svg>`;
 
 const TRACKS: Track[] = [
@@ -1131,6 +1204,48 @@ function DevComponentsScreen() {
             <Figure number={3} caption="A file that does not parse as SVG.">
               <SvgFigureBody source="<svg><g></svg>" label="Broken" />
             </Figure>
+          </div>
+        </Specimen>
+        <Specimen name="Figure role colors (--figure-attn and the rest): fills through style, kept by the sanitizer; outlines and lettering stay ink">
+          <div className="max-w-measure">
+            <Figure number={1} caption="One meaning per color in every figure. The last block is dimmed.">
+              <SvgFigureBody source={ROLE_FIGURE} label="The eight role colors as labeled blocks" />
+            </Figure>
+          </div>
+        </Specimen>
+        <Specimen name="Stepped figure: groups step-1, step-2, ... with a desc each; Previous and Next, or the arrow keys while it has focus">
+          <div className="max-w-measure">
+            <Figure number={2} caption="A cache that grows by one entry per call.">
+              <SvgFigureBody source={STEPPED_FIGURE} label="A cache that grows by one entry per call" />
+            </Figure>
+          </div>
+        </Specimen>
+        <Specimen name="Figure text cap: lettering never renders above 14px; the shapes keep scaling. Full measure, then half">
+          <div className="flex max-w-measure flex-col gap-8">
+            <Figure number={3} caption="At 4/3 scale: the 22-unit and 13-unit labels are both 14px.">
+              <SvgFigureBody source={TEXT_CAP_FIGURE} label="Labels at three sizes" />
+            </Figure>
+            <div className="w-80">
+              <Figure number={4} caption="At 2/3 scale: only the 22-unit label is capped.">
+                <SvgFigureBody source={TEXT_CAP_FIGURE} label="Labels at three sizes" />
+              </Figure>
+            </div>
+          </div>
+        </Specimen>
+        <Specimen name="InteractiveFigure: sampler-order; a name the app does not have">
+          <div className="flex max-w-measure flex-col gap-8">
+            <InteractiveFigure
+              name="sampler-order"
+              number={5}
+              alt="Ten tokens under top-k, top-p, and temperature"
+              caption="Ten candidate tokens. The dashed outline is the model's distribution; a filled bar is what the chain samples from."
+            />
+            <InteractiveFigure
+              name="no-such-figure"
+              number={6}
+              alt="Missing"
+              caption="The caption still stands."
+            />
           </div>
         </Specimen>
         <Specimen name="CodeBlock: plain, with line numbers, unknown language">

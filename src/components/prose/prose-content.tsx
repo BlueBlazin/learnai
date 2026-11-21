@@ -6,11 +6,12 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { InlineButton } from "@/components/app/inline-button";
 import { Notice } from "@/components/app/notice";
+import { InteractiveFigure } from "@/components/figures/interactive-figure";
 import { openExternal } from "@/lib/platform";
 import { AssetFigureContext } from "./asset-figure-context";
 import { CodeBlockContent } from "./code-block-content";
 import { Figure } from "./figure";
-import { ASSET_PREFIX, remarkProse } from "./remark-prose";
+import { ASSET_PREFIX, interactiveName, remarkProse } from "./remark-prose";
 
 const CALLOUT_LABEL: Record<string, string> = { note: "Note", tip: "Tip", warning: "Warning" };
 
@@ -50,7 +51,8 @@ function Caption({ children }: { children: string }) {
 /**
  * A paragraph that holds only an image (see remark-prose.ts). A file under
  * `assets/` is drawn by whoever supplies the text's assets (`ProblemFigures`);
- * any other URL is an ordinary image.
+ * `interactive:<name>` is a figure built into the app; any other URL is an
+ * ordinary image.
  */
 function ProseFigure({
   src,
@@ -65,6 +67,10 @@ function ProseFigure({
 }) {
   const AssetFigure = useContext(AssetFigureContext);
   const captionNode = caption ? <Caption>{caption}</Caption> : null;
+  const interactive = interactiveName(src);
+  if (interactive !== null) {
+    return <InteractiveFigure name={interactive} number={number} alt={alt} caption={captionNode} />;
+  }
   if (!src.startsWith(ASSET_PREFIX)) {
     return (
       <Figure number={number} caption={captionNode}>

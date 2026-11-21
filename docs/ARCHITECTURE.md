@@ -158,6 +158,27 @@ Optional `assets/` directory: figures for the statement (SVG preferred, PNG allo
 referenced from Markdown as `![caption](assets/<file>)`. SVG figures must read well in
 both light and dark themes (use `currentColor`, no fixed backgrounds).
 
+An SVG figure is sanitized (shapes and text only) and inlined. Three things in it are a
+contract with the app:
+
+- **Colors** come from `currentColor` and the `--figure-*` variables, set through
+  `style` (`style="fill: var(--figure-attn)"`). The role colors (`--figure-attn`,
+  `-mlp`, `-norm`, `-embed`, `-linear`, `-softmax`, `-cache`, `-panel`) are fills with one
+  meaning each; see `docs/DESIGN.md`.
+- **Text** scales with the drawing up to 14 CSS pixels and no further. The shapes keep
+  scaling, up to 4/3 of the drawing's natural size.
+- **Steps.** Groups directly under the root with ids `step-1`, `step-2`, ... are frames:
+  the app shows one at a time, with Previous and Next, and prints the text of the
+  group's `<desc>` child as the note of that step. Everything outside the step groups
+  shows in every frame. The numbers must run from 1 without a gap. A file without
+  `step-1` is an ordinary figure.
+
+`![caption](interactive:<name>)` names a figure that is built into the app instead of a
+file (`src/components/figures/registry.ts`). It is numbered and captioned like any other
+figure; a name the app does not have shows a notice. A front-end test checks that every
+name used under `problems/` is in the registry. Neither `learnai validate` nor the core
+reads image references in statements.
+
 **Track display keys and core.** A track is a module of an area. Besides `id`, `title`,
 `description`, and `order`, `track.toml` may carry three optional keys:
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { remarkProse } from "./remark-prose";
+import { interactiveName, remarkProse } from "./remark-prose";
 
 const text = (value: string) => ({ type: "text", value });
 const paragraph = (...children: unknown[]) => ({ type: "paragraph", children });
@@ -27,6 +27,47 @@ describe("remarkProse", () => {
     };
     remarkProse()(tree);
     expect((tree.children[0] as { data?: unknown }).data).toBeUndefined();
+  });
+
+  it("turns a lone image into a numbered figure, and marks an interactive one by name", () => {
+    const image = (url: string, alt: string) => ({ type: "image", url, alt });
+    const tree = {
+      type: "root",
+      children: [
+        paragraph(image("assets/mask.svg", "The mask.")),
+        paragraph(text("See "), image("interactive:sampler-order", "inline"), text(".")),
+        paragraph(image("interactive:sampler-order", "Ten tokens.")),
+        paragraph(image("interactive:", "No name.")),
+      ],
+    };
+    remarkProse()(tree);
+    const data = tree.children.map(
+      (node) => (node as { data?: { hName?: string; hProperties?: Record<string, unknown> } }).data,
+    );
+    expect(data[0]?.hName).toBe("figure");
+    expect(data[0]?.hProperties).toEqual({
+      "data-src": "assets/mask.svg",
+      "data-number": 1,
+      "data-alt": "The mask.",
+      "data-caption": "The mask.",
+    });
+    // An image inside a sentence is not a figure, whatever its URL.
+    expect(data[1]).toBeUndefined();
+    expect(data[2]?.hProperties).toEqual({
+      "data-src": "interactive:sampler-order",
+      "data-number": 2,
+      "data-alt": "Ten tokens.",
+      "data-caption": "Ten tokens.",
+      "data-interactive": "sampler-order",
+    });
+    expect(data[3]?.hProperties?.["data-interactive"]).toBe("");
+    expect(data[3]?.hProperties?.["data-number"]).toBe(3);
+  });
+
+  it("reads the name of an interactive figure from its URL", () => {
+    expect(interactiveName("interactive:sampler-order")).toBe("sampler-order");
+    expect(interactiveName("assets/interactive:x.svg")).toBeNull();
+    expect(interactiveName("https://example.com/interactive:x")).toBeNull();
   });
 
   it("binds punctuation to preceding inline math exactly once", () => {

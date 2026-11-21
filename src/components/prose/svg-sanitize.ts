@@ -5,8 +5,9 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 /**
  * The largest scale a figure is shown at. A drawing 480 units wide then exactly
  * fills the 640px measure, and in the narrowest statement pane (about 460px) it
- * is shown at just under 1:1, so text drawn at 13 units stays between roughly
- * 12 and 17 pixels: never below the caption, never above the body text.
+ * is shown at just under 1:1. Text scales with the drawing up to 14 pixels and
+ * stops there (`figure-text.ts`), so text drawn at 13 units stays between
+ * roughly 12 and 14 pixels.
  */
 const MAX_SCALE = 4 / 3;
 

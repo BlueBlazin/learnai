@@ -71,6 +71,20 @@ describe("SVG figure policy", () => {
     expect(keep("text", "font-family", "\\75rl(x)")).toBeNull();
   });
 
+  it("keeps the role colors and the opacities a dimmed block uses", () => {
+    for (const role of ["attn", "mlp", "norm", "embed", "linear", "softmax", "cache", "panel"]) {
+      expect(keep("rect", "style", `fill: var(--figure-${role})`)).toBe(`fill: var(--figure-${role})`);
+    }
+    expect(keep("rect", "fill-opacity", "0.4")).toBe("0.4");
+    expect(keep("rect", "stroke-opacity", "0.4")).toBe("0.4");
+    expect(sanitizeStyle("fill: var(--figure-attn); fill-opacity: 0.4; stroke-opacity: 0.4")).toBe(
+      "fill: var(--figure-attn); fill-opacity: 0.4; stroke-opacity: 0.4",
+    );
+    // Step groups are found by id, and a step's note is its desc.
+    expect(keep("g", "id", "step-2")).toBe("f1-step-2");
+    expect(SVG_ELEMENTS.has("desc")).toBe(true);
+  });
+
   it("reduces style to paint and text properties with plain values", () => {
     expect(sanitizeStyle("stroke: var(--figure-accent); fill:none")).toBe(
       "stroke: var(--figure-accent); fill: none",
