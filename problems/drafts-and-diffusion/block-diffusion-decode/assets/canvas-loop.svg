@@ -28,8 +28,8 @@
     <line x1="368" y1="68" x2="448" y2="68"/>
     <line x1="368" y1="58" x2="448" y2="58"/>
   </g>
-  <text x="136" y="34" style="fill: var(--figure-muted)">noise at the top, one denoise call per step,</text>
-  <text x="136" y="18" style="fill: var(--figure-muted)">until stable and confident or out of steps</text>
+  <text x="136" y="18" style="fill: var(--figure-muted)">noise at the top, one denoise call per step,</text>
+  <text x="136" y="34" style="fill: var(--figure-muted)">until stable and confident or out of steps</text>
 
   <!-- encoder calls into the cache -->
   <g stroke="currentColor" stroke-width="1" fill="none">

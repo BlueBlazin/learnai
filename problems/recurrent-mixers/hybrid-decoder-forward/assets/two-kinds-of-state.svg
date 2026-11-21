@@ -24,9 +24,9 @@
 
   <!-- state of the linear-attention layers: fixed size -->
   <g fill="none" stroke="currentColor" stroke-width="1">
-    <rect x="210" y="161" width="92" height="24"/>
-    <rect x="210" y="121" width="92" height="24"/>
-    <rect x="210" y="81" width="92" height="24"/>
+    <rect x="210" y="161" width="116" height="24"/>
+    <rect x="210" y="121" width="116" height="24"/>
+    <rect x="210" y="81" width="116" height="24"/>
   </g>
   <g style="font-family: var(--figure-mono)">
     <text x="216" y="178">conv_state, S</text>
@@ -39,8 +39,8 @@
     <line x1="170" y1="93" x2="210" y2="93"/>
     <line x1="170" y1="53" x2="210" y2="53"/>
   </g>
-  <text x="312" y="138" style="fill: var(--figure-muted)">the same size after</text>
-  <text x="312" y="154" style="fill: var(--figure-muted)">any number of tokens</text>
+  <text x="338" y="138" style="fill: var(--figure-muted)">the same size after</text>
+  <text x="338" y="154" style="fill: var(--figure-muted)">any number of tokens</text>
 
   <!-- state of the attention layer: one column per token -->
   <g fill="none" stroke-width="1" style="stroke: var(--figure-accent)">
