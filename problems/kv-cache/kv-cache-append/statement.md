@@ -44,7 +44,7 @@ $$
 
 4. **Mix.** $\text{out}_i = \sum_{j \le S + i} a_{ij}\, V_j$.
 
-![The mask for $S = 3$ cached tokens and $T = 3$ new ones: one row per new query, one column per entry of $K$. Every cached column is visible to every row; the new columns form a causal triangle.](assets/step-mask.svg)
+![Seven tokens over four calls of `attend_step`. The mask has one row per new query and one column per entry of $K$.](assets/cache-steps.svg)
 
 - `q_new`, `k_new`, `v_new`: float32, shape `(B, H, T, D)`, $T \ge 1$.
 - `cache`: `None`, or a tuple `(k, v)` of float32 tensors of shape `(B, H, S, D)`,

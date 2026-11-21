@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 172">
   <title>Data flow of a pre-norm decoder block</title>
-  <desc>The residual stream runs in a straight line from the input x on the left to the output y on the right. Two branches leave it and rejoin it at an addition. The first branch passes through RMSNorm, with the gain input_layernorm, and then attention. The second branch leaves after the first addition, at the point called h, and passes through RMSNorm, with the gain post_attention_layernorm, and then the SwiGLU MLP. No norm sits on the stream itself.</desc>
+  <desc>The residual stream runs straight from x to y. Two branches leave it and rejoin it at an addition: RMSNorm with the gain input_layernorm and then attention, and, from the point h after the first addition, RMSNorm with the gain post_attention_layernorm and then the SwiGLU MLP.</desc>
   <!-- Geometry: the stream is the line y = 40. Branches drop to y = 108, run right through two boxes, and rise into an adder on the stream. -->
 
   <!-- The residual stream -->
@@ -32,9 +32,9 @@
   <!-- Branch 1: norm, then attention -->
   <g fill="none" stroke="currentColor" stroke-width="1.5">
     <polyline points="48,40 48,108 62,108"/>
-    <rect x="62" y="92" width="68" height="32" rx="3"/>
+    <rect x="62" y="92" width="68" height="32" rx="5" style="fill: var(--figure-norm)"/>
     <line x1="130" y1="108" x2="135" y2="108"/>
-    <rect x="144" y="92" width="62" height="32" rx="3"/>
+    <rect x="144" y="92" width="62" height="32" rx="5" style="fill: var(--figure-attn)"/>
     <polyline points="206,108 224,108 224,57"/>
   </g>
   <polygon points="144,108 135,111.2 135,104.8"/>
@@ -47,9 +47,9 @@
   <!-- Branch 2: norm, then MLP -->
   <g fill="none" stroke="currentColor" stroke-width="1.5">
     <polyline points="256,40 256,108 270,108"/>
-    <rect x="270" y="92" width="68" height="32" rx="3"/>
+    <rect x="270" y="92" width="68" height="32" rx="5" style="fill: var(--figure-norm)"/>
     <line x1="338" y1="108" x2="343" y2="108"/>
-    <rect x="352" y="92" width="62" height="32" rx="3"/>
+    <rect x="352" y="92" width="62" height="32" rx="5" style="fill: var(--figure-mlp)"/>
     <polyline points="414,108 432,108 432,57"/>
   </g>
   <polygon points="352,108 343,111.2 343,104.8"/>

@@ -1,0 +1,52 @@
+{
+  "track": "transformer",
+  "file": "map.svg",
+  "title": "Where this problem sits in a decoder-only transformer",
+  "desc": "A decoder-only transformer drawn bottom to top: token embedding, a repeated block of RMSNorm, attention, RMSNorm, and SwiGLU MLP with a skip around each pair, then a final RMSNorm, a linear layer, and a softmax.",
+  "width": 480,
+  "height": 366,
+  "panel": {
+    "part": "panel",
+    "x": 58, "y": 121, "width": 234, "height": 193,
+    "label": "N ×", "label_at": [34, 217.5]
+  },
+  "blocks": [
+    {"part": "softmax", "role": "softmax", "label": "Softmax", "x": 104, "y": 32, "width": 132, "height": 20},
+    {"part": "linear", "role": "linear", "label": "Linear", "x": 104, "y": 62, "width": 132, "height": 20},
+    {"part": "final-norm", "role": "norm", "label": "RMSNorm", "x": 104, "y": 92, "width": 132, "height": 20},
+    {"part": "add2", "shape": "add", "at": [170, 138]},
+    {"part": "mlp", "role": "mlp", "label": "SwiGLU MLP", "x": 104, "y": 156, "width": 132, "height": 20},
+    {"part": "norm2", "role": "norm", "label": "RMSNorm", "x": 104, "y": 186, "width": 132, "height": 20},
+    {"part": "add1", "shape": "add", "at": [170, 228]},
+    {"part": "attn", "role": "attn", "label": "Attention", "x": 104, "y": 246, "width": 132, "height": 20},
+    {"part": "rope", "shape": "source", "role": "embed", "label": "RoPE", "at": [262, 256], "arrow_to": [236, 256]},
+    {"part": "norm1", "role": "norm", "label": "RMSNorm", "x": 104, "y": 276, "width": 132, "height": 20},
+    {"part": "embed", "role": "embed", "label": "Token embedding", "x": 104, "y": 320, "width": 132, "height": 20}
+  ],
+  "wires": [
+    {"points": [[170, 350], [170, 340]], "arrow": true},
+    {"points": [[170, 320], [170, 296]], "arrow": true},
+    {"part": "wiring", "points": [[170, 276], [170, 266]], "arrow": true},
+    {"part": "wiring", "points": [[170, 246], [170, 236]], "arrow": true},
+    {"part": "wiring", "points": [[170, 220], [170, 206]], "arrow": true},
+    {"part": "wiring", "points": [[170, 186], [170, 176]], "arrow": true},
+    {"part": "wiring", "points": [[170, 156], [170, 146]], "arrow": true},
+    {"points": [[170, 130], [170, 112]], "arrow": true},
+    {"points": [[170, 92], [170, 82]], "arrow": true},
+    {"points": [[170, 62], [170, 52]], "arrow": true},
+    {"points": [[170, 32], [170, 22]], "arrow": true},
+    {"part": "wiring", "points": [[170, 305], [80, 305], [80, 228], [162, 228]], "round": 8, "arrow": true, "tap": true},
+    {"part": "wiring", "points": [[170, 213], [80, 213], [80, 138], [162, 138]], "round": 8, "arrow": true, "tap": true}
+  ],
+  "labels": [
+    {"text": "next-token probabilities", "at": [170, 10]},
+    {"text": "token ids", "at": [170, 358]}
+  ],
+  "problems": {
+    "pre-norm-block": {
+      "parts": ["panel", "norm1", "norm2", "add1", "add2", "wiring"],
+      "marker": {"from": [292, 217.5], "length": 18},
+      "desc": "The two RMSNorm blocks, the two additions, and the wires inside the repeated block are at full strength; the rest is dimmed."
+    }
+  }
+}

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 296">
+  <title>Scaled dot-product attention with a causal mask</title>
+  <desc>Read from the bottom: q and k enter a matrix product, and the scores pass through a scale, a causal mask, and a softmax. A second matrix product applies the weights to v; each wire carries the shape of its tensor.</desc>
+  <!-- Geometry: the chain is the column x = 126, boxes 104 x 22 every 48 units. q and k enter at x = 106 and 146, v rises at x = 262 into the wide box at the top. -->
+
+  <!-- Wires -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <line x1="106" y1="274" x2="106" y2="253"/>
+    <line x1="146" y1="274" x2="146" y2="253"/>
+    <line x1="126" y1="226" x2="126" y2="205"/>
+    <line x1="126" y1="178" x2="126" y2="157"/>
+    <line x1="126" y1="130" x2="126" y2="109"/>
+    <line x1="126" y1="82" x2="126" y2="61"/>
+    <line x1="262" y1="274" x2="262" y2="61"/>
+    <line x1="178" y1="34" x2="178" y2="13"/>
+  </g>
+  <g>
+    <polygon points="106,248 109.3,254.5 102.7,254.5"/>
+    <polygon points="146,248 149.3,254.5 142.7,254.5"/>
+    <polygon points="126,200 129.3,206.5 122.7,206.5"/>
+    <polygon points="126,152 129.3,158.5 122.7,158.5"/>
+    <polygon points="126,104 129.3,110.5 122.7,110.5"/>
+    <polygon points="126,56 129.3,62.5 122.7,62.5"/>
+    <polygon points="262,56 265.3,62.5 258.7,62.5"/>
+    <polygon points="178,8 181.3,14.5 174.7,14.5"/>
+  </g>
+
+  <!-- Blocks, top to bottom -->
+  <g stroke="currentColor" stroke-width="1.5">
+    <rect x="74" y="34" width="208" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="74" y="82" width="104" height="22" rx="5" style="fill: var(--figure-softmax)"/>
+    <rect x="74" y="130" width="104" height="22" rx="5" style="fill: var(--figure-embed)"/>
+    <rect x="74" y="178" width="104" height="22" rx="5" style="fill: var(--figure-norm)"/>
+    <rect x="74" y="226" width="104" height="22" rx="5" style="fill: var(--figure-linear)"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="178" y="49.5">MatMul</text>
+    <text x="126" y="97.5">Softmax</text>
+    <text x="126" y="145.5">Causal mask</text>
+    <text x="126" y="193.5">Scale</text>
+    <text x="126" y="241.5">MatMul</text>
+  </g>
+
+  <!-- Inputs -->
+  <g font-size="13" text-anchor="middle" font-style="italic" style="font-family: var(--figure-serif)">
+    <text x="106" y="288.5">q</text>
+    <text x="146" y="288.5">k</text>
+    <text x="262" y="288.5">v</text>
+  </g>
+
+  <!-- The shape of the tensor on each wire; s and a are the scores and the weights -->
+  <g font-size="13" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="99" y="265.5" text-anchor="end">(B, T, d_k)</text>
+    <text x="153" y="265.5">(B, T, d_k)</text>
+    <text x="269" y="265.5">(B, T, d_v)</text>
+    <text x="133" y="217.5">(B, T, T)</text>
+    <text x="146" y="169.5">(B, T, T)</text>
+    <text x="133" y="121.5">(B, T, T)</text>
+    <text x="146" y="73.5">(B, T, T)</text>
+    <text x="185" y="25.5">(B, T, d_v)</text>
+  </g>
+  <g font-size="13" font-style="italic" style="font-family: var(--figure-serif)">
+    <text x="133" y="169.5">s</text>
+    <text x="133" y="73.5">a</text>
+  </g>
+</svg>

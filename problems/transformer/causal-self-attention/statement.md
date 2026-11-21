@@ -40,6 +40,8 @@ $$
 y_i = W_o \sum_{j \le i} a_{ij} \, v_j .
 $$
 
+![Steps 2 to 4 for one head, read from the bottom, with the shape of the tensor on each wire. $W_o$ is applied to the output at the top.](assets/attention-steps.svg)
+
 - `x`: float32, shape `(B, T, d)`.
 - `w_q`, `w_k`: float32, shape `(d_k, d)`.
 - `w_v`: float32, shape `(d_v, d)`.

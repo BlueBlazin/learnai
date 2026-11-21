@@ -2993,8 +2993,8 @@ A statement, hint, or editorial can carry figures. Put the file in the problem's
 
 - The text in the brackets is the **caption**. The app sets it beneath the drawing
   after "Figure N." (figures are numbered in order within the document, so the prose
-  can say "Figure 1"). Write it as one or two full sentences that say what to see, not
-  a title. It may contain `$...$` math, emphasis, and inline code, and must not
+  can say "Figure 1"). Write one sentence that says what to see, two at most, not a
+  title. It may contain `$...$` math, emphasis, and inline code, and must not
   contain a line break.
 - The path is `assets/<file>`, relative to the problem directory. Only `.svg` and
   `.png` files are served, each at most 1 MiB, and a path may not leave `assets/`.
@@ -3004,6 +3004,27 @@ A statement, hint, or editorial can carry figures. Put the file in the problem's
 - Use a figure where a picture carries something the formulas do not: a geometric
   action, a memory layout, a timeline. `problems/transformer/rope/assets/pair-rotation.svg`
   is the model to copy.
+
+There are four kinds of figure. Use the first that fits:
+
+| kind | use it for | example |
+|---|---|---|
+| map | where the problem's piece sits in the whole model; the first figure, after the opening paragraph | `transformer/pre-norm-block`, `assets/map.svg` |
+| mechanism | the inside of one piece: blocks, wires, and the shape of the tensor on each wire | `transformer/causal-self-attention`, `assets/attention-steps.svg` |
+| stepped | state that changes over calls or steps | `kv-cache/kv-cache-append`, `assets/cache-steps.svg` |
+| interactive | the few ideas a reader has to turn by hand; built in the app, not by authors | `sampling/sampler-chain` |
+
+Anything else (a plot, a geometric construction) is an ordinary SVG under the same
+rules.
+
+**Text.** A figure is a drawing, not a second statement:
+
+- A caption is one sentence, two at most. A step note is one sentence. A `<desc>` is
+  one or two sentences.
+- Lettering inside a drawing is names, symbols, and shapes, never a sentence, and
+  there is no column of notes beside the drawing. Keep the annotations that carry
+  information: the tensor shape on a wire, the "This problem" marker on a map.
+- Plain wording, as in the rest of the statement.
 
 **Prefer SVG.** An SVG is inlined into the page, so it takes its colors and typefaces
 from the app and follows the light and dark themes. A PNG is shown as it is and cannot
@@ -3022,9 +3043,9 @@ SVG rules:
    is also the text color, so text and solid shapes need no `fill`; an outline must say
    `fill="none"`. Never draw a background rectangle, and never write a fixed color
    (`#000`, `black`, `white`).
-3. **Other colors come from the figure palette**, five CSS variables defined by the
-   design tokens. A presentation attribute cannot hold `var()`, so set them through
-   `style`:
+3. **Other colors come from the figure palette**, CSS variables defined by the design
+   tokens. A presentation attribute cannot hold `var()`, so set them through `style`.
+   Five are for lines and lettering:
 
    | variable | use |
    |---|---|
@@ -3039,11 +3060,37 @@ SVG rules:
    <text x="230" y="87" font-size="13" style="fill: var(--figure-accent)">p = 1</text>
    ```
 
-   Two hues are the whole budget. Never let color carry a distinction alone: label the
-   series, or vary the dash pattern as well. Green, red, and amber mean pass, fail, and
-   warning in the app; do not use them.
-4. **Text is at least `font-size="13"`**, the size of the caption, in a drawing 480
-   units wide (scale that up in proportion for a wider `viewBox`). Text is set in the
+   Seven more are **role colors**, the fills of blocks. Each has one meaning in every
+   figure of the catalog, so a block is orange because it is attention:
+
+   | variable | fills |
+   |---|---|
+   | `--figure-attn` | attention |
+   | `--figure-mlp` | a feed-forward layer |
+   | `--figure-norm` | normalization, scaling |
+   | `--figure-embed` | an embedding, a mask |
+   | `--figure-linear` | a linear layer, a matrix product |
+   | `--figure-softmax` | softmax, sampling |
+   | `--figure-cache` | a cache, state kept between calls |
+
+   `--figure-panel` is the ground behind a group of blocks. Role colors are fills
+   only: outlines, arrows, and lettering stay `currentColor`. Do not use a role color
+   for anything but its meaning, and leave a block that has no role unfilled
+   (`fill="none"`). Dim a block that is not the subject with `fill-opacity` and
+   `stroke-opacity`, never with another color.
+
+   ```xml
+   <rect x="74" y="82" width="104" height="22" rx="5" stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-softmax)"/>
+   ```
+
+   Never let color carry a distinction alone: label the block or the series, or vary
+   the dash pattern as well. Green, red, and amber mean pass, fail, and warning in the
+   app; do not use them.
+4. **Text is `font-size="13"`**, the size of the caption, in a drawing 480 units wide
+   (scale that up in proportion for a wider `viewBox`), and never smaller. The app
+   scales lettering with the drawing up to 14px and stops there while the shapes keep
+   growing to 4/3, so larger text gains little, and a label that fits its box at 13
+   units fits at every pane width. Text is set in the
    interface sans by default; for symbols that also appear in the formulas use
    `style="font-family: var(--figure-serif)"`, with `font-style="italic"` on a
    `<tspan>` for variables, and `var(--figure-mono)` for code. Do not name a font
@@ -3062,7 +3109,8 @@ SVG rules:
    and text properties survive. A figure that relies on anything else will render
    without it.
 7. **Add a `<title>` and a `<desc>`** that say what the figure shows, for readers who
-   cannot see it. The caption is the figure's accessible name in the app.
+   cannot see it: the `<desc>` in one or two sentences. The caption is the figure's
+   accessible name in the app.
 8. **Write the file by hand or from a small script, and keep it readable**: grouped,
    commented, coordinates rounded to one decimal. Do not commit an export from a
    drawing program with its metadata, embedded fonts, and inline styles.
@@ -3072,6 +3120,62 @@ palette variables exist only inside the app. To check a figure, open the problem
 the app (`pnpm dev:real`) and look at it in both themes, at the default window size and
 with the statement pane dragged to its narrowest: every label must be legible and no
 two may touch.
+
+**Maps.** The map of a module is one drawing of the whole model, shown by each problem
+with its own part at full strength, the rest dimmed, and a "This problem" marker. Do
+not draw it by hand. It is described once in `tools/figures/maps/<track>.json`, and
+the script writes the file into every problem the spec lists:
+
+```sh
+python3 tools/figures/maps.py            # write every map
+python3 tools/figures/maps.py --check    # fail when a written file is out of date
+```
+
+To give a problem the map, add its id and the parts it highlights to the spec, run the
+script, commit the written `assets/map.svg`, and reference it after the opening
+paragraph. `tools/figures/README.md` has the spec format. The caption says which part
+of the model is this problem's, in one sentence.
+
+**Mechanism figures** are drawn by hand in the vocabulary of the map: a box 20 to 22
+units high with `rx="5"` and a role fill, wires that run bottom to top and end in an
+arrowhead, an addition as a circle with a plus. Write the shape of the tensor beside
+each wire in `var(--figure-mono)`, with the statement's own symbols.
+
+**Stepped figures.** One SVG holds every frame. Each frame is a group directly under
+the root with the id `step-1`, `step-2`, and so on, numbered from 1 without a gap, and
+its first child is a `<desc>` that is the note of the step:
+
+```xml
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 206">
+  <title>...</title>
+  <desc>...</desc>
+  <!-- outside the step groups: drawn in every frame -->
+  <text x="90" y="41.5" font-size="13" text-anchor="end">K, V</text>
+  <g id="step-1">
+    <desc>Call 1 appends three tokens to an empty cache, so the mask is the square causal triangle.</desc>
+    <!-- the shapes of this frame -->
+  </g>
+  <g id="step-2">
+    <desc>...</desc>
+  </g>
+</svg>
+```
+
+The app shows one frame at a time with Previous and Next, "Step 2 of 4", and the note
+beneath the drawing. A note is plain text, one sentence, and it should say what
+changed. Put whatever does not change (axes, row names, a key) outside the groups, and
+keep every frame inside the same `viewBox`.
+
+**Interactive figures** are components of the app, named in place of a file:
+
+```markdown
+![The dashed outline is the model's distribution and a filled bar is the probability the chain samples from.](interactive:sampler-order)
+```
+
+The figure is numbered and captioned like any other. `sampler-order` (top-k, top-p,
+and temperature in either order) is the only one. A new one is a change to the app
+(`src/components/figures/registry.ts`), not something a problem can carry, and a name
+the app does not have fails the front-end tests.
 
 **Starters** contain the imports the learner will need, the exact signature with type
 hints, a docstring restating argument and return shapes, and `raise NotImplementedError`.

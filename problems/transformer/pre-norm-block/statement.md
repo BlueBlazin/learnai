@@ -4,6 +4,8 @@ the residual stream and adding its result back. The sublayers themselves come fr
 kit; the problem is the wiring between them, where every wrong version returns a tensor
 of the right shape.
 
+![This problem is the wiring inside one block of a decoder-only transformer: the two norms, the two additions, and the paths between them.](assets/map.svg)
+
 ## Specification
 
 ```python

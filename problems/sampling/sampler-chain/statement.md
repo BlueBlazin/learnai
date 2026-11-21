@@ -4,6 +4,8 @@ draw. Each stage is a few lines, and the kit supplies the three filters. The exe
 is the **order**: every stage works on what the stage before it left, so a different
 order keeps a different set of tokens.
 
+![The dashed outline is the model's distribution and a filled bar is the probability the chain samples from. Switch the order with the same three settings and the kept set changes.](interactive:sampler-order)
+
 ## Specification
 
 ```python
