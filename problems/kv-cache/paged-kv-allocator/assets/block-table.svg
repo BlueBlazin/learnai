@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 244">
   <title>Block tables of two sequences and the pool of physical KV blocks</title>
-  <desc>Six physical blocks of four token slots each. Sequence a holds 9 tokens in physical blocks 0, 1 and 3: blocks 0 and 1 are full and block 3 holds one token. Sequence b holds 3 tokens in physical block 2. Blocks 4 and 5 are free. The block table of each sequence lists its physical block ids in logical order.</desc>
+  <desc>Six physical blocks of four token slots each. Sequence a holds 9 tokens in blocks 0, 1 and 3 and sequence b holds 3 tokens in block 2, with blocks 4 and 5 free, and each sequence's block table lists its block ids in logical order.</desc>
   <!-- Left: the block tables. One cell per logical block, holding the physical block id. -->
   <g font-size="13">
     <text x="12" y="15">Block tables</text>
@@ -30,42 +30,42 @@
   <text x="236" y="15" font-size="13">Physical blocks, 4 token slots each</text>
   <g>
     <text x="244" y="48" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
-    <rect x="260" y="30" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.3; stroke: var(--figure-accent)"/>
+    <rect x="260" y="30" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-cache); stroke: var(--figure-accent)"/>
     <text x="272" y="47" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">a</text>
-    <rect x="287" y="30" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.3; stroke: var(--figure-accent)"/>
+    <rect x="287" y="30" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-cache); stroke: var(--figure-accent)"/>
     <text x="299" y="47" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">a</text>
-    <rect x="314" y="30" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.3; stroke: var(--figure-accent)"/>
+    <rect x="314" y="30" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-cache); stroke: var(--figure-accent)"/>
     <text x="326" y="47" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">a</text>
-    <rect x="341" y="30" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.3; stroke: var(--figure-accent)"/>
+    <rect x="341" y="30" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-cache); stroke: var(--figure-accent)"/>
     <text x="353" y="47" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">a</text>
     <text x="376" y="47" font-size="13"><tspan style="font-family: var(--figure-mono)">a</tspan>, logical 0</text>
   </g>
   <g>
     <text x="244" y="83" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">1</text>
-    <rect x="260" y="65" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.3; stroke: var(--figure-accent)"/>
+    <rect x="260" y="65" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-cache); stroke: var(--figure-accent)"/>
     <text x="272" y="82" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">a</text>
-    <rect x="287" y="65" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.3; stroke: var(--figure-accent)"/>
+    <rect x="287" y="65" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-cache); stroke: var(--figure-accent)"/>
     <text x="299" y="82" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">a</text>
-    <rect x="314" y="65" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.3; stroke: var(--figure-accent)"/>
+    <rect x="314" y="65" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-cache); stroke: var(--figure-accent)"/>
     <text x="326" y="82" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">a</text>
-    <rect x="341" y="65" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.3; stroke: var(--figure-accent)"/>
+    <rect x="341" y="65" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-cache); stroke: var(--figure-accent)"/>
     <text x="353" y="82" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">a</text>
     <text x="376" y="82" font-size="13"><tspan style="font-family: var(--figure-mono)">a</tspan>, logical 1</text>
   </g>
   <g>
     <text x="244" y="118" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">2</text>
-    <rect x="260" y="100" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-straw); fill-opacity: 0.3; stroke: var(--figure-straw)"/>
+    <rect x="260" y="100" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-cache); stroke: var(--figure-straw)"/>
     <text x="272" y="117" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">b</text>
-    <rect x="287" y="100" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-straw); fill-opacity: 0.3; stroke: var(--figure-straw)"/>
+    <rect x="287" y="100" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-cache); stroke: var(--figure-straw)"/>
     <text x="299" y="117" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">b</text>
-    <rect x="314" y="100" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-straw); fill-opacity: 0.3; stroke: var(--figure-straw)"/>
+    <rect x="314" y="100" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-cache); stroke: var(--figure-straw)"/>
     <text x="326" y="117" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">b</text>
     <rect x="341" y="100" width="24" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
     <text x="376" y="117" font-size="13"><tspan style="font-family: var(--figure-mono)">b</tspan>, logical 0</text>
   </g>
   <g>
     <text x="244" y="153" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">3</text>
-    <rect x="260" y="135" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-accent); fill-opacity: 0.3; stroke: var(--figure-accent)"/>
+    <rect x="260" y="135" width="24" height="24" stroke-width="1.5" style="fill: var(--figure-cache); stroke: var(--figure-accent)"/>
     <text x="272" y="152" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">a</text>
     <rect x="287" y="135" width="24" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>
     <rect x="314" y="135" width="24" height="24" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-faint)"/>

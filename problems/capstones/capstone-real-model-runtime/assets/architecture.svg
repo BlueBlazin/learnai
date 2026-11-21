@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 330">
   <title>Architecture of the runtime: three files in, streamed text out</title>
-  <desc>Three files feed the runtime. model.safetensors goes through load_weights (stage 1) and becomes a dict of float32 tensors. tokenizer.json becomes a Tokenizer (stage 2), which together with chat_prompt turns messages into prompt ids. config.json supplies the constants of the forward pass (stage 3). In stage 4, prefill runs the prompt once and fills the key/value cache; then a loop alternates sample_token, which draws a token from the logits with a supplied uniform number, and decode_step, which runs that one token against the cache. In stage 5 the sampled tokens become bytes, an incremental UTF-8 decoder turns bytes into text, and a stop filter holds back text that may still become a stop string before pieces are yielded.</desc>
+  <desc>Three files feed the runtime: model.safetensors through load_weights, tokenizer.json into a Tokenizer that turns messages into prompt ids, and config.json for the constants of the forward pass. Stage 4 runs prefill once and then alternates sample_token and decode_step against the cache, and stage 5 turns the tokens into bytes, then text, and holds back text that may still become a stop string.</desc>
 
   <!-- files -->
   <g font-size="13">
@@ -56,7 +56,7 @@
     <text x="16" y="176" style="fill: var(--figure-accent)">stage 4: cached generation</text>
     <rect x="20" y="186" width="92" height="36" fill="none" stroke="currentColor" stroke-width="1"/>
     <text x="66" y="209" text-anchor="middle">prefill</text>
-    <rect x="160" y="186" width="124" height="36" fill="none" stroke="currentColor" stroke-width="1"/>
+    <rect x="160" y="186" width="124" height="36" stroke="currentColor" stroke-width="1" style="fill: var(--figure-softmax)"/>
     <text x="222" y="209" text-anchor="middle">sample_token</text>
     <rect x="336" y="186" width="124" height="36" fill="none" stroke="currentColor" stroke-width="1"/>
     <text x="398" y="209" text-anchor="middle">decode_step</text>

@@ -6,7 +6,7 @@ document, or a tool call; streamed or not), and a constraint that is implemented
 one of them and forgotten in another is the classic bug of this kind of server. The
 answer that makes every stage short is three layers, each consuming the one before:
 
-![One request through the server. The request is validated and its schema, if any, is looked up in the compilation cache or compiled once. The loop takes one row of logits per step from the model, masks it with the token index, and picks the best allowed token; the tool-call parser and the renderer turn the tokens into deltas, which are either streamed as chunks or folded into one message.](assets/architecture.svg)
+![The request is validated and its schema, if any, is looked up in the compilation cache or compiled once. The loop takes one row of logits per step from the model, masks it with the token index, and picks the best allowed token; the tool-call parser and the renderer turn the tokens into deltas, which are either streamed as chunks or folded into one message.](assets/architecture.svg)
 
 1. **The generation loop** owns the model's stream and the automaton's state. It is
    the only code that looks at logits, and it yields token texts.

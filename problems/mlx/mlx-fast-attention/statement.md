@@ -57,7 +57,7 @@ mx.fast.scaled_dot_product_attention(q, k, v, *, scale, mask=None)
 - `mask=` a float array: added to the scores before the softmax (`0` to attend,
   `-inf` to hide). Its dtype must not be wider than the dtype of `q`, `k`, and `v`.
 
-![Two new tokens after three cached ones. In a full buffer the string mask is exactly right. With unused capacity the same string is aligned with the end of the buffer and lets the new tokens read slots that hold no token; an explicit mask is needed.](assets/mask-alignment.svg)
+![Two new tokens after three cached ones: in a full buffer the string mask is exactly right. With unused capacity the same string is aligned with the end of the buffer and lets the new tokens read slots that hold no token, so an explicit mask is needed.](assets/mask-alignment.svg)
 
 ## Shapes
 

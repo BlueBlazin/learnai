@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150">
   <title>Each copy overlaps with the model's work on the previous batch</title>
-  <desc>Two horizontal tracks over a common time axis. On the upper track, three short boxes are the host-to-device copies of batches 0, 1, and 2. On the lower track, three long boxes are the model running on batches 0, 1, and 2. The copy of batch 0 comes first, started by the constructor. Each later copy starts at the same instant as the model's work on the previous batch, the instant at which next() returns that batch, and is finished well before the model is.</desc>
+  <desc>Two tracks over a common time axis: short host-to-device copies of batches 0, 1, and 2 above, and long model runs on the same batches below. The copy of batch 0 starts in the constructor, and each later copy starts when next() returns the previous batch and finishes well before the model does.</desc>
 
   <!-- Geometry: next() returns batch 0, 1, 2 at x = 136, 256, 376. -->
 

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 132">
   <title>A static cache of eight slots after a write of two tokens at position 3</title>
-  <desc>Three rows of eight cells, one column per slot of the buffer, numbered 0 to 7. In the top row, the buffer, slots 0 to 2 hold tokens written earlier, slots 3 and 4 hold the two tokens just written, and slots 5 to 7 are unused and hold arbitrary values, shown as question marks. The second row is the mask for the first new token, in slot 3: ones in columns 0 to 3 and zeros after. The third row is the mask for the second new token, in slot 4: ones in columns 0 to 4 and zeros after.</desc>
+  <desc>A buffer of eight slots numbered 0 to 7: slots 0 to 2 hold earlier tokens, slots 3 and 4 hold the two tokens just written, and slots 5 to 7 are unused, shown as question marks. Under it, the mask of the token in slot 3 has ones in columns 0 to 3, and the mask of the token in slot 4 has ones in columns 0 to 4.</desc>
 
   <!-- Geometry: eight cells of width 44 from x = 104; rows at y = 24, 64, 96. -->
 
@@ -24,12 +24,12 @@
   </g>
 
   <!-- The buffer: written earlier, written by this update, unused -->
-  <g fill="none" stroke="currentColor" stroke-width="1.5">
+  <g stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-cache)">
     <rect x="106" y="24" width="40" height="28"/>
     <rect x="150" y="24" width="40" height="28"/>
     <rect x="194" y="24" width="40" height="28"/>
   </g>
-  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-straw)">
+  <g stroke-width="1.5" fill-opacity="0.4" style="fill: var(--figure-cache); stroke: var(--figure-straw)">
     <rect x="238" y="24" width="40" height="28"/>
     <rect x="282" y="24" width="40" height="28"/>
   </g>
@@ -54,7 +54,7 @@
   </g>
 
   <!-- Mask row 0: the query in slot 3 sees slots 0 to 3 -->
-  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+  <g stroke-width="1.5" style="fill: var(--figure-attn); stroke: var(--figure-accent)">
     <rect x="106" y="64" width="40" height="24"/>
     <rect x="150" y="64" width="40" height="24"/>
     <rect x="194" y="64" width="40" height="24"/>
@@ -73,7 +73,7 @@
     <text x="434" y="81">0</text>
   </g>
   <!-- Mask row 1: the query in slot 4 sees slots 0 to 4 -->
-  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+  <g stroke-width="1.5" style="fill: var(--figure-attn); stroke: var(--figure-accent)">
     <rect x="106" y="96" width="40" height="24"/>
     <rect x="150" y="96" width="40" height="24"/>
     <rect x="194" y="96" width="40" height="24"/>

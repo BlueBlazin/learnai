@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 178">
   <title>A preallocated cache buffer with a length field, before and after a write</title>
-  <desc>Two rows of eight slots numbered 0 to 7. In the first row slots 0 to 4 hold tokens and slots 5 to 7 are unused; a marker shows length 5. In the second row, after writing two tokens, slots 0 to 6 hold tokens, slots 5 and 6 are highlighted as new, slot 7 is unused, and the marker shows length 7. The shape of the buffer is the same in both rows.</desc>
+  <desc>Two rows of eight slots numbered 0 to 7, before and after a write of two tokens, each with a marker at the length: 5 in the first row, 7 in the second. Slots 5 and 6 are highlighted as new in the second row, and the shape of the buffer is the same in both rows.</desc>
   <!-- Geometry: slots are 44 x 30, starting at x = 108. Slot j spans x = 108 + 44 j. Row 1 at y = 40, row 2 at y = 114. -->
   <!-- Slot numbers -->
   <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
@@ -17,7 +17,7 @@
   <!-- Row 1: length = 5 -->
   <g>
     <text x="100" y="60" font-size="13" text-anchor="end">before</text>
-    <rect x="108" y="40" width="220" height="30" style="fill: var(--figure-accent)" fill-opacity="0.3"/>
+    <rect x="108" y="40" width="220" height="30" style="fill: var(--figure-cache)"/>
     <g font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)">
       <text x="130" y="60"><tspan font-style="italic">k</tspan>₀</text>
       <text x="174" y="60"><tspan font-style="italic">k</tspan>₁</text>
@@ -48,8 +48,8 @@
   <g>
     <text x="100" y="134" font-size="13" text-anchor="end">after a write</text>
     <text x="100" y="150" font-size="13" text-anchor="end">of 2 tokens</text>
-    <rect x="108" y="114" width="220" height="30" style="fill: var(--figure-accent)" fill-opacity="0.3"/>
-    <rect x="328" y="114" width="88" height="30" style="fill: var(--figure-straw)" fill-opacity="0.45"/>
+    <rect x="108" y="114" width="220" height="30" style="fill: var(--figure-cache)"/>
+    <rect x="328" y="114" width="88" height="30" style="fill: var(--figure-cache)" fill-opacity="0.4"/>
     <g font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)">
       <text x="130" y="134"><tspan font-style="italic">k</tspan>₀</text>
       <text x="174" y="134"><tspan font-style="italic">k</tspan>₁</text>

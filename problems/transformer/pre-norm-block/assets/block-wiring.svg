@@ -22,7 +22,7 @@
   <!-- taps -->
   <circle cx="48" cy="40" r="2.5" style="fill: var(--figure-accent)"/>
   <circle cx="256" cy="40" r="2.5" style="fill: var(--figure-accent)"/>
-  <g font-size="14" style="font-family: var(--figure-serif)">
+  <g font-size="13" style="font-family: var(--figure-serif)">
     <text x="20" y="45" text-anchor="middle" font-style="italic">x</text>
     <text x="256" y="27" text-anchor="middle" font-style="italic">h</text>
     <text x="470" y="45" text-anchor="middle" font-style="italic">y</text>

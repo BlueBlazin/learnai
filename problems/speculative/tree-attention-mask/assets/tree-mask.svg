@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 232">
   <title>A token tree behind a two-token prefix, and the attention mask of the flattened sequence</title>
-  <desc>Left: the prefix p0, p1 followed by a tree of six draft nodes; nodes 0 and 1 continue the prefix, nodes 2 and 3 are children of node 0, node 4 is a child of node 1, node 5 is a child of node 2. Right: the 8 by 8 attention mask. Prefix rows are causal. Each node row is filled in the two prefix columns, in its own column, and in the columns of its ancestors only.</desc>
+  <desc>Left: the prefix p0, p1 followed by a tree of six draft nodes, where nodes 0 and 1 continue the prefix, nodes 2 and 3 are children of node 0, node 4 is a child of node 1, and node 5 is a child of node 2. Right: the 8 by 8 attention mask, causal for the prefix rows, and for each node row filled in the two prefix columns, its own column, and the columns of its ancestors only.</desc>
   <!-- The tree: edges first, then nodes -->
   <g fill="none" stroke="currentColor" stroke-width="1">
     <line x1="35" y1="112" x2="49" y2="112"/>
@@ -79,32 +79,32 @@
     <line x1="460" y1="40" x2="460" y2="208"/>
   </g>
   <g>
-    <rect x="296" y="44" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="296" y="65" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="317" y="65" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="296" y="86" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="317" y="86" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="338" y="86" width="13" height="13" style="fill: var(--figure-accent)"/>
-    <rect x="296" y="107" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="317" y="107" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="359" y="107" width="13" height="13" style="fill: var(--figure-accent)"/>
-    <rect x="296" y="128" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="317" y="128" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="338" y="128" width="13" height="13" style="fill: var(--figure-accent)"/>
-    <rect x="380" y="128" width="13" height="13" style="fill: var(--figure-accent)"/>
-    <rect x="296" y="149" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="317" y="149" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="338" y="149" width="13" height="13" style="fill: var(--figure-accent)"/>
-    <rect x="401" y="149" width="13" height="13" style="fill: var(--figure-accent)"/>
-    <rect x="296" y="170" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="317" y="170" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="359" y="170" width="13" height="13" style="fill: var(--figure-accent)"/>
-    <rect x="422" y="170" width="13" height="13" style="fill: var(--figure-accent)"/>
-    <rect x="296" y="191" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="317" y="191" width="13" height="13" style="fill: var(--figure-muted)"/>
-    <rect x="338" y="191" width="13" height="13" style="fill: var(--figure-accent)"/>
-    <rect x="380" y="191" width="13" height="13" style="fill: var(--figure-accent)"/>
-    <rect x="443" y="191" width="13" height="13" style="fill: var(--figure-accent)"/>
+    <rect x="296" y="44" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="296" y="65" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="317" y="65" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="296" y="86" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="317" y="86" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="338" y="86" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="296" y="107" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="317" y="107" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="359" y="107" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="296" y="128" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="317" y="128" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="338" y="128" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="380" y="128" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="296" y="149" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="317" y="149" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="338" y="149" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="401" y="149" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="296" y="170" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="317" y="170" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="359" y="170" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="422" y="170" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="296" y="191" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="317" y="191" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="338" y="191" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="380" y="191" width="13" height="13" style="fill: var(--figure-attn)"/>
+    <rect x="443" y="191" width="13" height="13" style="fill: var(--figure-attn)"/>
   </g>
   <text x="376" y="228" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">row attends to column</text>
 </svg>

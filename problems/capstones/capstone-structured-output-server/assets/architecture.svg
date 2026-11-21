@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 318">
   <title>Architecture of the structured-output server</title>
-  <desc>A request is validated. Its schema is looked up in the compilation cache, which holds, per schema text, an automaton and its token index, and compiles a missing entry once through schema to regex, regex to DFA, and DFA to token index. The generation loop reads one row of logits per step from the model, keeps the tokens the index allows in the current state, and picks the best. The chosen tokens pass through the tool-call parser and become deltas, which are streamed as chunks or folded into one message. A disconnect watcher on receive stops the loop and closes the model's stream.</desc>
+  <desc>A validated request looks up its schema in the compilation cache, which compiles a missing entry once into an automaton and token index; the generation loop keeps the tokens the index allows from each row of logits and picks the best. The tokens pass through the tool-call parser into deltas that are streamed or folded into one message, and a disconnect watcher stops the loop and closes the model's stream.</desc>
 
   <!-- request and validation -->
   <g font-size="13">
@@ -15,8 +15,8 @@
 
   <!-- compilation cache -->
   <g font-size="13">
-    <rect x="176" y="46" width="296" height="58" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
-    <text x="186" y="66" style="fill: var(--figure-accent)">compilation cache, keyed by the schema's text</text>
+    <rect x="176" y="46" width="296" height="58" stroke-width="1.5" style="fill: var(--figure-cache); stroke: var(--figure-accent)"/>
+    <text x="186" y="66" style="fill: var(--figure-accent)">compilation cache, keyed by schema text</text>
     <text x="186" y="84">schema → regex → DFA → token index</text>
     <text x="186" y="98" style="fill: var(--figure-muted)">once per schema; later requests look up</text>
   </g>

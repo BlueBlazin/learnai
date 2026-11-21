@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 232" font-size="13">
   <title>The per-layer state of a four-layer hybrid decoder</title>
-  <desc>Four layers stacked from bottom to top: three linear-attention layers and one full-attention layer. Next to each linear-attention layer its state is a box of fixed width holding conv_state and S. Next to the full-attention layer its state is a row of key and value columns, one per token seen, with a dashed outline where the next token will go.</desc>
+  <desc>Four layers stacked from bottom to top: three linear-attention layers and one full-attention layer. Each linear-attention layer has a fixed-width state box holding conv_state and S, and the full-attention layer has a row of key and value columns, one per token seen, with a dashed outline where the next token goes.</desc>
 
   <!-- the stack, layer 0 at the bottom -->
   <g fill="none" stroke="currentColor" stroke-width="1.5">
     <rect x="20" y="158" width="150" height="30" rx="3"/>
     <rect x="20" y="118" width="150" height="30" rx="3"/>
     <rect x="20" y="78" width="150" height="30" rx="3"/>
-    <rect x="20" y="38" width="150" height="30" rx="3" style="stroke: var(--figure-accent)"/>
+    <rect x="20" y="38" width="150" height="30" rx="3" style="fill: var(--figure-attn); stroke: var(--figure-accent)"/>
   </g>
   <text x="32" y="178">0  linear attention</text>
   <text x="32" y="138">1  linear attention</text>
@@ -23,7 +23,7 @@
   <text x="103" y="24" style="fill: var(--figure-muted)">logits</text>
 
   <!-- state of the linear-attention layers: fixed size -->
-  <g fill="none" stroke="currentColor" stroke-width="1">
+  <g stroke="currentColor" stroke-width="1" style="fill: var(--figure-cache)">
     <rect x="210" y="161" width="116" height="24"/>
     <rect x="210" y="121" width="116" height="24"/>
     <rect x="210" y="81" width="116" height="24"/>
@@ -39,15 +39,15 @@
     <line x1="170" y1="93" x2="210" y2="93"/>
     <line x1="170" y1="53" x2="210" y2="53"/>
   </g>
-  <text x="338" y="138" style="fill: var(--figure-muted)">the same size after</text>
-  <text x="338" y="154" style="fill: var(--figure-muted)">any number of tokens</text>
+  <text x="332" y="138" style="fill: var(--figure-muted)">the same size after</text>
+  <text x="332" y="154" style="fill: var(--figure-muted)">any number of tokens</text>
 
   <!-- state of the attention layer: one column per token -->
   <g fill="none" stroke-width="1" style="stroke: var(--figure-accent)">
-    <rect x="210" y="41" width="22" height="24"/>
-    <rect x="232" y="41" width="22" height="24"/>
-    <rect x="254" y="41" width="22" height="24"/>
-    <rect x="276" y="41" width="22" height="24"/>
+    <rect x="210" y="41" width="22" height="24" style="fill: var(--figure-cache)"/>
+    <rect x="232" y="41" width="22" height="24" style="fill: var(--figure-cache)"/>
+    <rect x="254" y="41" width="22" height="24" style="fill: var(--figure-cache)"/>
+    <rect x="276" y="41" width="22" height="24" style="fill: var(--figure-cache)"/>
     <rect x="298" y="41" width="22" height="24" stroke-dasharray="3 3"/>
   </g>
   <g style="font-family: var(--figure-mono); fill: var(--figure-accent)" font-size="13">

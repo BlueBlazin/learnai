@@ -43,7 +43,7 @@ $$
 
 with the natural logarithm.
 
-![A text of $N = 7$ tokens, `max_len` $= 4$, `stride` $= 2$. Each window is one call of `forward`; it scores the filled tokens and uses the outlined ones only as context. Token 0 is never scored.](assets/windows.svg)
+![A text of $N = 7$ tokens with `max_len` $= 4$ and `stride` $= 2$. Each window is one call of `forward` that scores the filled tokens and uses the outlined ones only as context, and token 0 is never scored.](assets/windows.svg)
 
 **The result.** Every position $1 \le p \le N - 1$ is scored exactly once, so
 

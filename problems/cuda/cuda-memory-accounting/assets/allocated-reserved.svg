@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 172">
   <title>Device memory as the caching allocator sees it</title>
-  <desc>A horizontal bar stands for the memory of the device. From the left: a long part occupied by tensors; a short part that is free but lies inside a segment that also holds a tensor, labeled split; a part that is a whole free segment, labeled free; and the rest, which the allocator has not reserved. A bracket under the first part is labeled allocated. A longer bracket under the first three parts is labeled reserved. Above the bar, the split part is marked non-releasable and the free segment is marked as what empty_cache() returns.</desc>
+  <desc>A horizontal bar for the memory of the device: a long part occupied by tensors, a short free part inside a segment that also holds a tensor (split), a whole free segment (free), and the rest, not reserved. Brackets mark the first part as allocated and the first three as reserved, and empty_cache() returns the free segment but not the split part.</desc>
 
   <!-- Geometry: the bar runs from x = 16 to x = 464 at y = 64..96.
        tensors 16..232, inactive split 232..276, free segment 276..356, not reserved 356..464. -->

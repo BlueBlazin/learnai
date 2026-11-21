@@ -35,6 +35,10 @@ TEXT_SIZE = 13
 BASELINE = 4.5  # from the middle of a 13-unit line down to its baseline (as maps.py)
 MAX_DESC_SENTENCES = 2
 MAX_CAPTION_SENTENCES = 2
+# Sentence counts alone are met by joining clauses, so each text has a word limit too.
+MAX_DESC_WORDS = 30
+MAX_CAPTION_WORDS = 30
+MAX_NOTE_WORDS = 25
 
 # ---------------------------------------------------------------- the policy
 # Mirrors src/components/prose/svg-policy.ts. python/tests/test_figure_check.py
@@ -252,10 +256,15 @@ class SvgCheck:
         if desc is None:
             self.add("the root has no <desc>")
         else:
-            count = sentences("".join(desc.itertext()))
+            words = "".join(desc.itertext())
+            count = sentences(words)
             if count > MAX_DESC_SENTENCES:
                 self.add(
                     f"the root <desc> has {count} sentences, at most {MAX_DESC_SENTENCES}"
+                )
+            if len(words.split()) > MAX_DESC_WORDS:
+                self.add(
+                    f"the root <desc> has {len(words.split())} words, at most {MAX_DESC_WORDS}"
                 )
 
     def stepped(self, root: ET.Element) -> None:
@@ -288,10 +297,15 @@ class SvgCheck:
             if first is None or local(first.tag) != "desc":
                 self.add(f"step-{number}: the first child is not a <desc>")
                 continue
-            count = sentences("".join(first.itertext()))
+            note = "".join(first.itertext())
+            count = sentences(note)
             if count != 1:
                 self.add(
                     f"step-{number}: the <desc> has {count} sentences, exactly 1 wanted"
+                )
+            if len(note.split()) > MAX_NOTE_WORDS:
+                self.add(
+                    f"step-{number}: the <desc> has {len(note.split())} words, at most {MAX_NOTE_WORDS}"
                 )
 
     # -- elements, attributes, style, colors
@@ -529,6 +543,10 @@ def check_texts(problem: Path, names: set[str]) -> tuple[list[Finding], set[str]
             if count > MAX_CAPTION_SENTENCES:
                 add(
                     f"the caption of {target} has {count} sentences, at most {MAX_CAPTION_SENTENCES}"
+                )
+            if len(caption.split()) > MAX_CAPTION_WORDS:
+                add(
+                    f"the caption of {target} has {len(caption.split())} words, at most {MAX_CAPTION_WORDS}"
                 )
     return found, referenced
 

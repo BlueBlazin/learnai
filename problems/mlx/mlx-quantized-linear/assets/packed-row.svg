@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 252">
   <title>One row of a weight matrix before and after mx.quantize with groups of 64 and 4 bits</title>
-  <desc>At the top, one row of 64 float32 weights, 256 bytes. An arrow labeled mx.quantize leads down to what replaces it: eight uint32 words holding eight 4-bit codes each, 32 bytes, followed by one float32 scale and one float32 bias for the group, 4 bytes each. At the bottom, the first word of the worked example, 0x76543210, is drawn as eight 4-bit cells from bit 31 on the left to bit 0 on the right; the cells read 7, 6, 5, 4, 3, 2, 1, 0, so code 0 sits in the lowest four bits and code 7 in the highest.</desc>
+  <desc>One row of 64 float32 weights, 256 bytes, is replaced through mx.quantize by eight uint32 words of eight 4-bit codes each, 32 bytes, and one float32 scale and bias for the group. Below, the word 0x76543210 is drawn as eight 4-bit cells from bit 31 to bit 0, so code 0 sits in the lowest four bits and code 7 in the highest.</desc>
 
   <!-- The float row -->
   <text x="10" y="14" font-size="13">one row of the float weight: 64 float32 values, 256 bytes</text>

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 212" font-size="13">
   <title>How the output of q_proj is laid out, and which channels of a query rotate</title>
-  <desc>Top row: the 4096 outputs of q_proj as eight equal segments, one per head; each segment is split in two halves, a query half and a gate half. Head 0 is drawn in the accent color. Bottom row: the 256 channels of one query after the norm. The first 64 are marked as rotating and are split into two halves of 32, channel i pairing with channel i plus 32; the remaining 192 pass through unchanged.</desc>
+  <desc>Top row: the 4096 outputs of q_proj as eight equal segments, one per head, each split into a query half and a gate half, with head 0 in the accent color. Bottom row: the 256 channels of one query after the norm, where the first 64 rotate as two halves of 32, channel i pairing with channel i plus 32, and the remaining 192 pass through.</desc>
 
   <!-- q_proj output: 8 heads, each [query | gate] -->
   <text x="24" y="20">q_proj output, 4096 numbers per token: 8 heads of [query | gate]</text>

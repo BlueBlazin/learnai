@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 224">
   <title>The last block of each row in the worked example hangs over the end of the row</title>
-  <desc>A strip of thirteen cells numbered 0 to 12: the memory behind the pointer x. Cells 0 to 4 are row 0, cells 5 to 9 are row 1, and cells 10 to 12, drawn dashed, lie beyond the tensor. Below the strip, the second block of program 0 covers cells 4 to 7 with mask values 1, 0, 0, 0: only cell 4 belongs to row 0, and cells 5 to 7 are the start of row 1. Below that, the second block of program 1 covers cells 9 to 12 with mask values 1, 0, 0, 0: only cell 9 exists, and cells 10 to 12 are outside the tensor.</desc>
+  <desc>A strip of thirteen cells, the memory behind the pointer x: cells 0 to 4 are row 0, cells 5 to 9 are row 1, and cells 10 to 12, dashed, lie beyond the tensor. Below it, the second block of program 0 covers cells 4 to 7 and the second block of program 1 covers cells 9 to 12, each with mask 1, 0, 0, 0.</desc>
 
   <!-- Flat element numbers, inside the cells -->
   <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
@@ -70,7 +70,7 @@
     <text x="410" y="110">0</text>
     <text x="444" y="110">0</text>
   </g>
-  <text x="19" y="172" font-size="13" style="fill: var(--figure-straw)">program 1, block 2 (dashed): columns 4 to 7 of row 1, mask 1 0 0 0</text>
+  <text x="19" y="172" font-size="13" style="fill: var(--figure-straw)">program 1, block 2 (dashed): columns 4 to 7 of row 1</text>
   <text x="19" y="189" font-size="13" style="fill: var(--figure-muted)">unmasked, it would read and write past the end of the tensor</text>
   <text x="19" y="214" font-size="13" style="fill: var(--figure-muted)">mask = columns &lt; n_cols; BLOCK = 4, n_cols = 5</text>
 </svg>

@@ -22,7 +22,7 @@ def granite_block(x, weights, layer, positions): ...
   start at 0 or be contiguous.
 - Returns the hidden state leaving the block: float32, shape `(B, T, D)`.
 
-![The block. Both branches read a normalized copy of the stream and are multiplied by 0.263 before they are added back. The accent marks what differs from a textbook pre-norm block.](assets/granite-block.svg)
+![Both branches read a normalized copy of the stream and are multiplied by 0.263 before they are added back, and the accent marks what differs from a textbook pre-norm block.](assets/granite-block.svg)
 
 Write $r = 0.263$ for the residual multiplier and $d = 64$ for the width of one
 head. The number of query heads $H$, of key/value heads $H_{kv}$, and the MLP width

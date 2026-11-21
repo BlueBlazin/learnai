@@ -3019,8 +3019,10 @@ rules.
 
 **Text.** A figure is a drawing, not a second statement:
 
-- A caption is one sentence, two at most. A step note is one sentence. A `<desc>` is
-  one or two sentences.
+- A caption is one sentence, two at most, and at most 30 words. A step note is one
+  sentence of at most 25 words. A `<desc>` is one or two sentences and at most 30
+  words. Joining clauses to stay under a sentence count is not shortening: what the
+  reader needs beyond that belongs in the statement's own paragraphs.
 - Lettering inside a drawing is names, symbols, and shapes, never a sentence, and
   there is no column of notes beside the drawing. Keep the annotations that carry
   information: the tensor shape on a wire, the "This problem" marker on a map.

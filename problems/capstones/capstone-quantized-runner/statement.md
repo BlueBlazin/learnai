@@ -17,7 +17,7 @@ def bits_per_weight(ckpt, group_size): ...  # stage 4 -> float
 def quantize_mixed(params, group_size, max_bpw): ...  # stage 4 -> checkpoint
 ```
 
-![The runner. Stages 1 and 4 turn float parameters into a checkpoint of packed codes, per-group scales and biases, and float gains; the float matrices are not stored. A step (stages 2 and 3) reads only the checkpoint: it dequantizes the embedding rows it looks up, multiplies by codes in every linear layer, and keeps rotated keys and values in the KV cache.](assets/runner.svg)
+![Stages 1 and 4 turn float parameters into a checkpoint of packed codes, per-group scales and biases, and float gains, and the float matrices are not stored. A step (stages 2 and 3) reads only the checkpoint: it dequantizes the embedding rows it looks up, multiplies by codes in every linear layer, and keeps rotated keys and values in the KV cache.](assets/runner.svg)
 
 The cases are grouped by stage, and each stage's cases use only what that stage and
 the ones before it specify. The tests of stages 2 and 3 pass in checkpoints that the

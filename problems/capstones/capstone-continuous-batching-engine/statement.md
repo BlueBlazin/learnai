@@ -42,7 +42,7 @@ class Engine:  # stages 2 to 5
     async def run(self) -> None: ...
 ```
 
-![The engine. Requests wait in one queue ordered by rank. Before every step the planner serves decodes, continues prompts that are being prefilled, and admits from the head of the queue; every block it uses comes from the allocator, whose block tables may point at shared blocks. The kit's `SimEngine` runs the step and reports who finished.](assets/architecture.svg)
+![Requests wait in one queue ordered by rank, and before every step the planner serves decodes, continues prompts that are being prefilled, and admits from the head of the queue. Every block comes from the allocator, whose block tables may point at shared blocks, and the kit's `SimEngine` runs the step and reports who finished.](assets/architecture.svg)
 
 The cases are grouped by stage, and each stage's cases use only what that stage and
 the ones before it specify: later features are off by default (`long_prefill_threshold=None`,

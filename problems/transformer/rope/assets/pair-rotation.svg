@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 246">
   <title>RoPE rotates each pair of dimensions by an angle proportional to position</title>
-  <desc>Two unit circles. In the first, the vector (1, 0) is shown turned by 0, 1, 2 and 3 radians: pair 0 at positions 0 to 3 with theta 1. In the second it is turned by 0, 0.1, 0.2 and 0.3 radians: pair 1 at the same positions with theta 0.1.</desc>
+  <desc>Two unit circles showing the vector (1, 0) at positions 0 to 3. It is turned by 0, 1, 2, and 3 radians for pair 0 with theta 1, and by 0, 0.1, 0.2, and 0.3 radians for pair 1 with theta 0.1.</desc>
   <!-- Geometry: the tip for position p sits at angle p * theta on a circle of radius 78 around each center. -->
   <!-- Pair 0: the plane of (x0, x1), theta = 1 -->
   <g>

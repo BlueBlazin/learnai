@@ -38,7 +38,7 @@ overwrites the oldest token of the window, and so on around. A token's slot neve
 changes: a write touches only the slots of the tokens it stores, and no entry is ever
 moved.
 
-![The buffer for `max_size = 8` and `keep = 2` after 11 tokens. Tokens 8, 9, and 10 have wrapped around and overwritten tokens 2, 3, and 4; the outlined slot holds the oldest token of the window and is the next to be overwritten. The returned keys are the sinks, then the ring read from that slot around.](assets/ring-layout.svg)
+![The buffer for `max_size = 8` and `keep = 2` after 11 tokens: tokens 8, 9, and 10 have wrapped around and overwritten tokens 2, 3, and 4, and the outlined slot holds the oldest token of the window and is the next to be overwritten. The returned keys are the sinks, then the ring read from that slot around.](assets/ring-layout.svg)
 
 **`rotating_write(cache, k_new, v_new, max_size, keep)`** writes the keys and values of
 `T` new tokens (numbers `offset` to `offset + T - 1`), each to its slot, and returns a

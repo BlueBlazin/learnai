@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 226">
   <title>Timeline of the worked example: six requests sharing two slots under continuous batching</title>
-  <desc>One row per request, time in milliseconds from 0 to 85, with the eight engine steps marked by vertical lines at 0, 14, 24, 35, 45, 55, 67, 76 and 85. Each request waits (dashed line) from its arrival until a slot is free, is prefilled during one step (filled bar), and then decodes one token per step (outlined bars) until it finishes. Requests 0 and 1 start together at 0; request 2 arrives at 5 and takes the slot of request 1 at 24; request 3 arrives at 45 and takes the slot of request 0 at once; request 4 follows request 2 at 55; request 5 starts at 67.</desc>
+  <desc>One row per request over time in milliseconds from 0 to 85, with the eight engine steps marked by vertical lines. Each request waits (dashed line) until a slot is free, is prefilled during one step (filled bar), and then decodes one token per step (outlined bars) until it finishes; request 2 takes the slot of request 1 at 24 and request 3 takes the slot of request 0 at 45.</desc>
   <!-- Geometry: x = 52 + 4.9 * t (ms); one row of 24 units per request, bars 14 high. -->
   <!-- legend -->
   <g font-size="13">

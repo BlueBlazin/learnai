@@ -207,3 +207,13 @@ def test_known_findings_do_not_fail_the_run(tmp_path):
     result = run("--known", str(known), str(directory))
     assert result.returncode == 0, result.stdout
     assert result.stdout.startswith("known: ")
+
+
+def test_captions_descriptions_and_notes_have_word_limits(tmp_path):
+    long = " ".join(["word"] * 31)
+    caption = messages(problem(tmp_path, GOOD, f"![{long}.](assets/fig.svg)"))
+    assert any("caption of assets/fig.svg has 31 words" in line for line in caption)
+    desc = messages(problem(tmp_path, GOOD.replace("One sentence. Two sentences.", f"{long}.")))
+    assert any("the root <desc> has 31 words" in line for line in desc)
+    note = messages(problem(tmp_path, STEPPED.replace("First step.", f"{long}.")))
+    assert any("step-1: the <desc> has 31 words" in line for line in note)

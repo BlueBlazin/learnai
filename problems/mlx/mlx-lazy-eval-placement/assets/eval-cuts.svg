@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 214">
   <title>One evaluation per generated token cuts the lazy graph between steps</title>
-  <desc>Three generation steps side by side. In each, a model call produces logits, the logits produce a token, and the token and logits extend a running log-probability. Arrows carry the cache and the token from one step's model call to the next, and the log-probability from one step to the next. A dashed vertical line labeled mx.eval separates each pair of steps and crosses all three arrows.</desc>
+  <desc>Three generation steps side by side, each with a model call that produces logits, a token, and a running log-probability, and with arrows that carry the cache, the token, and the log-probability to the next step. A dashed vertical line labeled mx.eval separates each pair of steps and crosses all three arrows.</desc>
 
   <!-- Geometry: step centers at x = 80, 240, 400; evaluation cuts at x = 160 and 320. -->
 

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 252">
   <title>What the program for output row 0 and batch row 0 of the worked example reads, column by column</title>
-  <desc>Five aligned rows over eight columns numbered 0 to 7. First, the activations of batch row 0: 1, 2, minus 1, 0.5, 0, 1, 1, minus 1. Second, the eight 4-bit codes of output row 0, unpacked from the single word 0xAF30F085 starting at its lowest bits: 5, 8, 0, 15, 0, 3, 15, 10. Third, the groups: columns 0 to 3 are group 0 with scale 0.1 and bias minus 0.5, columns 4 to 7 are group 1 with scale 0.06 and bias 2.0. Fourth, drawn dashed because it is never stored, the weight of each column, code times scale plus bias: 0, 0.3, minus 0.5, 1.0, 2.0, 2.18, 2.9, 2.6. Below, the single value the program stores: the sum of activation times weight, 4.08.</desc>
+  <desc>Five aligned rows over eight columns: the activations of batch row 0, the eight 4-bit codes of output row 0 unpacked from the word 0xAF30F085, and the two groups with scale 0.1 and bias minus 0.5 and with scale 0.06 and bias 2.0. Then, dashed because it is never stored, the weight of each column, code times scale plus bias, and below it the single stored value, the sum of activation times weight, 4.08.</desc>
 
   <!-- Column numbers -->
   <text x="10" y="18" font-size="13" style="fill: var(--figure-muted)">column</text>
@@ -91,7 +91,7 @@
     <text x="404" y="178">2.9</text>
     <text x="448" y="178">2.6</text>
   </g>
-  <text x="118" y="204" font-size="13" style="fill: var(--figure-muted)">code · scale + bias: in registers only, never in memory</text>
+  <text x="118" y="204" font-size="13" style="fill: var(--figure-muted)">code · scale + bias: in registers, never stored</text>
 
   <!-- The one value the program stores -->
   <text x="10" y="238" font-size="13">y[0, 0] = Σ x · weight = 4.08, the only element this program stores</text>

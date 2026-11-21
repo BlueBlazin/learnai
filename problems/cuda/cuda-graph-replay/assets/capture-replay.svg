@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 212">
   <title>What a call of a graphed step does: copy in, replay, clone out</title>
-  <desc>Three boxes in a row in the middle: the static input, the captured graph, and the static output. The graph box is joined to the other two by lines labeled reads and writes: it reads the memory of the static input and writes the memory of the static output, at the addresses recorded during capture. Above the static input is the caller's new input, with an arrow labeled copy_ pointing down into the static input. Below the static output is the result handed to the caller, with an arrow labeled clone pointing down from the static output. The caller's tensors on the left and right are separate memory from the static tensors.</desc>
+  <desc>Three boxes in a row: the static input, the captured graph, and the static output, where the graph reads the static input and writes the static output at the addresses recorded during capture. The caller's new input is copied down into the static input with copy_, and the result leaves the static output through clone, so the caller's tensors are separate memory.</desc>
 
   <!-- The caller's new input -->
   <rect x="24" y="14" width="124" height="30" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>
@@ -28,8 +28,8 @@
   <line x1="294" y1="106" x2="324" y2="106" fill="none" stroke="currentColor" stroke-width="1"/>
   <polygon points="332,106 323,102 323,110"/>
   <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
-    <text x="167" y="98">reads</text>
-    <text x="313" y="98">writes</text>
+    <text x="167" y="124">reads</text>
+    <text x="313" y="124">writes</text>
     <text x="240" y="152">the same addresses at every replay</text>
   </g>
 

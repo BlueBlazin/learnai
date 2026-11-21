@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300">
   <title>One round of the speculative engine</title>
-  <desc>The verified sequence feeds two proposers: prompt lookup, which copies tokens that followed an earlier occurrence of the current suffix, and the draft model with its own KV cache. Whichever proposes hands up to k draft tokens to the target model, which scores all of them in one call through its KV cache. The verifier accepts a prefix of the drafts and emits one more token from the target; the accepted tokens extend the verified sequence. Both caches are rolled back to verified tokens, and the number of accepted drafts adjusts k for the next round.</desc>
+  <desc>The verified sequence feeds two proposers, prompt lookup and the draft model with its own KV cache, and whichever proposes hands up to k draft tokens to the target model, which scores them in one call. The verifier accepts a prefix and emits one more token, both caches are rolled back to verified tokens, and the number of accepted drafts adjusts k for the next round.</desc>
 
   <!-- verified sequence -->
   <g font-size="13">

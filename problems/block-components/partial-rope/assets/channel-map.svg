@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 246">
   <title>Which channels of a 16-wide head rotate under the two meanings of a partial rotary factor of 0.5</title>
-  <desc>Two rows of 16 numbered channels. In the first row, the default convention, channels 0 to 7 are rotated and channel i is paired with channel i + 4; channels 8 to 15 pass through. In the second row, the proportional convention, channels 0 to 3 and 8 to 11 are rotated and channel i is paired with channel i + 8; channels 4 to 7 and 12 to 15 pass through.</desc>
+  <desc>Two rows of 16 numbered channels. In the default convention channels 0 to 7 rotate and channel i pairs with channel i + 4; in the proportional convention channels 0 to 3 and 8 to 11 rotate and channel i pairs with channel i + 8, and the rest pass through.</desc>
   <!-- Each cell is 26 wide; an arc joins the two members of a rotated pair. -->
   <!-- partial_rope: r = 8, pairs (i, i + 4) -->
   <g>
@@ -93,7 +93,7 @@
     </g>
   </g>
   <g font-size="13" style="fill: var(--figure-muted)">
-    <text x="32" y="224">Filled channels are rotated; dashed channels pass through unchanged.</text>
+    <text x="32" y="224">Filled channels rotate; dashed ones pass through.</text>
     <text x="32" y="241">An arc joins the two channels of one pair.</text>
   </g>
 </svg>

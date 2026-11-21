@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 196">
   <title>A CUDA call returns before its work is done</title>
-  <desc>Two horizontal tracks over a common time axis. On the host track, fn() occupies a short interval and is followed by a long interval in which sync() waits. On the device track, the work queued by fn() starts shortly after fn() begins and ends where the wait ends. A short bracket above the host track spans only fn(): the time measured when the timer is stopped without a sync. A long bracket below the device track spans from the start of fn() to the end of the work: the time measured when the timer is stopped after a sync.</desc>
+  <desc>Two tracks over a common time axis: on the host, fn() is short and is followed by a long wait in sync(), and on the device, the queued work starts shortly after fn() begins and ends where the wait ends. A short bracket over fn() alone is the time measured without a sync, and a long bracket from the start of fn() to the end of the work is the time measured after a sync.</desc>
 
   <!-- Geometry: the timer starts at x = 100, fn() returns at x = 150, the work ends at x = 370. -->
 

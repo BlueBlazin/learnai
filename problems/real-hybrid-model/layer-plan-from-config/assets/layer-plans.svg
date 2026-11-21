@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 262" font-size="13">
   <title>The layer plans of three published decoders</title>
-  <desc>Three rows of cells, one cell per layer, layer 0 on the left. Qwen3.5 0.8B has 24 layers; every fourth one, starting with layer 3, is filled: full attention among linear-attention layers. The first 24 of the 78 layers of GLM-5.3: layers 0, 1, 2 and then every fourth layer from 6 are filled, the layers that run their own indexer; the first three layers have a dense MLP. Gemma 4 E2B has 35 layers; every fifth one, starting with layer 4, is filled: full attention among sliding-window layers. Layers 13 and 14 store their keys and values, layers 15 to 34 reuse them.</desc>
+  <desc>Three rows of cells, one per layer with layer 0 on the left, with the filled layers marked: Qwen3.5 0.8B has 24 layers and every fourth one from layer 3 is full attention, the first 24 of the 78 layers of GLM-5.3 have filled layers 0, 1, 2 and every fourth from 6 that run their own indexer, and Gemma 4 E2B has 35 layers with every fifth one from layer 4 full attention. In Gemma, layers 13 and 14 store their keys and values and layers 15 to 34 reuse them.</desc>
 
   <!-- Qwen3.5 0.8B: filled = full attention -->
-  <text x="24" y="24">Qwen3.5 0.8B, 24 layers: <tspan style="fill: var(--figure-accent)">full attention</tspan> every 4th, counted from 1</text>
+  <text x="24" y="24">Qwen3.5 0.8B: <tspan style="fill: var(--figure-accent)">full attention</tspan> every 4th, counted from 1</text>
   <g stroke-width="1.5">
     <rect x="24.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>
     <rect x="42.0" y="34" width="16.0" height="18" fill="none" stroke="currentColor"/>

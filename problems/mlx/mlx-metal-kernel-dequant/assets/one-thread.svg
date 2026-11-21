@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300">
   <title>What the thread at column 37 of row 0 reads and writes in the worked example</title>
-  <desc>Four rows of boxes. First, the eight uint32 words of row 0; word 4 is highlighted because 37 divided by 8 is 4. Second, word 4, 0x76543210, opened into eight 4-bit cells from bit 31 on the left to bit 0 on the right; the cell holding code 5, bits 20 to 23, is highlighted because 37 modulo 8 is 5. Third, the two scales and two biases of row 0; those of group 1 are highlighted because 37 divided by 32 is 1. Fourth, the 64 output weights of row 0 with element 37 marked: 5 times minus 0.25 plus 2 equals 0.75.</desc>
+  <desc>Four rows of boxes for element 37 of row 0: word 4 of the eight uint32 words (37 divided by 8), the code in bits 20 to 23 of the word 0x76543210 (37 modulo 8 is 5), the scale and bias of group 1 (37 divided by 32), and the 64 output weights. Element 37 is 5 times minus 0.25 plus 2, which is 0.75.</desc>
   <!-- The eight words of row 0 -->
   <text x="10" y="14" font-size="13"><tspan style="font-family: var(--figure-mono)">words</tspan>, row 0: 8 words of 8 codes each</text>
   <rect x="10" y="22" width="54" height="24" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>

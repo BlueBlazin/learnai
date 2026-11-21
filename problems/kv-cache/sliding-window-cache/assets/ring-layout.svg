@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 212">
   <title>The layout of a rotating cache with two sink slots, and the temporal order read from it</title>
-  <desc>A buffer of eight slots after eleven tokens were written with max_size 8 and keep 2. Slots 0 and 1 hold the sink tokens 0 and 1. Slots 2 to 7 form a ring that holds tokens 8, 9, 10, 5, 6, 7: the ring has wrapped. Slot 5 is outlined: it holds the oldest ring token and is where the next write goes. Below, the returned keys in temporal order: tokens 0, 1, then 5, 6, 7 from slots 5 to 7, then 8, 9, 10 from slots 2 to 4.</desc>
+  <desc>A buffer of eight slots after eleven tokens with max_size 8 and keep 2: slots 0 and 1 hold the sink tokens 0 and 1, and slots 2 to 7 are a wrapped ring holding tokens 8, 9, 10, 5, 6, 7, with slot 5 outlined as the oldest ring token and the next write. Below, the returned keys in temporal order are tokens 0, 1, 5, 6, 7, 8, 9, 10.</desc>
   <!-- Geometry: slots are 44 x 30 starting at x = 108; slot j is centered at x = 130 + 44 j. Buffer row at y = 52, returned row at y = 150. -->
   <g font-size="13" text-anchor="middle">
     <text x="152" y="14">sinks (<tspan style="font-family: var(--figure-mono)">keep</tspan> = 2)</text>
@@ -23,8 +23,8 @@
   </g>
   <!-- The buffer: sinks, then the ring. Tokens 8, 9, 10 have overwritten 2, 3, 4. -->
   <text x="100" y="72" font-size="13" text-anchor="end">buffer</text>
-  <rect x="108" y="52" width="88" height="30" style="fill: var(--figure-straw)" fill-opacity="0.45"/>
-  <rect x="196" y="52" width="264" height="30" style="fill: var(--figure-accent)" fill-opacity="0.3"/>
+  <rect x="108" y="52" width="88" height="30" style="fill: var(--figure-cache)"/>
+  <rect x="196" y="52" width="264" height="30" style="fill: var(--figure-cache)"/>
   <g font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)">
     <text x="130" y="72"><tspan font-style="italic">k</tspan>₀</text>
     <text x="174" y="72"><tspan font-style="italic">k</tspan>₁</text>
@@ -67,6 +67,7 @@
     <text x="394" y="170"><tspan font-style="italic">k</tspan>₉</text>
     <text x="438" y="170"><tspan font-style="italic">k</tspan>₁₀</text>
   </g>
+  <rect x="108" y="150" width="352" height="30" style="fill: var(--figure-cache)"/>
   <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
     <line x1="152" y1="150" x2="152" y2="180"/>
     <line x1="196" y1="150" x2="196" y2="180"/>
