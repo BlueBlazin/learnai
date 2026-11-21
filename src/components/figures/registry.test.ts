@@ -11,6 +11,8 @@ const PROBLEM_TEXTS = import.meta.glob<string>("../../../problems/**/*.md", {
 describe("interactive figures", () => {
   it("names every figure in lowercase words joined by hyphens", () => {
     expect(Object.keys(INTERACTIVE_FIGURES).sort()).toEqual([
+      "batch-window",
+      "draft-overlap",
       "quant-grid",
       "quant-grid-affine",
       "rope-shift",

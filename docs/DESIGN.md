@@ -322,7 +322,7 @@ Composed components, by area (all shown in their states at
 |---|---|
 | `app/` | `AppShell`, `CommandPalette`, `AppLink`, `InlineButton`, `IconButton`, `ActionButton`, `CopyButton`, `ConfirmDialog`, `ShortcutHint`, `Page`, `PageHeader`, `Section`, `ScreenMessage`, `MetaList` / `MetaItem`, `RuledList`, `DisclosureChevron`, `Notice`, `EmptyState`, `ErrorState`, `LoadingLines`, `PixelIcon` |
 | `prose/` | `Prose`, `CodeBlock` (both lazy; `CodeFrame` is the block they share with their fallbacks), `Figure`, `SvgFigureBody`, `FigureDrawing`, `ProblemFigures` |
-| `figures/` | `InteractiveFigure` and the registry of interactive figures behind it (lazy): `SamplerOrder` (`sampler-order`), `QuantGrid` (`quant-grid`), `RopeShift` (`rope-shift`); the parts they share: `FigureSlider`, `FigureSliders`, `FigureChoice`, `FigureReadout`, `FigureNumbers` / `FigureNumber` |
+| `figures/` | `InteractiveFigure` and the registry of interactive figures behind it (lazy): `SamplerOrder` (`sampler-order`), `QuantGrid` (`quant-grid`), `RopeShift` (`rope-shift`), `DraftOverlap` (`draft-overlap`), `BatchWindow` (`batch-window`); the parts they share: `FigureSlider`, `FigureSliders`, `FigureChoice`, `FigureReadout`, `FigureNumbers` / `FigureNumber` |
 | `editor/` | `CodeEditor` (with the completion list, documentation card, signature help, and diagnostics it draws; see below) |
 | `problem/` | `DifficultyMark`, `StatusMark`, `JudgeList`, `FrameworkList`, `FrameworkSwitcher`, `ProgressRule`, `ProblemTable`, `ProblemRowList`, `ProblemHeader`, `PrerequisiteList`, `PrerequisiteNote`, `HintList`, `EditorialPanel`, `SubmissionList`, `SubmissionView` |
 | `results/` | `ResultsPanel`, `VerdictHeader`, `VerdictMark`, `CaseMark`, `CaseList`, `MetricList`, `OutputBlock`, `RunProgress` |

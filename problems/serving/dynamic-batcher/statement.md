@@ -112,6 +112,8 @@ The dispatches are `[0, 1]` at 10, `[2, 3, 4]` at 30, `[5, 6]` at 52, and `[7, 8
 at 86. The timer set for 90 never fires: after the dispatch at 86 there is nothing to
 wait for, and `next_timer_ms()` returns `None`.
 
+![The example's arrivals, a row each: a dot at the arrival, a line for the wait, a box for the batch. A tick marks a deadline passed while busy.](interactive:batch-window)
+
 ## Constraints
 
 - `1 <= max_batch_size <= 64` and `0 <= max_wait_ms <= 10_000`. All times are integers.

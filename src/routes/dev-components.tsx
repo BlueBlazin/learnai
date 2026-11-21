@@ -1232,7 +1232,7 @@ function DevComponentsScreen() {
             </div>
           </div>
         </Specimen>
-        <Specimen name="InteractiveFigure: sampler-order, quant-grid, rope-shift; a name the app does not have">
+        <Specimen name="InteractiveFigure: sampler-order, quant-grid, rope-shift, draft-overlap, batch-window; a name the app does not have">
           <div className="flex max-w-measure flex-col gap-8">
             <InteractiveFigure
               name="sampler-order"
@@ -1253,8 +1253,20 @@ function DevComponentsScreen() {
               caption="The rotated query (solid) and key (dashed) in each pair's plane. The shift turns both and leaves the score alone."
             />
             <InteractiveFigure
-              name="no-such-figure"
+              name="draft-overlap"
               number={8}
+              alt="A target and a draft distribution over eight tokens"
+              caption="Each bar splits where the target and the draft meet. The filled part is accepted; the part above it is the residual or rejected draft mass."
+            />
+            <InteractiveFigure
+              name="batch-window"
+              number={9}
+              alt="Ten requests on a time axis and the batches they fall into"
+              caption="Each request is a row: a dot where it arrives, a line while it waits, a box while its batch runs."
+            />
+            <InteractiveFigure
+              name="no-such-figure"
+              number={10}
               alt="Missing"
               caption="The caption still stands."
             />

@@ -16,6 +16,8 @@ export interface InteractiveFigureProps {
 export const INTERACTIVE_FIGURES: Readonly<
   Record<string, LazyExoticComponent<ComponentType<InteractiveFigureProps>>>
 > = {
+  "batch-window": lazy(() => import("./batch-window")),
+  "draft-overlap": lazy(() => import("./draft-overlap")),
   "quant-grid": lazy(() => import("./quant-grid")),
   "quant-grid-affine": lazy(() => import("./quant-grid-affine")),
   "rope-shift": lazy(() => import("./rope-shift")),

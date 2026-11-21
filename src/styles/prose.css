@@ -404,6 +404,23 @@
   fill: var(--figure-muted);
 }
 
+/* The parts of a bar in the draft-overlap figure, above the shared part (drawn
+   as .kept): the residual where the target is higher, in straw, and the part
+   of the draft that is rejected where the draft is higher, as a dashed outline. */
+.figure-bars .residual {
+  fill: var(--figure-straw);
+  fill-opacity: 0.3;
+  stroke: var(--figure-straw);
+  stroke-width: 1.2;
+}
+
+.figure-bars .excess {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
 /* The histogram of the quant-grid figure: the weights as bars, the grid's
    levels as a comb beneath the axis, and the ends of its range dashed. The
    clipped tails beyond the ends are tinted straw, their bars straw, and each
@@ -453,6 +470,56 @@
 
 .figure-quant .tick,
 .figure-quant .note {
+  fill: var(--figure-muted);
+}
+
+/* The timeline of the batch-window figure: one row per request, with a dot at
+   its arrival and a straw line while it waits; a batch is a tinted box over
+   the rows of its requests for as long as the model runs it. */
+.figure-timeline {
+  max-width: var(--container-measure);
+}
+
+.figure-timeline text {
+  font-size: min(11px, var(--figure-text-max, 11px));
+}
+
+.figure-timeline .grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.figure-timeline .axis {
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+
+.figure-timeline .batch {
+  fill: var(--figure-accent);
+  fill-opacity: 0.22;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+
+.figure-timeline .wait {
+  stroke: var(--figure-straw);
+  stroke-width: 1.5;
+}
+
+.figure-timeline .deadline {
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+.figure-timeline .id,
+.figure-timeline .value,
+.figure-timeline .size,
+.figure-timeline .tick {
+  font-family: var(--figure-mono);
+}
+
+.figure-timeline .head,
+.figure-timeline .tick {
   fill: var(--figure-muted);
 }
 

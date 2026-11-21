@@ -5,7 +5,7 @@ under "Figures". "Mechanism" here also covers a static layout, timeline, or plot
 
 - Maps: 10 modules (1 exists, 9 planned), shown by 118 problems (1 placed).
 - Mechanism: 86 (41 exist, 45 planned). Stepped: 15 (1 exists, 14 planned).
-- Interactive: 5 components (3 exist, 2 proposed), used by 7 problems.
+- Interactive: 5 components (all exist), used by 7 problems.
 - 63 problems get no figure and are not listed. 101 get a mechanism or stepped figure.
 
 A map-only row names the highlighted part. Otherwise "what it shows" describes the
@@ -207,7 +207,7 @@ and Target: `early-exit-self-speculation`. Whole: `speculative-decode-loop`.
 
 | problem | kind | what it shows | note |
 |---|---|---|---|
-| `speculative-sampling-step` | map, interactive | `draft-overlap` | |
+| `speculative-sampling-step` | map, interactive | `draft-overlap` | interactive is done |
 | `greedy-speculative-verify` | map, mechanism | `K` draft tokens over `K+1` target argmax rows: matched prefix, first mismatch, returned token | |
 | `prompt-lookup-draft` | map | Draft | |
 | `speculative-sampling-block` | map | Verify | |
@@ -276,7 +276,7 @@ Token stream: `sse-token-stream`, `streaming-backpressure`. The panel:
 
 | problem | kind | what it shows | note |
 |---|---|---|---|
-| `dynamic-batcher` | map, interactive | `batch-window` | |
+| `dynamic-batcher` | map, interactive | `batch-window` | interactive is done |
 | `sse-token-stream` | map | Token stream | |
 | `token-bucket-limiter` | map, mechanism | Balance over time: refill slope, burst cap, grants as drops, a large request waiting | plot |
 | `admission-control` | map | Admission | |
@@ -402,15 +402,15 @@ No map: three problems.
 
 ## Interactive figures
 
-`sampler-order`, `quant-grid`, and `rope-shift` exist and are placed. Each is a
-component in `src/components/figures/`; the last two rows are still to build:
+All five exist and are placed. Each is a component in `src/components/figures/`
+(`sampler-order` is used by `sampler-chain`):
 
 | name | problems | controls | what is drawn |
 |---|---|---|---|
 | `quant-grid` | `affine-int8`, `clipping-calibration` | bits (2 to 8), clipping fraction, symmetric or affine | Histogram of fixed samples, the grid levels, the clipped tails; clipping and rounding error as two numbers |
 | `rope-shift` | `rope`, `cached-rope-offsets` | query position, key position, one shift added to both | The pairs of `q` and `k` in their planes, and the score, which moves with the difference only |
-| `draft-overlap` | `speculative-sampling-step` | how far the draft `q` is from the target `p` (two sliders: sharpness, shift) | Bars of `p` and `q`: the overlap `min(p, q)`, the residual, the acceptance rate, and their sum equal to `p` |
-| `batch-window` | `dynamic-batcher` | max batch size, max wait | Fixed arrivals on a time axis, the batches they fall into, each request's wait, mean wait and batch size |
+| `draft-overlap` | `speculative-sampling-step` | how far the draft `q` is from the target `p` (two sliders: sharpness, shift) | One bar per token, split into the overlap `min(p, q)`, the residual, and the rejected part of `q`; the acceptance rate and `R`, which add up to 1 |
+| `batch-window` | `dynamic-batcher` | `max_batch_size`, `max_wait_ms` | The example's arrivals on a time axis, the batches they fall into, each request's wait, mean wait and batch size |
 
 ## Role fills on existing figures
 

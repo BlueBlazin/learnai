@@ -90,6 +90,8 @@ it. Only token 0 can be rejected, with probability $0.5 \times 0.8 = 0.4$, and t
 token 1 is chosen with probability $0.2 / 0.4$. In total
 $0.2 + 0.4 \times 0.5 = 0.4 = p[1]$.
 
+![The target p and a draft q over eight tokens. The filled part of a bar is accepted; it and the residual above it stack to p, whatever the draft.](interactive:draft-overlap)
+
 ## Constraints
 
 - $2 \le V \le 64$.

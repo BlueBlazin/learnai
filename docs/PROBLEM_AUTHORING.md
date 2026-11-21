@@ -3174,7 +3174,7 @@ keep every frame inside the same `viewBox`.
 ![The dashed outline is the model's distribution and a filled bar is the probability the chain samples from.](interactive:sampler-order)
 ```
 
-The figure is numbered and captioned like any other. There are three:
+The figure is numbered and captioned like any other. There are five:
 
 | name | what the reader turns | what it shows |
 |---|---|---|
@@ -3182,6 +3182,8 @@ The figure is numbered and captioned like any other. There are three:
 | `quant-grid` | bits, the clipping fraction, a symmetric or an affine grid | a sample of weights, the grid's levels, the clipped tails, and the clipping and rounding error |
 | `quant-grid-affine` | the same | the same figure, opening on the affine grid at 8 bits |
 | `rope-shift` | the query position, the key position, and one shift added to both | the rotated query and key in each pair's plane, and a score that the shift does not change |
+| `draft-overlap` | the sharpness and the shift of the draft `q` against the target `p` | each token's bar split into the overlap `min(p, q)`, the residual, and the rejected draft mass; the acceptance rate and `R` |
+| `batch-window` | `max_batch_size` and `max_wait_ms` | ten fixed arrivals on a time axis, the batches they fall into, each request's wait, the mean wait and the mean batch size |
 
 A new one is a change to the app (`src/components/figures/registry.ts`), not something
 a problem can carry, and a name the app does not have fails the front-end tests.
