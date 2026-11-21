@@ -17,12 +17,18 @@ The model is the kit's `LayeredLM` with one local change (`GainLM`): the gain of
 final norm is not all ones. With a unit gain the norm only rescales a state, the
 argmax of the head is the same with and without it, and forgetting `lm.norm` at the
 exit would be invisible.
+
+The solution gets the model as `LM`, a `GainLM` behind the kit's `Guarded`: it may use
+`embed`, `layers`, `norm`, `head`, `empty_cache`, a whole forward call, and the sizes.
+The counters, the weights, the seed, the private per-layer methods, and
+`with_framework` are refused, so the counts cannot be written and no layer can run
+where the counts do not see it.
 """
 
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import LayeredLM
+from learnai.kit import Guarded, LayeredLM, check_guard, guard
 
 FN = "self_speculative_greedy"
 MARGIN = 1e-3
@@ -41,6 +47,16 @@ class GainLM(LayeredLM):
         super().__init__(fw, seed, **sizes)
         gain = np.random.default_rng([seed, 77]).uniform(0.4, 1.6, self.d_model)
         self._weights = {**self._weights, "norm_out": gain.astype(np.float32)}
+
+
+class LM(Guarded, GainLM):
+    """The model the solution gets: the documented pieces and the sizes, nothing else."""
+
+    label = "lm"
+    refused = Guarded.refused | {"seed"}
+
+    def __repr__(self):  # LayeredLM's shows the seed, which would rebuild the model
+        return f"LayeredLM(n_layers={self.n_layers}, vocab_size={self.vocab_size})"
 
 
 _models = {}
@@ -115,7 +131,10 @@ def decode(ctx, seed, scale, prompt, exit_layer, k, max_new_tokens, expected=Non
     ):
         raise RuntimeError("authoring error: the rounds do not reproduce the expected tokens")
     lm = model(ctx, seed, scale, ctx.fw, n_layers)
-    got = ctx.call(FN, lm, list(prompt), exit_layer, k, max_new_tokens)
+    guard(ctx)
+    # The guarded object shares lm's counters.
+    got = ctx.call(FN, LM.of(lm), list(prompt), exit_layer, k, max_new_tokens)
+    check_guard()
     check.that(
         isinstance(got, list) and all(type(token) is int for token in got),
         f"{FN}: must return a list of Python ints",

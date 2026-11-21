@@ -13,12 +13,17 @@ the target's own greedy decode, and the number of rounds R. The limits are then
 model's argmax is used, its two largest logits are at least 1e-3 apart, so the split of
 the calls (which changes logits by about 1e-5) cannot change a token or the number of
 rounds.
+
+Both models are handed over behind the kit's `Guarded` (`Target`, `Draft`): a solution
+may call them and read their sizes. Their counters, weights, seed, and `with_framework`
+are refused, so the counts cannot be written and no third, uncounted model can do the
+work.
 """
 
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import draft_target_pair
+from learnai.kit import Guarded, TinyLM, check_guard, draft_target_pair, guard
 
 FN = "speculative_greedy"
 MARGIN = 1e-3
@@ -28,6 +33,20 @@ PROMPT = [0, 17, 42, 5]
 CONTINUATION = [42, 62, 33, 33, 40, 32, 45, 37, 40, 33, 40, 55]
 
 _pairs = {}
+
+
+class Target(Guarded, TinyLM):
+    """The target the solution gets: it is called, and its sizes are read; nothing else."""
+
+    label = "target"
+    refused = Guarded.refused | {"seed"}
+
+    def __repr__(self):  # TinyLM's shows the seed, which would rebuild the model
+        return f"TinyLM(vocab_size={self.vocab_size}, max_context={self.max_context})"
+
+
+class Draft(Target):
+    label = "draft"
 
 
 def models(ctx, seed, agreement, fw):
@@ -98,7 +117,10 @@ def decode(ctx, seed, agreement, prompt, k, max_new_tokens, eos_id, expected=Non
     ):
         raise RuntimeError("authoring error: the rounds do not reproduce the expected tokens")
     draft, target = models(ctx, seed, agreement, ctx.fw)
-    got = ctx.call(FN, target, draft, list(prompt), k, max_new_tokens, eos_id)
+    guard(ctx)
+    # The guarded objects share the counters of the pair built above.
+    got = ctx.call(FN, Target.of(target), Draft.of(draft), list(prompt), k, max_new_tokens, eos_id)
+    check_guard()
     check.that(
         isinstance(got, list) and all(type(token) is int for token in got),
         f"{FN}: must return a list of Python ints",
