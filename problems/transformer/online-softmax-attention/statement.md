@@ -5,6 +5,8 @@ end, so the function carries a running maximum, a running normalizer, and a runn
 output, and rescales the last two whenever the maximum grows. This is the online
 softmax at the core of FlashAttention.
 
+![This problem is attention, computed one block of keys at a time with a running softmax.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -88,6 +90,8 @@ block, with sums kept relative to the largest score so far:
 
 and $4.3205 / 1.1851 = 3.6456$. When the maximum moved from 1 to 3, both sums from
 block 1 were multiplied by $e^{1 - 3}$.
+
+![The two queries of the example, after each step: the maximum, the normalizer, and the output.](assets/online-steps.svg)
 
 Query 1 has scores $[0, 100]$ in the first block: $e^{100}$ is not a float32, and
 relative to the maximum the weights are $[e^{-100}, 1]$. The second block is masked

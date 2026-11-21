@@ -3,6 +3,8 @@ function of the input and four projection matrices. Every line is a familiar for
 the difficulty is that almost every wrong version still returns a tensor of the right
 shape with plausible numbers in it.
 
+![This problem is attention, here for one head under a causal mask.](assets/map.svg)
+
 ## Specification
 
 ```python

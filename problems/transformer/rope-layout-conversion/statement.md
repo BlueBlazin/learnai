@@ -5,6 +5,8 @@ which. Implement both, and the permutation of the query and key projection weigh
 that turns a model trained for the first into a model for the second with identical
 attention scores.
 
+![This problem is RoPE, in its two layouts of the feature pairs.](assets/map.svg)
+
 ## Specification
 
 ```python

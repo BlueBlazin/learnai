@@ -3,6 +3,8 @@ matrix to the hidden state of the last position, and to nothing else. Projecting
 position and discarding all rows but one gives the same numbers for hundreds of times
 the work, and the tests time your solution as well as checking it.
 
+![This problem is the final linear layer, applied to the last position of each sequence only.](assets/map.svg)
+
 ## Specification
 
 ```python

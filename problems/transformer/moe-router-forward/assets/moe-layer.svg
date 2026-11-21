@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 322">
+  <title>The mixture-of-experts layer</title>
+  <desc>Read from the bottom, x feeds a router chain that gives the weights w, and feeds every expert. A weighted sum of the expert outputs gives y.</desc>
+  <!-- Geometry: the router chain is the column x = 90, boxes 120 x 22 every 50 units. The experts are 70 x 22 boxes centered on x = 260, 340, 420 in the row y = 226. The weighted sum is the box x = 230..450, y = 40..62. -->
+
+  <!-- Wires -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <line x1="240" y1="300" x2="240" y2="270"/>
+    <polyline points="110,248 110,270 420,270"/>
+    <line x1="260" y1="248" x2="260" y2="270"/>
+    <line x1="340" y1="248" x2="340" y2="270"/>
+    <line x1="420" y1="248" x2="420" y2="270"/>
+    <line x1="110" y1="226" x2="110" y2="204.5"/>
+    <line x1="110" y1="176" x2="110" y2="154.5"/>
+    <line x1="110" y1="126" x2="110" y2="104.5"/>
+    <polyline points="110,76 110,51 223.5,51"/>
+    <line x1="260" y1="226" x2="260" y2="92.5"/>
+    <line x1="340" y1="226" x2="340" y2="92.5"/>
+    <line x1="420" y1="226" x2="420" y2="92.5"/>
+    <line x1="340" y1="40" x2="340" y2="28.5"/>
+    <polyline points="110,162 210,162 210,87 176.5,87"/>
+  </g>
+  <circle cx="240" cy="270" r="2.5"/>
+  <circle cx="110" cy="162" r="2.5"/>
+  <g>
+    <polygon points="110,248 113.3,254.5 106.7,254.5"/>
+    <polygon points="260,248 263.3,254.5 256.7,254.5"/>
+    <polygon points="340,248 343.3,254.5 336.7,254.5"/>
+    <polygon points="420,248 423.3,254.5 416.7,254.5"/>
+    <polygon points="110,198 113.3,204.5 106.7,204.5"/>
+    <polygon points="110,148 113.3,154.5 106.7,154.5"/>
+    <polygon points="110,98 113.3,104.5 106.7,104.5"/>
+    <polygon points="170,87 176.5,90.3 176.5,83.7"/>
+    <polygon points="230,51 223.5,54.3 223.5,47.7"/>
+    <polygon points="260,62 263.3,68.5 256.7,68.5"/>
+    <polygon points="340,62 343.3,68.5 336.7,68.5"/>
+    <polygon points="420,62 423.3,68.5 416.7,68.5"/>
+    <polygon points="340,22 343.3,28.5 336.7,28.5"/>
+  </g>
+
+  <!-- Blocks -->
+  <g stroke="currentColor" stroke-width="1.5">
+    <rect x="50" y="226" width="120" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="50" y="176" width="120" height="22" rx="5" style="fill: var(--figure-softmax)"/>
+    <rect x="50" y="126" width="120" height="22" rx="5" fill="none"/>
+    <rect x="50" y="76" width="120" height="22" rx="5" style="fill: var(--figure-norm)"/>
+    <rect x="225" y="226" width="70" height="22" rx="5" style="fill: var(--figure-mlp)"/>
+    <rect x="305" y="226" width="70" height="22" rx="5" style="fill: var(--figure-mlp)"/>
+    <rect x="385" y="226" width="70" height="22" rx="5" style="fill: var(--figure-mlp)"/>
+    <rect x="230" y="40" width="220" height="22" rx="5" fill="none"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="110" y="241.5">Router</text>
+    <text x="110" y="191.5">Softmax</text>
+    <text x="110" y="141.5">Top-k</text>
+    <text x="110" y="91.5">Renormalize</text>
+    <text x="340" y="55.5">Weighted sum</text>
+  </g>
+  <g font-size="13" text-anchor="middle" font-style="italic" style="font-family: var(--figure-serif)">
+    <text x="260" y="241.5">f<tspan font-style="normal">₀</tspan></text>
+    <text x="340" y="241.5">f<tspan font-style="normal">₁</tspan></text>
+    <text x="420" y="241.5">f<tspan font-style="normal">₂</tspan></text>
+    <text x="240" y="316.5">x</text>
+    <text x="340" y="14.5">y</text>
+  </g>
+
+  <!-- The shape of the tensor on each wire; r, p, S, and w are the logits, the probabilities, the selected set, and the weights -->
+  <g font-size="13" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="247" y="289.5">(B, T, D)</text>
+    <text x="117" y="263.5">(B, T, D)</text>
+    <text x="130" y="216.5">(B, T, E)</text>
+    <text x="103" y="166.5" text-anchor="end">(B, T, E)</text>
+    <text x="130" y="116.5">(B, T, k)</text>
+    <text x="130" y="70.5">(B, T, E)</text>
+    <text x="268" y="160.5">(B, T, D)</text>
+    <text x="347" y="38.5">(B, T, D)</text>
+  </g>
+  <g font-size="13" font-style="italic" style="font-family: var(--figure-serif)">
+    <text x="117" y="216.5">r</text>
+    <text x="26" y="166.5">p</text>
+    <text x="117" y="116.5">S</text>
+    <text x="117" y="70.5">w</text>
+  </g>
+</svg>

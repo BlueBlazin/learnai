@@ -4,6 +4,8 @@ tokens**, and scatter the results back into token order. The routing rule is the
 of `moe-router-forward`; this time the work is counted, and a dense evaluation that
 runs every expert on every token is rejected.
 
+![This problem is the MLP slot of a block, run so that each expert sees only its own tokens.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -96,6 +98,8 @@ Grouped by expert:
 | 2 | 1, 4 | `experts(2, x[[1, 4]])` |
 | 3 | 2 | `experts(3, x[[2]])` |
 | 4 | none | no call |
+
+![A filled cell is a token routed to an expert, with its weight; each row is one call.](assets/dispatch.svg)
 
 Four calls and $3 + 4 + 2 + 1 = 10 = k \cdot N$ rows. The dense evaluation makes five
 calls with 25 rows. Expert 0's tokens are 0, 2, and 3: the three rows of its output go

@@ -4,6 +4,8 @@ is one you have already written and is available from the kit; the work is assem
 them in the right order, with the right tensor in each slot, for a layout in which
 almost every mistake still produces logits of the right shape.
 
+![This problem is the whole forward pass, from token ids to next-token probabilities.](assets/map.svg)
+
 ## Specification
 
 ```python

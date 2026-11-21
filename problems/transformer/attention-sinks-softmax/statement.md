@@ -5,6 +5,8 @@ its weights over the real keys sum to less than 1. The arithmetic is one extra c
 the problem is that every way of getting that column slightly wrong still returns a
 tensor of the right shape.
 
+![This problem is attention, with one extra learned logit per head inside its softmax.](assets/map.svg)
+
 ## Specification
 
 ```python

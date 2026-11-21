@@ -4,6 +4,8 @@ only then rotated by RoPE. Three choices decide the result: which axis the
 normalization runs over, what it is applied to, and where it sits relative to the
 rotation.
 
+![This problem is attention with RoPE, where queries and keys are normalized before they are rotated.](assets/map.svg)
+
 ## Specification
 
 ```python

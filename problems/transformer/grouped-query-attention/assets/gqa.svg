@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 312">
+  <title>Grouped-query attention with four query heads and two key/value heads</title>
+  <desc>Four attention boxes, one per query head. Key/value head 0 feeds query heads 0 and 1, and key/value head 1 feeds query heads 2 and 3.</desc>
+  <!-- Geometry: attention boxes are 76 x 22 at y = 52, centered on x = 70, 190, 290, 410. Each box takes its query at the outer side and its key/value head at the inner side. The key/value buses run at y = 110. -->
+
+  <!-- Wires: the queries, then the two key/value heads -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <line x1="56" y1="272" x2="56" y2="80.5"/>
+    <line x1="204" y1="272" x2="204" y2="80.5"/>
+    <line x1="276" y1="272" x2="276" y2="80.5"/>
+    <line x1="424" y1="272" x2="424" y2="80.5"/>
+    <polyline points="84,80.5 84,110 176,110 176,80.5"/>
+    <line x1="130" y1="240" x2="130" y2="110"/>
+    <polyline points="304,80.5 304,110 396,110 396,80.5"/>
+    <line x1="350" y1="240" x2="350" y2="110"/>
+    <line x1="70" y1="52" x2="70" y2="44.5"/>
+    <line x1="190" y1="52" x2="190" y2="44.5"/>
+    <line x1="290" y1="52" x2="290" y2="44.5"/>
+    <line x1="410" y1="52" x2="410" y2="44.5"/>
+  </g>
+  <circle cx="130" cy="110" r="2.5"/>
+  <circle cx="350" cy="110" r="2.5"/>
+  <g>
+    <polygon points="56,74 59.3,80.5 52.7,80.5"/>
+    <polygon points="204,74 207.3,80.5 200.7,80.5"/>
+    <polygon points="276,74 279.3,80.5 272.7,80.5"/>
+    <polygon points="424,74 427.3,80.5 420.7,80.5"/>
+    <polygon points="84,74 87.3,80.5 80.7,80.5"/>
+    <polygon points="176,74 179.3,80.5 172.7,80.5"/>
+    <polygon points="304,74 307.3,80.5 300.7,80.5"/>
+    <polygon points="396,74 399.3,80.5 392.7,80.5"/>
+    <polygon points="70,38 73.3,44.5 66.7,44.5"/>
+    <polygon points="190,38 193.3,44.5 186.7,44.5"/>
+    <polygon points="290,38 293.3,44.5 286.7,44.5"/>
+    <polygon points="410,38 413.3,44.5 406.7,44.5"/>
+  </g>
+
+  <!-- Attention, one box per query head -->
+  <g stroke="currentColor" stroke-width="1.5">
+    <rect x="32" y="52" width="76" height="22" rx="5" style="fill: var(--figure-attn)"/>
+    <rect x="152" y="52" width="76" height="22" rx="5" style="fill: var(--figure-attn)"/>
+    <rect x="252" y="52" width="76" height="22" rx="5" style="fill: var(--figure-attn)"/>
+    <rect x="372" y="52" width="76" height="22" rx="5" style="fill: var(--figure-attn)"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="70" y="67.5">Attention</text>
+    <text x="190" y="67.5">Attention</text>
+    <text x="290" y="67.5">Attention</text>
+    <text x="410" y="67.5">Attention</text>
+  </g>
+
+  <!-- Outputs, queries, and key/value heads -->
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)">
+    <text x="70" y="32.5" font-style="italic">y<tspan font-style="normal">₀</tspan></text>
+    <text x="190" y="32.5" font-style="italic">y<tspan font-style="normal">₁</tspan></text>
+    <text x="290" y="32.5" font-style="italic">y<tspan font-style="normal">₂</tspan></text>
+    <text x="410" y="32.5" font-style="italic">y<tspan font-style="normal">₃</tspan></text>
+    <text x="56" y="288.5" font-style="italic">q<tspan font-style="normal">₀</tspan></text>
+    <text x="204" y="288.5" font-style="italic">q<tspan font-style="normal">₁</tspan></text>
+    <text x="276" y="288.5" font-style="italic">q<tspan font-style="normal">₂</tspan></text>
+    <text x="424" y="288.5" font-style="italic">q<tspan font-style="normal">₃</tspan></text>
+    <text x="130" y="256.5"><tspan font-style="italic">k</tspan>₀, <tspan font-style="italic">v</tspan>₀</text>
+    <text x="350" y="256.5"><tspan font-style="italic">k</tspan>₁, <tspan font-style="italic">v</tspan>₁</text>
+  </g>
+
+  <!-- The shape of the tensor on each row of wires -->
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="240" y="14.5">(B, H, T, d)</text>
+    <text x="56" y="304.5">(B, H, T, d)</text>
+    <text x="276" y="304.5">(B, H, T, d)</text>
+    <text x="130" y="272.5">(B, H_kv, S, d)</text>
+    <text x="350" y="272.5">(B, H_kv, S, d)</text>
+  </g>
+</svg>

@@ -5,6 +5,8 @@ They are worth a problem because they are numbers in a config file that no tenso
 shape reveals, and a forward pass that is right everywhere else produces wrong logits
 without them.
 
+![This problem is the token embedding and the final linear layer, each with a constant from the config.](assets/map.svg)
+
 ## Specification
 
 ```python

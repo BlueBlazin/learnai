@@ -3,6 +3,8 @@ Granite, and most other current decoder-only models. It has three weight matrice
 the classic MLP has two, and the activation goes on exactly one of its two parallel
 branches; putting it anywhere else still returns a tensor of the right shape.
 
+![This problem is the SwiGLU MLP, the feed-forward layer of every block.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -32,6 +34,8 @@ $$
 
 In one line: $y = W_{\text{down}} \big( \operatorname{silu}(W_{\text{gate}}\, x) \odot W_{\text{up}}\, x \big)$.
 There are no biases.
+
+![Only the gate branch passes through SiLU, and the two branches are then multiplied.](assets/swiglu.svg)
 
 The weights are stored in `(out, in)` layout, the layout of `nn.Linear.weight` and of
 model checkpoints: `w_gate[i, j]` multiplies component `j` of the input and contributes

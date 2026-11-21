@@ -4,6 +4,8 @@ takes the positions explicitly, so it works for a full prompt and for a single n
 token deep into a cached generation. The pairing of dimensions, the frequencies, and
 the direction of rotation each have a popular wrong variant.
 
+![This problem is RoPE, which turns the queries and keys of attention by an angle that depends on position.](assets/map.svg)
+
 ## Specification
 
 ```python

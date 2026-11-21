@@ -5,6 +5,8 @@ decoder in `decoder-forward`, and this model's block in `real-model-block`. What
 left is the frame around the 28 blocks, where this model departs from the textbook in
 three more places, and the discipline to take every number from the config.
 
+![This problem is the whole forward pass of Granite 4.0 350M, from token ids to logits.](assets/map.svg)
+
 ## Specification
 
 ```python

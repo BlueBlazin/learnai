@@ -3,6 +3,8 @@ query sees itself and a fixed number of the tokens just before it, and nothing o
 The mask is two inequalities, and each of them has an off-by-one that returns a
 plausible band of the right shape.
 
+![This problem is attention, limited to a window of the most recent tokens.](assets/map.svg)
+
 ## Specification
 
 ```python

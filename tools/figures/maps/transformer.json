@@ -82,6 +82,94 @@
       "parts": ["linear"],
       "marker": {"from": [242, 72], "length": 18},
       "desc": "The linear layer before the softmax is at full strength."
+    },
+    "causal-self-attention": {
+      "parts": ["attn"],
+      "marker": {"from": [292, 256], "length": 18},
+      "desc": "The attention block is at full strength."
+    },
+    "grouped-query-attention": {
+      "parts": ["attn"],
+      "marker": {"from": [292, 256], "length": 18},
+      "desc": "The attention block is at full strength."
+    },
+    "sliding-window-attention": {
+      "parts": ["attn"],
+      "marker": {"from": [292, 256], "length": 18},
+      "desc": "The attention block is at full strength."
+    },
+    "attention-sinks-softmax": {
+      "parts": ["attn"],
+      "marker": {"from": [292, 256], "length": 18},
+      "desc": "The attention block is at full strength."
+    },
+    "online-softmax-attention": {
+      "parts": ["attn"],
+      "marker": {"from": [292, 256], "length": 18},
+      "desc": "The attention block is at full strength."
+    },
+    "qk-norm-attention": {
+      "parts": ["attn", "rope"],
+      "marker": {"from": [292, 256], "length": 18},
+      "desc": "The attention block and the RoPE source are at full strength."
+    },
+    "padded-batch-invariance": {
+      "parts": ["attn", "rope"],
+      "marker": {"from": [292, 256], "length": 18},
+      "desc": "The attention block and the RoPE source are at full strength."
+    },
+    "rope": {
+      "parts": ["rope"],
+      "marker": {"from": [292, 256], "length": 18},
+      "desc": "The RoPE source beside attention is at full strength."
+    },
+    "rope-layout-conversion": {
+      "parts": ["rope"],
+      "marker": {"from": [292, 256], "length": 18},
+      "desc": "The RoPE source beside attention is at full strength."
+    },
+    "swiglu-mlp": {
+      "parts": ["mlp"],
+      "marker": {"from": [292, 166], "length": 18},
+      "desc": "The SwiGLU MLP is at full strength."
+    },
+    "moe-router-forward": {
+      "parts": ["mlp"],
+      "marker": {"from": [292, 166], "length": 18},
+      "desc": "The SwiGLU MLP slot is at full strength."
+    },
+    "moe-sparse-dispatch": {
+      "parts": ["mlp"],
+      "marker": {"from": [292, 166], "length": 18},
+      "desc": "The SwiGLU MLP slot is at full strength."
+    },
+    "fused-projection-split": {
+      "parts": ["attn", "mlp"],
+      "marker": {"from": [292, 256], "length": 18},
+      "desc": "The attention and SwiGLU MLP blocks are at full strength."
+    },
+    "last-position-head": {
+      "parts": ["linear"],
+      "marker": {"from": [242, 72], "length": 18},
+      "desc": "The linear layer before the softmax is at full strength."
+    },
+    "embedding-scale-softcap": {
+      "parts": ["embed", "linear"],
+      "marker": {"from": [242, 330], "length": 18},
+      "desc": "The token embedding and the final linear layer are at full strength."
+    },
+    "real-model-block": {
+      "parts": ["panel", "norm1", "norm2", "add1", "add2", "wiring", "attn", "rope", "mlp"],
+      "marker": {"from": [292, 217.5], "length": 18},
+      "desc": "Everything inside the panel is at full strength."
+    },
+    "decoder-forward": {
+      "parts": null,
+      "desc": "Nothing is dimmed: the problem is the whole model."
+    },
+    "real-model-logits": {
+      "parts": null,
+      "desc": "Nothing is dimmed: the problem is the whole model."
     }
   }
 }

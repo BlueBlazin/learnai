@@ -4,6 +4,8 @@ block is the pre-norm block you know, with grouped-query attention, RoPE, and Sw
 What makes it this model's block is six details that no tensor shape reveals, and a
 block that gets five of them right produces plausible numbers that are wrong.
 
+![This problem is one block of Granite 4.0 350M, which the model repeats 28 times.](assets/map.svg)
+
 ## Specification
 
 ```python

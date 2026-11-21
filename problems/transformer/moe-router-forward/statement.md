@@ -3,6 +3,8 @@ several, and a small router sends each token to a few of them. The arithmetic is
 softmax, a top-k, and a weighted sum; the care is in doing them per token, in the
 specified order, with weights that sum to one.
 
+![This problem is the MLP slot of a block, filled by a router and several expert MLPs.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -41,6 +43,8 @@ $$
 $$
 y = \sum_{e \in S} w_e \, f_e(x) .
 $$
+
+![Every expert reads $x$, and the router's weights $w$ decide how much each expert's output counts in the sum.](assets/moe-layer.svg)
 
 Arguments and result:
 

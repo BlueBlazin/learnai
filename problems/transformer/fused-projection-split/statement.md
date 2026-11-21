@@ -5,6 +5,8 @@ SwiGLU layer that reads the fused form directly. Which axis is cut, and which bl
 comes first, decide whether the result is the same model or a different one of the
 same shape.
 
+![This problem is the projections of attention and of the SwiGLU MLP, as stored in fused matrices.](assets/map.svg)
+
 ## Specification
 
 ```python

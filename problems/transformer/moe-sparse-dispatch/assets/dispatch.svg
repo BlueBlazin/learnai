@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 290">
+  <title>Gather, one call per expert, and scatter for five tokens and five experts</title>
+  <desc>Rows are experts and columns are tokens; a filled cell is a routed token with its weight. Each row is one call, and the columns are summed back into y.</desc>
+  <!-- Geometry: the grid is x = 90..370, y = 78..198, cells 56 x 24. The token strips are y = 22..46 above and y = 250..274 below. -->
+
+  <!-- Gather and scatter arrows, one per token column -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <line x1="118.0" y1="250" x2="118.0" y2="204.5"/>
+    <line x1="118.0" y1="78" x2="118.0" y2="52.5"/>
+    <line x1="174.0" y1="250" x2="174.0" y2="204.5"/>
+    <line x1="174.0" y1="78" x2="174.0" y2="52.5"/>
+    <line x1="230.0" y1="250" x2="230.0" y2="204.5"/>
+    <line x1="230.0" y1="78" x2="230.0" y2="52.5"/>
+    <line x1="286.0" y1="250" x2="286.0" y2="204.5"/>
+    <line x1="286.0" y1="78" x2="286.0" y2="52.5"/>
+    <line x1="342.0" y1="250" x2="342.0" y2="204.5"/>
+    <line x1="342.0" y1="78" x2="342.0" y2="52.5"/>
+  </g>
+  <g>
+    <polygon points="118.0,198 121.3,204.5 114.7,204.5"/>
+    <polygon points="118.0,46 121.3,52.5 114.7,52.5"/>
+    <polygon points="174.0,198 177.3,204.5 170.7,204.5"/>
+    <polygon points="174.0,46 177.3,52.5 170.7,52.5"/>
+    <polygon points="230.0,198 233.3,204.5 226.7,204.5"/>
+    <polygon points="230.0,46 233.3,52.5 226.7,52.5"/>
+    <polygon points="286.0,198 289.3,204.5 282.7,204.5"/>
+    <polygon points="286.0,46 289.3,52.5 282.7,52.5"/>
+    <polygon points="342.0,198 345.3,204.5 338.7,204.5"/>
+    <polygon points="342.0,46 345.3,52.5 338.7,52.5"/>
+  </g>
+
+  <!-- Token strips: y above, x below -->
+  <g stroke="currentColor" stroke-width="1.5" fill="none">
+    <rect x="90" y="22" width="56" height="24" rx="3"/>
+    <rect x="90" y="250" width="56" height="24" rx="3"/>
+    <rect x="146" y="22" width="56" height="24" rx="3"/>
+    <rect x="146" y="250" width="56" height="24" rx="3"/>
+    <rect x="202" y="22" width="56" height="24" rx="3"/>
+    <rect x="202" y="250" width="56" height="24" rx="3"/>
+    <rect x="258" y="22" width="56" height="24" rx="3"/>
+    <rect x="258" y="250" width="56" height="24" rx="3"/>
+    <rect x="314" y="22" width="56" height="24" rx="3"/>
+    <rect x="314" y="250" width="56" height="24" rx="3"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)">
+    <text x="118.0" y="38.5" font-style="italic">y<tspan font-style="normal">₀</tspan></text>
+    <text x="118.0" y="266.5" font-style="italic">x<tspan font-style="normal">₀</tspan></text>
+    <text x="174.0" y="38.5" font-style="italic">y<tspan font-style="normal">₁</tspan></text>
+    <text x="174.0" y="266.5" font-style="italic">x<tspan font-style="normal">₁</tspan></text>
+    <text x="230.0" y="38.5" font-style="italic">y<tspan font-style="normal">₂</tspan></text>
+    <text x="230.0" y="266.5" font-style="italic">x<tspan font-style="normal">₂</tspan></text>
+    <text x="286.0" y="38.5" font-style="italic">y<tspan font-style="normal">₃</tspan></text>
+    <text x="286.0" y="266.5" font-style="italic">x<tspan font-style="normal">₃</tspan></text>
+    <text x="342.0" y="38.5" font-style="italic">y<tspan font-style="normal">₄</tspan></text>
+    <text x="342.0" y="266.5" font-style="italic">x<tspan font-style="normal">₄</tspan></text>
+  </g>
+
+  <!-- The grid: a filled cell is a token routed to the expert, with its weight -->
+  <g stroke="currentColor" stroke-width="1.5" style="fill: var(--figure-mlp)">
+    <rect x="90" y="78" width="56" height="24" rx="3"/>
+    <rect x="202" y="78" width="56" height="24" rx="3"/>
+    <rect x="258" y="78" width="56" height="24" rx="3"/>
+    <rect x="90" y="102" width="56" height="24" rx="3"/>
+    <rect x="146" y="102" width="56" height="24" rx="3"/>
+    <rect x="258" y="102" width="56" height="24" rx="3"/>
+    <rect x="314" y="102" width="56" height="24" rx="3"/>
+    <rect x="146" y="126" width="56" height="24" rx="3"/>
+    <rect x="314" y="126" width="56" height="24" rx="3"/>
+    <rect x="202" y="150" width="56" height="24" rx="3"/>
+  </g>
+  <g fill="none" stroke-width="1" style="stroke: var(--figure-faint)">
+    <rect x="146" y="78" width="56" height="24" rx="3"/>
+    <rect x="314" y="78" width="56" height="24" rx="3"/>
+    <rect x="202" y="102" width="56" height="24" rx="3"/>
+    <rect x="90" y="126" width="56" height="24" rx="3"/>
+    <rect x="202" y="126" width="56" height="24" rx="3"/>
+    <rect x="258" y="126" width="56" height="24" rx="3"/>
+    <rect x="90" y="150" width="56" height="24" rx="3"/>
+    <rect x="146" y="150" width="56" height="24" rx="3"/>
+    <rect x="258" y="150" width="56" height="24" rx="3"/>
+    <rect x="314" y="150" width="56" height="24" rx="3"/>
+    <rect x="90" y="174" width="56" height="24" rx="3"/>
+    <rect x="146" y="174" width="56" height="24" rx="3"/>
+    <rect x="202" y="174" width="56" height="24" rx="3"/>
+    <rect x="258" y="174" width="56" height="24" rx="3"/>
+    <rect x="314" y="174" width="56" height="24" rx="3"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="118.0" y="94.5">0.8808</text>
+    <text x="230.0" y="94.5">0.2689</text>
+    <text x="286.0" y="94.5">0.1192</text>
+    <text x="118.0" y="118.5">0.1192</text>
+    <text x="174.0" y="118.5">0.7311</text>
+    <text x="286.0" y="118.5">0.8808</text>
+    <text x="342.0" y="118.5">0.1192</text>
+    <text x="174.0" y="142.5">0.2689</text>
+    <text x="342.0" y="142.5">0.8808</text>
+    <text x="230.0" y="166.5">0.7311</text>
+  </g>
+
+  <!-- Row names, the rows each call receives, and the stage names -->
+  <g font-size="13" text-anchor="end">
+    <text x="82" y="94.5">Expert 0</text>
+    <text x="82" y="118.5">Expert 1</text>
+    <text x="82" y="142.5">Expert 2</text>
+    <text x="82" y="166.5">Expert 3</text>
+    <text x="82" y="190.5">Expert 4</text>
+  </g>
+  <g font-size="13" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="378" y="94.5">(3, D)</text>
+    <text x="378" y="118.5">(4, D)</text>
+    <text x="378" y="142.5">(2, D)</text>
+    <text x="378" y="166.5">(1, D)</text>
+    <text x="378" y="38.5">(N, D)</text>
+    <text x="378" y="266.5">(N, D)</text>
+  </g>
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="378" y="190.5">no call</text>
+    <text x="82" y="68.5" text-anchor="end">scatter</text>
+    <text x="82" y="228.5" text-anchor="end">gather</text>
+  </g>
+</svg>

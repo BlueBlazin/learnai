@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 292">
+  <title>The SwiGLU MLP</title>
+  <desc>Read from the bottom, x feeds a gate branch and an up branch. SiLU acts on the gate branch only, the branches are multiplied, and a down projection gives y.</desc>
+  <!-- Geometry: the gate branch is the column x = 150, the up branch x = 300, the output column x = 225. Boxes are 110 x 22. The product is the circle at (225, 100). -->
+
+  <!-- Wires -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <line x1="225" y1="270" x2="225" y2="242"/>
+    <polyline points="150,212 150,242 300,242"/>
+    <line x1="300" y1="212" x2="300" y2="242"/>
+    <line x1="150" y1="190" x2="150" y2="169.5"/>
+    <polyline points="150,140 150,100 210.5,100"/>
+    <polyline points="300,190 300,100 240.5,100"/>
+    <line x1="225" y1="91" x2="225" y2="61.5"/>
+    <line x1="225" y1="34" x2="225" y2="28.5"/>
+  </g>
+  <circle cx="225" cy="242" r="2.5"/>
+  <g>
+    <polygon points="150,212 153.3,218.5 146.7,218.5"/>
+    <polygon points="300,212 303.3,218.5 296.7,218.5"/>
+    <polygon points="150,162 153.3,168.5 146.7,168.5"/>
+    <polygon points="216,100 209.5,103.3 209.5,96.7"/>
+    <polygon points="234,100 240.5,103.3 240.5,96.7"/>
+    <polygon points="225,56 228.3,62.5 221.7,62.5"/>
+    <polygon points="225,22 228.3,28.5 221.7,28.5"/>
+  </g>
+
+  <!-- The product: a circle with a dot -->
+  <circle cx="225" cy="100" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <circle cx="225" cy="100" r="2"/>
+
+  <!-- Blocks, top to bottom -->
+  <g stroke="currentColor" stroke-width="1.5">
+    <rect x="170" y="34" width="110" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="95" y="140" width="110" height="22" rx="5" fill="none"/>
+    <rect x="95" y="190" width="110" height="22" rx="5" style="fill: var(--figure-linear)"/>
+    <rect x="245" y="190" width="110" height="22" rx="5" style="fill: var(--figure-linear)"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="225" y="49.5"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">down</tspan></text>
+    <text x="150" y="155.5">SiLU</text>
+    <text x="150" y="205.5"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">gate</tspan></text>
+    <text x="300" y="205.5"><tspan font-style="italic" style="font-family: var(--figure-serif)">W</tspan><tspan dy="3">up</tspan></text>
+  </g>
+
+  <!-- Input and output -->
+  <g font-size="13" text-anchor="middle" font-style="italic" style="font-family: var(--figure-serif)">
+    <text x="225" y="288.5">x</text>
+    <text x="225" y="12.5">y</text>
+  </g>
+
+  <!-- The shape of the tensor on each wire -->
+  <g font-size="13" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="232" y="260.5">(..., d)</text>
+    <text x="157" y="232.5">(..., d)</text>
+    <text x="307" y="232.5">(..., d)</text>
+    <text x="172" y="182.5">(..., h)</text>
+    <text x="322" y="160.5">(..., h)</text>
+    <text x="222" y="124.5">(..., h)</text>
+    <text x="250" y="77.5">(..., h)</text>
+    <text x="232" y="28.5">(..., d_out)</text>
+  </g>
+  <g font-size="13" font-style="italic" style="font-family: var(--figure-serif)">
+    <text x="157" y="182.5">g</text>
+    <text x="307" y="160.5">u</text>
+    <text x="157" y="124.5">silu(g)</text>
+    <text x="232" y="77.5">m</text>
+  </g>
+</svg>

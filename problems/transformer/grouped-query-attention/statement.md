@@ -2,6 +2,8 @@ Implement grouped-query attention (GQA): multi-head attention in which several q
 heads share one head of keys and values. The arithmetic is ordinary scaled dot-product
 attention; the whole problem is pairing each query head with the right key/value head.
 
+![This problem is attention, where several query heads share one key/value head.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -16,6 +18,8 @@ $G, \dots, 2G-1$ share key/value head 1, and so on. Query head $h$ uses key/valu
 $$
 g(h) = \lfloor h / G \rfloor .
 $$
+
+![Heads 0 and 1 read key/value head 0 and heads 2 and 3 read head 1, as in the example, so $G = 2$.](assets/gqa.svg)
 
 For batch item $b$, query head $h$, query position $t$, and key position $s$, with $d$
 the width of a head:

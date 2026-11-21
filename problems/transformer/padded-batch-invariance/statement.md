@@ -4,6 +4,8 @@ tensor, so the shorter sequences are padded, and the whole problem is making sur
 padding changes nothing: not through attention, not through positions, and not through
 where the answer is read.
 
+![This problem is attention and RoPE, which must ignore the padding of a batch of unequal lengths.](assets/map.svg)
+
 ## Specification
 
 ```python
