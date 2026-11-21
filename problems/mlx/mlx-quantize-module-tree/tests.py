@@ -19,6 +19,10 @@ weights are stored, not how many there are).
 
 One case needs the Apple GPU: a model with 24 MiB of float weights must hold under
 8 MiB after `quantize_model` returns, with the test evaluating nothing.
+
+The recipe is handed over behind the kit's `Guarded`: a solution may call it. The
+function it wraps and its record of the calls are refused. The model is not guarded:
+nothing is counted on it, and the solution replaces its layers.
 """
 
 import io
@@ -28,7 +32,7 @@ import numpy as np
 from mlx.utils import tree_flatten, tree_map
 
 from learnai.judge import case, check
-from learnai.kit import MLXTinyLM, mlx_memory
+from learnai.kit import Guarded, MLXTinyLM, check_guard, guard, mlx_memory
 from mlx import nn
 
 FLOAT_LAYERS = (nn.Linear, nn.Embedding)
@@ -119,8 +123,11 @@ def n_bytes(model):
     return sum(v.nbytes for _, v in tree_flatten(model.parameters()))
 
 
-class Recipe:
+class Recipe(Guarded):
     """Wraps a recipe function and records every call."""
+
+    label = "recipe"
+    refused = Guarded.refused | {"fn", "calls"}
 
     def __init__(self, fn):
         self.fn = fn
@@ -157,7 +164,9 @@ def run(ctx, make, fn, forward):
     before = float_layers(model)
     want = {p: dict(params) for p, m in before.items() if (params := fn(p, m)) is not None}
     recipe = Recipe(fn)
+    guard(ctx)
     result = ctx.solution.quantize_model(model, recipe)
+    check_guard()
     # Measured first: everything below may evaluate the parameters.
     left_lazy = pending_ops(model.parameters())
 

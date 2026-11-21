@@ -17,6 +17,11 @@ Every case drives the solution's generator to the end and checks, in this order:
    operation (`mx.export_to_dot`; an array that was passed to `mx.async_eval` has
    none, from the moment it is scheduled);
 5. the work asked of the model, as in `cached-greedy-decode`.
+
+The model and `detok` are handed over behind the kit's `Guarded`: a solution may call
+both, and read the model's sizes, parameters, and submodules. The model's counters and
+private methods and what `detok` recorded (and its way back to the model) are refused,
+and the solution cannot build a second `MLXTinyLM` to do the work uncounted.
 """
 
 import io
@@ -25,7 +30,7 @@ import mlx.core as mx
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import EvalSpy, MLXTinyLM
+from learnai.kit import EvalSpy, Guarded, MLXTinyLM, check_guard, guard
 
 FN = "stream_generate"
 
@@ -42,11 +47,20 @@ def pending_ops(*arrays):
     return dot.getvalue().count("shape=rectangle")
 
 
-class Detok:
+class LM(Guarded, MLXTinyLM):
+    """The model the solution gets: everything of an MLXTinyLM but the counters."""
+
+    label = "model"
+
+
+class Detok(Guarded):
     """The detokenizer handed to the solution: one piece of text per token id.
 
     It records every call and how many times the model had been called by then.
     """
+
+    label = "detok"
+    refused = Guarded.refused | {"lm", "tokens", "forward_calls"}
 
     def __init__(self, lm):
         self.lm = lm
@@ -113,8 +127,9 @@ def run(ctx, seed, prompt, n, expected=None, **options):
     want_tokens, want_logprobs = eager_greedy(seed, prompt, n, **options)
     if expected is not None and want_tokens != expected:
         raise RuntimeError("authoring error: the worked example changed")
-    lm = MLXTinyLM(seed, **options)
+    lm = LM(seed, **options)
     detok = Detok(lm)
+    guard(ctx)
     received = []  # (item, forward calls when it arrived, pending operations behind it)
     with EvalSpy() as spy:
         stream = ctx.solution.stream_generate(lm, list(prompt), n, detok)
@@ -129,6 +144,7 @@ def run(ctx, seed, prompt, n, expected=None, **options):
             received.append((item, lm.counters.forward_calls, pending))
             if len(received) > n + 4:
                 break
+    check_guard()
 
     # 1. The stream.
     check.that(
@@ -265,8 +281,9 @@ def other_architecture(ctx):
 @case("a consumer that stops early: closing the stream after 3 of 10 pairs")
 def early_stop(ctx):
     want_tokens, _ = eager_greedy(8, [0, 21, 4], 10)
-    lm = MLXTinyLM(8)
+    lm = LM(8)
     detok = Detok(lm)
+    guard(ctx)
     stream = ctx.solution.stream_generate(lm, [0, 21, 4], 10, detok)
     texts = []
     for text, _ in stream:
@@ -274,6 +291,7 @@ def early_stop(ctx):
         if len(texts) == 3:
             break
     stream.close()
+    check_guard()
     check.equal(texts, [Detok.piece(t) for t in want_tokens[:3]], label="texts")
     # Three tokens delivered, the fourth step in flight: nothing beyond that was built.
     check.cost(lm.counters, "forward_calls", at_most=4)

@@ -14,6 +14,10 @@ Every case runs the solution once and checks, in this order:
    cannot see (`if token:`, an f-string) therefore gains a solution nothing: the count
    of `mx.eval` calls must still be exactly `n`;
 4. the work asked of the model, as in `cached-greedy-decode`.
+
+The model is handed over behind the kit's `Guarded`: a solution may call it and read
+its sizes, its parameters, and its submodules. Its counters, the probe, and its private
+methods are refused, and it cannot build a second `MLXTinyLM` to do the work uncounted.
 """
 
 import io
@@ -23,7 +27,7 @@ import numpy as np
 from mlx.utils import tree_flatten
 
 from learnai.judge import case, check
-from learnai.kit import EvalSpy, MLXTinyLM
+from learnai.kit import EvalSpy, Guarded, MLXTinyLM, check_guard, guard
 
 FN = "generate"
 
@@ -54,8 +58,11 @@ class Probe:
         self.pending = []
 
 
-class ProbedLM(MLXTinyLM):
+class ProbedLM(Guarded, MLXTinyLM):
     """An MLXTinyLM that records how much unevaluated graph each call receives."""
+
+    label = "model"
+    refused = Guarded.refused | {"probe"}
 
     def __init__(self, seed, **options):
         super().__init__(seed, **options)
@@ -90,8 +97,10 @@ def run(ctx, seed, prompt, n, expected=None, **options):
     if expected is not None and want_tokens != expected:
         raise RuntimeError("authoring error: the worked example changed")
     lm = ProbedLM(seed, **options)
+    guard(ctx)
     with EvalSpy() as spy:
         result = ctx.solution.generate(lm, list(prompt), n)
+    check_guard()
     # Measured first: every check below may read (and so evaluate) what was returned.
     left_lazy = pending_ops(result)
 

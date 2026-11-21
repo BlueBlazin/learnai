@@ -38,7 +38,7 @@ import numpy as np
 from mlx.utils import tree_flatten
 
 from learnai.judge import case, check
-from learnai.kit import EvalSpy, mlx_memory
+from learnai.kit import EvalSpy, Guarded, check_guard, guard, mlx_memory
 from mlx import nn
 
 ASSET = "granite-4.2-3b-mlx-8bit"
@@ -214,8 +214,15 @@ def logits_of(model, ids, cache=None):
     return got[0], cache
 
 
-class Counting:
-    """The model as `generate` sees it: the same calls, counted."""
+class Counting(Guarded):
+    """The model as `generate` sees it: the same calls, counted.
+
+    Behind the kit's `Guarded`: the solution may call it; the model inside and the
+    record of the calls are refused.
+    """
+
+    label = "model"
+    refused = Guarded.refused | {"model", "shapes"}
 
     def __init__(self, model):
         self.model = model
@@ -243,8 +250,10 @@ def run_generate(ctx, model, prompt, n, eos_id, want, label="generate"):
     """generate(...) on a counting wrapper; check tokens, model calls, and evaluations."""
     prompt, want = [int(t) for t in prompt], [int(t) for t in want]
     counted = Counting(model)
+    guard(ctx)
     with EvalSpy() as spy:
         got = ctx.solution.generate(counted, list(prompt), n, eos_id)
+    check_guard()
     mx.synchronize()  # a step scheduled past an EOS may still be running
     check.that(
         isinstance(got, list) and all(type(t) is int for t in got),

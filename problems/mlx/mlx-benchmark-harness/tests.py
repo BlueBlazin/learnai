@@ -23,6 +23,12 @@ uncached greedy decoding done here; the two throughputs against the cost model; 
 exactly `n_warmup + n_runs` full runs were made; that `mx.async_eval` was not used;
 and that no lazy graph crossed a step (pending operations behind the arguments of
 every model call, as in `mlx-lazy-eval-placement`).
+
+The model and the simulated clock are handed over behind the kit's `Guarded`: a
+solution may call the model and read its sizes, parameters, and submodules, and may
+call the clock. The model's counters, meter, and private methods and everything of the
+clock but the call are refused, so the times cannot be taken from the clock's books,
+and the solution cannot build a second `MLXTinyLM` to do work uncounted.
 """
 
 import io
@@ -34,7 +40,7 @@ import numpy as np
 from mlx.utils import tree_flatten
 
 from learnai.judge import case, check
-from learnai.kit import EvalSpy, MLXTinyLM
+from learnai.kit import EvalSpy, Guarded, MLXTinyLM, check_guard, guard
 
 FN = "benchmark"
 
@@ -64,8 +70,12 @@ def pending_ops(*trees):
     return dot.getvalue().count("shape=rectangle")
 
 
-class WorkClock:
+class WorkClock(Guarded):
     """A simulated clock on which time passes only when work is really done."""
+
+    label = "clock"
+    # The solution calls it, nothing else.
+    refused = Guarded.refused | {"now", "slow", "debts", "order", "reads", "spend", "owe"}
 
     def __init__(self, slow):
         self.now = 0.0
@@ -104,7 +114,14 @@ class Meter:
         self.pending = []
 
 
-class TimedLM(MLXTinyLM):
+class LM(Guarded, MLXTinyLM):
+    """The model the solution gets: everything of an MLXTinyLM but the counters."""
+
+    label = "model"
+    refused = Guarded.refused | {"meter"}
+
+
+class TimedLM(LM):
     """An MLXTinyLM whose calls cost simulated time on a WorkClock."""
 
     def __init__(self, seed, clock, **options):
@@ -150,8 +167,10 @@ def expected_throughput(n_prompt, n_tokens, n_warmup, n_runs, slow):
 def run(ctx, seed, prompt, n_tokens, n_warmup, n_runs, slow, **options):
     clock = WorkClock(slow)
     lm = TimedLM(seed, clock, **options)
+    guard(ctx)
     with EvalSpy() as spy:
         result = ctx.solution.benchmark(lm, list(prompt), n_tokens, n_warmup, n_runs, clock)
+    check_guard()
 
     check.that(isinstance(result, dict), f"{FN}: must return a dict")
     check.that(
@@ -286,8 +305,10 @@ def steady(ctx):
 def real_clock(ctx):
     # No threshold on the numbers: real time is not reproducible. The harness must
     # simply work with an ordinary clock and an ordinary model.
-    lm = MLXTinyLM(3)
+    lm = LM(3)
+    guard(ctx)
     result = ctx.solution.benchmark(lm, list(PROMPT), 8, 1, 3, time.perf_counter)
+    check_guard()
     check.equal(result["tokens"], EXAMPLE_TOKENS, label="tokens")
     for key in ("prompt_tps", "generation_tps"):
         value = result[key]

@@ -10,16 +10,26 @@ Every case drives the solution's step in a loop, as a generation loop would (one
    which under `mx.compile` happen only when the function is traced, so the counter is
    the number of traces. It is an exact count;
 3. evaluation: `EvalSpy` watches the solution file during every call of `step`.
+
+The model is handed over behind the kit's `Guarded`: a solution may call it and read
+its sizes, its parameters, its submodules, and `model.state`. Its counters and its
+private methods are refused, and it cannot build a second `MLXTinyLM` to run untraced.
 """
 
 import mlx.core as mx
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import EvalSpy, MLXTinyLM
+from learnai.kit import EvalSpy, Guarded, MLXTinyLM, check_guard, guard
 
 FN = "step"
 MAX_LEN = 64
+
+
+class LM(Guarded, MLXTinyLM):
+    """The model the solution gets: everything of an MLXTinyLM but the counters."""
+
+    label = "model"
 
 
 def fresh(model_seed):
@@ -56,8 +66,10 @@ def drive(ctx, seed, start, n, eos_id, *, max_len=MAX_LEN, swaps=None, traces=1,
     want_tokens, want_state = uncompiled(
         seed, start, n, eos_id, max_len=max_len, swaps=swaps, **options
     )
-    lm = MLXTinyLM(seed, **options)
+    lm = LM(seed, **options)
+    guard(ctx)
     step = ctx.solution.make_step(lm, eos_id)
+    check_guard()
     check.that(callable(step), "make_step: must return a function")
     check.that(
         lm.counters.forward_calls == 0,
@@ -91,6 +103,7 @@ def drive(ctx, seed, start, n, eos_id, *, max_len=MAX_LEN, swaps=None, traces=1,
             dtypes.add(str(token.dtype))
             shapes.add(tuple(token.shape))
             got_tokens.append(token.tolist() if token.ndim == 1 else token)
+    check_guard()
 
     # 1. The result.
     check.that(
@@ -196,6 +209,7 @@ def two_batch_sizes(ctx):
         token, state = step(token, state)
         mx.eval(token, state_arrays(state))
         got.append(token.tolist())
+    check_guard()
     check.equal(got, want, label="tokens (batch of 2)")
     check.cost(lm.counters, "forward_calls", at_most=2, metric="traces")
 
@@ -211,6 +225,7 @@ def two_models(ctx):
         token_one, state_one = step_one(token_one, state_one)
         mx.eval(token_one, state_arrays(state_one))
         got.append(token_one.tolist())
+    check_guard()
     check.equal(got, want[6:], label="tokens of the first model, continued")
     check.cost(first.counters, "forward_calls", at_most=1, metric="traces")
 

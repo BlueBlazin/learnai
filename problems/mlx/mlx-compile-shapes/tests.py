@@ -11,13 +11,18 @@ and `state["counts"]` after each call as a caller would, and checks, in this ord
    function is traced, so this is the list of traces, an exact count: at most one per
    bucket in use, and each on exactly the bucket's number of tokens;
 3. evaluation: `EvalSpy` watches the solution file during every call of `step`.
+
+The model is handed over behind the kit's `Guarded`: a solution may call it and read
+its sizes, its parameters, its submodules, and `model.state`. The record of traced
+lengths, its counters, and its private methods are refused, and it cannot build a
+second `MLXTinyLM` to run untraced.
 """
 
 import mlx.core as mx
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import EvalSpy, MLXTinyLM
+from learnai.kit import EvalSpy, Guarded, MLXTinyLM, check_guard, guard
 
 FN = "step"
 VOCAB = 64
@@ -28,15 +33,30 @@ def bucket_of(length):
     return next(size for size in BUCKETS if size >= length)
 
 
-class RecordingLM(MLXTinyLM):
+class Trace:
+    """The lengths traced. Not a list: MLX keeps a list attribute as an item of the
+    module (`model["traced_lengths"]`, `model.state`), outside the guard."""
+
+    def __init__(self):
+        self.lengths = []
+
+
+class RecordingLM(Guarded, MLXTinyLM):
     """An MLXTinyLM that notes how many tokens each run of its Python body was given."""
+
+    label = "model"
+    refused = Guarded.refused | {"trace", "traced_lengths"}
 
     def __init__(self, seed, **options):
         super().__init__(seed, **options)
-        self.traced_lengths = []
+        self.trace = Trace()
+
+    @property
+    def traced_lengths(self):
+        return self.trace.lengths
 
     def __call__(self, tokens, cache=None, **options):
-        self.traced_lengths.append(int(tokens.shape[-1]))
+        self.trace.lengths.append(int(tokens.shape[-1]))
         return super().__call__(tokens, cache, **options)
 
 
@@ -70,7 +90,9 @@ def drive(ctx, seed, prompts, penalty, *, counts=None, resets=None, lm=None, **o
     start = mx.zeros(VOCAB) if counts is None else mx.array(counts)
     mx.eval(start)
     state = {"counts": start}
+    guard(ctx)
     step = ctx.solution.make_sampler_step(lm, state, penalty)
+    check_guard()
     check.that(callable(step), "make_sampler_step: must return a function")
     check.that(
         len(lm.traced_lengths) == already,
@@ -105,6 +127,7 @@ def drive(ctx, seed, prompts, penalty, *, counts=None, resets=None, lm=None, **o
                 continue
             got_tokens.append(token.item())
             got_counts.append(np.array(state["counts"]))
+    check_guard()
 
     # 1. The result.
     check.that(

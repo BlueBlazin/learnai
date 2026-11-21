@@ -2741,9 +2741,13 @@ check_guard()                                # the first refused access fails th
   by the kit class's own rule first, so arrays and submodules stay items of the
   module, where `parameters()`, `update`, `nn.quantize`, and `mx.compile(...,
   inputs=lm.state)` look for them, and everything else (the counters, the sizes)
-  goes to the table. The parameters are public by design, so a guarded module keeps
-  its counters and private methods to itself and nothing more: a second module with
-  the same parameters (`MLXTinyLM(...).update(lm.parameters())`) is not stopped.
+  goes to the table. Two consequences. A record that your own subclass keeps as a
+  list, tuple, or dict (`self.traced_lengths = []`) is a module item too
+  (`model["traced_lengths"]`, `model.state`), outside the guard: keep it in a small
+  holder object, as `mlx-compile-shapes` does. And the parameters are public by
+  design: a second `MLXTinyLM` filled with them is refused by the rule against
+  building counting objects, but a forward pass written by hand from the public
+  submodules is not counted by anything.
 - **An object a factory built.** `Experts.of(moe.experts(1))` and `LM.of(draft)` (for
   `draft, target = draft_target_pair(...)`) are guarded objects with the attributes
   of the plain one. The attributes are shared, so the test can read the counters

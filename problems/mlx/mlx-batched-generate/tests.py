@@ -13,16 +13,26 @@ Every case hands the solution a fresh `MLXTinyLM` and a list of prompts, and che
    step, whatever the number of rows.
 
 Nothing here needs the device, so no case is marked `mlx-gpu`.
+
+The model is handed over behind the kit's `Guarded`: a solution may call it and read
+its sizes, its parameters, and its submodules. Its counters and its private methods
+are refused, and it cannot build a second `MLXTinyLM` to do the work uncounted.
 """
 
 import mlx.core as mx
 import numpy as np
 
 from learnai.judge import case, check
-from learnai.kit import EvalSpy, MLXTinyLM
+from learnai.kit import EvalSpy, Guarded, MLXTinyLM, check_guard, guard
 
 FN = "batch_generate"
 _alone: dict[tuple, list[int]] = {}
+
+
+class LM(Guarded, MLXTinyLM):
+    """The model the solution gets: everything of an MLXTinyLM but the counters."""
+
+    label = "model"
 
 
 def alone(seed, prompt, n, **options):
@@ -58,10 +68,12 @@ def run(ctx, seed, prompts, n, eos_id, *, lengths=None, **options):
     want = expected(seed, prompts, n, eos_id, **options)
     if lengths is not None and [len(row) for row in want] != lengths:
         raise RuntimeError(f"authoring error: rows have lengths {[len(row) for row in want]}")
-    lm = MLXTinyLM(seed, **options)
+    lm = LM(seed, **options)
     given = [list(prompt) for prompt in prompts]
+    guard(ctx)
     with EvalSpy() as spy:
         got = ctx.solution.batch_generate(lm, given, n, eos_id)
+    check_guard()
     check.that(
         isinstance(got, list)
         and all(isinstance(row, list) and all(type(t) is int for t in row) for row in got),
