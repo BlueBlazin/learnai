@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 246">
+  <title>The suffix automaton after the tokens 5 9 2 7 4 9 2</title>
+  <desc>Eight states in a row read the seven tokens, and two below hold the repeated suffixes. The last state's dashed suffix link ends at length 2.</desc>
+  <!-- States are circles of radius 11, lettered with the length of their longest string. The row y = 118 reads the tokens in order. -->
+  <!-- Below it are the two clones: 9 (length 1) under the third state, and 9 2 (length 2) under the fifth. -->
+  <!-- Suffix links that end at the start state (from the states of length 1, 4, 5 and from both clones) are not drawn. -->
+
+  <!-- Transitions: an edge reads one token -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <path d="M4 118 L12 118"/>
+    <path d="M39 118 L72 118"/>
+    <path d="M99 118 L132 118"/>
+    <path d="M159 118 L192 118"/>
+    <path d="M219 118 L252 118"/>
+    <path d="M279 118 L312 118"/>
+    <path d="M339 118 L372 118"/>
+    <path d="M399 118 L432 118"/>
+    <path d="M32 107.8 Q148 34 258.8 105.5"/>
+    <path d="M28 107 Q168 -12 320 104.8"/>
+    <path d="M32 128.2 Q56 196 132 199.8"/>
+    <path d="M28 129 C30 235 215 250 263.7 211"/>
+    <path d="M159 200 L252 200"/>
+    <path d="M268 189 L268 134"/>
+  </g>
+  <g>
+    <polygon points="17,118 10.5,121.3 10.5,114.7"/>
+    <polygon points="77,118 70.5,121.3 70.5,114.7"/>
+    <polygon points="137,118 130.5,121.3 130.5,114.7"/>
+    <polygon points="197,118 190.5,121.3 190.5,114.7"/>
+    <polygon points="257,118 250.5,121.3 250.5,114.7"/>
+    <polygon points="317,118 310.5,121.3 310.5,114.7"/>
+    <polygon points="377,118 370.5,121.3 370.5,114.7"/>
+    <polygon points="437,118 430.5,121.3 430.5,114.7"/>
+    <polygon points="263,108.2 255.7,107.4 259.3,101.9"/>
+    <polygon points="324,107.8 316.8,106.5 320.9,101.2"/>
+    <polygon points="137,200 130.3,203 130.7,196.4"/>
+    <polygon points="260,207.6 257.5,214.5 253,209.7"/>
+    <polygon points="257,200 250.5,203.3 250.5,196.7"/>
+    <polygon points="268,129 271.3,135.5 264.7,135.5"/>
+  </g>
+
+  <!-- Suffix links -->
+  <g fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3">
+    <path d="M148 129 L148 184"/>
+    <path d="M214.5 126.9 L258.6 187.1"/>
+    <path d="M377.6 121.6 L163.1 194.8"/>
+  </g>
+  <g>
+    <polygon points="148,189 144.7,182.5 151.3,182.5"/>
+    <polygon points="261.5,191.1 255,187.8 260.3,183.9"/>
+    <polygon points="158.4,196.4 163.5,191.2 165.6,197.5"/>
+  </g>
+  <!-- The link of the last state: its target is the longest earlier match -->
+  <g fill="none" stroke-width="1.5" stroke-dasharray="4 3" style="stroke: var(--figure-accent)">
+    <path d="M438 122.6 L282.6 193.4"/>
+  </g>
+  <g style="fill: var(--figure-accent)">
+    <polygon points="278,195.4 282.6,189.7 285.3,195.7"/>
+  </g>
+
+  <!-- States -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <circle cx="28" cy="118" r="11"/>
+    <circle cx="88" cy="118" r="11"/>
+    <circle cx="148" cy="118" r="11"/>
+    <circle cx="208" cy="118" r="11"/>
+    <circle cx="268" cy="118" r="11"/>
+    <circle cx="328" cy="118" r="11"/>
+    <circle cx="388" cy="118" r="11"/>
+    <circle cx="448" cy="118" r="11"/>
+    <circle cx="148" cy="200" r="11"/>
+    <circle cx="268" cy="200" r="11" style="stroke: var(--figure-accent)"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="28" y="122.5">0</text>
+    <text x="88" y="122.5">1</text>
+    <text x="148" y="122.5">2</text>
+    <text x="208" y="122.5">3</text>
+    <text x="268" y="122.5">4</text>
+    <text x="328" y="122.5">5</text>
+    <text x="388" y="122.5">6</text>
+    <text x="448" y="122.5">7</text>
+    <text x="148" y="204.5">1</text>
+    <text x="268" y="204.5">2</text>
+  </g>
+
+  <!-- The token each edge reads -->
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="58" y="111.5">5</text>
+    <text x="118" y="111.5">9</text>
+    <text x="178" y="111.5">2</text>
+    <text x="238" y="111.5">7</text>
+    <text x="298" y="111.5">4</text>
+    <text x="358" y="111.5">9</text>
+    <text x="418" y="111.5">2</text>
+    <text x="148" y="89.5">7</text>
+    <text x="168" y="38.5">4</text>
+    <text x="70" y="170.5">9</text>
+    <text x="100" y="234.5">2</text>
+    <text x="205" y="215.5">2</text>
+    <text x="277" y="184.5">7</text>
+  </g>
+
+  <!-- The match length of the whole sequence -->
+  <text x="290" y="218.5" font-size="13" style="font-family: var(--figure-serif); fill: var(--figure-accent)"><tspan font-style="italic">m</tspan> = 2</text>
+</svg>

@@ -5,6 +5,8 @@ replacement from its own residual, and grows by its own number of tokens. The ba
 goes in rectangular and comes out ragged; the substance is keeping every row exact
 while the tensor stays a tensor.
 
+![This problem is Roll back caches, where each row of a batch keeps its own number of tokens.](assets/map.svg)
+
 ## Specification
 
 ```python

@@ -5,6 +5,8 @@ the same forward pass, nothing the early layers computed is computed again. The
 result must be token for token the full model's greedy decode, and the judge counts
 which layers ran on how many tokens.
 
+![This problem is Draft and the target call, here the lower and upper layers of one model.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -61,6 +63,8 @@ tokens still to generate. One *round*:
    accepted): $n + 1$ tokens, never more than $r$.
 4. **Stop or roll back.** If `max_new_tokens` is reached, stop. Otherwise bring the
    cache of **every** layer back to verified tokens only, and start the next round.
+
+![The first $E$ layers draft through the model's own norm and head, and the remaining layers verify from the same exit states.](assets/exit-split.svg)
 
 With $r = 1$ nothing is drafted: the round is one pass of all layers over the
 unprocessed tokens.

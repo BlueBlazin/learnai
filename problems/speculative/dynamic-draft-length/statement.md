@@ -6,6 +6,8 @@ policy over recorded acceptance traces and total up the cost. No single formula 
 hard; the substance is which count the growth rule compares with, what happens to
 the token that triggers the confidence stop, and the end of the output.
 
+![This problem is Adapt k, which sets the draft length of the next round.](assets/map.svg)
+
 ## Specification
 
 ```python

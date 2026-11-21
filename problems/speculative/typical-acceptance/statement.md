@@ -5,6 +5,8 @@ when the target is uncertain. The step is a handful of tensor operations; the
 substance is the entropy (in nats, with zero probabilities), the `min`, the strict
 comparison, and stopping at the first failure.
 
+![This problem is Verify, here a probability threshold in place of an exact match.](assets/map.svg)
+
 > [!WARNING]
 > This scheme is **lossy**. Unlike greedy verification or speculative sampling, its
 > output is neither the target model's greedy decode nor a sample from the target's

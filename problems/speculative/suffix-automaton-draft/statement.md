@@ -4,6 +4,8 @@ occurred before and where it occurred **first**, so that the tokens which follow
 it can be proposed as a draft. Searching the history again for every draft is easy
 and quadratic; a suffix automaton built online answers in constant time per token.
 
+![This problem is Draft, here read from an index of the sequence so far.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -72,6 +74,8 @@ The match length after each `extend`, token by token:
 | token | 5 | 9 | 2 | 7 | 4 | 9 | 2 | 8 | 3 | 9 | 2 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | $m$ | 0 | 0 | 0 | 0 | 0 | 1 | 2 | 0 | 0 | 1 | 2 |
+
+![The example's first seven tokens: each state shows its longest length, and the last state's dashed suffix link ends at $m = 2$. Links to the start are not drawn.](assets/automaton.svg)
 
 At the end, the suffix `[3, 9, 2]` has not occurred earlier, and `[9, 2]` has, at
 $s = 1$ and at $s = 5$: $m = 2$. The earliest occurrence is $s = 1$, and the

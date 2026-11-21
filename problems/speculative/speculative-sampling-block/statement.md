@@ -6,6 +6,8 @@ model had sampled them itself. Each position uses the accept-or-resample rule of
 single step; what the block adds is that everything after the first rejection is
 void, and that a fully accepted block earns one more token.
 
+![This problem is Verify, applied to a block of sampled draft tokens.](assets/map.svg)
+
 ## Specification
 
 ```python

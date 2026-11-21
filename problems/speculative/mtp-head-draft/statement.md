@@ -6,6 +6,8 @@ residual block and its own unembedding. The arithmetic is three lines; the subst
 is which state each head reads, which position each head speaks for, and how the
 verification is aligned.
 
+![This problem is Draft, here extra heads on the model's own last hidden state.](assets/map.svg)
+
 ## Specification
 
 ```python

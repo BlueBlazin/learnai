@@ -5,6 +5,8 @@ whole step is an argmax and a comparison; the substance is the alignment of logi
 with drafts, stopping at the **first** disagreement, and the extra token the target
 always contributes.
 
+![This problem is Verify, here an argmax compared with each draft token.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -64,6 +66,8 @@ verify_greedy([2, 0, 4], target_logits)   # (2, 3)
 verify_greedy([2, 0, 3], target_logits)   # (3, 1)
 verify_greedy([1, 0, 3], target_logits)   # (0, 2)
 ```
+
+![The three calls of the example, draft tokens above the target's greedy tokens $g_i$. Dashed cells are discarded, and the heavy cell is `next_token`.](assets/verify-calls.svg)
 
 In the first call the target agrees with the first two draft tokens. At position 2
 the draft says 4 and the target says 3: two tokens are accepted and the target's

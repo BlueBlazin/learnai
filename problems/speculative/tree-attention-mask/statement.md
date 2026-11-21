@@ -5,6 +5,8 @@ node see exactly the sequence it would see if its own root path were the only
 continuation. The mask is the easy half to get almost right: the test is that the
 model's logits at every node are those of its path run alone.
 
+![This problem is the single target call, which here checks a whole tree of drafts.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -87,7 +89,7 @@ positions `P + j`; everything else behind the prefix is dropped.)
 
 ## Example
 
-The tree of Figure 1, with $P = 2$:
+The tree of Figure 2, with $P = 2$:
 
 ```python
 parents = [-1, -1, 0, 0, 1, 2]

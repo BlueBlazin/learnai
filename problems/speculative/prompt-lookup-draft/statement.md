@@ -4,6 +4,8 @@ before, and propose the tokens that followed them there. The search is a few lin
 the substance is which occurrence counts (not the suffix itself, the earliest one,
 the longest n-gram first) and where the copied tokens start.
 
+![This problem is Draft, here copied from an earlier place in the context.](assets/map.svg)
+
 ## Specification
 
 ```python

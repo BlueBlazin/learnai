@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 122">
+  <title>The three calls of the example: draft tokens against the target's greedy tokens</title>
+  <desc>Three panels, one per call. Each sets the three draft tokens above the four greedy tokens 2, 0, 3, 1 and marks the accepted prefix and the returned token.</desc>
+  <!-- Geometry: a panel is four columns 28 wide, one per row i of target_logits; draft cells are y = 26..48, greedy tokens y = 70..92. -->
+  <!-- Solid cells are used, dashed cells are discarded, and the heavy accent cell is next_token. -->
+
+  <!-- Row names -->
+  <text x="94" y="18.5" font-size="13" text-anchor="end" font-style="italic" style="font-family: var(--figure-serif); fill: var(--figure-muted)">i</text>
+  <text x="94" y="41.5" font-size="13" text-anchor="end" style="font-family: var(--figure-mono)">draft_tokens</text>
+  <text x="94" y="85.5" font-size="13" text-anchor="end" style="font-family: var(--figure-serif)"><tspan font-style="italic">g</tspan>ᵢ</text>
+
+  <!-- Call 1: verify_greedy([2, 0, 4], target_logits) = (2, 3) -->
+  <g>
+    <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+      <text x="118" y="18.5">0</text>
+      <text x="146" y="18.5">1</text>
+      <text x="174" y="18.5">2</text>
+      <text x="202" y="18.5">3</text>
+    </g>
+    <rect x="106" y="26" width="24" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="118" y="41.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">2</text>
+    <text x="118" y="63.5" font-size="13" text-anchor="middle">=</text>
+    <rect x="106" y="70" width="24" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>
+    <text x="118" y="85.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">2</text>
+    <rect x="134" y="26" width="24" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="146" y="41.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <text x="146" y="63.5" font-size="13" text-anchor="middle">=</text>
+    <rect x="134" y="70" width="24" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>
+    <text x="146" y="85.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="162" y="26" width="24" height="22" rx="3" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-muted)"/>
+    <text x="174" y="41.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">4</text>
+    <text x="174" y="63.5" font-size="13" text-anchor="middle">≠</text>
+    <rect x="162" y="70" width="24" height="22" rx="3" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+    <text x="174" y="85.5" font-size="13" text-anchor="middle" font-weight="600" style="font-family: var(--figure-mono)">3</text>
+    <rect x="190" y="70" width="24" height="22" rx="3" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-muted)"/>
+    <text x="202" y="85.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">1</text>
+    <text x="160" y="113.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">(2, 3)</text>
+  </g>
+
+  <!-- Call 2: verify_greedy([2, 0, 3], target_logits) = (3, 1) -->
+  <g>
+    <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+      <text x="244" y="18.5">0</text>
+      <text x="272" y="18.5">1</text>
+      <text x="300" y="18.5">2</text>
+      <text x="328" y="18.5">3</text>
+    </g>
+    <rect x="232" y="26" width="24" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="244" y="41.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">2</text>
+    <text x="244" y="63.5" font-size="13" text-anchor="middle">=</text>
+    <rect x="232" y="70" width="24" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>
+    <text x="244" y="85.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">2</text>
+    <rect x="260" y="26" width="24" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="272" y="41.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <text x="272" y="63.5" font-size="13" text-anchor="middle">=</text>
+    <rect x="260" y="70" width="24" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>
+    <text x="272" y="85.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">0</text>
+    <rect x="288" y="26" width="24" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="300" y="41.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">3</text>
+    <text x="300" y="63.5" font-size="13" text-anchor="middle">=</text>
+    <rect x="288" y="70" width="24" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>
+    <text x="300" y="85.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">3</text>
+    <rect x="316" y="70" width="24" height="22" rx="3" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+    <text x="328" y="85.5" font-size="13" text-anchor="middle" font-weight="600" style="font-family: var(--figure-mono)">1</text>
+    <text x="286" y="113.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">(3, 1)</text>
+  </g>
+
+  <!-- Call 3: verify_greedy([1, 0, 3], target_logits) = (0, 2) -->
+  <g>
+    <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+      <text x="370" y="18.5">0</text>
+      <text x="398" y="18.5">1</text>
+      <text x="426" y="18.5">2</text>
+      <text x="454" y="18.5">3</text>
+    </g>
+    <rect x="358" y="26" width="24" height="22" rx="3" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-muted)"/>
+    <text x="370" y="41.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">1</text>
+    <text x="370" y="63.5" font-size="13" text-anchor="middle">≠</text>
+    <rect x="358" y="70" width="24" height="22" rx="3" fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)"/>
+    <text x="370" y="85.5" font-size="13" text-anchor="middle" font-weight="600" style="font-family: var(--figure-mono)">2</text>
+    <rect x="386" y="26" width="24" height="22" rx="3" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-muted)"/>
+    <text x="398" y="41.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0</text>
+    <text x="398" y="63.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">=</text>
+    <rect x="386" y="70" width="24" height="22" rx="3" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-muted)"/>
+    <text x="398" y="85.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">0</text>
+    <rect x="414" y="26" width="24" height="22" rx="3" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-muted)"/>
+    <text x="426" y="41.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">3</text>
+    <text x="426" y="63.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">=</text>
+    <rect x="414" y="70" width="24" height="22" rx="3" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-muted)"/>
+    <text x="426" y="85.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">3</text>
+    <rect x="442" y="70" width="24" height="22" rx="3" fill="none" stroke-width="1" stroke-dasharray="2 3" style="stroke: var(--figure-muted)"/>
+    <text x="454" y="85.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">1</text>
+    <text x="412" y="113.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">(0, 2)</text>
+  </g>
+
+  <!-- The name of the bottom line -->
+  <text x="94" y="113.5" font-size="13" text-anchor="end" style="fill: var(--figure-muted)">returns</text>
+</svg>

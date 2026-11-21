@@ -5,6 +5,8 @@ so that the emitted token is distributed **exactly** as `p`. The rule is short, 
 every part of it (the ratio, the residual, its normalization, the two independent
 random numbers) is needed for that guarantee.
 
+![This problem is Verify, which keeps or replaces one sampled draft token.](assets/map.svg)
+
 ## Specification
 
 ```python

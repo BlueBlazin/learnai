@@ -5,6 +5,8 @@ sequence before the next round. The result must be token for token what the targ
 model's own greedy decode produces, and the judge counts the work both models were
 asked to do.
 
+![This problem is the whole loop, with greedy verification and a cache for each model.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -110,6 +112,8 @@ generated, and the three later drafts are void, whatever the target's rows for t
 say. Both caches now cover rejected tokens and are rolled back. Rounds 2 and 3 are
 accepted in full and earn a bonus token each. In round 4 a single token is left, so
 nothing is drafted and the target produces it alone.
+
+![Round 1 of the first call, step by step. The target's first token sits under the draft it is compared with.](assets/round-steps.svg)
 
 What the reference loop feeds each model, with the cache length before the call:
 

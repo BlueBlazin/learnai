@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 294">
+  <title>The layer stack split at the exit layer</title>
+  <desc>Layers 0 to E − 1 feed norm and head for the drafts. Layers E to L − 1 continue from the same exit states and verify.</desc>
+  <!-- Left column, bottom to top: the full forward pass. Right column: the early exit, the same norm and head on the exit states. -->
+
+  <!-- Wires -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <path d="M150 276 L150 267"/>
+    <path d="M150 240 L150 221"/>
+    <path d="M150 194 L150 155"/>
+    <path d="M150 128 L150 113"/>
+    <path d="M150 86 L150 71"/>
+    <path d="M150 44 L150 27"/>
+    <path d="M400 128 L400 113"/>
+    <path d="M400 86 L400 71"/>
+    <path d="M150 172 L392 172 Q400 172 400 164 L400 155"/>
+  </g>
+  <!-- Arrowheads, and a dot where the exit leaves the stack -->
+  <g>
+    <polygon points="150,262 153.3,268.5 146.7,268.5"/>
+    <polygon points="150,216 153.3,222.5 146.7,222.5"/>
+    <polygon points="150,150 153.3,156.5 146.7,156.5"/>
+    <polygon points="150,108 153.3,114.5 146.7,114.5"/>
+    <polygon points="150,66 153.3,72.5 146.7,72.5"/>
+    <polygon points="150,22 153.3,28.5 146.7,28.5"/>
+    <polygon points="400,108 403.3,114.5 396.7,114.5"/>
+    <polygon points="400,66 403.3,72.5 396.7,72.5"/>
+    <polygon points="400,150 403.3,156.5 396.7,156.5"/>
+    <circle cx="150" cy="172" r="2.5"/>
+  </g>
+
+  <!-- The full model -->
+  <rect x="75" y="44" width="150" height="22" rx="5" style="fill: var(--figure-linear)" stroke="currentColor" stroke-width="1.5"/>
+  <text x="150" y="59.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">head</text>
+  <rect x="75" y="86" width="150" height="22" rx="5" style="fill: var(--figure-norm)" stroke="currentColor" stroke-width="1.5"/>
+  <text x="150" y="101.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">norm</text>
+  <rect x="75" y="128" width="150" height="22" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="150" y="143.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)">layers <tspan font-style="italic">E</tspan> .. <tspan font-style="italic">L</tspan> − 1</text>
+  <rect x="75" y="194" width="150" height="22" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="150" y="209.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)">layers 0 .. <tspan font-style="italic">E</tspan> − 1</text>
+  <rect x="75" y="240" width="150" height="22" rx="5" style="fill: var(--figure-embed)" stroke="currentColor" stroke-width="1.5"/>
+  <text x="150" y="255.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">embed</text>
+
+  <!-- The early exit: the same norm and head -->
+  <rect x="345" y="86" width="110" height="22" rx="5" style="fill: var(--figure-linear)" stroke="currentColor" stroke-width="1.5"/>
+  <text x="400" y="101.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">head</text>
+  <rect x="345" y="128" width="110" height="22" rx="5" style="fill: var(--figure-norm)" stroke="currentColor" stroke-width="1.5"/>
+  <text x="400" y="143.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">norm</text>
+
+  <!-- What goes in and what comes out -->
+  <text x="150" y="288.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">tokens</text>
+  <text x="150" y="15.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)"><tspan font-style="italic">g</tspan>₀ … <tspan font-style="italic">g</tspan>ₖ′</text>
+  <text x="400" y="57.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-serif)"><tspan font-style="italic">d</tspan>₁ … <tspan font-style="italic">d</tspan>ₖ′</text>
+
+  <!-- The shape on each wire, and the name of the branch -->
+  <text x="158" y="232.5" font-size="13" style="font-family: var(--figure-mono)">(T, d)</text>
+  <text x="158" y="164.5" font-size="13" style="font-family: var(--figure-mono)">(T, d)</text>
+  <text x="158" y="36.5" font-size="13" style="font-family: var(--figure-mono)">(T, vocab_size)</text>
+  <text x="300" y="187.5" font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">exit states</text>
+
+  <!-- How often each half runs in a round -->
+  <g font-size="13" style="fill: var(--figure-muted)">
+    <text x="233" y="143.5">verify: one call</text>
+    <text x="233" y="209.5">draft: a call per token</text>
+  </g>
+</svg>

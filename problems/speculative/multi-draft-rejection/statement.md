@@ -6,6 +6,8 @@ Testing every candidate with the single-draft rule is not exact. The scheme that
 exact is *recursive rejection sampling*: every rejection changes the distribution
 the next candidate is tested against.
 
+![This problem is Verify, for several candidate tokens at one position.](assets/map.svg)
+
 ## Specification
 
 ```python
