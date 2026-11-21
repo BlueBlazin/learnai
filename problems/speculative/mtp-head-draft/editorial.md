@@ -116,7 +116,9 @@ tokens and emits between 1 and $k + 1$ of them.
   embedding layer, the shared output head, a transformer block, and a projection
   matrix. The report presents the modules as a training objective that can be
   dropped at inference or reused for speculative decoding, and vLLM exposes that
-  use as its `mtp` speculative method.
+  use as its `mtp` speculative method. Checkpoints released since then carry such
+  a chained module in their weights; drafting with one is the `mtp-chain-draft`
+  problem.
 - The loss of independence is measurable: parallel heads get less accurate with
   every position, which is why Medusa uses a handful of heads and compensates
   with several candidates per head.

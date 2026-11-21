@@ -104,8 +104,11 @@ $s / L$ of the ordinary model's.
   keys and values of layer $s - 1$ as they are, which is the Gemma 3n arrangement.
   YOCO instead computes the shared keys and values from the self-decoder's *output*
   with projections of their own, and its self-decoder uses efficient (windowed or
-  gated-retention) attention. Real models also apply the sharing per attention type
-  (local and global layers each read the last layer of their kind). The cost
+  gated-retention) attention. Real models also apply the sharing per attention type.
+  In Gemma 4 as `transformers` 5.23 implements it (`Gemma4TextConfig.kv_sharing_modes`,
+  read in the code), the last `num_kv_shared_layers` layers reuse, and each reads the
+  keys and values stored by the last earlier layer of its own type, sliding-window or
+  full, which is not always the layer just below the shared block. The cost
   argument is the same in all of them. Related work that keeps the standard
   architecture and caches only a few layers' pairs, such as "Layer-Condensed KV
   Cache for Efficient Inference of Large Language Models" (arXiv 2405.10637), is a

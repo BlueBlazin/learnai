@@ -156,7 +156,9 @@ and the store grows as $1 / n$.
 - **The layers** in question are those of "Mamba: Linear-Time Sequence Modeling
   with Selective State Spaces" (arXiv 2312.00752) and of "Gated Delta Networks:
   Improving Mamba2 with Delta Rule" (arXiv 2412.06464), the linear-attention layer
-  that the SGLang post serves in Qwen3-Next.
+  that the SGLang post serves in Qwen3-Next and that the Qwen3.5 checkpoints ship
+  in three layers out of four (the `gated-delta-step` and `gated-delta-layer`
+  problems build it).
 - **What this problem simplifies.** The model here is purely recurrent. A hybrid
   model also has attention layers whose KV cache *can* be truncated, and an engine
   must keep the two in step: it restores the recurrent state from a checkpoint and
