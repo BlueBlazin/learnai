@@ -1,0 +1,10 @@
+id = "model-architectures"
+title = "Model architectures"
+description = "What changed inside open-weights models since 2024: recurrent and hybrid mixers, indexed and compressed attention, new block parts, built-in drafts and text diffusion, and one real hybrid model ported from its raw weights."
+modules = [
+    "recurrent-mixers",
+    "sparse-attention",
+    "block-components",
+    "drafts-and-diffusion",
+    "real-hybrid-model",
+]

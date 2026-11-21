@@ -34,7 +34,7 @@ extras.
 | researcher | subagent | surveys primary sources and writes or extends the catalog specs |
 | kit engineer | subagent | extends `python/` (kit, judge) and its tests before the batches that need it |
 | author | subagent | writes one batch of problems and verifies them |
-| reviewer | subagent | **[Recommended]** reads a finished batch cold; see section 4, step 6 |
+| reviewer | subagent | reads a finished batch cold and tries to break it; see section 4, step 6 |
 
 Rules the owner set, in the owner's words where they set a standard:
 
@@ -67,7 +67,7 @@ Rules the owner set, in the owner's words where they set a standard:
 | 3 | Kit and judge work | kit engineer, then manager | kit objects, tests, guide sections, committed |
 | 4 | Authoring | author | one batch of complete problems, uncommitted, with a report |
 | 5 | Batch acceptance | manager | batch re-validated and committed |
-| 6 | Independent review | reviewer | **[Recommended]** findings fixed before the commit |
+| 6 | Independent review | reviewer | findings fixed before the commit |
 | 7 | Closing pass | manager | whole catalog validated, suites green, figures seen in the app |
 
 ## 3. Research and specification
@@ -266,13 +266,26 @@ In milestone 2 (parallel authors) the manager committed on the author's report a
 `learnai validate --all` only at the end of the milestone. From milestone 3 the re-run in
 item 2 preceded every commit. Item 2 before every commit is the rule.
 
-### Step 6. Independent review **[Recommended]**
+### Step 6. Independent review
 
-No problem was ever read by a second subagent. The manager's spot checks were the only
-review, and the statement, hints, editorial, and failure messages of most problems were
-read only by their author. For the next batch, before the commit of step 5, give each
-batch to a fresh Fable 5.2 reviewer with the brief in section 5.3, have the manager (or
-the author, resumed) fix what it finds, and re-run step 5 item 2.
+Through milestone 5 no problem was read by a second subagent: the manager's spot checks
+were the only review. From the architecture set (2026-11-21, 24 problems in six batches)
+every batch is reviewed before its commit, and every one of the six reviews found
+defects that validation had passed: an honest solution rejected, a wrong or cheating
+solution accepted, a fact that contradicted its source (section 7, items 11 to 19).
+Review is therefore part of the procedure, not an option:
+
+1. After step 5 item 2 and before the commit, give the batch to a fresh Fable 5.2
+   reviewer with the brief in section 5.3. The reviewer changes no file.
+2. Resume the author (not a new one) with the numbered findings and the folder of the
+   reviewer's counterexamples; the author fixes and reports per finding.
+3. The manager re-runs step 5 item 2 and submits the reviewer's counterexamples: every
+   cheat and wrong variant must now be rejected and every honest solution accepted.
+4. Commit the batch alone, then write the spec corrections back to `CURRICULUM.md` in a
+   second commit.
+
+A reviewed batch of four to six problems took about 35 minutes to write, 15 to 25 to
+review, and 15 to 30 to fix.
 
 ### Step 7. Closing pass (manager)
 
@@ -286,7 +299,7 @@ ruff check python problems
 
 Then: look at the new figures in the app in light and dark (`pnpm dev:real`), grep new
 SVGs for hard-coded colors, update `CURRICULUM.md` totals and each module's `core` list,
-and tell the owner what was *not* verified. **[Recommended]** Also write the authors'
+and tell the owner what was *not* verified. Also write the authors'
 spec corrections back into `CURRICULUM.md` (see section 8).
 
 ## 5. Brief templates
@@ -403,10 +416,10 @@ Additions by kind, as they were sent:
   stage; the statement keeps the rules of the prerequisite problems. Name an existing
   capstone to read in full.
 
-### 5.3 Reviewer **[Recommended]**
+### 5.3 Reviewer
 
-Not past practice. The checks are the [Judgment] rows of section 4.1 and the defects of
-section 7.
+The checks are the [Judgment] rows of section 4.1 and the defects of section 7. Add to
+item 4 the cheats and wrong variants that fit the batch (section 7, items 11 to 19).
 
 ```text
 You are reviewing a batch of new Learn AI practice problems before they are committed.
@@ -466,8 +479,9 @@ and found correct. Say plainly what you did not check.
 - [ ] Every item of the
       [guide's checklist](PROBLEM_AUTHORING.md#16-checklist-before-you-open-a-pull-request)
       that applies (hardware, assets, memory limits, statistical time, hidden-case leaks).
-- [ ] **[Recommended]** A reviewer who did not write it solved it from the statement and
-      found no accepted wrong solution.
+- [ ] A reviewer who did not write it solved it from the statement, and every wrong
+      solution and cheat the reviewer wrote is rejected.
+- [ ] Every rule a hidden case enforces is stated and is distinguished by a public case.
 
 ### One batch
 
@@ -480,7 +494,9 @@ and found correct. Say plainly what you did not check.
 - [ ] The commit contains only the batch; the message lists the ids.
 - [ ] Reported judge, kit, and guide problems are queued for the next kit engineer; new
       process rules are in the shared brief.
-- [ ] **[Recommended]** Spec corrections are written back to `CURRICULUM.md`.
+- [ ] The independent review is done, its findings fixed, and its counterexamples re-run
+      by the manager.
+- [ ] Spec corrections are written back to `CURRICULUM.md`.
 
 ### Closing a set of batches
 
@@ -530,10 +546,53 @@ Defects, how they surfaced, and the rule that came out of each.
 10. **Figures not seen in the app.** Authors rendered figures standalone; the manager
     checked only some in both themes. Rule: step 7.
 
+Found by the independent reviews of the architecture set (2026-11-21), each after the
+batch had passed validation:
+
+11. **An honest solution rejected.** By a rule only a hidden case enforced; by a hidden
+    case that contradicted the statement (an injected `lm_head.weight` where the
+    statement says there is none); by `forbidden_source` on an ordinary word (a learner's
+    own variable `counters`, a helper named `_select`). Rule: every rule a hidden case
+    checks is stated and distinguished by a public case; `forbidden_source` only for
+    names that are never ordinary words; the author submits an alternative solution
+    with its own helper and variable names.
+12. **A cost or speed judge that could be passed without the idea.** A speed judge was
+    met by a compiled per-token loop; counters on a kit object could be written by the
+    solution; a second model built by the solution did the counted work. Rule: cost
+    cases use counting objects the solution cannot write (the kit's guard), and a speed
+    judge is kept only where the wrong approach cannot be compiled to within the limit.
+13. **A cheat through another door.** A forbidden kit operation called through its
+    per-framework backend; the fixture file read from disk and replayed. Rule: forbid
+    the backends with the dispatcher, and give every fixture-judged problem at least one
+    case generated and judged at run time.
+14. **A stated rule that nothing tested.** "Inputs are not modified", the tie rule
+    (passed by an unstable sort on short inputs), the state after a call shorter than
+    the kernel, the one-token call. Rule: the reviewer lists each sentence of the
+    statement that no case distinguishes.
+15. **A constant or rule that differed from the shipped code.** An epsilon of 1e-6 where
+    the code has 1e-5; a rotary dimension that the library rounds up when odd; a
+    tolerance that failed a correct solution written in another order of operations.
+    Rule: expected values come from running the library, and the reviewer fuzzes the
+    reference against the library where a library implements the rule.
+16. **A mutant that failed for another reason**, by a crash or a NaN, or whose `# BUG:`
+    line and editorial claimed more than was true. Rule: run every mutant with
+    `--reveal` and read what failed.
+17. **Hidden cases that printed labels or expected counts.** Rule: submit a mutant
+    without `--reveal` and read the output.
+18. **A reference that relied on undocumented library behavior** (the stability of
+    `mx.argsort`). Rule: state the tie rule and implement it explicitly.
+19. **A measurement that did not reproduce.** The difference between two libraries on
+    the real model was 0.70 on the kit engineer's prompts and 0.26 on the author's.
+    Rule: an editorial states a measured number with its prompts and versions, in words
+    that stay true for what was measured.
+
 ## 8. Known gaps between this procedure and the record
 
-- **No independent review** of any problem (step 6). The fairness and "fails for the
-  right reason" checks rest on author reports.
+- **No independent review of the first 213 problems** (step 6 began with the
+  architecture set). For them the fairness and "fails for the right reason" checks rest
+  on author reports, and the defects of section 7, items 11 to 19, were found at a rate
+  of several per batch in the reviewed set, so the same kinds are likely present in the
+  unreviewed one.
 - **`CURRICULUM.md` drifted.** Its header says to fix an ambiguous spec there first.
   Authors fixed the problem instead and reported; most corrections were never written
   back, so for those entries the problem's statement is right and the spec is stale.
