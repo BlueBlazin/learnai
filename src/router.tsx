@@ -3,6 +3,7 @@ import { ScreenMessage } from "@/components/app/page";
 import { ErrorState, LoadingLines } from "@/components/app/states";
 import { parseFilters, serializeFilters } from "@/lib/filters";
 import {
+  type FiguresSearch,
   type LibrarySearch,
   type ProblemSearch,
   parseSettingsSection,
@@ -89,6 +90,16 @@ const devComponentsRoute = import.meta.env.DEV
     )
   : null;
 
+/** Development only: the figures of every statement, for review. */
+const devFiguresRoute = import.meta.env.DEV
+  ? createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/dev/figures",
+      validateSearch: (search: Record<string, unknown>): FiguresSearch =>
+        typeof search.track === "string" && search.track !== "" ? { track: search.track } : {},
+    }).lazy(() => import("@/routes/dev-figures").then((module) => module.Route))
+  : null;
+
 const routeTree = rootRoute.addChildren([
   homeRoute,
   curriculumRoute,
@@ -98,6 +109,7 @@ const routeTree = rootRoute.addChildren([
   problemRoute,
   settingsRoute,
   ...(devComponentsRoute ? [devComponentsRoute] : []),
+  ...(devFiguresRoute ? [devFiguresRoute] : []),
 ]);
 
 export const router = createRouter({

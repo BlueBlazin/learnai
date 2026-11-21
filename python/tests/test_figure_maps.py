@@ -91,3 +91,65 @@ def test_a_label_that_does_not_fit_is_refused(maps):
     box = next(block for block in spec["blocks"] if block.get("shape", "box") == "box")
     box["label"] = "A label far too long for the box it is in"
     assert any("does not fit" in problem for problem in maps.problems_of(spec))
+
+
+def small_spec(problems: dict) -> dict:
+    return {
+        "track": "demo",
+        "file": "map.svg",
+        "title": "A map",
+        "desc": "Two boxes.",
+        "width": 480,
+        "height": 100,
+        "blocks": [
+            {
+                "part": "a",
+                "role": "attn",
+                "label": "Attention",
+                "x": 10,
+                "y": 10,
+                "width": 120,
+                "height": 20,
+            },
+            {"part": "b", "label": "Input", "x": 10, "y": 50, "width": 120, "height": 20},
+        ],
+        "problems": problems,
+    }
+
+
+def test_a_box_without_a_role_is_drawn_unfilled(maps):
+    spec = small_spec({"one": {"parts": ["a"]}})
+    assert maps.problems_of(spec) == []
+    root = ET.fromstring(maps.render(spec, "one"))
+    boxes = list(root.iter(f"{SVG}rect"))
+    assert [b.get("fill") for b in boxes] == [None, "none"]
+    # The unfilled box is dimmed by its outline alone.
+    assert boxes[1].get("stroke-opacity") is not None
+    assert boxes[1].get("fill-opacity") is None
+
+
+def test_a_wrong_role_is_still_refused(maps):
+    spec = small_spec({"one": {"parts": ["a"]}})
+    spec["blocks"][1]["role"] = "purple"
+    assert any("unknown role" in found for found in maps.problems_of(spec))
+
+
+def test_a_problem_may_belong_to_another_module(maps, tmp_path):
+    spec = small_spec({"one": {"parts": ["a"]}, "other/two": {"parts": None}})
+    assert maps.place(spec, "one") == ("demo", "one")
+    assert maps.place(spec, "other/two") == ("other", "two")
+    with pytest.raises(maps.SpecError):
+        maps.place(spec, "a/b/c")
+    for track, name in (("demo", "one"), ("other", "two")):
+        directory = tmp_path / "problems" / track / name
+        directory.mkdir(parents=True)
+        (directory / "problem.toml").write_text("", encoding="utf-8")
+    files = maps.outputs([spec], tmp_path)
+    assert sorted(path.relative_to(tmp_path).as_posix() for path in files) == [
+        "problems/demo/one/assets/map.svg",
+        "problems/other/two/assets/map.svg",
+    ]
+    assert "other/two" in files[tmp_path / "problems/other/two/assets/map.svg"]
+    missing = small_spec({"other/nope": {"parts": None}})
+    with pytest.raises(maps.SpecError, match="other/nope"):
+        maps.outputs([missing], tmp_path)

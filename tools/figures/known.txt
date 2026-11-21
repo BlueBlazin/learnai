@@ -1,0 +1,85 @@
+# Findings of figures drawn before the rules of docs/PROBLEM_AUTHORING.md, "Figures".
+# One `path: message` per line. check.py reports them as known and does not fail on them.
+# Fix a figure, then delete its lines; a line that is no longer reported is flagged.
+
+problems/block-components/partial-rope/assets/channel-map.svg: the root <desc> has 3 sentences, at most 2
+problems/block-components/partial-rope/assets/channel-map.svg: the text 'Filled channels are rotated; dashed channels pass through unchanged.' leaves the viewBox
+problems/block-components/partial-rope/statement.md: the caption of assets/channel-map.svg has 3 sentences, at most 2
+problems/capstones/capstone-continuous-batching-engine/assets/architecture.svg: the root <desc> has 6 sentences, at most 2
+problems/capstones/capstone-continuous-batching-engine/assets/architecture.svg: the text '(priority, arrival)' leaves the viewBox
+problems/capstones/capstone-continuous-batching-engine/statement.md: the caption of assets/architecture.svg has 4 sentences, at most 2
+problems/capstones/capstone-continuous-batching-engine/editorial.md: the caption of assets/architecture.svg has 4 sentences, at most 2
+problems/capstones/capstone-inference-gateway/assets/architecture.svg: the root <desc> has 6 sentences, at most 2
+problems/capstones/capstone-inference-gateway/statement.md: the caption of assets/architecture.svg has 4 sentences, at most 2
+problems/capstones/capstone-inference-gateway/editorial.md: the caption of assets/architecture.svg has 4 sentences, at most 2
+problems/capstones/capstone-quantized-runner/assets/runner.svg: the root <desc> has 3 sentences, at most 2
+problems/capstones/capstone-quantized-runner/statement.md: the caption of assets/runner.svg has 3 sentences, at most 2
+problems/capstones/capstone-quantized-runner/editorial.md: the caption of assets/runner.svg has 3 sentences, at most 2
+problems/capstones/capstone-real-model-runtime/assets/architecture.svg: the root <desc> has 3 sentences, at most 2
+problems/capstones/capstone-speculative-engine/assets/engine.svg: the root <desc> has 4 sentences, at most 2
+problems/capstones/capstone-speculative-engine/statement.md: the caption of assets/engine.svg has 3 sentences, at most 2
+problems/capstones/capstone-speculative-engine/editorial.md: the caption of assets/engine.svg has 3 sentences, at most 2
+problems/capstones/capstone-structured-output-server/assets/architecture.svg: the root <desc> has 5 sentences, at most 2
+problems/capstones/capstone-structured-output-server/assets/architecture.svg: the text "compilation cache, keyed by the schema's text" leaves the viewBox
+problems/capstones/capstone-structured-output-server/statement.md: the caption of assets/architecture.svg has 3 sentences, at most 2
+problems/capstones/capstone-structured-output-server/editorial.md: the caption of assets/architecture.svg has 3 sentences, at most 2
+problems/constrained/dfa-token-mask/assets/token-jumps.svg: the root <desc> has 3 sentences, at most 2
+problems/constrained/dfa-token-mask/statement.md: the caption of assets/token-jumps.svg has 3 sentences, at most 2
+problems/cuda/cuda-graph-replay/assets/capture-replay.svg: the root <desc> has 5 sentences, at most 2
+problems/cuda/cuda-graph-replay/assets/capture-replay.svg: the text boxes 'captured graph' and 'writes' overlap
+problems/cuda/cuda-memory-accounting/assets/allocated-reserved.svg: the root <desc> has 5 sentences, at most 2
+problems/cuda/cuda-memory-accounting/statement.md: the caption of assets/allocated-reserved.svg has 3 sentences, at most 2
+problems/cuda/cuda-pinned-transfer/assets/prefetch-timeline.svg: the root <desc> has 5 sentences, at most 2
+problems/cuda/cuda-sdpa-attention/assets/causal-alignment.svg: the root <desc> has 3 sentences, at most 2
+problems/cuda/cuda-sdpa-attention/assets/causal-alignment.svg: the text 'new token i sees slots 0 to 3 + i' leaves the viewBox
+problems/cuda/cuda-static-kv-cache/assets/static-cache-mask.svg: the root <desc> has 4 sentences, at most 2
+problems/cuda/cuda-timing-sync/assets/async-timeline.svg: the root <desc> has 5 sentences, at most 2
+problems/cuda/cuda-triton-dequant-linear/assets/one-program.svg: the root <desc> has 6 sentences, at most 2
+problems/cuda/cuda-triton-dequant-linear/assets/one-program.svg: the text 'code · scale + bias: in registers only, never in memory' leaves the viewBox
+problems/cuda/cuda-triton-rmsnorm/assets/tail-mask.svg: the root <desc> has 4 sentences, at most 2
+problems/cuda/cuda-triton-rmsnorm/assets/tail-mask.svg: the text 'program 1, block 2 (dashed): columns 4 to 7 of row 1, mask 1 0 0 0' leaves the viewBox
+problems/drafts-and-diffusion/block-diffusion-decode/assets/canvas-loop.svg: the root <desc> has 3 sentences, at most 2
+problems/foundations/real-model-perplexity/assets/windows.svg: the root <desc> has 5 sentences, at most 2
+problems/foundations/real-model-perplexity/statement.md: the caption of assets/windows.svg has 3 sentences, at most 2
+problems/foundations/safetensors-parse/assets/file-layout.svg: the root <desc> has 3 sentences, at most 2
+problems/kv-cache/paged-kv-allocator/assets/block-table.svg: the root <desc> has 5 sentences, at most 2
+problems/kv-cache/paged-kv-allocator/statement.md: the caption of assets/block-table.svg has 3 sentences, at most 2
+problems/kv-cache/preallocated-kv-cache/assets/buffer-layout.svg: the root <desc> has 4 sentences, at most 2
+problems/kv-cache/sliding-window-cache/assets/ring-layout.svg: the root <desc> has 5 sentences, at most 2
+problems/kv-cache/sliding-window-cache/statement.md: the caption of assets/ring-layout.svg has 3 sentences, at most 2
+problems/mlx/mlx-batched-generate/assets/left-padding.svg: the root <desc> has 7 sentences, at most 2
+problems/mlx/mlx-batched-generate/assets/left-padding.svg: the text 'real key, not after the query' leaves the viewBox
+problems/mlx/mlx-batched-generate/assets/left-padding.svg: the text boxes 'tokens, with the RoPE position under each' and 'mask of row 1 (3 pads)' overlap
+problems/mlx/mlx-compile-shapes/assets/buckets.svg: the root <desc> has 4 sentences, at most 2
+problems/mlx/mlx-fast-attention/assets/mask-alignment.svg: the root <desc> has 4 sentences, at most 2
+problems/mlx/mlx-fast-attention/statement.md: the caption of assets/mask-alignment.svg has 3 sentences, at most 2
+problems/mlx/mlx-lazy-eval-placement/assets/eval-cuts.svg: the root <desc> has 4 sentences, at most 2
+problems/mlx/mlx-metal-kernel-dequant/assets/one-thread.svg: the root <desc> has 5 sentences, at most 2
+problems/mlx/mlx-preallocated-kv-cache/assets/growth.svg: the root <desc> has 3 sentences, at most 2
+problems/mlx/mlx-quantized-linear/assets/packed-row.svg: the root <desc> has 3 sentences, at most 2
+problems/mlx/mlx-streaming-generate/assets/overlap.svg: the root <desc> has 3 sentences, at most 2
+problems/real-hybrid-model/layer-plan-from-config/assets/layer-plans.svg: the root <desc> has 5 sentences, at most 2
+problems/real-hybrid-model/layer-plan-from-config/assets/layer-plans.svg: the text 'Qwen3.5 0.8B, 24 layers: full attention every 4th, counted from 1' leaves the viewBox
+problems/real-hybrid-model/real-hybrid-logits/assets/query-head-layout.svg: the root <desc> has 4 sentences, at most 2
+problems/recurrent-mixers/hybrid-decoder-forward/assets/two-kinds-of-state.svg: the root <desc> has 3 sentences, at most 2
+problems/recurrent-mixers/hybrid-decoder-forward/assets/two-kinds-of-state.svg: the text 'any number of tokens' leaves the viewBox
+problems/serving/continuous-batching-scheduler/assets/timeline.svg: the root <desc> has 3 sentences, at most 2
+problems/serving/continuous-batching-scheduler/statement.md: the caption of assets/timeline.svg has 3 sentences, at most 2
+problems/speculative/tree-attention-mask/assets/tree-mask.svg: the root <desc> has 4 sentences, at most 2
+problems/systems/ivf-index-search/assets/list-layout.svg: the root <desc> has 4 sentences, at most 2
+problems/transformer/pre-norm-block/assets/block-wiring.svg: the text 'x' has font-size 14, not 13
+problems/transformer/pre-norm-block/assets/block-wiring.svg: the text 'h' has font-size 14, not 13
+problems/transformer/pre-norm-block/assets/block-wiring.svg: the text 'y' has font-size 14, not 13
+problems/transformer/real-model-block/assets/granite-block.svg: the root <desc> has 4 sentences, at most 2
+problems/transformer/real-model-block/statement.md: the caption of assets/granite-block.svg has 3 sentences, at most 2
+problems/transformer/rope/assets/pair-rotation.svg: the root <desc> has 3 sentences, at most 2
+problems/transformer/rope-layout-conversion/assets/layouts.svg: the root <desc> has 4 sentences, at most 2
+problems/transformer/rope-layout-conversion/assets/layouts.svg: the text 'a₀' has font-size 14, not 13
+problems/transformer/rope-layout-conversion/assets/layouts.svg: the text 'b₀' has font-size 14, not 13
+problems/transformer/rope-layout-conversion/assets/layouts.svg: the text 'a₁' has font-size 14, not 13
+problems/transformer/rope-layout-conversion/assets/layouts.svg: the text 'b₁' has font-size 14, not 13
+problems/transformer/rope-layout-conversion/assets/layouts.svg: the text 'a₂' has font-size 14, not 13
+problems/transformer/rope-layout-conversion/assets/layouts.svg: the text 'b₂' has font-size 14, not 13
+problems/transformer/rope-layout-conversion/assets/layouts.svg: the text 'a₃' has font-size 14, not 13
+problems/transformer/rope-layout-conversion/assets/layouts.svg: the text 'b₃' has font-size 14, not 13
+problems/transformer/rope-layout-conversion/statement.md: the caption of assets/layouts.svg has 4 sentences, at most 2

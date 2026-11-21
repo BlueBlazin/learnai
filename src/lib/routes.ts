@@ -44,6 +44,11 @@ export function parseSettingsSection(value: unknown): SettingsSection {
   return SETTINGS_SECTIONS.find((candidate) => candidate === value) ?? "general";
 }
 
+/** The figure gallery's search: one module (a track id), or all when absent. */
+export interface FiguresSearch {
+  track?: string;
+}
+
 export type RouteTarget =
   | { to: "/" }
   | { to: "/curriculum" }
@@ -52,6 +57,7 @@ export type RouteTarget =
   | { to: "/library"; search: LibrarySearch }
   | { to: "/settings"; search: SettingsSearch }
   | { to: "/dev/components" }
+  | { to: "/dev/figures"; search: FiguresSearch }
   | { to: "/problems/$problemId"; params: { problemId: string }; search: ProblemSearch };
 
 export const routes = {
@@ -72,6 +78,8 @@ export const routes = {
     search: section === "general" ? {} : { section },
   }),
   devComponents: (): RouteTarget => ({ to: "/dev/components" }),
+  /** The dev-only figure gallery, for every module or one. */
+  devFigures: (search: FiguresSearch = {}): RouteTarget => ({ to: "/dev/figures", search }),
   problem: (problemId: string, search: ProblemSearch = {}): RouteTarget => ({
     to: "/problems/$problemId",
     params: { problemId },

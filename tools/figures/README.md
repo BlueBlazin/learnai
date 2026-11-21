@@ -1,5 +1,8 @@
 # Figures
 
+Two scripts live here: `maps.py` draws the architecture maps, and `check.py` checks
+every figure (see "Checking figures" below).
+
 `maps.py` draws the architecture map of a module: one drawing of the whole model,
 written once per problem with that problem's part at full strength and the rest
 dimmed. The rules every figure follows, and the other kinds of figure, are in
@@ -40,13 +43,19 @@ Widths are an upper estimate for 13-unit text.
 
 A block has a `part` (its name in this spec) and a `shape`:
 
-- `box` (the default): `x`, `y`, `width`, `height`, `role`, `label`.
+- `box` (the default): `x`, `y`, `width`, `height`, `label`, and an optional `role`.
+  A box without a `role` is drawn unfilled (`fill="none"`), and dimmed like the others.
 - `add`: an addition, a circle with a plus, centered `at` a point.
 - `source`: a circle with a wave, for something that enters from the side, such as
   a position encoding: `at`, `role`, `label` (set above it), and `arrow_to`, the
   point its arrow ends at.
 
 `role` is one of `attn`, `mlp`, `norm`, `embed`, `linear`, `softmax`, `cache`.
+A block that has no role of its own, such as a plain "Input" box, leaves it out.
+
+A key under `problems` is a bare id, a problem of the spec's own track, or
+`track/id`, a problem of another module: the map is written into that problem's
+`assets/`, so a module can show a map in a problem that belongs to another one.
 
 For a problem, `parts` lists what it highlights: blocks, the panel, and wires that
 carry a `part`. Everything else is dimmed; wires are never dimmed, only drawn
@@ -63,3 +72,33 @@ the file from the statement:
 ```markdown
 ![A decoder-only transformer, token ids in at the bottom. This problem is ...](assets/map.svg)
 ```
+
+## Checking figures
+
+```sh
+python3 tools/figures/check.py               # every problems/*/*/assets/*.svg and the texts that use them
+python3 tools/figures/check.py problems/transformer/rope   # one problem, or an SVG or Markdown file
+```
+
+One line per finding, `path: message`; the exit status is 1 when there is an error.
+It checks the rules of `docs/PROBLEM_AUTHORING.md` ("Figures"): the file parses with a
+`viewBox` and no `width` or `height`; only elements, attributes, and style properties
+that `src/components/prose/svg-policy.ts` keeps (the lists are mirrored in the script,
+and `python/tests/test_figure_check.py` fails when they drift apart); no fixed color;
+a `<title>` and a `<desc>` of at most two sentences; every text at `font-size` 13; no
+text outside the `viewBox` and no two texts overlapping (an estimate, as in `maps.py`;
+a stepped figure compares one frame at a time); stepped figures with ids from
+`step-1` and a one-sentence `<desc>` first in each; and, in `statement.md`,
+`hints.md`, and `editorial.md`, figures that exist, interactive names that are in
+`src/components/figures/registry.ts`, and captions of two sentences at most. An SVG
+that nothing references is a warning.
+
+`known.txt` lists findings of figures drawn before these rules, as `path: message`
+lines. They are printed as `known: ...` and do not fail the run, so a new finding
+stands out. Fix a figure, then delete its lines; a line that no longer applies is
+flagged. To see everything again, run with `--known /dev/null`.
+
+To look at the figures in the app, run `pnpm dev` and open `#/dev/figures` (the
+"Figures" link in the app bar). It shows the figures of every statement as a
+statement draws them; `?track=<module>` (or the control at the top) limits it to one
+module.
