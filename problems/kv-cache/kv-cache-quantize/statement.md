@@ -4,6 +4,8 @@ float window, with a scale and a bias for every short run of channels; the work 
 the bookkeeping of what leaves the window when, and in a layout the attention can
 read back.
 
+![This problem is the KV cache, here storing old tokens as integer codes.](assets/map.svg)
+
 ## Specification
 
 ```python

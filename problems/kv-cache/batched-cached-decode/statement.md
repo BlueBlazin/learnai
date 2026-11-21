@@ -4,6 +4,8 @@ Each row stops at its own EOS, a finished row must stop collecting tokens while 
 batch keeps running for the others, and the loop must end the moment the last row is
 done.
 
+![This problem is the decode loop, run for a batch of rows at once.](assets/map.svg)
+
 ## Specification
 
 ```python

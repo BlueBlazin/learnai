@@ -4,6 +4,8 @@ same tokens as a stored one only needs its remaining tokens processed. Find the
 longest reusable prefix, cut the stored cache down to it, prefill the rest, generate,
 and add the new prompt's cache to the store.
 
+![This problem is Prefix lookup, which finds a stored cache that begins like the prompt.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -98,6 +100,8 @@ The second prompt shares its first five tokens with the stored key and then diff
 eight tokens, three of which do not belong to this prompt: it is truncated to 5, and
 the call passes `[21, 7, 50, 8]`. That is $4 + 3 = 7$ tokens instead of
 $9 + 3 = 12$. The stored entry for `a` is untouched.
+
+![The second request of the example. The stored cache is cut after the five common tokens, and the remaining four prompt tokens are fed.](assets/prefix-match.svg)
 
 The third request repeats the second prompt. Now a key matches all nine tokens,
 $m = 9$, and $r = \min(9, 8) = 8$: the entry is truncated to 8 tokens and the last

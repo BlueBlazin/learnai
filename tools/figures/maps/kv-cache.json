@@ -1,0 +1,117 @@
+{
+  "track": "kv-cache",
+  "file": "map.svg",
+  "title": "Where this problem sits in a cached decode loop",
+  "desc": "A cached decode loop drawn bottom to top, from the prompt ids to the generated ids.",
+  "width": 480,
+  "height": 256,
+  "panel": {
+    "part": "panel",
+    "x": 22, "y": 66, "width": 344, "height": 100,
+    "label": "per token", "label_at": [60, 154]
+  },
+  "blocks": [
+    {"part": "next", "role": "softmax", "label": "Next token", "x": 134, "y": 32, "width": 112, "height": 20},
+    {"part": "attn", "role": "attn", "label": "Attention", "x": 134, "y": 98, "width": 112, "height": 20},
+    {"part": "rope", "shape": "source", "role": "embed", "label": "RoPE positions", "at": [79, 108], "arrow_to": [134, 108]},
+    {"part": "cache", "role": "cache", "label": "KV cache", "x": 276, "y": 98, "width": 80, "height": 20},
+    {"part": "pool", "role": "cache", "label": "Block pool", "x": 276, "y": 138, "width": 80, "height": 20},
+    {"part": "prefill", "label": "Prefill", "x": 134, "y": 180, "width": 112, "height": 20},
+    {"part": "lookup", "role": "cache", "label": "Prefix lookup", "x": 134, "y": 210, "width": 112, "height": 20}
+  ],
+  "wires": [
+    {"points": [[190, 240], [190, 230]], "arrow": true},
+    {"points": [[190, 210], [190, 200]], "arrow": true},
+    {"points": [[190, 180], [190, 118]], "arrow": true},
+    {"points": [[190, 98], [190, 52]], "arrow": true},
+    {"points": [[190, 32], [190, 22]], "arrow": true},
+    {"part": "cache-wires", "points": [[246, 103], [276, 103]], "arrow": true},
+    {"part": "cache-wires", "points": [[276, 113], [246, 113]], "arrow": true},
+    {"points": [[316, 138], [316, 118]], "arrow": true},
+    {"part": "loop", "points": [[134, 42], [12, 42], [12, 140], [190, 140]], "round": 8, "arrow": true}
+  ],
+  "labels": [
+    {"text": "generated ids", "at": [190, 10]},
+    {"text": "prompt ids", "at": [190, 248]}
+  ],
+  "problems": {
+    "cached-greedy-decode": {
+      "parts": null,
+      "desc": "Nothing is dimmed: the problem is the whole loop."
+    },
+    "kv-cache-append": {
+      "parts": ["attn", "cache", "cache-wires"],
+      "marker": {"from": [366, 108], "length": 18},
+      "desc": "Attention, the KV cache, and the wires between them are at full strength."
+    },
+    "chunked-prefill-cache": {
+      "parts": ["prefill"],
+      "marker": {"from": [252, 190], "length": 18},
+      "desc": "The Prefill block is at full strength."
+    },
+    "cached-rope-offsets": {
+      "parts": ["rope"],
+      "marker": {"from": [366, 108], "length": 18},
+      "desc": "The RoPE positions source beside attention is at full strength."
+    },
+    "preallocated-kv-cache": {
+      "parts": ["cache"],
+      "marker": {"from": [366, 108], "length": 18},
+      "desc": "The KV cache block is at full strength."
+    },
+    "batched-cached-decode": {
+      "parts": ["panel", "next", "loop"],
+      "marker": {"from": [366, 116], "length": 18},
+      "desc": "The panel, Next token, and the loop wire are at full strength."
+    },
+    "prefix-cache-reuse": {
+      "parts": ["lookup"],
+      "marker": {"from": [252, 220], "length": 18},
+      "desc": "The Prefix lookup block is at full strength."
+    },
+    "sliding-window-cache": {
+      "parts": ["cache"],
+      "marker": {"from": [366, 108], "length": 18},
+      "desc": "The KV cache block is at full strength."
+    },
+    "paged-kv-allocator": {
+      "parts": ["pool"],
+      "marker": {"from": [366, 148], "length": 18},
+      "desc": "The Block pool under the KV cache is at full strength."
+    },
+    "paged-kv-copy-on-write": {
+      "parts": ["pool"],
+      "marker": {"from": [366, 148], "length": 18},
+      "desc": "The Block pool under the KV cache is at full strength."
+    },
+    "block-hash-prefix-cache": {
+      "parts": ["lookup", "pool"],
+      "marker": {"from": [252, 220], "length": 18},
+      "desc": "The Prefix lookup block and the Block pool are at full strength."
+    },
+    "radix-prefix-cache": {
+      "parts": ["lookup"],
+      "marker": {"from": [252, 220], "length": 18},
+      "desc": "The Prefix lookup block is at full strength."
+    },
+    "kv-cache-quantize": {
+      "parts": ["cache"],
+      "marker": {"from": [366, 108], "length": 18},
+      "desc": "The KV cache block is at full strength."
+    },
+    "kv-eviction-heavy-hitters": {
+      "parts": ["cache"],
+      "marker": {"from": [366, 108], "length": 18},
+      "desc": "The KV cache block is at full strength."
+    },
+    "snapkv-compress": {
+      "parts": ["cache"],
+      "marker": {"from": [366, 108], "length": 18},
+      "desc": "The KV cache block is at full strength."
+    },
+    "real-model-cached-generate": {
+      "parts": null,
+      "desc": "Nothing is dimmed: the problem is the whole loop."
+    }
+  }
+}

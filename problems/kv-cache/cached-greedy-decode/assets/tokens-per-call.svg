@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 164">
+  <title>Tokens passed to the model per call, without and with a cache</title>
+  <desc>Four calls for the prompt 0, 17, 42, 5. Without a cache the rows grow from four to seven tokens; with one, the calls pass four tokens, then one each.</desc>
+  <!-- Geometry: row k is at y = 26 + 28 (k - 1), 22 high. Cell j is 24 wide at x = 58 + 26 j on the left and x = 264 + 26 j on the right. -->
+
+  <!-- Headings and row names -->
+  <g font-size="13" text-anchor="middle" style="fill: var(--figure-muted)">
+    <text x="148" y="16.5">without a cache</text>
+    <text x="354" y="16.5">with a cache</text>
+  </g>
+  <g font-size="13" text-anchor="end">
+    <text x="48" y="41.5">call 1</text>
+    <text x="48" y="69.5">call 2</text>
+    <text x="48" y="97.5">call 3</text>
+    <text x="48" y="125.5">call 4</text>
+  </g>
+
+  <!-- Left: every call passes the whole sequence -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="58" y="26" width="24" height="22" rx="3"/>
+    <rect x="84" y="26" width="24" height="22" rx="3"/>
+    <rect x="110" y="26" width="24" height="22" rx="3"/>
+    <rect x="136" y="26" width="24" height="22" rx="3"/>
+    <rect x="58" y="54" width="24" height="22" rx="3"/>
+    <rect x="84" y="54" width="24" height="22" rx="3"/>
+    <rect x="110" y="54" width="24" height="22" rx="3"/>
+    <rect x="136" y="54" width="24" height="22" rx="3"/>
+    <rect x="162" y="54" width="24" height="22" rx="3"/>
+    <rect x="58" y="82" width="24" height="22" rx="3"/>
+    <rect x="84" y="82" width="24" height="22" rx="3"/>
+    <rect x="110" y="82" width="24" height="22" rx="3"/>
+    <rect x="136" y="82" width="24" height="22" rx="3"/>
+    <rect x="162" y="82" width="24" height="22" rx="3"/>
+    <rect x="188" y="82" width="24" height="22" rx="3"/>
+    <rect x="58" y="110" width="24" height="22" rx="3"/>
+    <rect x="84" y="110" width="24" height="22" rx="3"/>
+    <rect x="110" y="110" width="24" height="22" rx="3"/>
+    <rect x="136" y="110" width="24" height="22" rx="3"/>
+    <rect x="162" y="110" width="24" height="22" rx="3"/>
+    <rect x="188" y="110" width="24" height="22" rx="3"/>
+    <rect x="214" y="110" width="24" height="22" rx="3"/>
+  </g>
+
+  <!-- Right: tokens the cache covers before the call -->
+  <g stroke="currentColor" stroke-width="1" style="fill: var(--figure-cache)">
+    <rect x="264" y="54" width="24" height="22" rx="3"/>
+    <rect x="290" y="54" width="24" height="22" rx="3"/>
+    <rect x="316" y="54" width="24" height="22" rx="3"/>
+    <rect x="342" y="54" width="24" height="22" rx="3"/>
+    <rect x="264" y="82" width="24" height="22" rx="3"/>
+    <rect x="290" y="82" width="24" height="22" rx="3"/>
+    <rect x="316" y="82" width="24" height="22" rx="3"/>
+    <rect x="342" y="82" width="24" height="22" rx="3"/>
+    <rect x="368" y="82" width="24" height="22" rx="3"/>
+    <rect x="264" y="110" width="24" height="22" rx="3"/>
+    <rect x="290" y="110" width="24" height="22" rx="3"/>
+    <rect x="316" y="110" width="24" height="22" rx="3"/>
+    <rect x="342" y="110" width="24" height="22" rx="3"/>
+    <rect x="368" y="110" width="24" height="22" rx="3"/>
+    <rect x="394" y="110" width="24" height="22" rx="3"/>
+  </g>
+  <!-- Right: tokens passed in the call -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="264" y="26" width="24" height="22" rx="3"/>
+    <rect x="290" y="26" width="24" height="22" rx="3"/>
+    <rect x="316" y="26" width="24" height="22" rx="3"/>
+    <rect x="342" y="26" width="24" height="22" rx="3"/>
+    <rect x="368" y="54" width="24" height="22" rx="3"/>
+    <rect x="394" y="82" width="24" height="22" rx="3"/>
+    <rect x="420" y="110" width="24" height="22" rx="3"/>
+  </g>
+
+  <!-- Token ids -->
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="70" y="41.5">0</text>
+    <text x="276" y="41.5">0</text>
+    <text x="96" y="41.5">17</text>
+    <text x="302" y="41.5">17</text>
+    <text x="122" y="41.5">42</text>
+    <text x="328" y="41.5">42</text>
+    <text x="148" y="41.5">5</text>
+    <text x="354" y="41.5">5</text>
+    <text x="70" y="69.5">0</text>
+    <text x="276" y="69.5">0</text>
+    <text x="96" y="69.5">17</text>
+    <text x="302" y="69.5">17</text>
+    <text x="122" y="69.5">42</text>
+    <text x="328" y="69.5">42</text>
+    <text x="148" y="69.5">5</text>
+    <text x="354" y="69.5">5</text>
+    <text x="174" y="69.5">42</text>
+    <text x="380" y="69.5">42</text>
+    <text x="70" y="97.5">0</text>
+    <text x="276" y="97.5">0</text>
+    <text x="96" y="97.5">17</text>
+    <text x="302" y="97.5">17</text>
+    <text x="122" y="97.5">42</text>
+    <text x="328" y="97.5">42</text>
+    <text x="148" y="97.5">5</text>
+    <text x="354" y="97.5">5</text>
+    <text x="174" y="97.5">42</text>
+    <text x="380" y="97.5">42</text>
+    <text x="200" y="97.5">62</text>
+    <text x="406" y="97.5">62</text>
+    <text x="70" y="125.5">0</text>
+    <text x="276" y="125.5">0</text>
+    <text x="96" y="125.5">17</text>
+    <text x="302" y="125.5">17</text>
+    <text x="122" y="125.5">42</text>
+    <text x="328" y="125.5">42</text>
+    <text x="148" y="125.5">5</text>
+    <text x="354" y="125.5">5</text>
+    <text x="174" y="125.5">42</text>
+    <text x="380" y="125.5">42</text>
+    <text x="200" y="125.5">62</text>
+    <text x="406" y="125.5">62</text>
+    <text x="226" y="125.5">33</text>
+    <text x="432" y="125.5">33</text>
+  </g>
+
+  <!-- Key -->
+  <rect x="58" y="146" width="14" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="78" y="156.5" font-size="13">passed to the model</text>
+  <rect x="264" y="146" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1" style="fill: var(--figure-cache)"/>
+  <text x="284" y="156.5" font-size="13">in the cache</text>
+</svg>

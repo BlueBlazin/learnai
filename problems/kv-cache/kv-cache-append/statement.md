@@ -4,6 +4,8 @@ everything. The step must give the same outputs whether a sequence arrives all a
 once, one token at a time, or in any mixture of chunks, and that depends on a mask
 whose shape is no longer square.
 
+![This problem is Attention with the KV cache, which appends the new keys and values and reads them all.](assets/map.svg)
+
 ## Specification
 
 ```python

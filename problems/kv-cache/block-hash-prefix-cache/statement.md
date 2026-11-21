@@ -4,6 +4,8 @@ blocks of the longest prefix whose keys are already in the cache. The key is wha
 makes it correct: the keys and values in a block depend on every token before the
 block, so a block's key must identify its whole prefix, not just its own tokens.
 
+![This problem is Prefix lookup and the Block pool, where a prompt's leading blocks are found by their keys.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -111,6 +113,8 @@ cache.release("r3")  #          eviction order: [T1, T0]
 cache.acquire("r6", Y)  # (0, 2)   evicts T1, then T0
 cache.cached_blocks()  # 5
 ```
+
+![`Q1` and `Q2` as chains of block keys. They share $\text{key}_0$ and $\text{key}_1$, then differ in block 2.](assets/key-chain.svg)
 
 The third call is the reason for the parent key. The list
 `[5, 6, 7, 8, 1, 2, 3, 4]` consists of two blocks whose tokens are both in the

@@ -4,6 +4,8 @@ which stay forever. The buffer is a ring, so its slots are not in sequence order
 after it wraps, and the function must also return the cached keys and values in
 temporal order.
 
+![This problem is the KV cache, here a fixed ring that overwrites its oldest entries.](assets/map.svg)
+
 ## Specification
 
 ```python

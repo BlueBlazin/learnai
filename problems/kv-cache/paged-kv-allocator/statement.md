@@ -3,6 +3,8 @@ for every sequence a *block table* that lists the blocks holding its keys and
 values. A sequence gets a new block only when the ones it has are full, so no
 sequence ever wastes more than one partly filled block.
 
+![This problem is the Block pool, which hands fixed-size blocks to the sequences.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -65,7 +67,7 @@ alloc.append("b", 3)     # [2]        b: 3 tokens
 alloc.append("a", 3)     # []         a: 8 tokens; the 3 tokens fit in block 1
 alloc.append("a", 1)     # [3]        a: 9 tokens; blocks 0 and 1 were full
 alloc.block_table("a")   # [0, 1, 3]
-alloc.free_blocks()      # 2          (blocks 4 and 5; this is Figure 1)
+alloc.free_blocks()      # 2          (blocks 4 and 5; this is Figure 2)
 
 alloc.free("b")          #            block 2 is free again
 alloc.append("c", 9)     # [2, 4, 5]  lowest free ids first; the pool is now empty

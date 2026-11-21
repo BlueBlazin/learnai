@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 122">
+  <title>A stored key and a new prompt, aligned token by token</title>
+  <desc>The stored key and the prompt agree on five tokens. The stored cache is cut after them, and the last four prompt tokens are fed.</desc>
+  <!-- Geometry: token j is the cell x = 96 + 40 j, 36 wide. The stored key is the row y = 26..48, the prompt the row y = 66..88. -->
+
+  <!-- Row names -->
+  <g font-size="13" text-anchor="end">
+    <text x="86" y="41.5">stored key</text>
+    <text x="86" y="81.5">prompt</text>
+  </g>
+
+  <!-- The stored cache: the five entries that stay, and the three cut off -->
+  <g stroke="currentColor" stroke-width="1" style="fill: var(--figure-cache)">
+    <rect x="96" y="26" width="36" height="22" rx="3"/>
+    <rect x="136" y="26" width="36" height="22" rx="3"/>
+    <rect x="176" y="26" width="36" height="22" rx="3"/>
+    <rect x="216" y="26" width="36" height="22" rx="3"/>
+    <rect x="256" y="26" width="36" height="22" rx="3"/>
+  </g>
+  <g stroke="currentColor" stroke-width="1" stroke-dasharray="2 3" stroke-opacity="0.45" fill-opacity="0.4" style="fill: var(--figure-cache)">
+    <rect x="296" y="26" width="36" height="22" rx="3"/>
+    <rect x="336" y="26" width="36" height="22" rx="3"/>
+    <rect x="376" y="26" width="36" height="22" rx="3"/>
+  </g>
+
+  <!-- The prompt: reused tokens, then the tokens passed to the model -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <rect x="96" y="66" width="36" height="22" rx="3"/>
+    <rect x="136" y="66" width="36" height="22" rx="3"/>
+    <rect x="176" y="66" width="36" height="22" rx="3"/>
+    <rect x="216" y="66" width="36" height="22" rx="3"/>
+    <rect x="256" y="66" width="36" height="22" rx="3"/>
+  </g>
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="296" y="66" width="36" height="22" rx="3"/>
+    <rect x="336" y="66" width="36" height="22" rx="3"/>
+    <rect x="376" y="66" width="36" height="22" rx="3"/>
+    <rect x="416" y="66" width="36" height="22" rx="3"/>
+  </g>
+
+  <!-- Token ids -->
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="114" y="41.5">0</text>
+    <text x="154" y="41.5">17</text>
+    <text x="194" y="41.5">42</text>
+    <text x="234" y="41.5">5</text>
+    <text x="274" y="41.5">9</text>
+    <text x="114" y="81.5">0</text>
+    <text x="154" y="81.5">17</text>
+    <text x="194" y="81.5">42</text>
+    <text x="234" y="81.5">5</text>
+    <text x="274" y="81.5">9</text>
+    <text x="314" y="81.5">21</text>
+    <text x="354" y="81.5">7</text>
+    <text x="394" y="81.5">50</text>
+    <text x="434" y="81.5">8</text>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="314" y="41.5">33</text>
+    <text x="354" y="41.5">12</text>
+    <text x="394" y="41.5">60</text>
+  </g>
+
+  <!-- The comparison stops at the first token that differs -->
+  <g font-size="13" text-anchor="middle">
+    <text x="114" y="61.5">=</text>
+    <text x="154" y="61.5">=</text>
+    <text x="194" y="61.5">=</text>
+    <text x="234" y="61.5">=</text>
+    <text x="274" y="61.5">=</text>
+    <text x="314" y="61.5">≠</text>
+  </g>
+
+  <!-- Brackets and what they span -->
+  <g fill="none" stroke="currentColor" stroke-width="1">
+    <path d="M96 21 v-5 H292 v5"/>
+    <path d="M296 21 v-5 H412 v5"/>
+    <path d="M96 93 v5 H292 v-5"/>
+    <path d="M296 93 v5 H452 v-5"/>
+  </g>
+  <g font-size="13" text-anchor="middle">
+    <text x="194" y="11.5" style="font-family: var(--figure-mono)">cache.truncate(5)</text>
+    <text x="354" y="11.5" style="fill: var(--figure-muted)">cut</text>
+    <text x="194" y="114.5">reused, <tspan font-style="italic" style="font-family: var(--figure-serif)">r</tspan> = 5</text>
+    <text x="374" y="114.5">fed, <tspan style="font-family: var(--figure-mono)">prompt[5:]</tspan></text>
+  </g>
+</svg>

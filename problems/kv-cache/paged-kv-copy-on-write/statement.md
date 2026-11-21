@@ -5,6 +5,8 @@ bookkeeping is a reference count per block; the difficulty is that "shared" is a
 fact about the present, and it changes whenever any sequence copies, appends, or is
 freed.
 
+![This problem is the Block pool, here with blocks that several sequences share.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -113,6 +115,8 @@ into it (two valid slots), and `b` writes its token into slot 2 of the copy. Blo
 
 `free("b")` shows why counts, not ownership, decide what returns to the pool: `b`
 allocated blocks 2 and 3, but `c` still reads them.
+
+![The pool at four points of the example, with each block's reference count and holders.](assets/pool-steps.svg)
 
 ## Constraints
 

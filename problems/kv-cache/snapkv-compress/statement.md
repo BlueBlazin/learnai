@@ -4,6 +4,8 @@ weights, for the earlier positions worth keeping, separately in every head. Vote
 max-pooled along the sequence before the top positions are chosen, so that a position
 with a high vote brings its neighbors along.
 
+![This problem is the KV cache, here shrunk once after the prefill.](assets/map.svg)
+
 ## Specification
 
 ```python

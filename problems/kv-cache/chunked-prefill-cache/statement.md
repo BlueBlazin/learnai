@@ -4,6 +4,8 @@ logits that score the first new token together with the cache that covers the wh
 prompt. The result must be what a single call on the whole prompt gives; the judge
 counts the calls and the tokens.
 
+![This problem is Prefill, here done in chunks that share one cache.](assets/map.svg)
+
 ## Specification
 
 ```python

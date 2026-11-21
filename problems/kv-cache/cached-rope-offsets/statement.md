@@ -4,6 +4,8 @@ bookkeeping that make this work in a batch: compute the absolute positions of th
 tokens from each row's cache length, and rotate the new queries and keys, and nothing
 else, for those positions.
 
+![This problem is RoPE positions, which rotates new tokens for their place in the whole sequence.](assets/map.svg)
+
 ## Specification
 
 ```python

@@ -4,6 +4,8 @@ their common prefix, and each edge carries a run of tokens rather than one. Look
 is a walk; the work is in keeping the tree exact while edges are split, paths are
 locked by running requests, and old leaves are evicted.
 
+![This problem is Prefix lookup, here a radix tree over token sequences.](assets/map.svg)
+
 ## Specification
 
 ```python
@@ -119,6 +121,8 @@ cache.evict(1)  # 1    removes [4]
 cache.total_tokens()  # 3    only [1 2 3] is left
 cache.evict(1)  # 3    a leaf goes whole
 ```
+
+![The tree at four points of the example. Each box is a node, labeled with the tokens on its edge.](assets/tree-steps.svg)
 
 ## Constraints
 

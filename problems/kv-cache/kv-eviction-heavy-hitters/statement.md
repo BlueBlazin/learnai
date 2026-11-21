@@ -4,6 +4,8 @@ exceeds the budget, keep the newest tokens and the highest-scoring older ones. E
 head evicts on its own, so the cache stops being a prefix of the sequence, and the
 scores have to move with the entries they belong to.
 
+![This problem is the KV cache, here kept within a budget by evicting low-scoring tokens.](assets/map.svg)
+
 ## Specification
 
 ```python

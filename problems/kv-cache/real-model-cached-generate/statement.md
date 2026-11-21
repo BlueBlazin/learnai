@@ -5,6 +5,8 @@ forward pass in `real-model-logits`. Here it gets a memory, and the exercise is 
 the memory must hold: keys that are already rotated, at the width of the 4 key/value
 heads, with positions that continue where the cache ends.
 
+![This problem is the whole loop, run on a real model.](assets/map.svg)
+
 ## Specification
 
 ```python

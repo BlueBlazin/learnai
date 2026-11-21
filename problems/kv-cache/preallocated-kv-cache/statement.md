@@ -3,6 +3,8 @@ capacity, and a length that says how many slots hold tokens. Writing fills the n
 free slots; attention must behave as if the unused tail did not exist, whatever it
 happens to contain.
 
+![This problem is the KV cache, here two buffers allocated once at full capacity.](assets/map.svg)
+
 ## Specification
 
 ```python
