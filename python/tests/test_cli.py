@@ -162,7 +162,7 @@ def test_fixture_catalog_passes_validation(capsys, fixture_root):
         "mutant no_terminator rejected (wrong_answer)",
         "mutant slightly_biased rejected (wrong_answer)",
         "mutant uses_builtin rejected (wrong_answer)",
-        "forbidden: 7 names resolve and can be guarded",
+        "forbidden: 7 names resolve" if HAS_MLX else "names resolve and can be guarded",
     ):
         assert line in out
 
@@ -174,7 +174,10 @@ def test_the_exemplar_problem_passes_validation(capsys, monkeypatch):
     starters = 3 if HAS_MLX else 2  # one per framework this platform can have
     assert out.count("rejected (") == starters + 7  # and seven mutants
     assert "mutant uses_builtin rejected (wrong_answer)" in out
-    assert "forbidden: 24 names resolve and can be guarded" in out
+    if HAS_MLX:
+        assert "forbidden: 24 names resolve and can be guarded" in out
+    else:  # the MLX names are left out
+        assert "names resolve and can be guarded (" in out
 
 
 def test_a_framework_the_platform_cannot_have_is_not_validated(capsys, fixture_root, monkeypatch):
@@ -187,6 +190,8 @@ def test_a_framework_the_platform_cannot_have_is_not_validated(capsys, fixture_r
     assert f"skipped: reference (mlx): not validated here: {reason}" in out
     assert "reference (mlx) accepted" not in out and "starter (mlx)" not in out
     assert "reference (torch) accepted" in out and "reference (jax) accepted" in out
+    # MLX names on a `forbidden` list are not resolved, and say so.
+    assert "of a framework this platform cannot have)" in out
 
 
 def test_a_reference_that_ends_before_any_case_is_an_error_not_a_crash(

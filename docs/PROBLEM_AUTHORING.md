@@ -148,9 +148,10 @@ are skipped by the harness, and validation never counts what it did not see:
   Apple silicon, so on Linux and Windows a problem's MLX reference and starter (and the
   mutants of an MLX-only problem) are left out, and the problem lists "skipped:
   reference (mlx): not validated here: MLX is installed only on Apple silicon". The
-  problem is `ok` when its other frameworks pass and `SKIP` when MLX is its only one. A
-  framework that is only not installed, on a machine that could have it, is still an
-  error.
+  problem is `ok` when its other frameworks pass and `SKIP` when MLX is its only one.
+  The MLX names on a `forbidden` list are not resolved there, and a mutant that imports
+  MLX is reported as "NOT validated". A framework that is only not installed, on a
+  machine that could have it, is still an error.
 - `learnai validate --require-assets` makes a missing asset an error. Use it on the machine
   that is supposed to validate everything (and in CI once that machine has the weights).
 
