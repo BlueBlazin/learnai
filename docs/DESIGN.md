@@ -222,6 +222,10 @@ have no area around them. A module with no color falls back to the accent.
   sprites drawn at whole multiples with
   `image-rendering: pixelated`. They are generic game symbols, not concept
   art, and there are only these two.
+- **The app icon** (`src-tauri/icons/`) is one more print in the manner of the
+  scenes, cut to the macOS icon shape: a snow-capped summit with a pennant on
+  its tip under a cyan sky, in very few shapes so that it reads at 16 px.
+  `tools/app-icon/` holds the artwork, its prompt, and the build script.
 
 Syntax uses four inks shared by the editor and static listings
 (`--syntax-*`): keywords in temper blue, strings in green, numbers and

@@ -1,0 +1,13 @@
+The attached image is a style reference only. Match its flat screenprint treatment, its handling of ink, its crisp cut-paper edges, and its level of simplification exactly, so this picture looks like another print from the same series. Do not copy its scene, its composition, its colors other than the shared inks, or its off-white margin.
+
+A flat screenprint travel poster illustration, in the manner of mid-century national park posters, simplified further to work as a small app icon.
+
+Scene: one broad mountain, a single wide silhouette with gently irregular slopes and one pointed summit at the center, its base running off the left, right, and bottom edges of the picture, with a jagged snow cap covering the top third of the mountain. It must read clearly as a mountain, not as a sailboat or a tent: no water, no straight horizontal bands. On the very tip of the summit stands a short pole with one large plain triangular pennant streaming to the right. The sky is completely empty. Nothing else.
+
+Inks: five flat ink colors only. Three are shared by the whole series: off-white paper (#f1ede0), deep blue-black ink (#0e1a26), and a muted grayish steel blue (#5f84a2). The fourth is the accent of this print: red (#d63c3c), printed rich, pure, and fully saturated, never dulled, never shifted toward a neighboring hue. The fifth is a lighter tint of that same accent. The sky is full red, one plain flat area. The mountain is blue-black. The snow cap is off-white paper. The pennant and its pole are off-white paper. Use no other ink.
+
+Style: no gradients, no airbrushing, no glow, no soft shading, no texture, no paper grain, no halftone, no outlines, no line work. Bold simplified shapes with crisp edges, large calm flat areas. Extremely simple, like a logo: only four flat shapes in the whole picture, each one large, with nothing else added; almost no small detail; strong contrast between the subject and what is behind it, so the subject still reads when the picture is shrunk to the size of a thumbnail.
+
+Composition: a square 1:1 picture with one subject at the exact center. The subject fills about half of the picture's width and height and stays entirely inside the central two thirds; the outer band on all four sides holds only plain sky, ground, water, or flat background color, because the corners will be cut off by a rounded mask later.
+
+The artwork fills the whole image, full bleed to all four edges: no border, no margin, no frame, no vignette, no rounded corners, no drop shadow, no badge shape. Do not draw an app icon, a button, or a rounded square: draw only the picture. No people, no animals, no birds, no text, no lettering, no numbers, no signature.
