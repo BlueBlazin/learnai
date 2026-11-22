@@ -1,4 +1,5 @@
 # BUG: the selection is torch.topk, which does not promise an order among equal scores, so which of several equal scores at the cut is selected is arbitrary instead of the lowest index.
+# PLATFORM: on Windows torch.topk returns the lowest index among equal scores, so there this is not a bug.
 import torch
 
 

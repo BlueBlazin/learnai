@@ -230,6 +230,25 @@ def test_validate_rejects_an_accepted_starter(scratch_root):
     assert errors_for(scratch_root) == ["starter (python): must not be accepted, but it was"]
 
 
+def test_an_accepted_mutant_is_an_error_unless_its_platform_line_allows_it(scratch_root):
+    problem = scratch_root / "problems" / "basics" / "sum-list"
+    reference = (problem / "reference" / "python.py").read_text()
+    mutant = problem / "mutants" / "absolute_values.py"
+    mutant.write_text("# BUG: none at all.\n" + reference)
+    (error,) = errors_for(scratch_root)
+    assert error.startswith("mutant absolute_values: was accepted; no test catches this bug")
+    mutant.write_text("# BUG: none here.\n# PLATFORM: not a bug on this machine.\n" + reference)
+    (directory,) = list((scratch_root / "problems").glob("*/sum-list"))
+    (report,) = gate.validate(scratch_root, [directory], jobs=2)
+    assert report.errors == []
+    assert report.warnings == [
+        (
+            "mutant absolute_values: NOT validated: it was accepted here, which its "
+            "`# PLATFORM:` line allows (not a bug on this machine.)"
+        )
+    ]
+
+
 def test_validate_rejects_a_failing_reference(scratch_root):
     problem = scratch_root / "problems" / "basics" / "sum-list"
     (problem / "reference" / "python.py").write_text("def total(xs):\n    return 6\n")

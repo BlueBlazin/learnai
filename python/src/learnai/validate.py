@@ -333,6 +333,22 @@ def _imports_unavailable(path: Path) -> str | None:
     return None
 
 
+def _platform_note(path: Path) -> str | None:
+    """Line 2 of a mutant, when it is `# PLATFORM: <where the bug does not show>`.
+
+    A few bugs lean on behavior a library leaves unspecified (the order ``torch.topk``
+    gives equal scores, say). On a platform where the library happens to do the right
+    thing, such a mutant is a correct solution and no test can reject it.
+    """
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()[:2]
+    except OSError:
+        return None
+    if len(lines) == 2 and lines[1].startswith("# PLATFORM: "):
+        return lines[1].removeprefix("# PLATFORM: ").strip() or None
+    return None
+
+
 def _jobs(problem: Problem) -> list[_Job]:
     jobs = []
     for framework in problem.frameworks:
@@ -483,7 +499,12 @@ def _judge(
         else:
             report.checks.append(f"{job.label} rejected ({verdict})")
     else:
-        if verdict == "accepted" or complete_elsewhere:
+        if verdict == "accepted" and (note := _platform_note(job.path)):
+            report.warnings.append(
+                f"{job.label}: NOT validated: it was accepted here, which its "
+                f"`# PLATFORM:` line allows ({note})"
+            )
+        elif verdict == "accepted" or complete_elsewhere:
             # Every case ran: that the machine lacks the hardware changes nothing.
             report.errors.append(
                 f"{job.label}: {'was accepted' if verdict == 'accepted' else 'passed every case'}"

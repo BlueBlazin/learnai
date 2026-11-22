@@ -3322,6 +3322,13 @@ import torch
 ...
 ```
 
+A bug that leans on behavior a library leaves unspecified (the order `torch.topk` gives
+equal scores) may not be a bug everywhere: where the library happens to do the right
+thing, the mutant is a correct solution and no test can reject it. Say so on line 2,
+`# PLATFORM: <where the bug does not show>`. Validation then reports such a mutant as
+"NOT validated" on a machine that accepts it, instead of failing. Use it only for
+that; every other mutant must be rejected on every platform.
+
 What makes a good mutant:
 
 - **It is a mistake people really make.** Start from the list of common mistakes in
