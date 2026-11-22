@@ -38,7 +38,10 @@ class FdCapture:
         # O_APPEND makes every write land at the current end of file, so truncating
         # the file between cases is all the bookkeeping there is. Both descriptors
         # share one file so stdout and stderr stay interleaved in order.
-        self._file_fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND, 0o600)
+        # O_BINARY (Windows only): without it the C runtime rewrites "\n" as "\r\n" in
+        # everything written through these descriptors.
+        flags = os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND | getattr(os, "O_BINARY", 0)
+        self._file_fd = os.open(path, flags, 0o600)
         os.dup2(self._file_fd, 1)
         os.dup2(self._file_fd, 2)
         # Unbuffered text streams: if the watchdog has to kill this process, whatever
@@ -49,8 +52,9 @@ class FdCapture:
     @staticmethod
     def _text_stream(fd: int) -> io.TextIOWrapper:
         raw = os.fdopen(fd, "wb", buffering=0, closefd=False)
+        # newline="\n": the captured text is what the solution wrote, on every platform.
         return io.TextIOWrapper(
-            raw, encoding="utf-8", errors="backslashreplace", write_through=True
+            raw, encoding="utf-8", errors="backslashreplace", write_through=True, newline="\n"
         )
 
     def _flush(self) -> None:
@@ -78,7 +82,10 @@ class FdCapture:
         chunks: list[bytes] = []
         offset = 0
         while offset < want:
-            chunk = os.pread(self._file_fd, want - offset, offset)
+            # Seek and read instead of os.pread, which Windows does not have. Writers
+            # are unaffected: O_APPEND puts every write at the end of the file.
+            os.lseek(self._file_fd, offset, os.SEEK_SET)
+            chunk = os.read(self._file_fd, want - offset)
             if not chunk:
                 break
             chunks.append(chunk)
