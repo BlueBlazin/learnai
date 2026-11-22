@@ -21,6 +21,20 @@ pub const LOCAL_TARGET: &str = "local";
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// A command for `program` that opens no console window. uv, Python, and the tools
+/// around them are console programs; started from the windowed app on Windows, each
+/// would otherwise flash a window. Elsewhere this is `Command::new`.
+pub(crate) fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[allow(unused_mut)]
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
 /// A place harness jobs can run.
 pub trait Target: Send + Sync {
     /// Stable name, stored with submissions and used to select the target.
@@ -142,7 +156,7 @@ impl LocalProcess {
         stdout: Stdio,
         stderr: Stdio,
     ) -> io::Result<Self> {
-        let mut command = Command::new(&spec.program);
+        let mut command = command(&spec.program);
         command
             .args(&spec.args)
             .envs(spec.envs.iter().map(|(key, value)| (key, value)))
@@ -156,13 +170,6 @@ impl LocalProcess {
         {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            // uv and Python are console programs; without this, each one started from
-            // the windowed app opens a console window.
-            command.creation_flags(CREATE_NO_WINDOW);
         }
         let mut child = command.spawn().map_err(|e| {
             io::Error::new(
@@ -284,13 +291,11 @@ impl LocalProcess {
     /// What it cannot find is a process left behind by a parent that already exited.
     #[cfg(windows)]
     fn kill_group(&mut self) {
-        use std::os::windows::process::CommandExt;
-        let _ = Command::new("taskkill")
+        let _ = command("taskkill")
             .args(["/PID", &self.child.id().to_string(), "/T", "/F"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .creation_flags(CREATE_NO_WINDOW)
             .status();
         let _ = self.child.kill();
     }

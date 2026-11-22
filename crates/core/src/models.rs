@@ -14,7 +14,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -306,7 +306,7 @@ impl ModelAssets {
     /// `list_assets`: every asset the catalog declares, with its state on disk.
     pub fn list(&self) -> Result<AssetList> {
         let spec = self.command(&self.env.enabled_extras()?, &["list", "--json"]);
-        let output = Command::new(&spec.program)
+        let output = crate::target::command(&spec.program)
             .args(&spec.args)
             .envs(spec.envs.iter().map(|(key, value)| (key, value)))
             .stdin(Stdio::null())
