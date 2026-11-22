@@ -43,8 +43,6 @@ Architecture and contracts: `docs/ARCHITECTURE.md`. Dependency versions: `docs/V
   <sub>A Triton kernel for RMSNorm, and a hybrid decoder from Model architectures</sub>
 </p>
 
-The last two screenshots show the catalog; the others show the sample data that `pnpm dev` serves.
-
 ## Prerequisites
 
 - macOS 14 or later on Apple silicon (required by the MLX and PyTorch wheels)
