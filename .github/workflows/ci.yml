@@ -68,16 +68,17 @@ jobs:
   validate:
     name: Catalog (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest, ubuntu-24.04-arm, windows-latest]
         include:
-          # Four harness runs at once oversubscribe the arm64 runner's four cores
-          # enough that some references exceed their time limits.
+          # Harness runs side by side slow each other down several times over on the
+          # arm64 runner, enough that a reference exceeds its time limit. One at a
+          # time is also what a learner's machine does.
           - os: ubuntu-24.04-arm
-            jobs: --jobs 2
+            jobs: --jobs 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
