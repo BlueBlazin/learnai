@@ -13,7 +13,8 @@ Time limits
 -----------
 Each case has two limits.
 
-* Soft (in the worker): a ``SIGALRM`` timer raises ``CaseTimeout`` on the main thread
+* Soft (in the worker): a ``SIGALRM`` timer (on Windows, which has none, a timer
+  thread and an asynchronous exception) raises ``CaseTimeout`` on the main thread
   when the case's limit expires. This stops any pure-Python loop, reports the case as
   ``timeout``, and lets the remaining cases run in the same process, so one slow case
   does not cost the learner the rest of their results.
