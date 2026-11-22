@@ -1,4 +1,8 @@
-# Learn AI
+<p align="center">
+  <img src="src-tauri/icons/128x128@2x.png" width="128" height="128" alt="Learn AI app icon">
+</p>
+
+<h1 align="center">Learn AI</h1>
 
 Learn AI is a native desktop app for mastering LLM inference and serving through
 LeetCode-style practice problems. You write solutions in PyTorch, JAX, MLX, or plain
@@ -11,6 +15,35 @@ problems in each module. Catalog and cores: `docs/CURRICULUM.md`. Writing proble
 `docs/PROBLEM_PROCESS.md`.
 
 Architecture and contracts: `docs/ARCHITECTURE.md`. Dependency versions: `docs/VERSIONS.md`.
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/home.png" width="720" alt="Home: the problem to continue, the streak, the weekly goal, and reviews due">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/curriculum.png" width="49%" alt="Curriculum: the modules of an area with progress in each">
+  <img src="docs/screenshots/library.png" width="49%" alt="Library: every problem, filtered by module, difficulty, status, framework, and judge">
+  <br>
+  <sub>Curriculum and library</sub>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/problem.png" width="49%" alt="Problem: statement, editor, and an accepted submission">
+  <img src="docs/screenshots/problem-cost.png" width="49%" alt="Problem: the cost judge rejects a decode loop that reprocesses tokens">
+  <br>
+  <sub>An accepted submission, and the cost judge counting model tokens</sub>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/triton.png" width="49%" alt="A Triton kernel for RMSNorm, with the masked last block of each row">
+  <img src="docs/screenshots/hybrid.png" width="49%" alt="Model architectures: a hybrid decoder of recurrent and attention layers">
+  <br>
+  <sub>A Triton kernel for RMSNorm, and a hybrid decoder from Model architectures</sub>
+</p>
+
+The last two screenshots show the catalog; the others show the sample data that `pnpm dev` serves.
 
 ## Prerequisites
 

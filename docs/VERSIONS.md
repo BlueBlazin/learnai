@@ -175,7 +175,7 @@ pnpm tauri dev
 
 - The project name is a positional argument (`.` scaffolds into the current directory) and `--template react-ts` selects React + TypeScript + Vite. The README documents only these two for non-interactive use. `--manager pnpm`, `--identifier <id>`, `--yes`, and `--force` are confirmed by `--help` on 4.7.5 and were used to scaffold this repository. Running through `pnpm create` selects pnpm as the manager.
 - Gotcha: the `react-ts` template currently pins `typescript ~6.0.3`, `vite ^8.0.16`, `@vitejs/plugin-react ^6.0.2`, `react ^19.1.0`, and includes `@tauri-apps/plugin-opener`. It lags the plain Vite template (which is on `typescript ~7.0.2`). Bump deliberately after scaffolding.
-- Gotcha: `.` scaffolding into `/Users/sanjeetdasharath/learnai` will run into the existing `docs/` directory. The CLI has `-f, --force` for non-empty directories; this repository was scaffolded into a temp directory and moved in instead.
+- Gotcha: `.` scaffolding into the repository root will run into the existing `docs/` directory. The CLI has `-f, --force` for non-empty directories; this repository was scaffolded into a temp directory and moved in instead.
 - Add plugins with `pnpm tauri add dialog` (and `store`, `window-state`, `opener`), which installs both the crate and the npm package and registers the plugin. UNVERIFIED on 2.12.4 but long-standing CLI behavior; the manual route is `cargo add tauri-plugin-dialog` plus `pnpm add @tauri-apps/plugin-dialog` plus a capability entry.
 
 Streaming from Rust to the front end: use **Channels** (`tauri::ipc::Channel<T>` passed as a command argument, `new Channel<T>()` with `onmessage` from `@tauri-apps/api/core`). Doc: https://tauri.app/develop/calling-frontend/

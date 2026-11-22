@@ -1,13 +1,28 @@
+# Secrets and local environment (keys are read from the environment, never from files)
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.keystore
+*.jks
+
 # Node / Vite
 node_modules/
 dist/
 dist-ssr/
 *.local
 *.tsbuildinfo
+.vite/
+vite.config.ts.timestamp-*
+.pnpm-store/
+coverage/
 
 # Rust / Tauri
 target/
 src-tauri/gen/schemas/
+**/*.rs.bk
 
 # Python
 python/.venv/
@@ -17,17 +32,30 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.coverage
+.coverage.*
+htmlcov/
 
-# Learn AI user data and local state
+# Learn AI user data and local state (solutions, downloaded models, progress)
 workspace/
 .learnai/
+
+# Claude Code local state (launch.json is shared; the rest is per machine)
+.claude/*
+!.claude/launch.json
 
 # Logs
 *.log
 
 # OS and editors
 .DS_Store
+._*
+Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+*.code-workspace
 *.sw?
+*~
