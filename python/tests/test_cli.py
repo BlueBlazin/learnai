@@ -9,6 +9,9 @@ from conftest import CATALOG, FIXTURES, REPO_ROOT, SOLUTIONS, fixture_problem
 from learnai import cli, protocol
 from learnai import validate as gate
 
+#: Whether this platform can have MLX at all (Apple silicon only).
+HAS_MLX = gate.unavailable_here("mlx") is None
+
 
 @pytest.fixture
 def fixture_root(monkeypatch):
@@ -152,7 +155,7 @@ def test_fixture_catalog_passes_validation(capsys, fixture_root):
     assert "7 of 7 problems passed validation" in out
     for line in (
         "reference (jax) accepted",
-        "starter (mlx) rejected (runtime_error)",
+        *(["starter (mlx) rejected (runtime_error)"] if HAS_MLX else []),
         "mutant no_cache rejected (wrong_answer)",
         "mutant python_loops rejected (wrong_answer)",
         "mutant never_times_out rejected (wrong_answer)",
@@ -168,9 +171,42 @@ def test_the_exemplar_problem_passes_validation(capsys, monkeypatch):
     monkeypatch.setenv("LEARNAI_ROOT", str(REPO_ROOT))
     code, out, _ = learnai(capsys, "validate", "stable-softmax", "-v")
     assert code == 0, out
-    assert out.count("rejected (") == 3 + 7  # three starters, seven mutants
+    starters = 3 if HAS_MLX else 2  # one per framework this platform can have
+    assert out.count("rejected (") == starters + 7  # and seven mutants
     assert "mutant uses_builtin rejected (wrong_answer)" in out
     assert "forbidden: 24 names resolve and can be guarded" in out
+
+
+def test_a_framework_the_platform_cannot_have_is_not_validated(capsys, fixture_root, monkeypatch):
+    """What Linux and Windows see: MLX runs are left out instead of failing."""
+    reason = "MLX is installed only on Apple silicon"
+    monkeypatch.setattr(gate, "unavailable_here", lambda fw: reason if fw == "mlx" else None)
+    code, out, _ = learnai(capsys, "validate", "--all", "-v")
+    assert code == 0, out
+    assert "7 of 7 problems passed validation" in out
+    assert f"skipped: reference (mlx): not validated here: {reason}" in out
+    assert "reference (mlx) accepted" not in out and "starter (mlx)" not in out
+    assert "reference (torch) accepted" in out and "reference (jax) accepted" in out
+
+
+def test_a_reference_that_ends_before_any_case_is_an_error_not_a_crash(
+    capsys, fixture_root, monkeypatch
+):
+    """A harness error has no failing case to name (this used to raise IndexError)."""
+    real = gate.runner.run
+
+    def run(command):
+        result = real(command)
+        if "reference" in " ".join(map(str, command)):
+            result.cases.clear()
+            result.end = {**(result.end or {}), "status": "harness_error", "message": "boom"}
+        return result
+
+    monkeypatch.setattr(gate.runner, "run", run)
+    code, out, _ = learnai(capsys, "validate", "--all")
+    assert code == 1
+    assert "must be accepted, got harness_error: boom" in out
+    assert "first failing case" not in out
 
 
 def test_deliberately_broken_fixture_fails_validation(capsys, monkeypatch):

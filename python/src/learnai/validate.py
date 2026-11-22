@@ -16,6 +16,7 @@ error.
 from __future__ import annotations
 
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -294,6 +295,19 @@ class _Job:
         return f"{self.kind} ({self.framework})"
 
 
+def unavailable_here(framework: str) -> str | None:
+    """Why this platform can never have ``framework``, or None when it can.
+
+    The ``mlx`` extra carries an Apple-silicon marker (pyproject.toml), so everywhere
+    else its runs are reported as not validated instead of failing. A framework that
+    is only not installed, on a machine that could have it, is still an error.
+    """
+    apple_silicon = sys.platform == "darwin" and platform.machine() == "arm64"
+    if framework == "mlx" and not apple_silicon:
+        return "MLX is installed only on Apple silicon"
+    return None
+
+
 def _jobs(problem: Problem) -> list[_Job]:
     jobs = []
     for framework in problem.frameworks:
@@ -399,10 +413,14 @@ def _judge(
             )
         elif verdict != "accepted":
             failing = [c for c in result.cases if c.get("status") != "pass"]
-            first = f" (first failing case {failing[0]['id']}: {failing[0].get('message')})"
+            # A run that ended before any case (a harness error) has no failing case.
+            first = (
+                f" (first failing case {failing[0]['id']}: {failing[0].get('message')})"
+                if failing
+                else ""
+            )
             report.errors.append(
-                f"{job.label}: must be accepted, got {verdict}{explanation}"
-                f"{first if failing else ''}"
+                f"{job.label}: must be accepted, got {verdict}{explanation}{first}"
             )
             return
         report.ran = True
@@ -554,7 +572,12 @@ def validate(
         if problem.forbidden:
             guarded.append((report, problem))
         queue = serial if is_timing_sensitive(problem) else parallel
-        queue.extend((report, problem, job) for job in _jobs(problem))
+        for job in _jobs(problem):
+            reason = unavailable_here(job.framework)
+            if reason is None:
+                queue.append((report, problem, job))
+            elif job.kind == "reference":
+                report.skips.append(f"{job.label}: not validated here: {reason}")
 
     def execute(item: tuple[Report, Problem, _Job]) -> runner.RunResult:
         _, problem, job = item
