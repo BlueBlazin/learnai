@@ -393,12 +393,13 @@ def test_recurrent_lm_state_is_fixed_size_and_resuming_is_exact(fw):
     logits, both = lm(batch)
     assert fw.numpy(logits).shape == (2, 6, 64) and both.batch_size == 2
     # Not bit for bit: a batched product may round differently from a single one
-    # (it does with the BLAS of Linux on arm64).
-    np.testing.assert_allclose(fw.numpy(logits)[0], fw.numpy(whole)[:6], rtol=1e-4, atol=1e-5)
+    # (it does with the BLAS of Linux), and so may a step that resumes a batched state.
+    close = {"rtol": 1e-4, "atol": 1e-5}
+    np.testing.assert_allclose(fw.numpy(logits)[0], fw.numpy(whole)[:6], **close)
     one = both.select([1])
     step, _ = lm(np.array([[5]]), one)
     alone, _ = lm(np.append(tokens[6:12], 5))
-    np.testing.assert_array_equal(fw.numpy(step)[0, 0], fw.numpy(alone)[-1])
+    np.testing.assert_allclose(fw.numpy(step)[0, 0], fw.numpy(alone)[-1], **close)
     assert lm.initial_state().length == 0 and lm.initial_state(3).batch_size == 3
     for bad, message in [
         (([],), "T >= 1"),
