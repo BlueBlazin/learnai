@@ -1,6 +1,10 @@
 //! Model assets against the fake uv: listing, fetching (events, failure, cancel, one
 //! job at a time), removal, and the extras every uv command passes.
 
+// The fakes these tests drive are shell and Perl scripts started as programs, which
+// Windows cannot do. Windows needs its own process tests with a fake that is not a script.
+#![cfg(unix)]
+
 mod common;
 
 use std::fs;

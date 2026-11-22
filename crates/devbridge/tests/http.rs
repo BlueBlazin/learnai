@@ -1,5 +1,8 @@
 //! Drives the bridge over real HTTP on an ephemeral port, with the fake harness and
 //! fake uv from the core fixtures.
+// The fakes these tests drive are shell and Perl scripts started as programs, which
+// Windows cannot do. Windows needs its own process tests with a fake that is not a script.
+#![cfg(unix)]
 
 use std::fs;
 use std::path::{Path, PathBuf};

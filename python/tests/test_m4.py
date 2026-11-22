@@ -3,7 +3,6 @@ the JAX compilation cache, and the small kit helpers."""
 
 import importlib.util
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -640,4 +639,3 @@ def test_linux_runs_need_no_macos_only_dependency():
             if requirement.startswith("mlx"):
                 assert requirement.endswith(apple), requirement
     assert not any(d.startswith("mlx") for d in project["dependencies"])
-    assert os.name == "posix"  # the harness's signals and fd capture are POSIX, not macOS

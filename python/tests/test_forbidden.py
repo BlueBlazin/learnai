@@ -1,5 +1,6 @@
 """Forbidden-call enforcement: the guard itself, then the harness and the gate around it."""
 
+import importlib.util
 import math
 import sys
 import textwrap
@@ -367,6 +368,8 @@ def test_a_torch_solution_that_takes_the_shortcut_fails_every_case(tmp_path, how
 def test_the_references_pass_under_the_same_guards():
     problem = fixture_problem("unit-normalize")
     for framework in ("torch", "jax", "mlx"):
+        if framework == "mlx" and importlib.util.find_spec("mlx") is None:
+            continue  # MLX is installed only on Apple silicon
         run = run_harness(problem, problem / "reference" / f"{framework}.py", framework)
         assert run.end["status"] == "accepted", (framework, run.end)
 
@@ -384,6 +387,7 @@ def test_jax_and_mlx_functions_are_guarded(tmp_path):
     assert run.case("worked_example")["message"].startswith(
         "`jax.numpy.linalg.norm` is not allowed in this problem (called at jax.py line 4"
     )
+    pytest.importorskip("mlx.core")
     run = solve(
         tmp_path, "mlx",
         """
@@ -415,6 +419,7 @@ def test_borrowing_another_frameworks_builtin_is_caught(tmp_path):
 
 def test_a_method_of_an_immutable_type_is_found_statically(tmp_path):
     # mlx.core.array cannot be patched, so `.rsqrt` is looked for in the source.
+    pytest.importorskip("mlx.core")
     run = solve(
         tmp_path, "mlx",
         """

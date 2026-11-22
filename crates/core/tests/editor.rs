@@ -3,6 +3,10 @@
 //! framing in both directions, the `initialize` rewrite as the server sees it,
 //! restarts, the on/off preference, installing, and process cleanup.
 
+// The fakes these tests drive are shell and Perl scripts started as programs, which
+// Windows cannot do. Windows needs its own process tests with a fake that is not a script.
+#![cfg(unix)]
+
 mod common;
 
 use std::fs;

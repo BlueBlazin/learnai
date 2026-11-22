@@ -16,6 +16,7 @@ error.
 from __future__ import annotations
 
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -294,6 +295,60 @@ class _Job:
         return f"{self.kind} ({self.framework})"
 
 
+def unavailable_here(framework: str) -> str | None:
+    """Why this platform can never have ``framework``, or None when it can.
+
+    The ``mlx`` extra carries an Apple-silicon marker (pyproject.toml), so everywhere
+    else its runs are reported as not validated instead of failing. A framework that
+    is only not installed, on a machine that could have it, is still an error.
+    """
+    apple_silicon = sys.platform == "darwin" and platform.machine() == "arm64"
+    if framework == "mlx" and not apple_silicon:
+        return "MLX is installed only on Apple silicon"
+    return None
+
+
+def _checkable(names: tuple[str, ...]) -> tuple[str, ...]:
+    """The forbidden names that can be resolved here: not those of an absent framework."""
+    return tuple(name for name in names if unavailable_here(name.split(".")[0]) is None)
+
+
+_IMPORT = re.compile(r"^\s*(?:import|from)\s+([A-Za-z_]\w*)", re.MULTILINE)
+
+
+def _imports_unavailable(path: Path) -> str | None:
+    """Why the file cannot be imported on this platform at all, or None.
+
+    A mutant of a torch problem may borrow another framework's built-in (to show that
+    the guard catches it); where that framework cannot exist, the mutant cannot run.
+    """
+    try:
+        source = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for module in _IMPORT.findall(source):
+        reason = unavailable_here(module)
+        if reason is not None:
+            return reason
+    return None
+
+
+def _platform_note(path: Path) -> str | None:
+    """Line 2 of a mutant, when it is `# PLATFORM: <where the bug does not show>`.
+
+    A few bugs lean on behavior a library leaves unspecified (the order ``torch.topk``
+    gives equal scores, say). On a platform where the library happens to do the right
+    thing, such a mutant is a correct solution and no test can reject it.
+    """
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()[:2]
+    except OSError:
+        return None
+    if len(lines) == 2 and lines[1].startswith("# PLATFORM: "):
+        return lines[1].removeprefix("# PLATFORM: ").strip() or None
+    return None
+
+
 def _jobs(problem: Problem) -> list[_Job]:
     jobs = []
     for framework in problem.frameworks:
@@ -399,10 +454,14 @@ def _judge(
             )
         elif verdict != "accepted":
             failing = [c for c in result.cases if c.get("status") != "pass"]
-            first = f" (first failing case {failing[0]['id']}: {failing[0].get('message')})"
+            # A run that ended before any case (a harness error) has no failing case.
+            first = (
+                f" (first failing case {failing[0]['id']}: {failing[0].get('message')})"
+                if failing
+                else ""
+            )
             report.errors.append(
-                f"{job.label}: must be accepted, got {verdict}{explanation}"
-                f"{first if failing else ''}"
+                f"{job.label}: must be accepted, got {verdict}{explanation}{first}"
             )
             return
         report.ran = True
@@ -440,7 +499,12 @@ def _judge(
         else:
             report.checks.append(f"{job.label} rejected ({verdict})")
     else:
-        if verdict == "accepted" or complete_elsewhere:
+        if verdict == "accepted" and (note := _platform_note(job.path)):
+            report.warnings.append(
+                f"{job.label}: NOT validated: it was accepted here, which its "
+                f"`# PLATFORM:` line allows ({note})"
+            )
+        elif verdict == "accepted" or complete_elsewhere:
             # Every case ran: that the machine lacks the hardware changes nothing.
             report.errors.append(
                 f"{job.label}: {'was accepted' if verdict == 'accepted' else 'passed every case'}"
@@ -485,6 +549,8 @@ def check_forbidden(names: tuple[str, ...]) -> dict[str, str]:
     Returns ``{name: what is wrong}``. A separate process, because it imports every
     framework the names mention and patches them.
     """
+    if not names:
+        return {}
     command = [sys.executable, "-P", "-m", "learnai.judge.forbidden", *names]
     try:
         proc = subprocess.run(
@@ -554,7 +620,16 @@ def validate(
         if problem.forbidden:
             guarded.append((report, problem))
         queue = serial if is_timing_sensitive(problem) else parallel
-        queue.extend((report, problem, job) for job in _jobs(problem))
+        for job in _jobs(problem):
+            reason = unavailable_here(job.framework)
+            if reason is not None:
+                if job.kind == "reference":
+                    report.skips.append(f"{job.label}: not validated here: {reason}")
+                continue
+            if job.kind == "mutant" and (reason := _imports_unavailable(job.path)):
+                report.warnings.append(f"{job.label}: NOT validated: {reason}")
+                continue
+            queue.append((report, problem, job))
 
     def execute(item: tuple[Report, Problem, _Job]) -> runner.RunResult:
         _, problem, job = item
@@ -566,14 +641,17 @@ def validate(
 
     workers = max(1, jobs or min(4, os.cpu_count() or 1))
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        unresolved = pool.map(lambda item: check_forbidden(item[1].forbidden), guarded)
+        unresolved = pool.map(lambda item: check_forbidden(_checkable(item[1].forbidden)), guarded)
         results = pool.map(execute, parallel)
         for (report, problem), problems in zip(guarded, unresolved, strict=True):
             for name, what in problems.items():
                 report.errors.append(f"problem.toml: forbidden name `{name}`: {what}")
             if not problems:
+                checked = len(_checkable(problem.forbidden))
+                left_out = len(problem.forbidden) - checked
                 report.checks.append(
-                    f"forbidden: {len(problem.forbidden)} names resolve and can be guarded"
+                    f"forbidden: {checked} names resolve and can be guarded"
+                    + (f" ({left_out} of a framework this platform cannot have)" if left_out else "")
                 )
         for item, result in zip(parallel, results, strict=True):
             _judge(item[0], item[1], item[2], result, require_assets=require_assets)

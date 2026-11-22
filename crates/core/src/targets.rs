@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -350,7 +350,7 @@ impl Targets {
     /// never installs anything.
     fn check_local(&self, run: &mut CheckRun<'_>) {
         let uv = self.env.uv();
-        let version = Command::new(uv.program())
+        let version = crate::target::command(uv.program())
             .arg("--version")
             .stdin(Stdio::null())
             .stderr(Stdio::null())

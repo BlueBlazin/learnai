@@ -6,7 +6,7 @@
 //! fetching), because a `uv sync` with a partial set would silently remove the rest.
 
 use std::collections::BTreeMap;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -255,7 +255,7 @@ impl Environment {
 
 /// Runs a command to completion and returns its stdout if it succeeded.
 pub(crate) fn capture(spec: &CommandSpec) -> Option<String> {
-    let output = Command::new(&spec.program)
+    let output = crate::target::command(&spec.program)
         .args(&spec.args)
         .envs(spec.envs.iter().map(|(key, value)| (key, value)))
         .stdin(Stdio::null())

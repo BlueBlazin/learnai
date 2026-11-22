@@ -1,0 +1,172 @@
+# Runs the project's own checks on every platform it is meant to support.
+#
+# Steps after the install keep going when an earlier one fails, so one run shows
+# everything that is wrong on a platform instead of only the first failure.
+
+name: CI
+
+# Every push to any branch, so a branch is tested without opening a pull request.
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: always
+  # Every uv command passes the full set of extras; a partial set removes the rest.
+  UV_EXTRAS: --extra jax --extra mlx --extra models --extra editor
+
+jobs:
+  python:
+    name: Python (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, ubuntu-24.04-arm, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # A uv new enough to download Python 3.15 itself (0.9.26 could not).
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.9"
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+
+      - name: Install
+        id: install
+        run: uv sync --project python $UV_EXTRAS --locked
+
+      - name: Environment
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uv run --project python $UV_EXTRAS learnai doctor --json
+
+      - name: Ruff
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uv run --project python $UV_EXTRAS ruff check python
+
+      - name: Pytest
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uv run --project python $UV_EXTRAS pytest python/tests
+
+  # The catalog's quality gate: every reference passes, every starter and mutant fails.
+  # Real-model problems are skipped; their weights are not downloaded here. Its own job
+  # because it takes much longer than the tests.
+  validate:
+    name: Catalog (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, ubuntu-24.04-arm, windows-latest]
+        include:
+          # Harness runs side by side slow each other down several times over on the
+          # arm64 runner, enough that a reference exceeds its time limit. One at a
+          # time is also what a learner's machine does.
+          - os: ubuntu-24.04-arm
+            jobs: --jobs 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.9"
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+
+      - name: Install
+        run: uv sync --project python $UV_EXTRAS --locked
+
+      - name: Validate the catalog
+        run: uv run --project python $UV_EXTRAS learnai validate --all ${{ matrix.jobs }}
+
+  app:
+    name: App (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, ubuntu-24.04-arm, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # https://tauri.app/start/prerequisites/
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      # The pnpm version comes from `packageManager` in package.json.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 25
+          cache: pnpm
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Install
+        id: install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm lint
+
+      - name: Type-check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm typecheck
+
+      - name: Front-end tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm test
+
+      - name: Front-end build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm build
+
+      # The Tauri crate refuses to compile without its `frontendDist` directory. Make
+      # sure it exists so a failed front-end build does not also hide the Rust results.
+      - name: Clippy
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p dist
+          cargo clippy --workspace --all-targets -- -D warnings
+
+      # Unit and integration tests are separate steps: when the integration tests do
+      # not compile on a platform, the unit tests still report.
+      - name: Rust unit tests
+        if: ${{ !cancelled() }}
+        run: cargo test --workspace --lib --bins --no-fail-fast
+
+      - name: Rust integration tests
+        if: ${{ !cancelled() }}
+        run: cargo test --workspace --test '*' --no-fail-fast
+
+      # Compiles and links the desktop app. Installers are not built yet.
+      - name: Desktop build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm tauri build --debug --no-bundle

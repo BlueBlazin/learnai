@@ -447,3 +447,23 @@ def test_architecture_command_verbatim_from_another_directory(tmp_path):
     first, last = json.loads(lines[0][7:]), json.loads(lines[-1][7:])
     assert first["event"] == "start" and first["problem"] == "stable-softmax"
     assert last["event"] == "end" and last["status"] == "accepted"
+
+
+def test_the_soft_limit_without_sigalrm_stops_a_python_loop(monkeypatch):
+    """The Windows path: a timer thread raises CaseTimeout in the main thread."""
+    import time
+
+    from learnai import _worker
+
+    monkeypatch.setattr(_worker, "HAS_ALARM", False)
+    started = time.perf_counter()
+    with pytest.raises(_worker.CaseTimeout), _worker.soft_time_limit(0.2):
+        while True:
+            pass
+    assert time.perf_counter() - started < 5
+    # A limit that does not expire leaves nothing armed, and can be paused and resumed.
+    with _worker.soft_time_limit(30):
+        left = _worker._disarm()
+        assert 29 < left <= 30
+        _worker._arm(left)
+    assert _worker._disarm() == 0.0

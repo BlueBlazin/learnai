@@ -17,6 +17,24 @@ use crate::harness::{CommandSpec, HarnessCommand, HarnessJob};
 /// Name of the built-in local target.
 pub const LOCAL_TARGET: &str = "local";
 
+/// Windows process creation flag: do not give a console program a console window.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// A command for `program` that opens no console window. uv, Python, and the tools
+/// around them are console programs; started from the windowed app on Windows, each
+/// would otherwise flash a window. Elsewhere this is `Command::new`.
+pub(crate) fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[allow(unused_mut)]
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
 /// A place harness jobs can run.
 pub trait Target: Send + Sync {
     /// Stable name, stored with submissions and used to select the target.
@@ -114,7 +132,8 @@ impl Target for LocalTarget {
     }
 }
 
-/// A local child process that leads its own process group.
+/// A local child process that leads its own process group (on Windows, the root of
+/// the process tree that a kill takes down).
 pub struct LocalProcess {
     child: Child,
     stdin: Option<ChildStdin>,
@@ -137,7 +156,7 @@ impl LocalProcess {
         stdout: Stdio,
         stderr: Stdio,
     ) -> io::Result<Self> {
-        let mut command = Command::new(&spec.program);
+        let mut command = command(&spec.program);
         command
             .args(&spec.args)
             .envs(spec.envs.iter().map(|(key, value)| (key, value)))
@@ -266,7 +285,22 @@ impl LocalProcess {
         }
     }
 
-    #[cfg(not(unix))]
+    /// Windows has no process groups to signal. `taskkill /T` ends the process and
+    /// every descendant it can reach through a parent that is still alive, which covers
+    /// a cancel and a timeout (uv, the harness, and the worker are all still running).
+    /// What it cannot find is a process left behind by a parent that already exited.
+    #[cfg(windows)]
+    fn kill_group(&mut self) {
+        let _ = command("taskkill")
+            .args(["/PID", &self.child.id().to_string(), "/T", "/F"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        let _ = self.child.kill();
+    }
+
+    #[cfg(not(any(unix, windows)))]
     fn kill_group(&mut self) {
         let _ = self.child.kill();
     }

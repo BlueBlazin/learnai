@@ -8,11 +8,13 @@ protocol lines to a private duplicate of the original stdout.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import importlib.util
 import os
 import platform
 import signal
 import sys
+import threading
 import time
 import traceback
 from contextlib import contextmanager
@@ -48,23 +50,93 @@ class HarnessFailure(Exception):
     """Something outside the solution is wrong (bad problem, missing framework)."""
 
 
+#: Whether the soft limit is a SIGALRM timer. Windows has no SIGALRM.
+HAS_ALARM = hasattr(signal, "setitimer")
+
+
+class _ThreadTimer:
+    """The soft limit where there is no SIGALRM: a timer thread that asks the
+    interpreter to raise CaseTimeout in the main thread.
+
+    Like a signal handler, the exception arrives between two bytecodes of the main
+    thread, so it stops a Python loop and not a long call inside a C extension. Unlike
+    a signal, it does not cut a blocking call such as ``time.sleep`` short; the hard
+    limit covers that.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._timer: threading.Timer | None = None
+        self._deadline = 0.0
+        self._fired = False
+        self._main = ctypes.c_ulong(threading.main_thread().ident or 0)
+
+    def _raise_in_main(self, exception: type[BaseException] | None) -> None:
+        # None (a null pointer) withdraws an exception that was requested and has not
+        # been raised yet.
+        target = None if exception is None else ctypes.py_object(exception)
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(self._main, target)
+
+    def start(self, seconds: float) -> None:
+        with self._lock:
+            timer = threading.Timer(seconds, lambda: self._fire(timer))
+            timer.daemon = True
+            self._timer, self._deadline = timer, time.monotonic() + seconds
+            timer.start()
+
+    def _fire(self, timer: threading.Timer) -> None:
+        with self._lock:
+            if self._timer is timer:  # not stopped, not replaced
+                self._timer, self._fired = None, True
+                self._raise_in_main(CaseTimeout)
+
+    def stop(self) -> float:
+        """Disarm; return the seconds that were left (0.0 if it was not armed)."""
+        with self._lock:
+            timer, self._timer = self._timer, None
+            if timer is None:
+                if self._fired:
+                    # It fired as the block was ending. If the exception has not been
+                    # raised yet, it must not surface later, outside the block.
+                    self._fired = False
+                    self._raise_in_main(None)
+                return 0.0
+            timer.cancel()
+            return max(0.0, self._deadline - time.monotonic())
+
+
+_thread_timer = _ThreadTimer()
+
+
+def _arm(seconds: float) -> None:
+    if HAS_ALARM:
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+    else:
+        _thread_timer.start(seconds)
+
+
+def _disarm() -> float:
+    """Stop the soft limit's timer; return the seconds that were left on it."""
+    if HAS_ALARM:
+        return signal.setitimer(signal.ITIMER_REAL, 0)[0]
+    return _thread_timer.stop()
+
+
 @contextmanager
 def soft_time_limit(seconds: float):
     """Raise CaseTimeout in the main thread after ``seconds`` (see harness.py)."""
-    if not hasattr(signal, "setitimer"):  # no SIGALRM here: the hard limit still applies
-        yield
-        return
 
     def on_alarm(signum: int, frame: Any) -> None:
         raise CaseTimeout
 
-    previous = signal.signal(signal.SIGALRM, on_alarm)
-    signal.setitimer(signal.ITIMER_REAL, seconds)
+    previous = signal.signal(signal.SIGALRM, on_alarm) if HAS_ALARM else None
+    _arm(seconds)
     try:
         yield
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
+        _disarm()
+        if HAS_ALARM:
+            signal.signal(signal.SIGALRM, previous)
 
 
 def import_file(name: str, path: Path) -> ModuleType:
@@ -120,11 +192,11 @@ class Worker:
         long from now until the soft limit would fire), and again when the block ends;
         the time is added to ``paused_s``, which ``run_case`` subtracts.
         """
-        if self._pause_depth or not hasattr(signal, "setitimer"):
+        if self._pause_depth:
             yield
             return
         self._pause_depth += 1
-        remaining, _ = signal.setitimer(signal.ITIMER_REAL, 0)
+        remaining = _disarm()
         if self.current is not None:
             waiting = {**self.current, "deadline_s": remaining + OFF_THE_CLOCK_ALLOWANCE_S}
             self.capture.write_protocol(protocol.encode_internal(waiting))
@@ -138,7 +210,7 @@ class Worker:
                 resumed = {**self.current, "deadline_s": remaining}
                 self.capture.write_protocol(protocol.encode_internal(resumed))
             if remaining > 0:
-                signal.setitimer(signal.ITIMER_REAL, remaining)
+                _arm(remaining)
 
     def end(
         self, status: str, statuses: list[str], total: int, metrics: list, **extra: Any

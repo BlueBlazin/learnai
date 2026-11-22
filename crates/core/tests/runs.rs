@@ -1,6 +1,10 @@
 //! Run orchestration against the fake harness: event mapping, failure modes, cancel,
 //! timeouts, submission persistence, and the progress derived from submissions.
 
+// The fakes these tests drive are shell and Perl scripts started as programs, which
+// Windows cannot do. Windows needs its own process tests with a fake that is not a script.
+#![cfg(unix)]
+
 mod common;
 
 use std::fs;
@@ -8,7 +12,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use common::{Collector, TestRoot, assert_well_formed, logs, test_limits};
+use common::{Collector, TestRoot, assert_well_formed, logs, test_limits, wait_for_file};
 use learnai_core::{
     CaseStatus, Core, CoreError, CoreOptions, Framework, LOCAL_TARGET, LogStream, MissingAsset,
     ProblemStatus, ProgramHarness, Requires, RunEvent, RunLimits, RunMode, Skip, Verdict,
@@ -460,15 +464,8 @@ fn cancel_kills_the_whole_process_group_and_ends_with_canceled() {
             .iter()
             .any(|e| matches!(e, RunEvent::CaseStart { .. }))
     });
-    let pidfile = root.pidfile();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while !pidfile.exists() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    let pid = fs::read_to_string(&pidfile)
-        .expect("pid file")
-        .trim()
-        .to_owned();
+    // The script creates the file before it writes the pid into it: wait for the pid.
+    let pid = wait_for_file(&root.pidfile());
     assert!(
         process_alive(&pid),
         "grandchild should be running before cancel"

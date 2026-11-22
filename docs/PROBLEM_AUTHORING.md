@@ -144,6 +144,14 @@ are skipped by the harness, and validation never counts what it did not see:
   "80 of 81 problems passed validation; 1 skipped (not validated on this machine, see
   above)". A skip does not fail the command. Static checks (metadata, files, the
   `forbidden` list) still run.
+- A framework this platform can never have is not run at all. MLX is installed only on
+  Apple silicon, so on Linux and Windows a problem's MLX reference and starter (and the
+  mutants of an MLX-only problem) are left out, and the problem lists "skipped:
+  reference (mlx): not validated here: MLX is installed only on Apple silicon". The
+  problem is `ok` when its other frameworks pass and `SKIP` when MLX is its only one.
+  The MLX names on a `forbidden` list are not resolved there, and a mutant that imports
+  MLX is reported as "NOT validated". A framework that is only not installed, on a
+  machine that could have it, is still an error.
 - `learnai validate --require-assets` makes a missing asset an error. Use it on the machine
   that is supposed to validate everything (and in CI once that machine has the weights).
 
@@ -3313,6 +3321,13 @@ bug in the code below it.
 import torch
 ...
 ```
+
+A bug that leans on behavior a library leaves unspecified (the order `torch.topk` gives
+equal scores) may not be a bug everywhere: where the library happens to do the right
+thing, the mutant is a correct solution and no test can reject it. Say so on line 2,
+`# PLATFORM: <where the bug does not show>`. Validation then reports such a mutant as
+"NOT validated" on a machine that accepts it, instead of failing. Use it only for
+that; every other mutant must be rejected on every platform.
 
 What makes a good mutant:
 
