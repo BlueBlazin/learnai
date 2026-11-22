@@ -1,0 +1,12 @@
+# Text files are LF in the repository and in every checkout, Windows included. Fixtures
+# are compared byte for byte and the formatters expect LF, so Git must not convert them.
+* text=auto eol=lf
+
+# Never text, whatever their bytes look like.
+*.npz binary
+*.safetensors binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary
+*.icns binary
