@@ -31,7 +31,7 @@ jobs:
   python:
     name: Python (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -62,11 +62,36 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run --project python $UV_EXTRAS pytest python/tests
 
-      # The catalog's quality gate: every reference passes, every starter and mutant
-      # fails. Real-model problems are skipped; their weights are not downloaded here.
+  # The catalog's quality gate: every reference passes, every starter and mutant fails.
+  # Real-model problems are skipped; their weights are not downloaded here. Its own job
+  # because it takes much longer than the tests.
+  validate:
+    name: Catalog (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, ubuntu-24.04-arm, windows-latest]
+        include:
+          # Four harness runs at once oversubscribe the arm64 runner's four cores
+          # enough that some references exceed their time limits.
+          - os: ubuntu-24.04-arm
+            jobs: --jobs 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.9"
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+
+      - name: Install
+        run: uv sync --project python $UV_EXTRAS --locked
+
       - name: Validate the catalog
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: uv run --project python $UV_EXTRAS learnai validate --all
+        run: uv run --project python $UV_EXTRAS learnai validate --all ${{ matrix.jobs }}
 
   app:
     name: App (${{ matrix.os }})
