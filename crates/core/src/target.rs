@@ -17,6 +17,10 @@ use crate::harness::{CommandSpec, HarnessCommand, HarnessJob};
 /// Name of the built-in local target.
 pub const LOCAL_TARGET: &str = "local";
 
+/// Windows process creation flag: do not give a console program a console window.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 /// A place harness jobs can run.
 pub trait Target: Send + Sync {
     /// Stable name, stored with submissions and used to select the target.
@@ -114,7 +118,8 @@ impl Target for LocalTarget {
     }
 }
 
-/// A local child process that leads its own process group.
+/// A local child process that leads its own process group (on Windows, the root of
+/// the process tree that a kill takes down).
 pub struct LocalProcess {
     child: Child,
     stdin: Option<ChildStdin>,
@@ -151,6 +156,13 @@ impl LocalProcess {
         {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            // uv and Python are console programs; without this, each one started from
+            // the windowed app opens a console window.
+            command.creation_flags(CREATE_NO_WINDOW);
         }
         let mut child = command.spawn().map_err(|e| {
             io::Error::new(
@@ -266,7 +278,24 @@ impl LocalProcess {
         }
     }
 
-    #[cfg(not(unix))]
+    /// Windows has no process groups to signal. `taskkill /T` ends the process and
+    /// every descendant it can reach through a parent that is still alive, which covers
+    /// a cancel and a timeout (uv, the harness, and the worker are all still running).
+    /// What it cannot find is a process left behind by a parent that already exited.
+    #[cfg(windows)]
+    fn kill_group(&mut self) {
+        use std::os::windows::process::CommandExt;
+        let _ = Command::new("taskkill")
+            .args(["/PID", &self.child.id().to_string(), "/T", "/F"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+        let _ = self.child.kill();
+    }
+
+    #[cfg(not(any(unix, windows)))]
     fn kill_group(&mut self) {
         let _ = self.child.kill();
     }
