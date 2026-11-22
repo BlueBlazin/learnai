@@ -5,6 +5,10 @@
 //! Time comes from a test clock that the tests move; nothing here sleeps to wait for a
 //! due date.
 
+// The fakes these tests drive are shell and Perl scripts started as programs, which
+// Windows cannot do. Windows needs its own process tests with a fake that is not a script.
+#![cfg(unix)]
+
 mod common;
 
 use std::fs;

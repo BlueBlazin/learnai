@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use learnai_core::{Core, CoreOptions, EventSink, ProgramHarness, RunEvent, RunLimits, SshOptions};
+#[cfg(unix)]
+use learnai_core::SshOptions;
+use learnai_core::{Core, CoreOptions, EventSink, ProgramHarness, RunEvent, RunLimits};
 use tempfile::TempDir;
 
 /// The fixtures directory.
@@ -185,17 +187,21 @@ pub fn logs(events: &[RunEvent]) -> Vec<String> {
 
 /// A fake remote host: fake `ssh` and `rsync` executables, a "remote" home directory,
 /// and an SSH configuration, all in one temporary directory. See
-/// `fixtures/fake_ssh.sh` for how the pieces behave.
+/// `fixtures/fake_ssh.sh` for how the pieces behave. Built from shell scripts, file
+/// modes, and symlinks, so it and its helpers exist on Unix only.
+#[cfg(unix)]
 pub struct FakeRemote {
     dir: TempDir,
 }
 
 /// The tools the fake remote host has on its `PATH`, besides uv.
+#[cfg(unix)]
 const REMOTE_TOOLS: &[&str] = &[
     "sh", "awk", "ps", "uname", "sleep", "cat", "mkdir", "sed", "head", "basename", "dirname",
     "wc", "tr", "rsync", "perl",
 ];
 
+#[cfg(unix)]
 fn find_tool(name: &str) -> Option<PathBuf> {
     ["/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"]
         .iter()
@@ -203,12 +209,14 @@ fn find_tool(name: &str) -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
+#[cfg(unix)]
 fn install_script(from: &Path, to: &Path) {
     use std::os::unix::fs::PermissionsExt;
     fs::copy(from, to).expect("copy script");
     fs::set_permissions(to, fs::Permissions::from_mode(0o755)).expect("chmod");
 }
 
+#[cfg(unix)]
 impl FakeRemote {
     /// A healthy host whose SSH configuration defines `box` (and the aliases the fake
     /// ssh refuses: `denied`, `newhost`, `changed`, `down`, `nowhere`).

@@ -93,7 +93,7 @@ def test_wrong_tensor_type_is_reported_clearly(fw):
     assert failure.value.message == (
         f"`softmax` returned a numpy.ndarray, expected a {fw.tensor_type_name}"
     )
-    other = frameworks.get("mlx" if fw.name == "torch" else "torch")
+    other = frameworks.get("jax" if fw.name == "torch" else "torch")
     with pytest.raises(CheckFailure, match="expected a"):
         fw.to_numpy((other.tensor(np.ones(2)),))
 
