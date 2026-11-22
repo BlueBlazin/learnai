@@ -18,8 +18,10 @@ from learnai.protocol import STDOUT_LIMIT_BYTES
 
 def _flush_c_stdio() -> None:
     """Flush C-level stdio buffers (``printf`` from extensions buffers when fd 1 is a file)."""
+    # On POSIX, None names the running process and whatever C library it loaded. Windows
+    # has no such handle: the C runtime that Python and its extensions share is named.
     try:
-        ctypes.CDLL(None).fflush(None)
+        ctypes.CDLL("ucrtbase" if os.name == "nt" else None).fflush(None)
     except OSError, AttributeError:
         pass
 
