@@ -110,7 +110,8 @@ pub fn extra_names(extras: &[Extra]) -> Vec<&'static str> {
 ///
 /// Order: `LEARNAI_UV`, then `PATH`, then the usual install locations. The fallback
 /// locations matter for the desktop app: a macOS app launched from Finder inherits a
-/// minimal `PATH` that contains neither `~/.local/bin` nor Homebrew.
+/// minimal `PATH` that contains neither `~/.local/bin` nor Homebrew. On Windows the
+/// file is `uv.exe` and the home directory is `USERPROFILE`.
 pub fn find_uv() -> PathBuf {
     if let Some(path) = std::env::var_os(UV_ENV).filter(|v| !v.is_empty()) {
         return PathBuf::from(path);
@@ -118,7 +119,10 @@ pub fn find_uv() -> PathBuf {
     let on_path = std::env::var_os("PATH")
         .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
         .unwrap_or_default();
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let file = if cfg!(windows) { "uv.exe" } else { "uv" };
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from);
     let fallbacks = [
         home.as_ref().map(|h| h.join(".local/bin")),
         home.as_ref().map(|h| h.join(".cargo/bin")),
@@ -128,7 +132,7 @@ pub fn find_uv() -> PathBuf {
     on_path
         .into_iter()
         .chain(fallbacks.into_iter().flatten())
-        .map(|dir| dir.join("uv"))
+        .map(|dir| dir.join(file))
         .find(|candidate| candidate.is_file())
         .unwrap_or_else(|| PathBuf::from("uv"))
 }
