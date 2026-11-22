@@ -392,7 +392,9 @@ def test_recurrent_lm_state_is_fixed_size_and_resuming_is_exact(fw):
     batch = np.stack([tokens[:6], tokens[6:12]])
     logits, both = lm(batch)
     assert fw.numpy(logits).shape == (2, 6, 64) and both.batch_size == 2
-    np.testing.assert_array_equal(fw.numpy(logits)[0], fw.numpy(whole)[:6])
+    # Not bit for bit: a batched product may round differently from a single one
+    # (it does with the BLAS of Linux on arm64).
+    np.testing.assert_allclose(fw.numpy(logits)[0], fw.numpy(whole)[:6], rtol=1e-4, atol=1e-5)
     one = both.select([1])
     step, _ = lm(np.array([[5]]), one)
     alone, _ = lm(np.append(tokens[6:12], 5))

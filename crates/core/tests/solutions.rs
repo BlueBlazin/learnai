@@ -3,6 +3,7 @@
 mod common;
 
 use std::fs;
+use std::path::Path;
 
 use common::TestRoot;
 use learnai_core::{CoreError, Framework, ProblemStatus};
@@ -19,7 +20,7 @@ fn read_falls_back_to_the_starter() {
     assert_eq!(file.code, STARTER);
     assert!(file.is_starter);
     assert!(
-        file.path.ends_with("workspace/add-two/torch.py"),
+        Path::new(&file.path).ends_with("workspace/add-two/torch.py"),
         "{}",
         file.path
     );

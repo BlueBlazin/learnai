@@ -262,7 +262,7 @@ fn a_bad_scene_or_color_is_dropped_and_reported() {
     let mine = |track: &str| -> Vec<&str> {
         issues
             .iter()
-            .filter(|i| i.path.ends_with(&format!("{track}/track.toml")))
+            .filter(|i| Path::new(&i.path).ends_with(format!("{track}/track.toml")))
             .map(|i| i.message.as_str())
             .collect()
     };
@@ -288,7 +288,7 @@ fn core_ids_from_another_track_or_repeated_are_dropped_and_reported() {
     let issues = core.list_catalog_issues();
     let mine: Vec<_> = issues
         .iter()
-        .filter(|i| i.path.ends_with("basics/track.toml"))
+        .filter(|i| Path::new(&i.path).ends_with("basics/track.toml"))
         .map(|i| i.message.as_str())
         .collect();
     assert_eq!(mine.len(), 3, "{issues:?}");
