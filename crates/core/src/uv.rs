@@ -4,6 +4,10 @@
 //! `models` once it has been installed), so the result never depends on uv's
 //! exact/inexact defaults (see the uv notes in `docs/VERSIONS.md`) and no command
 //! removes what another one installed.
+//!
+//! An installed folder (see `root.rs`) carries its own uv in `<root>/bin`. Commands made
+//! with it keep everything they download inside the folder, so an install neither uses
+//! nor changes anything else on the machine and is removed by deleting the folder.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -14,11 +18,15 @@ use crate::model::Extra;
 /// Environment variable that overrides the uv executable.
 pub const UV_ENV: &str = "LEARNAI_UV";
 
+/// File name of the uv executable.
+const UV_FILE: &str = if cfg!(windows) { "uv.exe" } else { "uv" };
+
 /// A uv executable bound to the `python/` project.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Uv {
     program: PathBuf,
     project: PathBuf,
+    envs: Vec<(OsString, OsString)>,
 }
 
 impl Uv {
@@ -27,12 +35,30 @@ impl Uv {
         Self {
             program: program.into(),
             project: project.into(),
+            envs: Vec::new(),
         }
     }
 
     /// Finds uv and binds it to `<root>/python`.
+    ///
+    /// The uv of an installed folder, `<root>/bin/uv`, wins over any other on the
+    /// machine and runs with [`private_envs`]. `LEARNAI_UV` still overrides it.
     pub fn locate(root: &Path) -> Self {
+        let named = std::env::var_os(UV_ENV).is_some_and(|v| !v.is_empty());
+        let private = root.join("bin").join(UV_FILE);
+        if !named && private.is_file() {
+            return Self {
+                program: private,
+                project: root.join("python"),
+                envs: private_envs(root),
+            };
+        }
         Self::new(find_uv(), root.join("python"))
+    }
+
+    /// The environment variables every command carries.
+    pub fn envs(&self) -> &[(OsString, OsString)] {
+        &self.envs
     }
 
     /// The uv executable.
@@ -59,6 +85,7 @@ impl Uv {
         CommandSpec {
             program: self.program.clone().into(),
             args,
+            envs: self.envs.clone(),
             ..CommandSpec::default()
         }
     }
@@ -84,9 +111,32 @@ impl Uv {
         CommandSpec {
             program: self.program.clone().into(),
             args: vec!["--version".into()],
+            envs: self.envs.clone(),
             ..CommandSpec::default()
         }
     }
+}
+
+/// The environment of the uv that belongs to an installed folder.
+///
+/// It keeps uv's cache and the Pythons uv downloads under `<root>/uv`, uses no Python
+/// of the system, and stops uv from announcing its Python to the rest of the machine (a
+/// link in a `bin` directory, an entry in the Windows registry). What Hugging Face and
+/// PyTorch cache goes under `<root>/.learnai/cache`. The installer runs its first
+/// `uv sync` with the same uv variables (`install.sh`, `install.ps1`); keep the three
+/// in step.
+pub fn private_envs(root: &Path) -> Vec<(OsString, OsString)> {
+    let uv = root.join("uv");
+    let cache = root.join(".learnai").join("cache");
+    vec![
+        ("UV_CACHE_DIR".into(), uv.join("cache").into()),
+        ("UV_PYTHON_INSTALL_DIR".into(), uv.join("python").into()),
+        ("UV_MANAGED_PYTHON".into(), "1".into()),
+        ("UV_PYTHON_INSTALL_BIN".into(), "0".into()),
+        ("UV_PYTHON_INSTALL_REGISTRY".into(), "0".into()),
+        ("HF_HOME".into(), cache.join("huggingface").into()),
+        ("TORCH_HOME".into(), cache.join("torch").into()),
+    ]
 }
 
 /// The path of an executable inside a virtual environment.
@@ -119,7 +169,6 @@ pub fn find_uv() -> PathBuf {
     let on_path = std::env::var_os("PATH")
         .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
         .unwrap_or_default();
-    let file = if cfg!(windows) { "uv.exe" } else { "uv" };
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from);
@@ -132,7 +181,7 @@ pub fn find_uv() -> PathBuf {
     on_path
         .into_iter()
         .chain(fallbacks.into_iter().flatten())
-        .map(|dir| dir.join(file))
+        .map(|dir| dir.join(UV_FILE))
         .find(|candidate| candidate.is_file())
         .unwrap_or_else(|| PathBuf::from("uv"))
 }
@@ -162,5 +211,37 @@ mod tests {
             uv.run_no_sync().display(),
             "uv run --project /r/python --no-sync --"
         );
+    }
+
+    #[test]
+    fn the_uv_of_an_installed_folder_is_used_and_keeps_its_files_inside_it() {
+        let root = tempfile::tempdir().expect("a temporary directory");
+        let root = root.path();
+        assert!(Uv::locate(root).envs().is_empty());
+
+        let private = root.join("bin").join(UV_FILE);
+        std::fs::create_dir_all(root.join("bin")).expect("create bin");
+        std::fs::write(&private, "").expect("write uv");
+        let uv = Uv::locate(root);
+        // `LEARNAI_UV` names another uv on purpose; then this one is not chosen.
+        if std::env::var_os(UV_ENV).is_some_and(|v| !v.is_empty()) {
+            return;
+        }
+        assert_eq!(uv.program(), private);
+        for spec in [uv.sync(&[]), uv.run(&[]), uv.run_no_sync(), uv.version()] {
+            let value = |name: &str| {
+                spec.envs
+                    .iter()
+                    .find(|(key, _)| key == name)
+                    .map(|(_, value)| PathBuf::from(value))
+            };
+            for name in ["UV_CACHE_DIR", "UV_PYTHON_INSTALL_DIR", "HF_HOME", "TORCH_HOME"] {
+                let path = value(name).unwrap_or_else(|| panic!("{name} is set"));
+                assert!(path.starts_with(root), "{name} = {}", path.display());
+            }
+            assert_eq!(value("UV_MANAGED_PYTHON"), Some(PathBuf::from("1")));
+            assert_eq!(value("UV_PYTHON_INSTALL_BIN"), Some(PathBuf::from("0")));
+            assert_eq!(value("UV_PYTHON_INSTALL_REGISTRY"), Some(PathBuf::from("0")));
+        }
     }
 }

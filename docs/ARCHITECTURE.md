@@ -54,8 +54,21 @@ React UI  --invoke/Channel-->  src-tauri (thin)  -->  learnai-core (Rust)
   `window.__TAURI_INTERNALS__` exists, else HTTP when `VITE_BACKEND=http`, else fixtures.
 
 **Content root.** Core needs the directory holding `python/`, `problems/`, `workspace/`.
-Resolution order: env `LEARNAI_ROOT`, then the saved setting, then the repository path
-captured at compile time.
+Resolution order: env `LEARNAI_ROOT`, then the saved setting, then where the build keeps
+its content. A build from a checkout keeps it in the repository path captured at compile
+time. A build made for the installer (compiled with `LEARNAI_DIST` set, by
+`.github/workflows/release.yml`) keeps it in the installed folder, `~/.learnai`.
+
+**Installed folder.** `install.sh` and `install.ps1` fill `~/.learnai` from a release
+file (`installer/package.sh` documents its layout): the content root's `areas/`,
+`problems/`, and `python/`, plus `bin/uv`. When a root has `bin/uv`, core runs that uv
+and no other, with variables that keep everything it downloads inside the root
+(`private_envs` in `crates/core/src/uv.rs`): uv's cache and Pythons under `uv/`, and the
+Hugging Face and PyTorch caches under `.learnai/cache/`. The app itself is in `app/`
+(on macOS in `~/Applications`, where the system looks for apps). Nothing else is
+written outside the folder except what the operating system keeps per app (settings,
+logs, web cache), and `uninstall.sh` or `uninstall.cmd` removes all of it.
+`installer/test.sh` and `installer/test.ps1` check exactly that on each platform.
 
 ## 3. Python side
 
