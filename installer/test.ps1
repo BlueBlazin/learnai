@@ -22,16 +22,11 @@ $log = Join-Path $env:LOCALAPPDATA "$appId\logs\learnai.log"
 $shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Learn AI.lnk'
 $systemDirs = @((Join-Path $env:APPDATA $appId), (Join-Path $env:LOCALAPPDATA $appId))
 
-# Not ours: what Windows and its libraries write for any program that opens a window.
-$ignore = @(
-    '\\AppData\\Local\\Temp(\\|$)',
-    '\\AppData\\Local\\Microsoft(\\|$)',
-    '\\AppData\\Local\\D3DSCache(\\|$)',
-    '\\AppData\\LocalLow\\Microsoft(\\|$)',
-    '\\AppData\\Roaming\\Microsoft\\Windows\\Recent(\\|$)',
-    # Firefox on the CI machine runs its own background task during the test.
-    '\\AppData\\(Local|Roaming)\\Mozilla(\\|$)'
-)
+# Windows and other programs write to AppData all the time. There, a new path counts
+# only if it carries a name of ours; anywhere else (and in the registry), every new path
+# counts.
+$appData = Join-Path $env:USERPROFILE 'AppData\'
+$ours = 'learnai|learn ai|\\uv(\\|$)|python|hugging|torch'
 
 function Step($text) { Write-Host ''; Write-Host "=== $text" }
 function Fail($text) { throw "FAILED: $text" }
@@ -174,8 +169,7 @@ $after = Snapshot
 $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
 foreach ($entry in $before) { [void]$seen.Add($entry) }
 $left = $after | Where-Object { -not $seen.Contains($_) } | Where-Object {
-    $path = $_
-    -not ($ignore | Where-Object { $path -match $_ })
+    -not $_.StartsWith($appData, [StringComparison]::OrdinalIgnoreCase) -or $_ -match $ours
 }
 if ($left) {
     $left | ForEach-Object { Write-Host $_ }

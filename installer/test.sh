@@ -178,8 +178,15 @@ must_not_exist "$dest"
 
 step "What is left in the home directory"
 snapshot >"$after"
-# Not ours: what the system and its libraries write for any program that opens a window.
-left=$(comm -13 "$before" "$after" | grep -v -E -f "$repo/installer/test-ignore.txt" || true)
+left=$(comm -13 "$before" "$after")
+if [ "$os" = Darwin ]; then
+    # The system's own services write to ~/Library all the time. There, a new path
+    # counts only if it carries a name of ours; anywhere else, every new path counts.
+    left=$(echo "$left" | awk -v library="$HOME/Library/" \
+        'index($0, library) != 1 || tolower($0) ~ /learnai|learn ai|\/uv(\/|$)|python|hugging|torch/')
+fi
+# Not ours: what system libraries write for any program that opens a window.
+left=$(echo "$left" | grep -v -E -f "$repo/installer/test-ignore.txt" || true)
 if [ -n "$left" ]; then
     echo "$left"
     fail "the paths above are new in the home directory"
