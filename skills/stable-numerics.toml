@@ -1,0 +1,15 @@
+id = "stable-numerics"
+title = "Sure Footing"
+name = "Stable Numerics"
+summary = "The small numerical functions everything else stands on, kept stable at the extremes."
+art = "trail-start"
+color = "#ed9b11"
+requires = []
+problems = [
+    "stable-softmax",
+    "rmsnorm",
+    "gelu-silu-activations",
+    "sequence-log-likelihood",
+]
+row = 0
+x = 490

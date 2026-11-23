@@ -7,7 +7,7 @@
 use learnai_core::{
     Area, AssetEvent, AssetList, CatalogIssue, Core, EditorDocs, EditorEvent, EditorStatus,
     EnvStatus, Framework, InstallEvent, ProblemDetail, ProblemSummary, Review, ReviewAction,
-    RunEvent, RunMode, Settings, SolutionFile, SshHost, Stats, Submission, SubmissionDetail,
+    RunEvent, RunMode, Settings, Skill, SolutionFile, SshHost, Stats, Submission, SubmissionDetail,
     TargetCheckEvent, TargetInfo, Track,
 };
 use tauri::State;
@@ -216,6 +216,22 @@ pub async fn list_catalog_issues(state: State<'_, AppState>) -> CommandResult<Ve
 #[tauri::command]
 pub async fn list_areas(state: State<'_, AppState>) -> CommandResult<Vec<Area>> {
     with_core(state, "list_areas", |core| core.list_areas()).await
+}
+
+#[tauri::command]
+pub async fn list_skills(state: State<'_, AppState>) -> CommandResult<Vec<Skill>> {
+    with_core(state, "list_skills", |core| core.list_skills()).await
+}
+
+#[tauri::command]
+pub async fn skills_earned_by(
+    state: State<'_, AppState>,
+    submission_id: i64,
+) -> CommandResult<Vec<Skill>> {
+    with_core(state, "skills_earned_by", move |core| {
+        core.skills_earned_by(submission_id)
+    })
+    .await
 }
 
 #[tauri::command]

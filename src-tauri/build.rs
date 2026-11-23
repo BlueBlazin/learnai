@@ -19,6 +19,8 @@ const COMMANDS: &[&str] = &[
     "get_stats",
     "list_catalog_issues",
     "list_areas",
+    "list_skills",
+    "skills_earned_by",
     "get_problem_asset",
     "list_assets",
     "fetch_assets",

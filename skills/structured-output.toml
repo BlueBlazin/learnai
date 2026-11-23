@@ -1,0 +1,17 @@
+id = "structured-output"
+title = "Walk the Line"
+name = "Structured Output"
+summary = "Output held to a pattern: token masks from automata, up to a JSON schema."
+art = "rope-bridge"
+color = "#8fc30b"
+requires = ["cached-decoding"]
+problems = [
+    "token-mask-apply",
+    "dfa-token-mask",
+    "dfa-token-index",
+    "constrained-greedy-decode",
+    "regex-to-dfa",
+    "json-schema-regex",
+]
+row = 4
+x = 385

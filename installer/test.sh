@@ -82,7 +82,7 @@ snapshot >"$before"
 
 step "Install"
 run_install
-for path in version bin/uv python/.venv python/uv.lock problems areas workspace uninstall.sh LICENSE; do
+for path in version bin/uv python/.venv python/uv.lock problems areas skills workspace uninstall.sh LICENSE; do
     must_exist "$dest/$path"
 done
 must_exist "$binary"
@@ -163,7 +163,7 @@ step "Uninstall, keeping the work"
 sh "$dest/uninstall.sh" --keep-work
 must_exist "$dest/workspace/kept/torch.py"
 must_exist "$dest/.learnai/state.db"
-for path in version bin python problems areas uv uninstall.sh; do
+for path in version bin python problems areas skills uv uninstall.sh; do
     must_not_exist "$dest/$path"
 done
 must_not_exist "$app"

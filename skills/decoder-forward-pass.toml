@@ -1,0 +1,16 @@
+id = "decoder-forward-pass"
+title = "Forward March"
+name = "Decoder Forward Pass"
+summary = "A whole decoder, block by block, that gives the same answer in a padded batch."
+art = "uphill"
+color = "#5a5fc0"
+requires = ["attention"]
+problems = [
+    "swiglu-mlp",
+    "pre-norm-block",
+    "decoder-forward",
+    "padded-batch-invariance",
+]
+row = 2
+x = 250
+lanes = [[3, 160]]

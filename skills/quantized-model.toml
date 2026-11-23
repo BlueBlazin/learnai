@@ -1,0 +1,14 @@
+id = "quantized-model"
+title = "Fast and Light"
+name = "Quantized Model"
+summary = "A model that runs from packed 4-bit weights, start to finish."
+art = "skiing"
+color = "#209d6e"
+requires = ["quantization-basics", "decoder-forward-pass", "cached-decoding"]
+problems = [
+    "bit-packing",
+    "quantize-real-weights",
+    "capstone-quantized-runner",
+]
+row = 4
+x = 140

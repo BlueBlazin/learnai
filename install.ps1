@@ -137,7 +137,7 @@ function Install-LearnAI {
         Replace-Entries $new $dest @('app')
         # `python\.venv` stays where it is: uv brings it up to date below.
         Replace-Entries (Join-Path $new 'python') (Join-Path $dest 'python') @('src', 'pyproject.toml', 'uv.lock', '.python-version', 'README.md')
-        Replace-Entries $new $dest @('areas', 'problems', 'bin', 'licenses', 'LICENSE', 'uninstall.ps1', 'uninstall.cmd')
+        Replace-Entries $new $dest @('areas', 'skills', 'problems', 'bin', 'licenses', 'LICENSE', 'uninstall.ps1', 'uninstall.cmd')
         New-Item -ItemType Directory -Force -Path (Join-Path $dest 'workspace') | Out-Null
 
         $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'

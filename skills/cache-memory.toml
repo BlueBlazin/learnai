@@ -1,0 +1,16 @@
+id = "cache-memory"
+title = "Know the Ropes"
+name = "Cache Memory"
+summary = "Cache memory as a managed resource: shared prefixes, pages, and copy-on-write."
+art = "rappel"
+color = "#188adc"
+requires = ["cached-decoding"]
+problems = [
+    "prefix-cache-reuse",
+    "radix-prefix-cache",
+    "paged-kv-allocator",
+    "paged-kv-copy-on-write",
+    "block-hash-prefix-cache",
+]
+row = 3
+x = 500

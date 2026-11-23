@@ -24,6 +24,8 @@
     "allow-get-stats",
     "allow-list-catalog-issues",
     "allow-list-areas",
+    "allow-list-skills",
+    "allow-skills-earned-by",
     "allow-get-problem-asset",
     "allow-list-assets",
     "allow-fetch-assets",

@@ -11,7 +11,7 @@
 #   version                 the app version and the commit it was built from
 #   app/                    the app (macOS: Learn AI.app; Linux: learnai, learnai.png;
 #                           Windows: learnai.exe)
-#   areas/ problems/        the catalog
+#   areas/ skills/ problems/  the catalog
 #   python/                 the judge (the uv project, without its tests)
 #   bin/uv                  uv, which installs Python and the libraries on the machine
 #   licenses/               the licenses of uv
@@ -46,7 +46,7 @@ version=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' src-tauri/tauri.conf.json
 echo "$version ($(git rev-parse --short HEAD))" >"$stage/version"
 
 # Only what git tracks, so nothing local (a virtual environment, a workspace) gets in.
-git archive HEAD areas problems python LICENSE | tar -x -C "$stage"
+git archive HEAD areas skills problems python LICENSE | tar -x -C "$stage"
 rm -rf "$stage/python/tests"
 
 release="$repo/target/release"

@@ -14,14 +14,15 @@ use crate::lsp::{self, EditorOptions, LanguageServer};
 use crate::model::{
     Area, AssetEvent, AssetList, Difficulty, EditorDocs, EditorEvent, EditorStatus,
     EditorStopReason, EnvStatus, Extra, Framework, InstallEvent, ProblemDetail, ProblemStatus,
-    ProblemSummary, Review, ReviewAction, RunEvent, RunMode, Settings, SolutionFile, SshHost,
-    Stats, Submission, SubmissionDetail, TargetCheckEvent, TargetInfo, Track,
+    ProblemSummary, Review, ReviewAction, RunEvent, RunMode, Settings, Skill, SolutionFile,
+    SshHost, Stats, Submission, SubmissionDetail, TargetCheckEvent, TargetInfo, Track, Verdict,
 };
 use crate::models::{ModelAssets, RemoteFetch};
 use crate::progress::{current_streak, derive_status};
 use crate::review::{self, Clock, SystemClock};
 use crate::run::{RunLimits, RunPlan, RunRegistry};
 use crate::sink::EventSink;
+use crate::skills::{earned_times, load_skills};
 use crate::solutions::Workspace;
 use crate::ssh::{Ssh, SshOptions};
 use crate::store::{Store, SubmissionProgress};
@@ -159,11 +160,12 @@ impl Core {
             .load()
     }
 
-    /// Malformed tracks, problems, and areas found by the latest scan.
+    /// Malformed tracks, problems, areas, and skills found by the latest scan.
     pub fn catalog_issues(&self) -> Vec<CatalogIssue> {
         let catalog = self.catalog();
         let mut issues = catalog.issues().to_vec();
         issues.extend(load_areas(&self.inner.root, &catalog).1);
+        issues.extend(load_skills(&self.inner.root, &catalog).1);
         issues
     }
 
@@ -293,6 +295,47 @@ impl Core {
                 modules: area.modules,
             })
             .collect())
+    }
+
+    /// `list_skills`: every valid skill with when it was earned, sorted by row, then x.
+    pub fn list_skills(&self) -> Result<Vec<Skill>> {
+        let catalog = self.catalog();
+        let (metas, _issues) = load_skills(&self.inner.root, &catalog);
+        let mut earned = earned_times(&metas, &self.inner.store.first_accepted_times()?);
+        let mut skills: Vec<Skill> = metas
+            .into_iter()
+            .map(|skill| Skill {
+                earned_at: earned.remove(&skill.id).flatten(),
+                id: skill.id,
+                title: skill.title,
+                name: skill.name,
+                summary: skill.summary,
+                art: skill.art,
+                color: skill.color,
+                requires: skill.requires,
+                problems: skill.problems,
+                row: skill.row,
+                x: skill.x,
+                lanes: skill.lanes,
+            })
+            .collect();
+        // Stable: skills at the same place stay in file-name order.
+        skills.sort_by_key(|skill| (skill.row, skill.x));
+        Ok(skills)
+    }
+
+    /// `skills_earned_by`: the skills that the submission earned, which are those earned
+    /// at its creation time. That includes a skill further down that was only waiting
+    /// on one this submit earned. Empty unless the submission is an accepted submit
+    /// that is not a review attempt.
+    pub fn skills_earned_by(&self, submission_id: i64) -> Result<Vec<Skill>> {
+        let submission = self.inner.store.get_submission(submission_id)?.submission;
+        if submission.verdict != Verdict::Accepted || submission.review {
+            return Ok(Vec::new());
+        }
+        let mut skills = self.list_skills()?;
+        skills.retain(|skill| skill.earned_at.as_deref() == Some(&submission.created_at));
+        Ok(skills)
     }
 
     /// `list_problems`: every valid problem, in track order then problem order.

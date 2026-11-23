@@ -1,0 +1,15 @@
+id = "speculative-decoding"
+title = "Leap of Faith"
+name = "Speculative Decoding"
+summary = "Drafts verified in one pass, with the output distribution left exact."
+art = "leap"
+color = "#f4c60a"
+requires = ["cached-decoding", "sampling"]
+problems = [
+    "greedy-speculative-verify",
+    "speculative-sampling-step",
+    "speculative-sampling-block",
+    "speculative-decode-loop",
+]
+row = 4
+x = 600

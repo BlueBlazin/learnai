@@ -197,7 +197,7 @@ main() {
     fi
     # `python/.venv` stays where it is: uv brings it up to date below.
     replace "$new/python" "$dest/python" src pyproject.toml uv.lock .python-version README.md
-    replace "$new" "$dest" areas problems bin licenses LICENSE uninstall.sh
+    replace "$new" "$dest" areas skills problems bin licenses LICENSE uninstall.sh
     mkdir -p "$dest/workspace"
 
     if [ "$os" = Linux ]; then

@@ -160,6 +160,12 @@ struct SubmissionIdArgs {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct SkillsEarnedByArgs {
+    submission_id: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct FrameworkArgs {
     framework: Framework,
 }
@@ -308,6 +314,10 @@ fn dispatch(bridge: &Bridge, command: &str, body: &[u8]) -> Result<Value, ApiErr
         "get_stats" => reply(core.get_stats()?),
         "list_catalog_issues" => reply(core.list_catalog_issues()),
         "list_areas" => reply(core.list_areas()?),
+        "list_skills" => reply(core.list_skills()?),
+        "skills_earned_by" => {
+            reply(core.skills_earned_by(args::<SkillsEarnedByArgs>(body)?.submission_id)?)
+        }
         "get_problem_asset" => {
             let a: AssetArgs = args(body)?;
             reply(core.get_problem_asset(&a.id, &a.path)?)

@@ -1,0 +1,16 @@
+id = "continuous-batching"
+title = "Feed the Camp"
+name = "Continuous Batching"
+summary = "Many requests sharing one model, scheduled step by step."
+art = "campfire"
+color = "#e85a3a"
+requires = ["cache-memory", "sizing-a-deployment"]
+problems = [
+    "dynamic-batcher",
+    "continuous-batching-scheduler",
+    "chunked-prefill-scheduling",
+    "deadline-cancellation",
+    "preemption-recompute",
+]
+row = 4
+x = 790

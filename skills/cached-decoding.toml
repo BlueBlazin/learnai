@@ -1,0 +1,17 @@
+id = "cached-decoding"
+title = "Cache and Carry"
+name = "Cached Decoding"
+summary = "Generation that keeps its keys and values and never recomputes the prefix."
+art = "cache"
+color = "#18978e"
+requires = ["attention"]
+problems = [
+    "kv-cache-append",
+    "cached-greedy-decode",
+    "cached-rope-offsets",
+    "preallocated-kv-cache",
+    "batched-cached-decode",
+]
+row = 2
+x = 500
+lanes = [[3, 385], [4, 480]]

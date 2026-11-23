@@ -1,0 +1,16 @@
+id = "quantization-basics"
+title = "Packing Light"
+name = "Quantization Basics"
+summary = "Weights in 8 and 4 bits, and arithmetic on them without unpacking."
+art = "packing"
+color = "#834ccd"
+requires = []
+problems = [
+    "affine-int8",
+    "symmetric-per-channel",
+    "groupwise-4bit",
+    "quantized-matmul",
+    "quant-error-metrics",
+]
+row = 3
+x = 70

@@ -1,0 +1,18 @@
+id = "sampling"
+title = "Luck of the Draw"
+name = "Sampling"
+summary = "From logits to one token: the filters, the draw, and their order."
+art = "fishing"
+color = "#db5881"
+requires = ["stable-numerics"]
+problems = [
+    "temperature-scaling",
+    "top-k-filtering",
+    "top-p-filtering",
+    "min-p-filtering",
+    "categorical-sample",
+    "sampler-chain",
+]
+row = 1
+x = 600
+lanes = [[2, 600], [3, 600], [4, 695]]

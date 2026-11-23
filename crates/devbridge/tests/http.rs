@@ -593,6 +593,91 @@ async fn areas_and_module_fields_over_http() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn skills_over_http() {
+    let bridge = Bridge::start().await;
+    let root = bridge.root.path();
+
+    // No skills directory: an empty list, not an error.
+    assert_eq!(bridge.call("list_skills", json!({})).await, json!([]));
+
+    fs::create_dir_all(root.join("skills")).expect("mkdir");
+    fs::write(
+        root.join("skills/starter.toml"),
+        "id = \"starter\"\ntitle = \"Sure Footing\"\nname = \"Stable Numerics\"\n\
+         summary = \"A short skill.\"\nart = \"trail-start\"\ncolor = \"#ED9B11\"\n\
+         requires = [\"missing\"]\nproblems = [\"add-two\", \"nope\"]\n\
+         row = 0\nx = 490\nlanes = [[1, 480]]\n",
+    )
+    .expect("write");
+    fs::write(
+        root.join("skills/next.toml"),
+        "id = \"next\"\ntitle = \"Next\"\nname = \"Next Skill\"\nrequires = [\"starter\"]\n\
+         problems = [\"hard-one\"]\nrow = 1\nx = 200\n",
+    )
+    .expect("write");
+    let starter = json!({
+        "id": "starter", "title": "Sure Footing", "name": "Stable Numerics",
+        "summary": "A short skill.", "art": "trail-start", "color": "#ed9b11",
+        "requires": [], "problems": ["add-two"], "row": 0, "x": 490, "lanes": [[1, 480]],
+        "earnedAt": null
+    });
+    let next = json!({
+        "id": "next", "title": "Next", "name": "Next Skill", "summary": "",
+        "requires": ["starter"], "problems": ["hard-one"], "row": 1, "x": 200, "lanes": [],
+        "earnedAt": null
+    });
+    assert_eq!(
+        bridge.call("list_skills", json!({})).await,
+        json!([starter, next])
+    );
+    let issues = bridge.call("list_catalog_issues", json!({})).await;
+    for dropped in ["`missing`", "`nope`"] {
+        assert!(issues.as_array().expect("array").iter().any(|i| {
+            i["path"]
+                .as_str()
+                .is_some_and(|p| p.ends_with("starter.toml"))
+                && i["message"].as_str().is_some_and(|m| m.contains(dropped))
+        }));
+    }
+
+    // An accepted submit of the skill's only problem earns it.
+    let started = bridge
+        .call("start_run", json!({"problemId": "add-two", "framework": "torch", "mode": "submit", "target": "local"}))
+        .await;
+    let run_id = started["runId"].as_str().expect("runId");
+    let events = bridge.events(&format!("/api/runs/{run_id}/events")).await;
+    let end = events.last().expect("end");
+    assert_eq!(end["verdict"], "accepted");
+    let submission = bridge
+        .call("get_submission", json!({"id": end["submissionId"]}))
+        .await;
+
+    let earned = bridge
+        .call(
+            "skills_earned_by",
+            json!({"submissionId": end["submissionId"]}),
+        )
+        .await;
+    let mut starter_earned = starter;
+    starter_earned["earnedAt"] = submission["createdAt"].clone();
+    assert!(starter_earned["earnedAt"].is_string());
+    assert_eq!(earned, json!([starter_earned]));
+    assert_eq!(
+        bridge.call("list_skills", json!({})).await,
+        json!([starter_earned, next])
+    );
+
+    // An unknown submission is not found; a missing argument is a bad request.
+    let (status, body) = bridge
+        .post("skills_earned_by", json!({"submissionId": 4242}))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(body["error"].is_string());
+    let (status, _) = bridge.post("skills_earned_by", json!({})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn assets_over_http() {
     let bridge = Bridge::start().await;
     let root = bridge.root.path();

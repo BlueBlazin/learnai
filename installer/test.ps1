@@ -68,7 +68,7 @@ $before = Snapshot
 
 Step 'Install'
 Run-Install
-foreach ($path in @('version', 'bin\uv.exe', 'python\.venv', 'python\uv.lock', 'problems', 'areas', 'workspace', 'uninstall.ps1', 'uninstall.cmd', 'LICENSE', 'app\learnai.exe')) {
+foreach ($path in @('version', 'bin\uv.exe', 'python\.venv', 'python\uv.lock', 'problems', 'areas', 'skills', 'workspace', 'uninstall.ps1', 'uninstall.cmd', 'LICENSE', 'app\learnai.exe')) {
     Must-Exist (Join-Path $dest $path)
 }
 Must-Exist $shortcut
@@ -153,7 +153,7 @@ Step 'Uninstall, keeping the work'
 Check-Exit 'uninstall.cmd -KeepWork'
 Must-Exist $kept
 Must-Exist (Join-Path $dest '.learnai\state.db')
-foreach ($path in @('version', 'bin', 'python', 'problems', 'areas', 'uv', 'app', 'uninstall.ps1', 'uninstall.cmd')) {
+foreach ($path in @('version', 'bin', 'python', 'problems', 'areas', 'skills', 'uv', 'app', 'uninstall.ps1', 'uninstall.cmd')) {
     Must-Not-Exist (Join-Path $dest $path)
 }
 Must-Not-Exist $shortcut

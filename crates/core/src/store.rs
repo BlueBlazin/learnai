@@ -247,6 +247,19 @@ impl Store {
         Ok(progress)
     }
 
+    /// When each problem was first solved: the time of its first accepted submit, by
+    /// problem id. Review attempts are left out; `assets_missing` and
+    /// `hardware_missing` are not `accepted` and never count.
+    pub fn first_accepted_times(&self) -> Result<HashMap<String, String>> {
+        let conn = self.conn();
+        let mut statement = conn.prepare(
+            "SELECT problem_id, MIN(created_at) FROM submissions
+             WHERE verdict = 'accepted' AND review = 0 GROUP BY problem_id",
+        )?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Creation times of every accepted submission (the streak counts only these).
     pub fn accepted_times(&self) -> Result<Vec<String>> {
         let conn = self.conn();
@@ -572,6 +585,57 @@ mod tests {
         let detail = store.get_submission(hardware)?;
         assert_eq!(detail.submission.skipped, 1);
         assert_eq!(detail.cases, vec![skipped_case]);
+        Ok(())
+    }
+
+    #[test]
+    fn first_accepted_times_are_the_earliest_accepted_submit_that_is_not_a_review() -> Result<()> {
+        let store = Store::open_in_memory()?;
+        let at = |created_at, review, problem, verdict| NewSubmission {
+            created_at,
+            review,
+            ..submission(problem, Framework::Torch, verdict)
+        };
+        store.insert_submission(&at(
+            "2026-11-01T10:00:00.000Z",
+            false,
+            "a",
+            Verdict::WrongAnswer,
+        ))?;
+        store.insert_submission(&at(
+            "2026-11-03T10:00:00.000Z",
+            false,
+            "a",
+            Verdict::Accepted,
+        ))?;
+        store.insert_submission(&at(
+            "2026-11-02T10:00:00.000Z",
+            false,
+            "a",
+            Verdict::Accepted,
+        ))?;
+        store.insert_submission(&at(
+            "2026-11-01T12:00:00.000Z",
+            true,
+            "a",
+            Verdict::Accepted,
+        ))?;
+        store.insert_submission(&at(
+            "2026-11-04T10:00:00.000Z",
+            false,
+            "b",
+            Verdict::AssetsMissing,
+        ))?;
+        store.insert_submission(&at(
+            "2026-11-05T10:00:00.000Z",
+            false,
+            "c",
+            Verdict::HardwareMissing,
+        ))?;
+
+        let times = store.first_accepted_times()?;
+        assert_eq!(times.len(), 1, "{times:?}");
+        assert_eq!(times["a"], "2026-11-02T10:00:00.000Z");
         Ok(())
     }
 

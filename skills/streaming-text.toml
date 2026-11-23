@@ -1,0 +1,16 @@
+id = "streaming-text"
+title = "Across the Stream"
+name = "Streaming Text"
+summary = "Tokens out as text, piece by piece, without breaking a character or missing a stop."
+art = "stepping-stones"
+color = "#27add9"
+requires = ["text-to-tokens"]
+problems = [
+    "utf8-boundaries",
+    "streaming-detokenizer",
+    "stop-sequences",
+    "sse-token-stream",
+]
+row = 1
+x = 890
+lanes = [[2, 890], [3, 890], [4, 890]]

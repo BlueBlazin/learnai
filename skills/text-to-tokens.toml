@@ -1,0 +1,15 @@
+id = "text-to-tokens"
+title = "Word by Word"
+name = "Text to Tokens"
+summary = "From a chat to the token ids a model reads, with a real tokenizer's merges."
+art = "journal"
+color = "#e5691d"
+requires = []
+problems = [
+    "bpe-encode",
+    "special-tokens-split",
+    "chat-template-render",
+    "tokenizer-json-load",
+]
+row = 0
+x = 890

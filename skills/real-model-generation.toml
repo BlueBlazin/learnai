@@ -1,0 +1,14 @@
+id = "real-model-generation"
+title = "The Summit"
+name = "Real Model Generation"
+summary = "A real model answering a chat turn through your own runtime."
+art = "summit"
+color = "#e6b125"
+requires = ["real-model-forward-pass", "cached-decoding", "sampling", "streaming-text"]
+problems = [
+    "real-model-cached-generate",
+    "real-model-chat-turn",
+    "capstone-real-model-runtime",
+]
+row = 5
+x = 570

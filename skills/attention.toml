@@ -1,0 +1,16 @@
+id = "attention"
+title = "Keen Eye"
+name = "Attention"
+summary = "Masks, heads, rotary positions, and grouped queries."
+art = "spyglass"
+color = "#2a71cc"
+requires = ["stable-numerics"]
+problems = [
+    "attention-mask-builder",
+    "split-merge-heads",
+    "causal-self-attention",
+    "rope",
+    "grouped-query-attention",
+]
+row = 1
+x = 375

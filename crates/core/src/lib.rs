@@ -9,6 +9,7 @@
 //! - [`root`]: content root resolution
 //! - [`catalog`]: tracks and problems on disk, with a cheap incremental reload
 //! - [`areas`]: subject areas under `areas/`
+//! - [`skills`]: skills under `skills/` and when each was earned
 //! - [`assets`]: statement figures served as `data:` URLs
 //! - [`solutions`]: the user's files under `workspace/`
 //! - [`store`]: SQLite state (submissions, editorial unlocks, settings)
@@ -42,6 +43,7 @@ pub mod review;
 pub mod root;
 pub mod run;
 pub mod sink;
+pub mod skills;
 pub mod solutions;
 pub mod ssh;
 pub mod store;

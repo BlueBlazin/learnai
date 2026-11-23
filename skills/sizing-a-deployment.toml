@@ -1,0 +1,17 @@
+id = "sizing-a-deployment"
+title = "Measure Twice"
+name = "Sizing a Deployment"
+summary = "Memory, bandwidth, and latency worked out before anything is served."
+art = "map"
+color = "#c2332f"
+requires = []
+problems = [
+    "param-count",
+    "kv-cache-bytes",
+    "memory-bandwidth-bound",
+    "latency-metrics",
+    "latency-percentiles",
+    "goodput-slo",
+]
+row = 3
+x = 790

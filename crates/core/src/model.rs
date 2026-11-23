@@ -262,6 +262,39 @@ pub struct Area {
     pub modules: Vec<String>,
 }
 
+/// A skill: a group of problems, optionally building on other skills, with its place on
+/// the Accomplishments tree and when the user earned it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Skill {
+    /// Skill id.
+    pub id: String,
+    /// The name the skill goes by.
+    pub title: String,
+    /// The plain name of what it covers.
+    pub name: String,
+    /// One-sentence description.
+    pub summary: String,
+    /// Slug of the bundled graphic; absent when none or invalid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub art: Option<String>,
+    /// The skill's color as lowercase `#rrggbb`; absent when none or invalid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Ids of the skills this one builds on. Usable skills only; never a cycle.
+    pub requires: Vec<String>,
+    /// Existing problem ids only; all must be solved.
+    pub problems: Vec<String>,
+    /// Row on the tree, top to bottom from 0.
+    pub row: u32,
+    /// Horizontal center in px on a 1000 px wide canvas.
+    pub x: u32,
+    /// `[row, x]` points where this skill's trails pass a row on the way down.
+    pub lanes: Vec<[u32; 2]>,
+    /// When the skill was earned, ISO 8601 in UTC; `null` until then.
+    pub earned_at: Option<String>,
+}
+
 /// Catalog metadata of a problem plus the user's progress on it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1413,6 +1446,42 @@ mod tests {
                    "order": 1, "problemCount": 3, "solvedCount": 1,
                    "scene": "trailhead", "color": "#ed9b11", "core": ["stable-softmax"]})
         );
+    }
+
+    #[test]
+    fn skills_match_the_contract() {
+        let skill = Skill {
+            id: "sampling".into(),
+            title: "Luck of the Draw".into(),
+            name: "Sampling".into(),
+            summary: "One sentence.".into(),
+            art: Some("fishing".into()),
+            color: Some("#db5881".into()),
+            requires: vec!["stable-numerics".into()],
+            problems: vec!["temperature-scaling".into()],
+            row: 1,
+            x: 600,
+            lanes: vec![[2, 600], [3, 600]],
+            earned_at: Some("2026-11-14T10:00:00.000Z".into()),
+        };
+        assert_eq!(
+            json!(skill),
+            json!({"id": "sampling", "title": "Luck of the Draw", "name": "Sampling",
+                   "summary": "One sentence.", "art": "fishing", "color": "#db5881",
+                   "requires": ["stable-numerics"], "problems": ["temperature-scaling"],
+                   "row": 1, "x": 600, "lanes": [[2, 600], [3, 600]],
+                   "earnedAt": "2026-11-14T10:00:00.000Z"})
+        );
+        // Without a graphic or a color the keys are absent; unearned is `null`.
+        let bare = Skill {
+            art: None,
+            color: None,
+            earned_at: None,
+            ..skill
+        };
+        let wire = json!(bare);
+        assert!(wire.get("art").is_none() && wire.get("color").is_none());
+        assert_eq!(wire["earnedAt"], json!(null));
     }
 
     #[test]

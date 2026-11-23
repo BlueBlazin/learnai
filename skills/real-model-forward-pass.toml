@@ -1,0 +1,17 @@
+id = "real-model-forward-pass"
+title = "The Real Thing"
+name = "Real Model Forward Pass"
+summary = "Real weights read from disk, and logits that match the reference."
+art = "rock-face"
+color = "#c8632a"
+requires = ["decoder-forward-pass"]
+problems = [
+    "bf16-decode",
+    "safetensors-parse",
+    "real-model-block",
+    "real-model-logits",
+    "real-model-perplexity",
+]
+row = 3
+x = 250
+lanes = [[4, 250]]
