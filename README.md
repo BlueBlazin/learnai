@@ -45,10 +45,38 @@ Architecture and contracts: `docs/ARCHITECTURE.md`. Dependency versions: `docs/V
 
 ## Prerequisites
 
-- macOS 14 or later on Apple silicon (required by the MLX and PyTorch wheels)
+Learn AI runs on:
+
+- macOS 14 or later on Apple silicon
+- Linux on x86_64 or arm64
+- Windows on x64
+
+Intel Macs and Windows on ARM are not supported: PyTorch publishes no wheel for them.
+CI builds the app and runs the tests and the catalog's quality gate on macOS, Ubuntu
+24.04 (x86_64 and arm64), and Windows Server 2025 on every push. Day-to-day use so far
+has been on macOS only.
+
+MLX is installed only on Apple silicon. On Linux and Windows the 18 MLX-only problems
+cannot be run, and every other problem is solved in PyTorch, JAX, or plain Python.
+
+On every platform:
+
 - Node.js 25 and pnpm 10
-- Rust (stable, 1.100 or later) with the Xcode Command Line Tools
+- Rust (stable, 1.100 or later)
 - uv 0.9.26 or later (it uses Python 3.15, pinned in `python/.python-version`)
+
+And for the desktop shell:
+
+- macOS: the Xcode Command Line Tools
+- Linux: WebKitGTK 4.1 and the other Tauri system packages. On Debian or Ubuntu:
+
+  ```sh
+  sudo apt-get install libwebkit2gtk-4.1-dev build-essential curl wget file \
+    libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+  ```
+
+- Windows: the Microsoft C++ Build Tools with "Desktop development with C++", and the
+  WebView2 runtime (Windows 11 includes it)
 
 ## Development
 
@@ -78,9 +106,23 @@ uv run --project python --extra jax --extra mlx --extra models --extra editor py
 uv run --project python ruff check python
 ```
 
-The desktop app logs to stderr and to `~/Library/Logs/dev.learnai.app/learnai.log`:
-the content root, catalog problems that were skipped and why, and every finished run.
-Set `LEARNAI_LOG=debug` to also log each command the window invokes. Builds made by
+The commands are the same on every platform, including `--extra mlx`, which installs
+nothing off Apple silicon. There `learnai validate` skips MLX solutions and reports them
+as not validated. Two scripts need a POSIX shell: on Windows, instead of `pnpm dev:real`
+or `pnpm dev:http`, run `pnpm dev:bridge` in one terminal and this in another:
+
+```powershell
+$env:VITE_BACKEND = "http"; pnpm dev
+```
+
+The desktop app logs to stderr and to `learnai.log` in the platform's log directory:
+
+- macOS: `~/Library/Logs/dev.learnai.app/`
+- Linux: `~/.local/share/dev.learnai.app/logs/`
+- Windows: `%LOCALAPPDATA%\dev.learnai.app\logs\`
+
+It logs the content root, catalog problems that were skipped and why, and every finished
+run. Set `LEARNAI_LOG=debug` to also log each command the window invokes. Builds made by
 the Tauri CLI leave the sample data out of the bundle.
 
 ## Layout
