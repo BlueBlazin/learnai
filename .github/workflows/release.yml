@@ -1,0 +1,175 @@
+name: Release
+
+# Builds the files that install.sh and install.ps1 download, then tests the installer
+# with them on each platform: install, open the app, update, uninstall, and check that
+# nothing is left behind. Pushing a tag like v0.1.0 also publishes the files as a
+# GitHub release, which is what the installers fetch.
+#
+# A branch push runs it only when the installer changed; it is a heavy run (each
+# platform downloads Python and every library).
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    paths:
+      - install.sh
+      - install.ps1
+      - installer/**
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          # The oldest Ubuntu runners, so the app starts on older systems too.
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Makes the app look for its content in ~/.learnai (crates/core/src/root.rs).
+      LEARNAI_DIST: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Linux packages for Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 25
+          cache: pnpm
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: release
+
+      - name: Install front-end dependencies
+        run: pnpm install --frozen-lockfile
+
+      # An ad hoc signature: no certificate, but a bundle macOS accepts when it was
+      # downloaded by curl.
+      - name: Build the app (macOS)
+        if: runner.os == 'macOS'
+        run: pnpm tauri build --bundles app --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
+      - name: Build the app
+        if: runner.os != 'macOS'
+        run: pnpm tauri build --no-bundle
+
+      - name: Package
+        run: installer/package.sh ${{ matrix.target }} release-files
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: learnai-${{ matrix.target }}
+          path: release-files/
+          if-no-files-found: error
+          retention-days: 7
+
+  install:
+    name: Install (${{ matrix.os }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: learnai-${{ matrix.target }}
+          path: release-files
+      - name: Checksums
+        shell: bash
+        run: |
+          cd release-files
+          if command -v sha256sum >/dev/null; then sha256sum learnai-* >SHA256SUMS; else shasum -a 256 learnai-* >SHA256SUMS; fi
+          cat SHA256SUMS
+
+      # The web view a Linux desktop provides, and what the test needs to open a
+      # window and photograph it on a machine without a screen.
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb scrot
+
+      - name: Test the installer
+        if: runner.os != 'Windows'
+        run: sh installer/test.sh release-files screenshots
+      # Windows PowerShell 5.1, the one every Windows machine has.
+      - name: Test the installer (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: installer\test.ps1 -Files release-files -Shots screenshots
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: screenshots-${{ matrix.target }}
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: install
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: learnai-*
+          path: release-files
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd release-files
+          sha256sum learnai-* >SHA256SUMS
+          cat SHA256SUMS
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-files/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Learn AI ${GITHUB_REF_NAME#v}" \
+            --generate-notes
