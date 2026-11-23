@@ -95,6 +95,11 @@ $problem = Get-ChildItem -Recurse -Filter problem.toml (Join-Path $dest 'problem
 Check-Exit 'learnai validate'
 
 Step 'Open the app'
+# With none of the variables above: the app has to find the folder and set up uv itself.
+foreach ($name in @('UV_CACHE_DIR', 'UV_PYTHON_INSTALL_DIR', 'UV_MANAGED_PYTHON', 'UV_PYTHON_INSTALL_BIN',
+        'UV_PYTHON_INSTALL_REGISTRY', 'HF_HOME', 'TORCH_HOME', 'LEARNAI_ROOT', 'LEARNAI_DOWNLOAD_BASE')) {
+    Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+}
 $problems = @(Get-ChildItem -Recurse -Filter problem.toml (Join-Path $dest 'problems')).Count
 $env:LEARNAI_LOG = 'debug'
 $app = Start-Process -FilePath $exe -PassThru
