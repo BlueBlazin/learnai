@@ -1,4 +1,6 @@
-# Removes Learn AI from Windows. Run it through uninstall.cmd next to it:
+# Removes Learn AI from Windows. Run it through uninstall.cmd next to it, which reads
+# this file into memory and leaves its own batch context first (`(goto) 2>nul`), so that
+# both files can be deleted while they run:
 #
 #   %USERPROFILE%\.learnai\uninstall.cmd [-KeepWork | -DeleteWork]
 #
