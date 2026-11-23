@@ -43,7 +43,39 @@ Architecture and contracts: `docs/ARCHITECTURE.md`. Dependency versions: `docs/V
   <sub>A Triton kernel for RMSNorm, and a hybrid decoder from Model architectures</sub>
 </p>
 
-## Prerequisites
+## Install
+
+macOS and Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/BlueBlazin/learnai/master/install.sh | sh
+```
+
+Windows, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/BlueBlazin/learnai/master/install.ps1 | iex
+```
+
+The installer downloads the app, the problems, and its own copy of uv, which then
+downloads Python 3.15 and the libraries (PyTorch, JAX, and MLX on Apple silicon). That is a few gigabytes.
+Nothing has to be installed first. The one exception is Linux, where the window needs
+the system library WebKitGTK 4.1; the installer names the package if it is missing.
+
+Everything goes into `~/.learnai` (`%USERPROFILE%\.learnai` on Windows). Outside that
+folder there is only:
+
+- what the system starts the app from: the app in `~/Applications` on macOS, a
+  `.desktop` file on Linux, a Start Menu shortcut on Windows
+- the folders the system keeps for any app (settings, logs, web cache)
+
+The installer uses no `sudo`, changes neither `PATH` nor a shell profile nor the
+registry, and neither uses nor changes a Python or uv you already have.
+
+- **Update:** run the installer again. Your solutions and progress are kept.
+- **Uninstall:** `sh ~/.learnai/uninstall.sh`, or `%USERPROFILE%\.learnai\uninstall.cmd`
+  on Windows. It removes all of the above and asks before deleting your solutions and
+  progress.
 
 Learn AI runs on:
 
@@ -53,13 +85,15 @@ Learn AI runs on:
 
 Intel Macs and Windows on ARM are not supported: PyTorch publishes no wheel for them.
 CI builds the app and runs the tests and the catalog's quality gate on macOS, Ubuntu
-24.04 (x86_64 and arm64), and Windows Server 2025 on every push. Day-to-day use so far
-has been on macOS only.
+24.04 (x86_64 and arm64), and Windows Server 2025 on every push, and runs the installer
+on each of them whenever it changes. Day-to-day use so far has been on macOS only.
 
 MLX is installed only on Apple silicon. On Linux and Windows the 18 MLX-only problems
 cannot be run, and every other problem is solved in PyTorch, JAX, or plain Python.
 
-On every platform:
+## Prerequisites
+
+To build from source instead, on every platform:
 
 - Node.js 25 and pnpm 10
 - Rust (stable, 1.100 or later)
