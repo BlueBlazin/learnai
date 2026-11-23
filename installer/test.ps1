@@ -28,7 +28,9 @@ $ignore = @(
     '\\AppData\\Local\\Microsoft(\\|$)',
     '\\AppData\\Local\\D3DSCache(\\|$)',
     '\\AppData\\LocalLow\\Microsoft(\\|$)',
-    '\\AppData\\Roaming\\Microsoft\\Windows\\Recent(\\|$)'
+    '\\AppData\\Roaming\\Microsoft\\Windows\\Recent(\\|$)',
+    # Firefox on the CI machine runs its own background task during the test.
+    '\\AppData\\(Local|Roaming)\\Mozilla(\\|$)'
 )
 
 function Step($text) { Write-Host ''; Write-Host "=== $text" }
@@ -76,6 +78,8 @@ foreach ($path in @('version', 'bin\uv.exe', 'python\.venv', 'python\uv.lock', '
 }
 Must-Exist $shortcut
 Must-Not-Exist (Join-Path $dest '.staging')
+$bytes = (Get-ChildItem -Recurse -Force -File $dest | Measure-Object -Property Length -Sum).Sum
+Write-Host ("size on disk: {0:N1} GB in {1}" -f ($bytes / 1GB), $dest)
 
 Step 'The Python environment'
 & $uv run --project $project --no-sync -- python -c "import sys, torch, jax, numpy; print(sys.version); print('torch', torch.__version__, 'jax', jax.__version__)"
