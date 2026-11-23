@@ -3,6 +3,10 @@ import { cn } from "cn";
 import { Lock, Play } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import scenes from "@/assets/scenes/scenes.json";
+import { SkillDetail } from "@/components/accomplishments/skill-detail";
+import { SkillEarned } from "@/components/accomplishments/skill-earned";
+import { SkillGraphic } from "@/components/accomplishments/skill-graphic";
+import { SkillTree } from "@/components/accomplishments/skill-tree";
 import { ActionButton } from "@/components/app/action-button";
 import { AppLink } from "@/components/app/app-link";
 import { ConfirmDialog } from "@/components/app/confirm-dialog";
@@ -115,6 +119,7 @@ import {
   type ProblemDetail,
   type ProblemSummary,
   type Review,
+  type Skill,
   STATUSES,
   type Submission,
   type SubmissionDetail,
@@ -141,6 +146,7 @@ import { moduleColorVars } from "@/lib/module-colors";
 import { unmetPrerequisites } from "@/lib/prerequisites";
 import { dueReviews, reviewEntries } from "@/lib/reviews";
 import { routes } from "@/lib/routes";
+import { skillStates } from "@/lib/skills";
 import type { ThemePreference } from "@/stores/theme";
 
 /** Sample data. Kept inline so this page has no dependency on any backend. */
@@ -187,6 +193,69 @@ const PROBLEMS: ProblemSummary[] = [
     judges: ["simclock", "service"],
   }),
 ];
+
+const skill = (over: Partial<Skill> & Pick<Skill, "id" | "title" | "name" | "row" | "x">): Skill => ({
+  summary: "The small numerical functions everything else stands on, kept stable at the extremes.",
+  requires: [],
+  problems: ["a"],
+  lanes: [],
+  earnedAt: null,
+  ...over,
+});
+
+/**
+ * Sample skills over the sample problems, one in each state: earned, under way,
+ * every problem solved but waiting on a required skill, and untouched (with no
+ * graphic or color of its own). The first passes the second row in a lane.
+ */
+const SKILLS: Skill[] = [
+  skill({
+    id: "footing",
+    title: "Sure Footing",
+    name: "Stable Numerics",
+    art: "trail-start",
+    color: "#ed9b11",
+    row: 0,
+    x: 390,
+    lanes: [[1, 610]],
+    earnedAt: "2026-11-12T16:20:00.000Z",
+  }),
+  skill({
+    id: "eye",
+    title: "Keen Eye",
+    name: "Attention",
+    summary: "Masks, heads, rotary positions, and grouped queries.",
+    art: "spyglass",
+    color: "#2a71cc",
+    requires: ["footing"],
+    problems: ["a", "scaled-dot-product-attention", "c"],
+    row: 1,
+    x: 390,
+  }),
+  skill({
+    id: "draw",
+    title: "Luck of the Draw",
+    name: "Sampling",
+    summary: "From logits to one token: the filters, the draw, and their order.",
+    art: "fishing",
+    color: "#db5881",
+    requires: ["eye", "footing"],
+    row: 2,
+    x: 610,
+  }),
+  skill({
+    id: "plain",
+    title: "Off the Map",
+    name: "No Graphic or Color",
+    summary: "A skill whose file names no graphic and no color.",
+    requires: ["eye"],
+    problems: ["d"],
+    row: 2,
+    x: 300,
+  }),
+];
+const SKILL_STATES = skillStates(SKILLS, PROBLEMS);
+const [SKILL_EARNED, SKILL_UNDER_WAY, SKILL_WAITING, SKILL_PLAIN] = SKILLS as [Skill, Skill, Skill, Skill];
 
 /** Sample problems where one builds on an unsolved problem, for the "best after" remark. */
 const PREREQUISITE_PROBLEMS: ProblemSummary[] = [
@@ -1014,6 +1083,8 @@ function DevComponentsScreen() {
   const [pickedTarget, setPickedTarget] = useState("local");
   const [reviewsOn, setReviewsOn] = useState(true);
   const [goal, setGoal] = useState(5);
+  const [skillOpen, setSkillOpen] = useState<string | null>(null);
+  const [skillEarned, setSkillEarned] = useState<Skill | null>(null);
 
   return (
     <Page>
@@ -1708,6 +1779,49 @@ function DevComponentsScreen() {
             ))}
             <ModuleSwatch color={null} />
           </div>
+        </Specimen>
+      </Section>
+
+      <Section title="Accomplishments" aside="accomplishments/">
+        <Specimen name="SkillGraphic: earned, not earned; a skill with no graphic or color (a flat block of the accent)">
+          <div className="flex gap-4">
+            {[SKILL_EARNED, SKILL_PLAIN].flatMap((sample) =>
+              [true, false].map((earned) => (
+                <div key={`${sample.id}-${earned}`} className="size-32 overflow-hidden rounded-md bg-muted">
+                  <SkillGraphic skill={sample} earned={earned} />
+                </div>
+              )),
+            )}
+          </div>
+        </Specimen>
+        <Specimen name="SkillTree: earned (its trails solid, in its color), under way, waiting on a required skill, untouched; a tile opens SkillDetail">
+          <SkillTree states={SKILL_STATES} onOpen={(sample) => setSkillOpen(sample.id)} />
+        </Specimen>
+        <Specimen name="SkillDetail (a dialog): earned, under way, waiting on a required skill; SkillEarned (the popup, with Confetti)">
+          <div className="flex items-center gap-2">
+            {[SKILL_EARNED, SKILL_UNDER_WAY, SKILL_WAITING].map((sample) => (
+              <Button key={sample.id} variant="outline" size="sm" onClick={() => setSkillOpen(sample.id)}>
+                {sample.title}
+              </Button>
+            ))}
+            <Button variant="outline" size="sm" onClick={() => setSkillEarned(SKILL_EARNED)}>
+              Show earning a skill
+            </Button>
+          </div>
+          <SkillDetail
+            state={skillOpen ? (SKILL_STATES.get(skillOpen) ?? null) : null}
+            states={SKILL_STATES}
+            onClose={() => setSkillOpen(null)}
+            onOpen={(sample) => setSkillOpen(sample.id)}
+          />
+          <SkillEarned
+            skill={skillEarned}
+            onClose={() => setSkillEarned(null)}
+            onView={(sample) => {
+              setSkillEarned(null);
+              setSkillOpen(sample.id);
+            }}
+          />
         </Specimen>
       </Section>
 

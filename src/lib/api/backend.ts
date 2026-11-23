@@ -16,6 +16,7 @@ import type {
   RunEvent,
   RunMode,
   Settings,
+  Skill,
   SolutionFile,
   SshHost,
   Stats,
@@ -76,6 +77,15 @@ export interface Backend {
 
   /** Areas, in file-name order. Each lists existing track ids only. */
   listAreas(): Promise<Area[]>;
+
+  /** Skills with when each was earned, sorted by row, then x. */
+  listSkills(): Promise<Skill[]>;
+  /**
+   * The skills a stored submission earned, including one further down that was
+   * only waiting on a skill this submit earned. Empty unless it is an accepted
+   * submit that is not a review attempt.
+   */
+  skillsEarnedBy(submissionId: number): Promise<Skill[]>;
 
   /**
    * A statement figure as a `data:` URL. `path` is relative to the problem's

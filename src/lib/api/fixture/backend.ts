@@ -20,6 +20,7 @@ import type {
   ReviewAction,
   RunEvent,
   Settings,
+  Skill,
   SolutionFile,
   SshHost,
   Stats,
@@ -34,6 +35,7 @@ import { FIXTURE_HARDWARE, type FixtureAsset, fixtureAssets } from "./assets";
 import { buildCatalog, type FixtureProblem, hash, renderTemplate } from "./catalog";
 import { FixtureEditor } from "./editor";
 import { buildPlan, type RunContext, simulateRun, verdictOf } from "./runs";
+import { earnedTimes, FIXTURE_SKILLS } from "./skills";
 import { FIXTURE_SSH_HOSTS, fixtureCheckScript, fixtureTargets } from "./targets";
 
 export interface FixtureOptions {
@@ -761,6 +763,48 @@ export class FixtureBackend implements Backend {
         modules: area.modules.filter((id) => this.catalog.tracks.some((track) => track.id === id)),
       })).filter((area) => area.modules.length > 0),
     );
+
+  /**
+   * The fixture skills with core's rules applied: a problem that is not a fixture
+   * problem is dropped, and so is a skill left with none or a requirement that
+   * names no remaining skill. Sorted by row, then x.
+   */
+  private skills(): Skill[] {
+    const usable = FIXTURE_SKILLS.map((skill) => ({
+      ...skill,
+      problems: skill.problems.filter((id) => this.problems.has(id)),
+    })).filter((skill) => skill.problems.length > 0);
+    const ids = new Set(usable.map((skill) => skill.id));
+    const metas = usable.map((skill) => ({
+      ...skill,
+      requires: skill.requires.filter((id) => ids.has(id)),
+    }));
+    // Oldest first, so the first accepted submit of a problem is the one kept.
+    const firstAccepted = new Map<string, string>();
+    const accepted = this.submissions
+      .filter((submission) => submission.verdict === "accepted" && !submission.review)
+      .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id - b.id);
+    for (const submission of accepted) {
+      if (!firstAccepted.has(submission.problemId)) {
+        firstAccepted.set(submission.problemId, submission.createdAt);
+      }
+    }
+    const earned = earnedTimes(metas, firstAccepted);
+    return metas
+      .map((skill) => ({ ...skill, earnedAt: earned.get(skill.id) ?? null }))
+      .sort((a, b) => a.row - b.row || a.x - b.x);
+  }
+
+  listSkills = (): Promise<Skill[]> => this.respond(() => this.skills());
+
+  /** The skills earned at the submission's creation time, as core decides it. */
+  skillsEarnedBy = (submissionId: number): Promise<Skill[]> =>
+    this.respond(() => {
+      const submission = this.submissions.find((s) => s.id === submissionId);
+      if (!submission) throw new Error(`Unknown submission: ${submissionId}`);
+      if (submission.verdict !== "accepted" || submission.review) return [];
+      return this.skills().filter((skill) => skill.earnedAt === submission.createdAt);
+    });
 
   /** Serves the figures bundled with authored fixture statements, with core's asset rules. */
   getProblemAsset = (id: string, path: string): Promise<string> =>

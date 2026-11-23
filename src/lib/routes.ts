@@ -44,6 +44,11 @@ export function parseSettingsSection(value: unknown): SettingsSection {
   return SETTINGS_SECTIONS.find((candidate) => candidate === value) ?? "general";
 }
 
+export interface AccomplishmentsSearch {
+  /** The id of the skill whose detail is open. */
+  skill?: string;
+}
+
 /** The figure gallery's search: one module (a track id), or all when absent. */
 export interface FiguresSearch {
   track?: string;
@@ -54,6 +59,7 @@ export type RouteTarget =
   | { to: "/curriculum" }
   | { to: "/curriculum/$area"; params: { area: string } }
   | { to: "/curriculum/$area/$module"; params: { area: string; module: string } }
+  | { to: "/accomplishments"; search: AccomplishmentsSearch }
   | { to: "/library"; search: LibrarySearch }
   | { to: "/settings"; search: SettingsSearch }
   | { to: "/dev/components" }
@@ -70,6 +76,11 @@ export const routes = {
   module: (area: string, module: string): RouteTarget => ({
     to: "/curriculum/$area/$module",
     params: { area, module },
+  }),
+  /** Accomplishments: the tree of skills, with the detail of the skill with this id open when one is given. */
+  accomplishments: (skill?: string): RouteTarget => ({
+    to: "/accomplishments",
+    search: skill ? { skill } : {},
   }),
   library: (search: LibrarySearch = {}): RouteTarget => ({ to: "/library", search }),
   /** Settings, opened at a category; General (the default) stays out of the URL. */

@@ -47,6 +47,37 @@ export interface Area {
   modules: string[];
 }
 
+/**
+ * A skill: a curated group of problems, optionally building on other skills
+ * (`skills/<id>.toml`). It is earned once all of its problems are solved and
+ * every skill it requires is earned.
+ */
+export interface Skill {
+  id: string;
+  /** The name the skill goes by. */
+  title: string;
+  /** The plain name of what it covers, shown in parentheses under the title. */
+  name: string;
+  /** One sentence. */
+  summary: string;
+  /** Slug of the bundled graphic. Absent when the skill has none. */
+  art?: string;
+  /** `#rrggbb`. Absent when the skill has none or it is malformed. */
+  color?: string;
+  /** Ids of the usable skills this one builds on. Never part of a cycle. */
+  requires: string[];
+  /** Existing problem ids only, in order. Never empty. */
+  problems: string[];
+  /** Row on the Accomplishments tree, from 0 at the top. */
+  row: number;
+  /** Horizontal center in px on a 1000 px wide canvas. */
+  x: number;
+  /** `[row, x]`: where this skill's trails pass a row on the way down. */
+  lanes: [number, number][];
+  /** ISO 8601. Null until the skill is earned. */
+  earnedAt: string | null;
+}
+
 export interface ProblemSummary {
   id: string;
   title: string;

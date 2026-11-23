@@ -49,6 +49,36 @@ describe("HttpBackend first load", () => {
     await expect(backend.listTracks()).resolves.toEqual([]);
   });
 
+  it("posts list_skills with no arguments and skills_earned_by with the submission id", async () => {
+    const skill = {
+      id: "stable-numerics",
+      title: "Sure Footing",
+      name: "Stable Numerics",
+      summary: "S.",
+      art: "trail-start",
+      color: "#ed9b11",
+      requires: [],
+      problems: ["stable-softmax"],
+      row: 0,
+      x: 490,
+      lanes: [[1, 600]],
+      earnedAt: "2026-11-20T10:00:00+00:00",
+    };
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ok([skill]));
+    vi.stubGlobal("fetch", fetchMock);
+    const backend = new HttpBackend("http://bridge");
+
+    await expect(backend.listSkills()).resolves.toEqual([skill]);
+    await expect(backend.skillsEarnedBy(12)).resolves.toEqual([skill]);
+    const posts = fetchMock.mock.calls
+      .filter(([url]) => url.includes("/api/"))
+      .map(([url, init]) => [url, JSON.parse(String(init?.body))]);
+    expect(posts).toEqual([
+      ["http://bridge/api/list_skills", {}],
+      ["http://bridge/api/skills_earned_by", { submissionId: 12 }],
+    ]);
+  });
+
   it("posts list_areas with no arguments", async () => {
     const area = { id: "inference-and-serving", title: "T", description: "D.", modules: ["foundations"] };
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ok([area]));

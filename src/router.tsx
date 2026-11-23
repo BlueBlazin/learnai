@@ -3,6 +3,7 @@ import { ScreenMessage } from "@/components/app/page";
 import { ErrorState, LoadingLines } from "@/components/app/states";
 import { parseFilters, serializeFilters } from "@/lib/filters";
 import {
+  type AccomplishmentsSearch,
   type FiguresSearch,
   type LibrarySearch,
   type ProblemSearch,
@@ -57,6 +58,13 @@ const moduleRoute = createRoute({
   path: "/curriculum/$area/$module",
 }).lazy(() => import("@/routes/curriculum").then((module) => module.ModuleRoute));
 
+const accomplishmentsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/accomplishments",
+  validateSearch: (search: Record<string, unknown>): AccomplishmentsSearch =>
+    typeof search.skill === "string" && search.skill !== "" ? { skill: search.skill } : {},
+}).lazy(() => import("@/routes/accomplishments").then((module) => module.Route));
+
 const problemRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/problems/$problemId",
@@ -105,6 +113,7 @@ const routeTree = rootRoute.addChildren([
   curriculumRoute,
   areaRoute,
   moduleRoute,
+  accomplishmentsRoute,
   libraryRoute,
   problemRoute,
   settingsRoute,

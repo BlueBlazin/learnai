@@ -2,11 +2,26 @@ import { cn } from "cn";
 import type { ReactNode } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-/** A scrolling screen with one centered column: Home and Settings. */
-export function Page({ children, className }: { children: ReactNode; className?: string }) {
+/**
+ * A scrolling screen with one centered column: Home and Settings. `wide` gives
+ * the column the room a wide figure needs (Accomplishments and its tree).
+ */
+export function Page({
+  children,
+  wide = false,
+  className,
+}: {
+  children: ReactNode;
+  wide?: boolean;
+  className?: string;
+}) {
   return (
     <ScrollArea className="h-full bg-paper">
-      <div className={cn("mx-auto max-w-page px-gutter pt-12 pb-20", className)}>{children}</div>
+      <div
+        className={cn("mx-auto px-gutter pt-12 pb-20", wide ? "max-w-page-wide" : "max-w-page", className)}
+      >
+        {children}
+      </div>
     </ScrollArea>
   );
 }

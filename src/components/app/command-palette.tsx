@@ -1,4 +1,5 @@
 import {
+  Award,
   BookOpen,
   House,
   ListOrdered,
@@ -157,6 +158,10 @@ export function CommandPalette() {
             <CommandItem onSelect={() => navigate(routes.curriculum())}>
               <ListOrdered />
               Curriculum
+            </CommandItem>
+            <CommandItem onSelect={() => navigate(routes.accomplishments())}>
+              <Award />
+              Accomplishments
             </CommandItem>
             <CommandItem onSelect={() => navigate(routes.library())}>
               <BookOpen />

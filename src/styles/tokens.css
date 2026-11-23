@@ -69,6 +69,7 @@
   /* Layout */
   --container-measure: 40rem; /* statement measure: about 68 characters of body serif */
   --container-page: 60rem; /* home and settings column */
+  --container-page-wide: 72rem; /* a screen built around a wide figure: the skill tree */
   --spacing-titlebar: 2.75rem;
   --spacing-toolbar: 2.5rem;
   --spacing-gutter: 2.5rem;

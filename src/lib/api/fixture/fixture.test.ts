@@ -871,3 +871,105 @@ describe("FixtureBackend case stages", () => {
     expect(plainStart?.type === "start" && plainStart.cases.every((c) => c.stage === undefined)).toBe(true);
   });
 });
+
+describe("FixtureBackend skills", () => {
+  const ACCEPTED = "# learnai: accepted\nimport torch\n\n\ndef solve(x):\n    return x\n";
+  const submit = async (backend: FixtureBackend, problemId: string, code: string): Promise<number> => {
+    await backend.writeSolution(problemId, "torch", code);
+    const end = (await runToEnd(backend, problemId, "submit")).at(-1);
+    if (end?.type !== "end" || end.submissionId === null) throw new Error("expected a stored submission");
+    return end.submissionId;
+  };
+
+  it("serves valid skills by row, then x, showing every state at once", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const [skills, problems] = await Promise.all([backend.listSkills(), backend.listProblems()]);
+    expect(skills.map((skill) => [skill.row, skill.x])).toEqual(
+      [...skills].sort((a, b) => a.row - b.row || a.x - b.x).map((skill) => [skill.row, skill.x]),
+    );
+    const status = new Map(problems.map((problem) => [problem.id, problem.status]));
+    const row = new Map(skills.map((skill) => [skill.id, skill.row]));
+    for (const skill of skills) {
+      expect(skill.problems.length).toBeGreaterThan(0);
+      for (const id of skill.problems) expect(status.has(id)).toBe(true);
+      // Everything a skill builds on is on a higher row.
+      for (const id of skill.requires) expect(row.get(id)).toBeLessThan(skill.row);
+      expect(skill.color).toMatch(/^#[0-9a-f]{6}$/);
+    }
+    expect(new Set(skills.map((skill) => skill.row)).size).toBeGreaterThanOrEqual(3);
+    expect(skills.some((skill) => skill.lanes.length > 0)).toBe(true);
+
+    const solved = (id: string) => status.get(id) === "solved";
+    const earned = skills.filter((skill) => skill.earnedAt !== null);
+    expect(earned.map((skill) => skill.id)).toEqual(["stable-numerics", "text-to-tokens"]);
+    const open = skills.filter((skill) => skill.earnedAt === null);
+    // Under way, untouched, and every problem solved but waiting on a required skill.
+    expect(open.some((skill) => skill.problems.some(solved) && !skill.problems.every(solved))).toBe(true);
+    expect(open.some((skill) => !skill.problems.some(solved))).toBe(true);
+    expect(open.filter((skill) => skill.problems.every(solved)).map((skill) => skill.id)).toEqual([
+      "sampling",
+    ]);
+  });
+
+  it("dates an earned skill by the latest first accepted submit of its problems", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    const [skills, submissions] = await Promise.all([backend.listSkills(), backend.listSubmissions()]);
+    const firstAccepted = (problemId: string) =>
+      submissions
+        .filter((s) => s.problemId === problemId && s.verdict === "accepted" && !s.review)
+        .map((s) => s.createdAt)
+        .sort()[0];
+    const footing = skills.find((skill) => skill.id === "stable-numerics");
+    expect(footing?.earnedAt).toBe([firstAccepted("stable-softmax"), firstAccepted("log-sum-exp")].sort()[1]);
+  });
+
+  it("reports the skills an accepted submit earned, including one that was only waiting", async () => {
+    // A skill belongs to the submit made at the time it was earned, so no two submits share a time.
+    let now = new Date(2026, 10, 15, 10, 0, 0).getTime();
+    const backend = new FixtureBackend({
+      speed: 0,
+      now: () => {
+        now += 1000;
+        return new Date(now);
+      },
+    });
+    const failed = await submit(backend, "rotary-embeddings", "# learnai: wrong_answer\n");
+    await expect(backend.skillsEarnedBy(failed)).resolves.toEqual([]);
+
+    const accepted = await submit(backend, "rotary-embeddings", ACCEPTED);
+    const stored = await backend.getSubmission(accepted);
+    expect(stored.verdict).toBe("accepted");
+    const earned = await backend.skillsEarnedBy(accepted);
+    expect(earned.map((skill) => skill.id)).toEqual(["attention", "sampling"]);
+    for (const skill of earned) expect(skill.earnedAt).toBe(stored.createdAt);
+    const all = await backend.listSkills();
+    expect(all.filter((skill) => skill.earnedAt !== null)).toHaveLength(4);
+
+    // Solving a problem again earns nothing, and neither does a submit that earns no skill.
+    await expect(
+      backend.skillsEarnedBy(await submit(backend, "rotary-embeddings", ACCEPTED)),
+    ).resolves.toEqual([]);
+    await expect(backend.skillsEarnedBy(await submit(backend, "kv-cache-decode", ACCEPTED))).resolves.toEqual(
+      [],
+    );
+    await expect(backend.skillsEarnedBy(9999)).rejects.toThrow("Unknown submission: 9999");
+  });
+
+  it("does not let an accepted review submit earn a skill", async () => {
+    const backend = new FixtureBackend({ speed: 0 });
+    await backend.writeReviewSolution("stable-softmax", "torch", ACCEPTED);
+    const end = await new Promise<RunEvent>((resolve, reject) => {
+      backend
+        .startRun(
+          { problemId: "stable-softmax", framework: "torch", mode: "submit", target: "local", review: true },
+          (event) => {
+            if (event.type === "end") resolve(event);
+          },
+        )
+        .catch(reject);
+    });
+    if (end.type !== "end" || end.submissionId === null) throw new Error("expected a stored submission");
+    expect(end.verdict).toBe("accepted");
+    await expect(backend.skillsEarnedBy(end.submissionId)).resolves.toEqual([]);
+  });
+});

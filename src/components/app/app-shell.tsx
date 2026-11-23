@@ -29,7 +29,7 @@ function NavLink({ to, exact = false, children }: { to: RouteTarget; exact?: boo
 }
 
 /**
- * The window frame: one quiet bar with the wordmark, the four destinations,
+ * The window frame: one quiet bar with the wordmark, the five destinations,
  * and the command palette.
  *
  * With an overlay title bar (macOS) the bar is the window's title bar: it keeps
@@ -59,6 +59,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             Home
           </NavLink>
           <NavLink to={routes.curriculum()}>Curriculum</NavLink>
+          <NavLink to={routes.accomplishments()}>Accomplishments</NavLink>
           <NavLink to={routes.library()}>Library</NavLink>
           <NavLink to={routes.settings()}>Settings</NavLink>
           {import.meta.env.DEV ? <NavLink to={routes.devComponents()}>Components</NavLink> : null}
