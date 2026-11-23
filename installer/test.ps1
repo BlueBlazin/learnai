@@ -42,8 +42,10 @@ function Check-Exit($what) { if ($LASTEXITCODE -ne 0) { Fail "$what exited with 
 function Snapshot {
     $paths = Get-ChildItem -LiteralPath $env:USERPROFILE -Force -Recurse -Depth 3 -ErrorAction SilentlyContinue |
         ForEach-Object { $_.FullName }
-    $registry = & reg query 'HKCU\Software\Python' /s 2>$null | Where-Object { $_ -match '^HKEY' }
-    $global:LASTEXITCODE = 0
+    $registry = @()
+    if (Test-Path 'HKCU:\Software\Python') {
+        $registry = Get-ChildItem -Recurse 'HKCU:\Software\Python' | ForEach-Object { $_.Name }
+    }
     return @($paths) + @($registry) | Sort-Object -Unique
 }
 

@@ -1,1 +1,3 @@
 /\.cache/fontconfig
+/\.cache/mesa_shader_cache
+/Library/.*com\.apple\.
