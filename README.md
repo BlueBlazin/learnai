@@ -58,8 +58,8 @@ irm https://raw.githubusercontent.com/BlueBlazin/learnai/master/install.ps1 | ie
 ```
 
 The installer downloads the app, the problems, and its own copy of uv, which then
-downloads Python 3.15 and the libraries (PyTorch, JAX, and MLX on Apple silicon). Installed, that is about 3 GB on macOS and 6 GB
-on Linux, where PyTorch brings its CUDA libraries.
+downloads Python 3.15 and the libraries (PyTorch, JAX, and MLX on Apple silicon). Installed, that is about 3 GB on macOS, 2 GB on
+Windows, and 6 GB on Linux, where PyTorch brings its CUDA libraries.
 Nothing has to be installed first. The one exception is Linux, where the window needs
 the system library WebKitGTK 4.1; the installer names the package if it is missing.
 
