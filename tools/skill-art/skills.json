@@ -1,0 +1,172 @@
+[
+  {
+    "slug": "wanderer",
+    "label": "The wanderer (character reference)",
+    "accent": {
+      "name": "amber",
+      "hex": "#ed9b11"
+    },
+    "scene": "a character study of the traveler alone. The traveler stands still in a relaxed pose on a low rise, seen in three-quarter view from the side and facing right, one hand resting on a tall wooden walking stick planted on the ground, looking out over the land. Behind, only a low line of distant mountains and a wide empty sky.",
+    "inks": "The sky is the light amber tint. The ground is full amber. The distant mountains are steel blue. The walking stick is blue-black. The light comes from the upper right."
+  },
+  {
+    "slug": "trail-start",
+    "label": "Sure Footing (Stable Numerics)",
+    "accent": {
+      "name": "amber",
+      "hex": "#ed9b11"
+    },
+    "scene": "the traveler sets out at the start of a trail, walking in mid-stride from left to right, seen in three-quarter view from the side, a wooden walking stick in the leading hand. A footpath runs ahead and winds away toward a low range of distant mountains. One plain wooden post with no writing stands beside the path where the trail begins.",
+    "inks": "The sky is the light amber tint. The rolling ground is full amber. The distant mountains are steel blue with a few off-white snow shapes. The path is off-white. The post and the nearest ground are blue-black."
+  },
+  {
+    "slug": "journal",
+    "label": "Word by Word (Text to Tokens)",
+    "accent": {
+      "name": "orange",
+      "hex": "#e5691d"
+    },
+    "scene": "the traveler sits on a flat boulder, seen in three-quarter view from the side and facing right, bent a little over an open notebook resting on one knee and writing in it with a pencil. The rucksack stands on the ground beside the boulder and the walking stick leans against it. One pine tree behind, low hills beyond.",
+    "inks": "The sky is the light orange tint with one flat band of full orange above the hills. The hills are full orange. The boulder is steel blue. The notebook pages are off-white. The pine and the nearest ground are blue-black."
+  },
+  {
+    "slug": "packing",
+    "label": "Packing Light (Quantization Basics)",
+    "accent": {
+      "name": "violet",
+      "hex": "#834ccd"
+    },
+    "scene": "the traveler kneels on one knee on the ground, seen in three-quarter view from the side, pressing a rolled blanket down into the open top of a large rucksack that stands upright in front of them. A coil of rope and a small cooking pot lie on the ground beside the rucksack. Low hills at dusk behind. In this picture the traveler's back carries nothing, because the rucksack is on the ground.",
+    "inks": "The sky is full violet. The far hills are the light violet tint. The ground is steel blue. The rope coil and the blanket are off-white. The pot and the nearest ground are blue-black."
+  },
+  {
+    "slug": "map",
+    "label": "Measure Twice (Sizing a Deployment)",
+    "accent": {
+      "name": "red",
+      "hex": "#c2332f"
+    },
+    "scene": "the traveler stands, seen in three-quarter view from the side and facing right, holding a large unfolded paper map open with both hands and studying it, the walking stick tucked under one arm. Far ahead stands a range of sharp peaks that the route must cross.",
+    "inks": "The sky is full red. A flat band of the light red tint lies low above the peaks. The peaks are steel blue with off-white snow shapes. The map is off-white with a few plain blue-black route marks and no writing. The ground under the traveler is blue-black."
+  },
+  {
+    "slug": "spyglass",
+    "label": "Keen Eye (Attention)",
+    "accent": {
+      "name": "blue",
+      "hex": "#2a71cc"
+    },
+    "scene": "the traveler stands on a rocky outcrop, seen in three-quarter view from the side and facing right, holding a long brass-style spyglass up to the eye with both hands and looking toward one distant pointed peak across a wide valley.",
+    "inks": "The sky is full blue. The valley haze is the light blue tint. The distant peak is steel blue with an off-white snow cap. The spyglass is off-white. The outcrop is blue-black."
+  },
+  {
+    "slug": "fishing",
+    "label": "Luck of the Draw (Sampling)",
+    "accent": {
+      "name": "pink",
+      "hex": "#db5881"
+    },
+    "scene": "the traveler stands on a low bank at the edge of a calm mountain lake, seen in three-quarter view from the side and facing right, casting a long fishing rod with both hands; the rod bends forward and the fishing line arcs far out over the water in one clean thin curve. Mountains stand on the far shore.",
+    "inks": "The sky is the light pink tint. The lake is full pink with two or three flat off-white ripples. The mountains are steel blue. The rod and the line are blue-black. The bank is blue-black."
+  },
+  {
+    "slug": "stepping-stones",
+    "label": "Across the Stream (Streaming Text)",
+    "accent": {
+      "name": "cyan",
+      "hex": "#27add9"
+    },
+    "scene": "the traveler crosses a wide shallow stream on a row of flat stepping stones, caught in mid-stride from one stone to the next, seen in three-quarter view from the side and moving right, arms a little out for balance with the walking stick held level in one hand. Low banks on both sides.",
+    "inks": "The stream is full cyan with a few flat off-white ripples. The sky is the light cyan tint. The far bank and hills are steel blue. The stepping stones and the near bank are blue-black."
+  },
+  {
+    "slug": "uphill",
+    "label": "Forward March (Decoder Forward Pass)",
+    "accent": {
+      "name": "indigo",
+      "hex": "#5a5fc0"
+    },
+    "scene": "the traveler climbs a steep bare slope. The slope is low at the left edge of the picture and high at the right edge, and the traveler faces right and walks up it toward the upper right, seen in three-quarter view from the side: the body leans forward into the climb, the walking stick is planted ahead and higher up the slope, the front knee is bent high and the back leg is stretched out behind and lower down. Higher ridges rise in layers beyond.",
+    "inks": "The sky is the light indigo tint. The far ridges are full indigo. The middle ridge is steel blue. The steep slope under the traveler is blue-black with one off-white strip of trail running up it."
+  },
+  {
+    "slug": "cache",
+    "label": "Cache and Carry (Cached Decoding)",
+    "accent": {
+      "name": "teal",
+      "hex": "#18978e"
+    },
+    "scene": "the traveler stands beneath one tall pine tree, seen in three-quarter view from the side, leaning back and pulling down with both hands on a rope that runs up over a high branch; on the other end of the rope a tied supply sack hangs high in the air under the branch, well above the traveler's head. In this picture the traveler's back carries nothing.",
+    "inks": "The sky is full teal. A band of the light teal tint lies along the horizon. Far hills are steel blue. The supply sack and the rope are off-white. The pine and the ground are blue-black."
+  },
+  {
+    "slug": "rock-face",
+    "label": "The Real Thing (Real Model Forward Pass)",
+    "accent": {
+      "name": "rust orange",
+      "hex": "#c8632a"
+    },
+    "scene": "the traveler climbs a steep rock face, seen from the side: the rock wall fills one side of the picture from top to bottom, and the traveler clings to it halfway up, one arm stretched up to a hold, one leg bent high on a ledge, a climbing rope hanging down from the waist. Open air and distant mesas on the other side.",
+    "inks": "The rock wall is full rust orange with two or three flat blue-black cracks and shadows. The sky is the light rust tint. The distant mesas are steel blue. The rope is off-white."
+  },
+  {
+    "slug": "rappel",
+    "label": "Know the Ropes (Cache Memory)",
+    "accent": {
+      "name": "sky blue",
+      "hex": "#188adc"
+    },
+    "scene": "the traveler rappels down a sheer cliff below a ridge, seen from the side: the cliff wall fills one side of the picture, the traveler leans back away from the rock with both boots braced flat against the wall and both hands on a taut rope that runs straight up to the ridge top and hangs on below. Open sky and far mountains on the other side.",
+    "inks": "The sky is full sky blue. A band of the light sky blue tint lies low on the horizon. The far mountains are steel blue with off-white snow shapes. The cliff wall is blue-black with a few steel blue facets. The rope is off-white."
+  },
+  {
+    "slug": "rope-bridge",
+    "label": "Walk the Line (Structured Output)",
+    "accent": {
+      "name": "lime green",
+      "hex": "#8fc30b"
+    },
+    "scene": "the traveler walks across a narrow rope bridge slung over a deep gorge, seen in three-quarter view from the side and moving right, one hand on each of the two rope handrails. The bridge sags gently from cliff to cliff across the whole picture, with plain plank steps and upright ropes between rail and deck.",
+    "inks": "The sky is the light lime tint. The gorge walls far below and behind are full lime green. A river at the bottom is off-white. The two cliffs at the picture's sides are blue-black. The bridge ropes and planks are blue-black."
+  },
+  {
+    "slug": "leap",
+    "label": "Leap of Faith (Speculative Decoding)",
+    "accent": {
+      "name": "yellow",
+      "hex": "#f4c60a"
+    },
+    "scene": "the traveler is caught in mid-air leaping across a gap between two rock ledges, seen in three-quarter view from the side and jumping from left to right, front leg stretched forward, back leg trailing, coat tails flying behind, the walking stick held in one hand. The left ledge is a little higher than the right one, and the gap between them drops out of the picture.",
+    "inks": "The sky is full yellow. A flat band of the light yellow tint lies low. Far ridges are steel blue. The two ledges are blue-black with off-white top edges."
+  },
+  {
+    "slug": "campfire",
+    "label": "Feed the Camp (Continuous Batching)",
+    "accent": {
+      "name": "vermilion",
+      "hex": "#e85a3a"
+    },
+    "scene": "evening at a camp. The traveler crouches beside a campfire, seen in three-quarter view from the side, stirring a cooking pot that hangs over the flames from a simple tripod of three sticks. A small plain tent stands behind. The rucksack rests against the tent. In this picture the traveler's back carries nothing. The firelight is shown only as flat lit planes on the coat, never as outlines around the figure.",
+    "inks": "The sky is full vermilion. The flames are the light vermilion tint with an off-white core. Far hills are steel blue. The tent is off-white. The ground, the pot, and the tripod are blue-black."
+  },
+  {
+    "slug": "summit",
+    "label": "The Summit (Real Model Generation)",
+    "accent": {
+      "name": "golden yellow",
+      "hex": "#e6b125"
+    },
+    "scene": "the traveler stands on the very tip of a snow-capped summit, seen in three-quarter view from the side, planting a tall pole into the peak with both hands; one large plain triangular pennant streams from the top of the pole. Lower peaks far below.",
+    "inks": "The sky is full golden yellow. A flat band of the light golden tint lies along the horizon. The lower peaks are steel blue. The summit under the traveler is blue-black with a jagged off-white snow cap. The pennant is off-white and the pole is blue-black."
+  },
+  {
+    "slug": "skiing",
+    "label": "Fast and Light (Quantized Model)",
+    "accent": {
+      "name": "emerald green",
+      "hex": "#209d6e"
+    },
+    "scene": "the traveler skis fast down a snowy slope that falls from the upper left to the lower right of the picture, seen in three-quarter view from the side, crouched low with knees bent, both ski poles tucked back under the arms, a flat spray of snow kicking up behind the skis. Two or three pine trees stand on the slope behind.",
+    "inks": "The sky is full emerald green. The far mountains are the light emerald tint. The snow slope is off-white with one steel blue shadow band. The pines, the skis, and the poles are blue-black."
+  }
+]

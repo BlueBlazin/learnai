@@ -1,0 +1,15 @@
+{refs}
+
+A flat screenprint travel poster illustration, in the manner of mid-century national park posters.
+
+Scene: {scene}
+
+The traveler: one lone traveler, an adult of no particular age or gender, wearing a wide-brimmed hat, a knee-length coat, trousers, and sturdy boots, and carrying a rucksack with a rolled blanket strapped on top. The traveler is not a flat black cutout. The figure has form and depth, rendered the way a screenprint poster renders a person: one clear light direction, and every part built from two or three flat tones that show a lit side and a shadow side, with crisp cut-paper facets for the folds of the coat, the bend of the sleeves and knees, the crown and brim of the hat, the collar, the straps, flap, and pockets of the rucksack, and the turns of the scarf. The coat is steel blue on its lit planes and deep blue-black in shadow. The trousers and boots are blue-black with a few steel blue highlights. The hat is steel blue with a blue-black band and a shadowed underside. The rucksack is the light accent tint on its lit planes and steel blue in shadow, with blue-black straps. The blanket roll is off-white. A scarf at the neck is the full accent color. The hands are simple mitten shapes. The face is left blank: the face and hands are plain flat shapes in one warm skin tone (never white, never off-white, never outlined) that show only the outline of the head, with no eyes, no mouth, no facial features, no skin detail, and no hair detail. The traveler is the subject of the picture, large and clear: about 60 percent of the picture's height, so the pose still reads when the picture is shrunk to a thumbnail.
+
+Inks: five flat ink colors only. Three are shared by the whole series: off-white paper (#f1ede0), deep blue-black ink (#0e1a26), and a muted grayish steel blue (#5f84a2). The fourth is the accent of this print: {accent_name} ({accent_hex}), printed rich, pure, and fully saturated, never dulled, never shifted toward a neighboring hue. The fifth is a lighter tint of that same accent. The accent is the dominant color of the picture and covers more area than any other ink. {inks}
+
+Style: no gradients, no airbrushing, no glow, no soft shading, no texture, no paper grain, no halftone, no outlines, no line work. Bold simplified shapes with crisp edges, layered silhouettes for depth, large calm flat areas. About five to eight big shapes in total besides the traveler; minimal detail; calm and confident.
+
+Composition: a square 1:1 picture. The traveler sits at the center of the picture, entirely inside the central two thirds, with a clear gap between the figure and every edge. The landscape behind is simple and quiet, and the traveler's whole outline stands against a lighter or strongly contrasting flat area so the pose is unmistakable.
+
+The artwork fills the whole image, full bleed to all four edges: no border, no margin, no frame, no vignette, no rounded corners, no badge shape, no drop shadow. One traveler only: no other people, no animals, no birds, no text, no lettering, no numbers, no signature, no signs with writing.

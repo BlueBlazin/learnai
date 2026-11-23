@@ -18,22 +18,25 @@ binding component rules in `docs/ARCHITECTURE.md` section 5.
    typeset prose on a fixed measure. Chrome never competes with them: one
    44px app bar, one 40px toolbar per pane, nothing else.
 2. **Rules and whitespace, not boxes.** Structure comes from hairlines, a
-   heavier ink rule above each section, and vertical rhythm. There are no cards,
-   no drop shadows on resting surfaces, and no badges. The only filled blocks
-   are code listings, program output, and the scenes.
+   heavier ink rule above each section, and vertical rhythm. There are no cards
+   and no drop shadows on resting surfaces. The only filled blocks are code
+   listings, program output, the scenes, and the skill graphics.
 3. **Words over ornaments.** Judges, frameworks, verdicts, and counts are
    written out ("Numeric, Property", "5 of 7 cases passed"). A mark appears only
    where it encodes something a word cannot at a glance: status, difficulty,
    verdict.
 4. **Hue has two jobs, kept apart.** Outcome colors (pass, fail, warn) say how
    something went, and each use also carries a distinct shape and a word. Module
-   colors say which module something belongs to, and are never used for an
-   outcome. Nothing else is colored.
+   and skill colors say which module or skill something belongs to, and are
+   never used for an outcome. Nothing else is colored.
 5. **Calm at the desk, character around it.** The workspace (statement, editor,
-   results) stays as quiet as a page. Home and the Curriculum screens are where
-   the app shows warmth: the scenes, the module color bar, the streak and the
-   weekly goal. Progress is still honest: a sentence and plain counts, a pip per
-   core problem. No rings, confetti, percentages in display type, levels, or locks.
+   results) stays as quiet as a page while a problem is being solved. Home, the
+   Curriculum screens, and Accomplishments are where the app shows warmth: the
+   scenes, the module color bar, the streak and the weekly goal, the skill
+   graphics. Progress is still honest: a sentence and plain counts, a pip per
+   core problem, a skill's graphic in gray until the skill is earned. Confetti
+   has one place: the popup for a skill just earned, which appears after the
+   accepted submit that earned it has ended.
 6. **Pictures set a mood; they do not explain.** A scene is a place on the
    route, not a diagram of the module's topic. Icons that tried to depict a KV
    cache or a GPU were tried and dropped: illustration of abstract technical
@@ -42,8 +45,9 @@ binding component rules in `docs/ARCHITECTURE.md` section 5.
    the app.
 
 What this deliberately is not: an untouched shadcn neutral theme, Inter or
-Geist everywhere, gradients, glass or blur, emoji as icons, card grids, pill
-badges, or one large radius on everything.
+Geist everywhere, gradients, glass or blur, card grids, pill badges, or one
+large radius on everything. Emoji appear in one place: a party popper on each
+side of "Skill earned" in the earned popup.
 
 ## 2. Typography
 
@@ -217,11 +221,22 @@ have no area around them. A module with no color falls back to the accent.
   around its middle.
 - An area has no scene of its own: its banner (`AreaBanner`) is one equal
   vertical slice of each module's scene, side by side in module order.
+- **Skill graphics** (`src/assets/skills/`, looked up by slug through
+  `src/lib/skill-art.ts`) are square prints in the same flat screenprint style
+  as the scenes, one per skill (`art` in the skill file). Each shows one
+  traveler performing an action: setting out on a trail, looking through a
+  spyglass, casting a fishing line. The action loosely echoes the skill and
+  does not depict its topic. The traveler is drawn with light and shadow
+  planes, not as a black cutout, carries a detailed pack, and has a plain
+  face with no features. Each print takes one accent color, which is the
+  skill's `color`. Unlike a scene, a skill graphic is shown in gray until its
+  skill is earned. `tools/skill-art/` holds the prompts and scripts, and its
+  README says how to add or redo one.
 - **Pixel icons** (`PixelIcon`, `src/assets/pixel/`): a flame for the streak
   and a star for a goal met or a module with every problem solved, 24x24
   sprites drawn at whole multiples with
   `image-rendering: pixelated`. They are generic game symbols, not concept
-  art, and there are only these two.
+  art.
 - **The app icon** (`src-tauri/icons/`) is one more print in the manner of the
   scenes, cut to the macOS icon shape: a snow-capped summit with a pennant on
   its tip under a cyan sky, in very few shapes so that it reads at 16 px.
@@ -258,7 +273,10 @@ does not.
 ## 5. Space, radii, elevation
 
 - Spacing is Tailwind's 4px grid. Named values: `titlebar` 44px, `toolbar`
-  40px, `gutter` 40px (page margins; 24px in a narrow pane).
+  40px, `gutter` 40px (page margins; 24px in a narrow pane). A page's column is
+  `--container-page` (60rem); a screen built around a wide figure takes
+  `--container-page-wide` (72rem), which only Accomplishments does, for its
+  tree (`Page` with `wide`).
 - Radii are small and few: `sm` 2px (focus outlines on text), `md` 4px
   (controls, listings), `lg` 5px, `xl` 7px (popovers and dialogs). Nothing is
   fully rounded except status discs.
@@ -275,9 +293,12 @@ does not.
   `theme-switching` class) for the frame in which the colors change; otherwise
   every control's hover transition would run at once, and restart at each level
   of nesting.
-- Nothing animates on its own except the spinner on a running case and the run
-  progress rule. There are no entrance animations and no staggered reveals.
-- `prefers-reduced-motion` removes all transitions and animations.
+- Nothing animates on its own except the spinner on a running case, the run
+  progress rule, and the earned popup, where the skill's graphic turns from
+  gray to color over 700ms and one burst of confetti falls. Elsewhere there
+  are no entrance animations and no staggered reveals.
+- `prefers-reduced-motion` removes all transitions and animations, and the
+  confetti is not drawn.
 
 ## 7. Native window behavior
 
@@ -335,6 +356,7 @@ Composed components, by area (all shown in their states at
 | `models/` | `ModelsPanel` and `AssetRow` (the Models pane of Settings, built on `SettingRow`), `AssetStateMark`, `AssetProgress`, `AssetNotice` / `AssetNoticeList`, `AssetDownloadButton`, `RemoveAssetButton` |
 | `targets/` | `TargetsPanel` and `TargetRow` (the Run targets pane of Settings, built on `SettingRow`), `TargetSummary`, `CheckStepList`, `CheckStepMark`, `FixText`, `AddTargetForm`, `TargetPicker` |
 | `curriculum/` | `AreaEntry`, `AreaBanner`, `AreaSummary`, `ModulePlates`, `ModuleProgressBar`, `ModuleSwatch`, `ModuleHeader`, `ModuleNeighbors`, `ModuleRowList`, `SceneBanner` |
+| `accomplishments/` | `SkillTree`, `SkillGraphic`, `SkillDetail`, `SkillEarned`, `Confetti` |
 | `home/` | `ContinueEntry`, `HabitStrip`, `ActivityCalendar`, `GettingStarted`, `ProgressSummary`, `TrackProgress` |
 | `settings/` | `SettingsNav`, `SettingList` / `SettingRow`, `RowStatus`, `SettingSwitch`, `PathRow`, `GeneralPanel`, `ThemePicker`, `GoalSetting`, `ReviewSetting`, `EnvironmentPanel`, `InstallButton`, `UvGuideButton`, `InstallLog`, `FilesPanel`, `CatalogIssueList` |
 
@@ -424,7 +446,7 @@ model is `src/lib/curriculum.ts` (pure, built from `useAreas`, `useTracks`, and
 track forms one implicit area.
 
 The Curriculum is its own destination in the app bar (between Home and
-Library), not a section of the Library. The Library is a catalog: organized by
+Accomplishments), not a section of the Library. The Library is a catalog: organized by
 track, filtered, searched, windowed for hundreds of rows. The Curriculum is a
 reading order, and as screens of its own it can be what it is: the table of
 contents of the course. There are three screens, all in
@@ -457,9 +479,10 @@ contents of the course. There are three screens, all in
 An unknown area or module id shows the empty state with a link to the
 Curriculum.
 
-What it deliberately is not: a roadmap. There are no nodes and connectors, no
-locked steps, no percentages, no badges for finishing a module beyond the
-solved mark and the star. The next problem is marked by the words "Up next" and
+The Curriculum is a table of contents, not a roadmap. Its screens have no nodes
+and connectors, no locked steps, and no percentages, and a finished module is
+marked by the solved mark and the star. The one screen that is a tree with
+connectors is Accomplishments (below). The next problem is marked by the words "Up next" and
 a medium weight, nothing else, on its row and on its module's plate. A
 prerequisite that comes earlier in the area's reading order gets no remark,
 because the order of the list already says so; one that comes later, or is
@@ -472,6 +495,71 @@ buttons follow the reading order (a module's core, then its further problems,
 then the next module). In the Library each track in the left list carries its
 module swatch, and one filter, "Core", narrows the table to core problems or to
 further ones.
+
+### The Accomplishments screen
+
+A **skill** is a curated group of problems that may build on other skills
+(`skills/<id>.toml`, `docs/ARCHITECTURE.md` section 3.3). It is earned once all
+of its problems are solved and every skill it builds on is earned. A skill has
+a title ("Keen Eye"), the plain name of what it covers ("Attention"), one
+sentence, a graphic, and a color. Accomplishments (`/accomplishments`, between
+Curriculum and Library in the app bar; `src/routes/accomplishments.tsx`) shows
+the skills as a tree. The model is `src/lib/skills.ts` (pure, built from
+`useSkills` and `useProblems` by `useSkillStates`). The curriculum is not
+changed by it: areas, modules, and core lists are as they were, and a skill
+only names problems.
+
+- **The page.** The title, one sentence ("4 of 16 skills earned."; before the
+  first, the number of skills and how one is earned), an ink rule, and the
+  tree (`SkillTree`). The column is the wide one (`--container-page-wide`): the
+  tree is drawn on a canvas 1000px wide, centered, and scrolls sideways in a
+  narrower window.
+- **The tile.** A 124px square of the skill's graphic (`SkillGraphic`) that
+  opens the skill. Under it, on paper: the title, the plain name in
+  parentheses, and one progress line: "6 problems" before any is solved, "2 of
+  6 solved" under way, "Needs Keen Eye" when every problem is solved and a
+  skill it builds on is not earned yet, and the solved mark with "Earned".
+- **Gray until earned.** An unearned skill's graphic is shown in grayscale at
+  reduced contrast and its title in secondary ink; an earned one is in full
+  color with its title in semibold. A skill with no graphic shows a flat block
+  of its color (the accent when it has none). Nothing is locked: every tile
+  opens, and every problem in it opens like any other.
+- **The trails.** A trail runs down from each skill to every skill that builds
+  on it. It is dotted in the faint ink until the skill it leaves is earned,
+  then solid in that skill's color, with a dot where it leaves. Trails are
+  routed, not straight lines between tiles: verticals and horizontals with
+  rounded corners, turning only in the band between two rows. Trails that
+  arrive at the same tile arrive side by side on its top edge, 14px apart, in
+  the order they come from. Where two trails cross, the one drawn later passes
+  over a gap in the other; solid trails are drawn last, so an open trail is
+  never broken by a dotted one.
+- **Placement is set by hand**, in the skill file. `row` is the row, from 0 at
+  the top, and `x` is the tile's center on the 1000px canvas. A skill sits
+  below everything it builds on. A skill that builds on nothing sits near
+  what it leads to, not at the top: Packing Light is on row 3, just above
+  Fast and Light, the one skill it leads to. A trail that has to pass a row on its
+  way down passes it at the `x` given for that row in the skill's `lanes`
+  (`[row, x]`), which is chosen to run between that row's tiles; without a
+  lane it would pass at the skill's own `x`.
+- **The detail** (`SkillDetail`, a dialog; `?skill=<id>` in the address, so a
+  link can open one). The graphic at 22rem on the left, gray until earned.
+  Beside it the title, the name in parentheses, the sentence, and where the
+  skill stands ("Earned 2 days ago.", "3 of 6 problems solved.", or "Every
+  problem is solved. It is earned once Keen Eye is."). Then "Builds on": each
+  required skill with its mark and "Earned" or "Not yet", opening that skill in
+  the dialog. Then "Problems": each with its status mark, opening the problem.
+- **The earned popup** (`SkillEarned`). When an accepted submit earns a skill,
+  a small centered dialog appears over the workspace once the run has ended:
+  "Skill earned" with a party popper on each side, the graphic at 16rem, the
+  title in the reading serif, and the name in parentheses under it. The
+  graphic starts gray and turns to color, and as it does one burst of
+  cut-paper confetti (`Confetti`) is thrown from its middle in the skill's
+  color, a tint of it, and the two inks every print shares. "Continue" closes
+  it; "View accomplishments" opens the skill on this screen. A submit that
+  earns several skills shows them one after the other, each with its own
+  reveal and confetti. It appears once per submit and at no other time: not on
+  Run, not on a failed submit, not on a review submit, and not when the problem
+  is opened again.
 
 ### The Settings screen
 

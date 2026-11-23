@@ -23,6 +23,7 @@ learnai/
   Cargo.toml               Cargo workspace (src-tauri, crates/*)
   python/                  uv project: the `learnai` package (judge, kit, CLI)
   problems/<track>/<id>/   the problem catalog
+  skills/<id>.toml         the skills of the Accomplishments screen (section 3.3)
   workspace/               the user's solutions (gitignored)
   .learnai/              local state: SQLite database, caches (gitignored)
 ```
@@ -61,7 +62,7 @@ time. A build made for the installer (compiled with `LEARNAI_DIST` set, by
 
 **Installed folder.** `install.sh` and `install.ps1` fill `~/.learnai` from a release
 file (`installer/package.sh` documents its layout): the content root's `areas/`,
-`problems/`, and `python/`, plus `bin/uv`. When a root has `bin/uv`, core runs that uv
+`problems/`, `skills/`, and `python/`, plus `bin/uv`. When a root has `bin/uv`, core runs that uv
 and no other, with variables that keep everything it downloads inside the root
 (`private_envs` in `crates/core/src/uv.rs`): uv's cache and Pythons under `uv/`, and the
 Hugging Face and PyTorch caches under `.learnai/cache/`. The app itself is in `app/`
@@ -224,6 +225,50 @@ issue. A module id that is not a known track is dropped and reported. A track li
 more than one area stays with the first area in file-name order; the later listing is
 dropped and reported. An area left with no modules is dropped and reported. A missing
 `areas/` directory is not an issue and yields an empty list.
+
+**Skills.** A skill is a curated group of problems that may build on other skills. The
+Accomplishments screen shows the skills as a tree. A skill is stored at
+`skills/<id>.toml` in the content root and read on every call:
+
+```toml
+id = "sampling"                   # must equal the file stem; a-z, 0-9, `-`, `_`
+title = "Luck of the Draw"        # the name the skill goes by
+name = "Sampling"                 # the plain name of what it covers
+summary = "One sentence."         # optional
+art = "fishing"                   # optional: slug of a graphic bundled with the app
+color = "#db5881"                 # optional: #rrggbb, stored lowercase
+requires = ["stable-numerics"]    # optional: ids of the skills this one builds on
+problems = ["temperature-scaling", "top-k-filtering"]   # problem ids, in order
+row = 1                           # row on the tree, from 0 at the top
+x = 600                           # horizontal center in px on a 1000 px wide canvas
+lanes = [[2, 600], [3, 600]]      # optional: [row, x], where its trails pass a lower row
+```
+
+`id`, `title`, `name`, `row`, and `x` are required; `row` and `x` are non-negative
+integers. Skills are loaded in file-name order and never fail as a whole:
+
+- A file that does not parse, lacks a required key, has an `id` that is not the file
+  stem or not a slug, or has an empty `title` or `name` is skipped and reported as a
+  catalog issue.
+- A `problems` id that is not a known problem, or that is listed twice, is dropped and
+  reported. A skill left with no problems is dropped and reported.
+- An `art` that is not a slug, a `color` that is not a hex color, and a `lanes` entry
+  that is not `[row, x]` of non-negative integers are each dropped and reported; the
+  skill still loads. The core passes `art` through unchanged and does not know the
+  images; the front end maps it to one.
+- `requires` is checked once every file is read, so a skill may build on one whose file
+  sorts after its own. A requirement that names the skill itself, names no usable skill
+  (unknown, or dropped for one of the reasons above), or repeats is dropped and
+  reported. A requirement that would close a cycle is dropped and reported: of two
+  skills that require each other, the one earlier in file-name order keeps its
+  requirement. The skills that load therefore always form a DAG.
+- A requirement on a skill that is not on a higher row (a smaller `row`) is reported
+  and kept: earning does not depend on the layout. The tree draws no trail for it.
+- A missing `skills/` directory is not an issue and yields an empty list.
+
+`row`, `x`, and `lanes` are set by hand (docs/DESIGN.md, "The Accomplishments screen").
+A test loads the shipped files and fails on any issue or any requirement that is not on
+a higher row.
 
 ### 3.4 Judge types
 
@@ -389,6 +434,14 @@ interface Track { id: string; title: string; description: string; order: number;
 interface Area { id: string; title: string; description: string;
                  modules: string[]; }                // existing track ids only, in order
 
+interface Skill { id: string; title: string; name: string; summary: string;
+                  art?: string; color?: string;      // absent when none or invalid
+                  requires: string[];                // usable skill ids only; never a cycle
+                  problems: string[];                // existing problem ids only, in order; never empty
+                  row: number; x: number;            // place on the tree: row from 0, center in px of 1000
+                  lanes: [number, number][];         // [row, x]: where its trails pass a lower row
+                  earnedAt: string | null; }         // ISO 8601; null until earned
+
 interface ProblemSummary {
   id: string; title: string; track: string; order: number; difficulty: Difficulty;
   frameworks: Framework[]; judges: JudgeKind[]; tags: string[]; prerequisites: string[];
@@ -479,8 +532,10 @@ Commands (Tauri command names are snake_case; the `Backend` interface uses camel
 | `get_stats` | | `Stats` |
 
 | `list_areas` | | `Area[]` |
+| `list_skills` | | `Skill[]`, sorted by `row`, then `x` (file-name order within a tie) |
+| `skills_earned_by` | `submissionId` | `Skill[]`: the skills that submission earned, in the same order; fails when there is no such submission |
 | `get_problem_asset` | `id, path` | `string`: a `data:` URL. `path` is relative to the problem's `assets/` directory and may not escape it; only `.svg` and `.png`, at most 1 MiB; an SVG must be UTF-8 and a PNG must have the PNG signature |
-| `list_catalog_issues` | | `{ path: string; message: string }[]` (malformed tracks, problems, and areas, and track, area, and core entries that were skipped) |
+| `list_catalog_issues` | | `{ path: string; message: string }[]` (malformed tracks, problems, areas, and skills, and track, area, core, and skill entries that were skipped) |
 | `list_assets` | | `AssetList` (runs `learnai assets list --json`) |
 | `fetch_assets` | `names: string[], target?` + event sink | `jobId: string`; stream of `AssetEvent` (runs `learnai assets fetch <names> --json` with `--extra models`) |
 | `cancel_asset_fetch` | `jobId` | |
@@ -506,6 +561,20 @@ the same time (both change the one environment). Every uv call core makes passes
 full set of installed extras, so no call removes another's packages. The app never
 downloads anything without an explicit click. `assets_missing` and `hardware_missing` submits are stored (with `skipped`) but
 never count as solved or toward the streak.
+
+Skills: nothing about a skill is stored; `earnedAt` is derived from the submissions
+table on every call. A problem's first solve is its earliest accepted submit that is not
+a review attempt, in any framework. A skill is earned once every one of its problems
+has a first solve and every skill it requires is earned, and `earnedAt` is the latest
+of those first solves and of the required skills' earned times (compared as times,
+returned as stored). So a skill whose problems were all solved earlier is earned at the
+moment the last skill it was waiting on is earned. `skills_earned_by` returns the
+skills whose `earnedAt` equals the submission's `createdAt`: the skills that submit
+earned, including one further down that was only waiting on a skill it earned. It
+returns an empty list unless the submission is an accepted submit that is not a review
+attempt; a later accepted submit of a problem that is already solved earns nothing.
+Devbridge: both follow the general rule (section 4.3); `skills_earned_by` with an
+unknown `submissionId` is `404`.
 
 ### 4.1 Run targets
 
@@ -1006,6 +1075,51 @@ help, one diagnostic and one hint) and a docs helper, so the fixture preview and
 tests run the real client. A `# learnai: editor_restarting`, `editor_failed`, or
 `editor_not_installed` comment in the open document plays that session state, once per
 session; `FixtureOptions.editorInstalled: false` starts without the server.
+
+### 5.2 Accomplishments in the front end
+
+The screen over section 4's `list_skills` and `skills_earned_by`. Its look is specified
+in docs/DESIGN.md ("The Accomplishments screen").
+
+**Data.** `Backend.listSkills()` and `Backend.skillsEarnedBy(submissionId)` exist on
+all three backends. `useSkills()` (`lib/api/queries.ts`) is the query;
+`invalidateProgress` invalidates it after every submit. `useSkillStates()`
+(`hooks/use-skills.ts`) joins the skills with `list_problems` into one `SkillState` per
+skill: its problems, how many are solved, whether it is earned (`earnedAt !== null`, as
+core decided it), and the required skills it still waits on once its problems are all
+solved.
+
+**Layout** (`lib/skills.ts`, pure and unit-tested). `skillStates`, `skillProgress` (the
+line under a tile), and the tree's geometry: `rowTop` and `canvasHeight` place the
+tiles from each skill's `row` and `x` on a canvas 1000 px wide, and `trails` returns
+the SVG paths from each skill to the skills below that build on it. A trail runs down,
+turns only in the band between two rows, passes a row at the `x` its skill's `lanes`
+give for that row, and arrives at a tile beside the other arrivals (`arrivalPorts`).
+Within a band, the trails that turn are stacked in the order with the fewest crossings.
+
+**Screen and components.** `routes/accomplishments.tsx` is the route `/accomplishments`,
+the third destination in the top bar and an entry in the command palette. Its search
+parameter `skill=<id>` opens that skill's detail, so `routes.accomplishments(id)` links
+to one. Under `components/accomplishments/`: `SkillTree` (tiles and trails),
+`SkillGraphic` (the graphic, gray until earned), `SkillDetail` (the dialog), `SkillEarned`
+(the popup for a skill just earned), and `Confetti`. `lib/skill-art.ts` maps an `art`
+slug to `src/assets/skills/<slug>.webp`; a slug with no file shows a block of the skill's
+color.
+
+**The earned popup.** `useEarnedSkills(run.state)` (`hooks/use-earned-skills.ts`), called
+by the problem workspace, decides when `SkillEarned` shows. When a run ends as an
+accepted submit that is not a review attempt and has a `submissionId`
+(`earningSubmission` in `lib/earned-skills.ts`), the hook calls `skills_earned_by` once
+for that submission and queues the result. The popup shows the first skill; closing it
+shows the next, in the order returned; "View accomplishments" goes to that skill on the
+Accomplishments screen and drops the rest. A failed call shows nothing. The queue lives
+in the workspace's state, so leaving the problem ends it, and reopening the problem
+starts with no run and therefore no popup.
+
+**Fixture backend.** `lib/api/fixture/skills.ts` has seven skills over the fixture
+problems, placed so that the seeded progress shows every state. One accepted submit of
+`rotary-embeddings` earns two of them. A `# learnai: accepted` comment in the solution
+makes a fixture run pass.
 
 ## 6. Milestones
 

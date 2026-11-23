@@ -1,6 +1,7 @@
 import { createLazyRoute, getRouteApi } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Layout, type LayoutChangedMeta, useDefaultLayout } from "react-resizable-panels";
+import { SkillEarned } from "@/components/accomplishments/skill-earned";
 import { AppLink } from "@/components/app/app-link";
 import { ScreenMessage } from "@/components/app/page";
 import { EmptyState, ErrorState, LoadingLines } from "@/components/app/states";
@@ -19,6 +20,7 @@ import { StatementPane } from "@/components/workbench/statement-pane";
 import { SuggestionsStatus } from "@/components/workbench/suggestions-status";
 import { useCollapsiblePanel } from "@/hooks/use-collapsible-panel";
 import { useCurriculum } from "@/hooks/use-curriculum";
+import { useEarnedSkills } from "@/hooks/use-earned-skills";
 import { useGo } from "@/hooks/use-go";
 import { usePanelShortcuts } from "@/hooks/use-panel-shortcuts";
 import { useRunShortcuts } from "@/hooks/use-run-shortcuts";
@@ -85,6 +87,8 @@ function ProblemScreen({ problemId }: { problemId: string }) {
   const editor = useSolutionEditor(problemId, framework, reviewing);
   const suggestions = useEditorSession();
   const run = useRun(problemId);
+  // An accepted submit that earns a skill says so, once, after the run has ended.
+  const earned = useEarnedSkills(run.state);
 
   // Where runs execute: the remembered choice, while that target still exists.
   const targets = useTargets();
@@ -345,156 +349,167 @@ function ProblemScreen({ problemId }: { problemId: string }) {
     sizeMb,
   }));
   return (
-    <ResizablePanelGroup
-      orientation="horizontal"
-      defaultLayout={openingColumns}
-      onLayoutChanged={onColumnsChanged}
-    >
-      <ResizablePanel
-        id="statement"
-        defaultSize={`${STATEMENT_SIZE}%`}
-        minSize="30%"
-        {...statementPanel.panelProps}
+    <>
+      <ResizablePanelGroup
+        orientation="horizontal"
+        defaultLayout={openingColumns}
+        onLayoutChanged={onColumnsChanged}
       >
-        <StatementPane
-          problem={detail}
-          place={place}
-          prerequisites={prerequisites}
-          framework={framework}
-          tab={tab}
-          submissionId={tab === "submissions" ? (search.submission ?? null) : null}
-          onTabChange={(next) => setSearch(next === "statement" ? {} : { tab: next })}
-          onOpenSubmission={(id) =>
-            setSearch(id === null ? { tab: "submissions" } : { tab: "submissions", submission: id })
-          }
-          previous={around.previous}
-          next={around.next}
-          onNavigate={(target) => go(routes.problem(target.id))}
-          reviewing={reviewing}
-        />
-      </ResizablePanel>
-      <ResizableHandle />
-      <ResizablePanel id="work" defaultSize={`${100 - STATEMENT_SIZE}%`} minSize="34%">
-        <ResizablePanelGroup
-          orientation="vertical"
-          defaultLayout={rows.defaultLayout}
-          onLayoutChanged={onRowsChanged}
+        <ResizablePanel
+          id="statement"
+          defaultSize={`${STATEMENT_SIZE}%`}
+          minSize="30%"
+          {...statementPanel.panelProps}
         >
-          <ResizablePanel
-            id="editor"
-            defaultSize={`${100 - RESULTS_SIZE}%`}
-            minSize="25%"
-            elementRef={editorPanel}
+          <StatementPane
+            problem={detail}
+            place={place}
+            prerequisites={prerequisites}
+            framework={framework}
+            tab={tab}
+            submissionId={tab === "submissions" ? (search.submission ?? null) : null}
+            onTabChange={(next) => setSearch(next === "statement" ? {} : { tab: next })}
+            onOpenSubmission={(id) =>
+              setSearch(id === null ? { tab: "submissions" } : { tab: "submissions", submission: id })
+            }
+            previous={around.previous}
+            next={around.next}
+            onNavigate={(target) => go(routes.problem(target.id))}
+            reviewing={reviewing}
+          />
+        </ResizablePanel>
+        <ResizableHandle />
+        <ResizablePanel id="work" defaultSize={`${100 - STATEMENT_SIZE}%`} minSize="34%">
+          <ResizablePanelGroup
+            orientation="vertical"
+            defaultLayout={rows.defaultLayout}
+            onLayoutChanged={onRowsChanged}
           >
-            <EditorPane
-              problemId={problemId}
-              layoutControls={
-                <>
-                  <PanelToggle
-                    panel="statement"
-                    collapsed={statementPanel.collapsed}
-                    onToggle={toggleStatement}
+            <ResizablePanel
+              id="editor"
+              defaultSize={`${100 - RESULTS_SIZE}%`}
+              minSize="25%"
+              elementRef={editorPanel}
+            >
+              <EditorPane
+                problemId={problemId}
+                layoutControls={
+                  <>
+                    <PanelToggle
+                      panel="statement"
+                      collapsed={statementPanel.collapsed}
+                      onToggle={toggleStatement}
+                    />
+                    <PanelToggle
+                      panel="results"
+                      collapsed={resultsPanel.collapsed}
+                      onToggle={toggleResults}
+                    />
+                  </>
+                }
+                suggestions={
+                  <SuggestionsStatus session={suggestions} onRetry={() => editorSession.restart()} />
+                }
+                frameworks={detail.frameworks}
+                framework={framework}
+                solvedFrameworks={detail.solvedFrameworks}
+                env={env.data}
+                install={install}
+                onInstall={(target) => void startInstall(target)}
+                editor={editor}
+                busy={active}
+                onFrameworkChange={(next) => setFramework(problemId, next)}
+                onRun={onRun}
+                onSubmit={onSubmit}
+                remote={host !== null}
+                review={reviewing}
+                targetPicker={
+                  <TargetPicker
+                    targets={targets.data ?? []}
+                    value={target}
+                    disabled={active}
+                    onChange={setTarget}
                   />
-                  <PanelToggle panel="results" collapsed={resultsPanel.collapsed} onToggle={toggleResults} />
-                </>
-              }
-              suggestions={
-                <SuggestionsStatus session={suggestions} onRetry={() => editorSession.restart()} />
-              }
-              frameworks={detail.frameworks}
-              framework={framework}
-              solvedFrameworks={detail.solvedFrameworks}
-              env={env.data}
-              install={install}
-              onInstall={(target) => void startInstall(target)}
-              editor={editor}
-              busy={active}
-              onFrameworkChange={(next) => setFramework(problemId, next)}
-              onRun={onRun}
-              onSubmit={onSubmit}
-              remote={host !== null}
-              review={reviewing}
-              targetPicker={
-                <TargetPicker
-                  targets={targets.data ?? []}
-                  value={target}
-                  disabled={active}
-                  onChange={setTarget}
-                />
-              }
-              notices={
-                <>
-                  {reviewing && review ? (
-                    <ReviewStrip
-                      review={review}
-                      busy={active || resolveReview.isPending}
-                      error={resolveReview.error ? resolveReview.error.message : null}
-                      onForgot={() => void endReview("forgot")}
-                      onSnooze={() => void endReview("snooze")}
-                      onRetire={() => void endReview("retire")}
-                      onStartOver={() => void editor.reset()}
-                      onLeave={() => setReviewMode(false)}
-                    />
-                  ) : review?.due && !reviewing && !reviewAccepted ? (
-                    <ReviewDueNotice review={review} disabled={active} onStart={() => setReviewMode(true)} />
-                  ) : null}
-                  {/* The listing describes this computer's disk, so it speaks for local runs only. */}
-                  {host === null ? <AssetNoticeList assets={models} fetch={fetch} /> : null}
-                  {lacking ? (
-                    <HardwareNotice
-                      requires={lacking}
-                      machine={host ?? undefined}
-                      remote={capable?.label}
-                      onUseRemote={capable && !active ? () => setTarget(capable.name) : undefined}
-                    />
-                  ) : null}
-                </>
-              }
-            />
-          </ResizablePanel>
-          <ResizableHandle />
-          <ResizablePanel
-            id="results"
-            defaultSize={`${RESULTS_SIZE}%`}
-            minSize="15%"
-            {...resultsPanel.panelProps}
-          >
-            <ResultsPanel
-              run={run.state}
-              onCancel={run.cancel}
-              idleHint={
-                reviewing
-                  ? "Run checks your review attempt against the public cases. Submit runs every case; an accepted submit completes this review."
-                  : undefined
-              }
-              note={outcome ? <ReviewOutcomeNote outcome={outcome} /> : null}
-              resolution={
-                <AssetNoticeList
-                  assets={sameTarget && host ? remoteSkippedFor : skippedFor}
-                  fetch={sameTarget ? targetFetch : fetch}
-                  host={sameTarget ? (host ?? undefined) : undefined}
-                  layout="inline"
-                  whenPresent={`${run.state.mode === "run" ? "Run" : "Submit"} again to judge the skipped cases.`}
-                />
-              }
-              actions={
-                run.state.submissionId !== null ? (
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    onClick={() =>
-                      setSearch({ tab: "submissions", submission: run.state.submissionId ?? undefined })
-                    }
-                  >
-                    View submission
-                  </Button>
-                ) : null
-              }
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      </ResizablePanel>
-    </ResizablePanelGroup>
+                }
+                notices={
+                  <>
+                    {reviewing && review ? (
+                      <ReviewStrip
+                        review={review}
+                        busy={active || resolveReview.isPending}
+                        error={resolveReview.error ? resolveReview.error.message : null}
+                        onForgot={() => void endReview("forgot")}
+                        onSnooze={() => void endReview("snooze")}
+                        onRetire={() => void endReview("retire")}
+                        onStartOver={() => void editor.reset()}
+                        onLeave={() => setReviewMode(false)}
+                      />
+                    ) : review?.due && !reviewing && !reviewAccepted ? (
+                      <ReviewDueNotice
+                        review={review}
+                        disabled={active}
+                        onStart={() => setReviewMode(true)}
+                      />
+                    ) : null}
+                    {/* The listing describes this computer's disk, so it speaks for local runs only. */}
+                    {host === null ? <AssetNoticeList assets={models} fetch={fetch} /> : null}
+                    {lacking ? (
+                      <HardwareNotice
+                        requires={lacking}
+                        machine={host ?? undefined}
+                        remote={capable?.label}
+                        onUseRemote={capable && !active ? () => setTarget(capable.name) : undefined}
+                      />
+                    ) : null}
+                  </>
+                }
+              />
+            </ResizablePanel>
+            <ResizableHandle />
+            <ResizablePanel
+              id="results"
+              defaultSize={`${RESULTS_SIZE}%`}
+              minSize="15%"
+              {...resultsPanel.panelProps}
+            >
+              <ResultsPanel
+                run={run.state}
+                onCancel={run.cancel}
+                idleHint={
+                  reviewing
+                    ? "Run checks your review attempt against the public cases. Submit runs every case; an accepted submit completes this review."
+                    : undefined
+                }
+                note={outcome ? <ReviewOutcomeNote outcome={outcome} /> : null}
+                resolution={
+                  <AssetNoticeList
+                    assets={sameTarget && host ? remoteSkippedFor : skippedFor}
+                    fetch={sameTarget ? targetFetch : fetch}
+                    host={sameTarget ? (host ?? undefined) : undefined}
+                    layout="inline"
+                    whenPresent={`${run.state.mode === "run" ? "Run" : "Submit"} again to judge the skipped cases.`}
+                  />
+                }
+                actions={
+                  run.state.submissionId !== null ? (
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      onClick={() =>
+                        setSearch({ tab: "submissions", submission: run.state.submissionId ?? undefined })
+                      }
+                    >
+                      View submission
+                    </Button>
+                  ) : null
+                }
+              />
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </ResizablePanel>
+      </ResizablePanelGroup>
+      <SkillEarned {...earned} />
+    </>
   );
 }
 
