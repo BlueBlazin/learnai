@@ -156,7 +156,10 @@ UNVERIFIED: that `axum` 0.8.9 and `tower-http` 0.7.1 are compatible with each ot
 
 | Tool | Version | Source |
 |---|---|---|
-| `uv` | 0.13.8 (released 2026-11-12) | https://github.com/astral-sh/uv/releases/latest |
+| `uv` | 0.13.9 (released 2026-11-17) | https://github.com/astral-sh/uv/releases/latest |
+
+0.13.9 is the uv that CI installs (`.github/workflows/ci.yml`) and that the installer
+ships in `~/.learnai/bin` (`UV_VERSION` in `installer/package.sh`).
 
 ---
 
@@ -346,13 +349,21 @@ No dependency was added or bumped for milestone 4. What changed is two markers i
   `aarch64-manylinux_2_28`. With the extras a harness run uses (`jax`, `mlx`) and
   `--only-binary :all:`, both platforms resolve to 48 packages, every one a wheel.
   With `models` added (69 packages) one package has no Linux wheel for Python 3.15:
-  **`pyyaml` 6.0.3** (needed by `huggingface_hub` and `transformers`) must be built
-  from its sdist, so `learnai assets fetch` on a Linux host needs a working build
-  environment or a later `pyyaml`. `uv pip compile pyproject.toml --python-platform
-  x86_64-manylinux_2_28` resolves to the same versions as the lock.
-- NOT verified: an actual install or run on Linux (wheel contents, the CUDA runtime
-  loading, glibc compatibility of the host, a managed Python 3.15 from uv on Linux),
-  and anything on a GPU.
+  **`pyyaml` 6.0.3** (needed by `huggingface_hub` and `transformers`) is built from
+  its sdist; the lock lists no wheel for it on any platform. The build needs no
+  compiler: without one, pyyaml installs without its optional C extension (checked on
+  this Mac with `CC=/usr/bin/false`: `yaml.__with_libyaml__` is `False` and
+  `safe_load` works; not checked on a Linux or Windows machine that has no compiler).
+  `uv pip compile pyproject.toml --python-platform x86_64-manylinux_2_28` resolves to
+  the same versions as the lock.
+- Verified since by CI on Ubuntu 24.04, x86_64 and arm64, with uv 0.13.9
+  (`.github/workflows/ci.yml`): `uv sync --locked` with all four extras, `learnai
+  doctor`, `pytest python/tests`, and `learnai validate --all`. The installer's test
+  (`.github/workflows/release.yml`) also checks there that the environment's Python
+  3.15 is the one uv downloaded into `~/.learnai/uv/python`. Windows Server 2025 gets
+  the same checks.
+- NOT verified: the CUDA runtime loading and anything on a GPU, and a host with an
+  older glibc than Ubuntu 24.04's (the wheels are `manylinux_2_28`).
 - `learnai doctor --json` was run in a fresh environment with no extras
   (`UV_PROJECT_ENVIRONMENT=<tmp> uv run --frozen --no-dev learnai doctor --json`): it
   reports `jax` and `mlx` as null and exits 0, and a torch problem is judged there.

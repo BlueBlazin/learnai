@@ -604,6 +604,10 @@ batch had passed validation:
   milestone 3, and the earlier tracks do not pass `ruff format --check`. Do not run the
   formatter across existing problems as part of a batch.
 - **Repetition counts varied** (two, three, or four validations) with the batch.
-- **Nothing runs automatically.** There is no CI and no pre-commit hook; the gate runs
-  when someone runs it.
+- **CI runs part of the gate.** On every push, `.github/workflows/ci.yml` runs
+  `learnai validate --all`, `pytest python/tests`, and `ruff check python` on macOS,
+  Linux (x86_64 and arm64), and Windows. It does not validate real-model problems (the
+  weights are not downloaded there), CUDA cases, or MLX solutions off Apple silicon, and
+  it does not lint `problems/`. There is no pre-commit hook. Those parts still run only
+  when someone runs them.
 - **CUDA cases have never run**, and the Triton shim was never compared with real Triton.

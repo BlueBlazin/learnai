@@ -166,7 +166,8 @@ jobs:
         if: ${{ !cancelled() }}
         run: cargo test --workspace --test '*' --no-fail-fast
 
-      # Compiles and links the desktop app. Installers are not built yet.
+      # Compiles and links the desktop app. The apps that are released are built in
+      # release.yml.
       - name: Desktop build
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm tauri build --debug --no-bundle

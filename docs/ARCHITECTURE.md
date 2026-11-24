@@ -964,7 +964,9 @@ and resolves after `done`, like `env_install`. Devbridge:
   remnants; `editor_docs` returns plain text. Neither is rendered reStructuredText.
 - The docs helper holds its libraries in memory while it runs (about 200 MB with torch
   imported; the language server uses about 120 MB).
-- Windows paths are handled when forming URIs but nothing here has been run on Windows.
+- ty itself has been run only on macOS. In CI `tests/editor_real.rs` skips itself,
+  because that job installs no Python environment. On Windows `tests/editor.rs`
+  (Unix-only) does not run either, which leaves this module's unit tests.
 
 ## 5. Front end
 
