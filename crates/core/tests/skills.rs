@@ -26,7 +26,8 @@ fn skill(id: &str, problems: &[&str], row: u32, x: u32, extra: &str) -> String {
 }
 
 /// Three skills in a chain, one fixture problem each: `first`, then `second`, then
-/// `third`.
+/// `third`. Only the `earning` tests use it, and they are built on Unix alone.
+#[cfg(unix)]
 fn write_chain(root: &Path) {
     write_skill(
         root,
