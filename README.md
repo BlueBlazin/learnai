@@ -14,6 +14,9 @@ problems in each module. Catalog and cores: `docs/CURRICULUM.md`. Writing proble
 `docs/PROBLEM_AUTHORING.md`. Producing and verifying a batch of problems:
 `docs/PROBLEM_PROCESS.md`.
 
+The Accomplishments screen shows 16 skills as a tree. A skill is a group of problems, and
+it is earned once each of them is solved and every skill it builds on is earned.
+
 Architecture and contracts: `docs/ARCHITECTURE.md`. Dependency versions: `docs/VERSIONS.md`.
 
 ## Screenshots
@@ -34,6 +37,13 @@ Architecture and contracts: `docs/ARCHITECTURE.md`. Dependency versions: `docs/V
   <img src="docs/screenshots/problem-cost.png" width="49%" alt="Problem: the cost judge rejects a decode loop that reprocesses tokens">
   <br>
   <sub>An accepted submission, and the cost judge counting model tokens</sub>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/accomplishments.png" width="49%" alt="Accomplishments: the skill tree, with two skills earned and trails to the skills that build on them">
+  <img src="docs/screenshots/skill.png" width="49%" alt="A skill: its graphic, the day it was earned, and its problems">
+  <br>
+  <sub>The skill tree, and an earned skill</sub>
 </p>
 
 <p align="center">
