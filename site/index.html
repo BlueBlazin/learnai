@@ -256,6 +256,14 @@
           transparent 100%
         );
       }
+      /* The Library animation and the track art are decoration: no selecting, no dragging. */
+      .library img,
+      .track img {
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-user-drag: none;
+        pointer-events: none;
+      }
       .library img {
         width: 100%;
         animation: drift 90s ease-in-out infinite alternate;
