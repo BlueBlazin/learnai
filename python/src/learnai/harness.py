@@ -69,13 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--case",
         default=None,
-        help="run only the case with this id, as the start event lists it "
-        "(hidden cases: hidden-N, or the real id with --reveal)",
-    )
-    parser.add_argument(
-        "--reveal",
-        action="store_true",
-        help="for problem authors: report hidden cases with their real ids, names, and details",
+        help="run only the case with this id, as the start event lists it",
     )
     return parser
 

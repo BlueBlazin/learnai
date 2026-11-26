@@ -1,15 +1,10 @@
 """Assertions for test cases, with failure messages a learner can act on.
 
 Every helper raises ``CheckFailure(message, detail)`` when the check does not hold.
-The ``message`` is one line and is shown for hidden cases too, so it never contains
-what the test expects (values, shapes, lengths, dtypes, keys, exception types) or what it
-passed in: it says what the solution produced and where it went wrong. The ``detail``
-has the expected side, the numbers, and the excerpts, and is dropped for hidden cases.
-
-One deliberate exception: the limit of a metric (``check.cost``, ``check.at_most``,
-``check.memory``, the speed judge). A limit is reported with the metric on every case,
-hidden or not, because the app draws the bar from it, so the message may repeat it.
-Never use a secret as a limit.
+The ``message`` is one line: what the solution produced, what was expected where
+that is short (a shape, a length, a dtype, an exception type, the worst value), and
+where it went wrong. The ``detail`` has the call, the numbers, and the excerpts. Both
+are shown for every case, public or hidden.
 
 Use as ``from learnai.judge import check`` and then ``check.allclose(...)``.
 """
@@ -52,16 +47,6 @@ _join = layout.join
 
 def _index(idx: Sequence[int]) -> str:
     return "[" + ", ".join(str(int(i)) for i in idx) + "]" if len(idx) else "(scalar)"
-
-
-def _magnitude(error: float) -> str:
-    """An error as an order of magnitude ("1e-03"), which is all a message may say.
-
-    The exact error next to the learner's own value would give the expected value away.
-    """
-    if not math.isfinite(error):
-        return "infinite"
-    return f"1e{math.floor(math.log10(error)):+03d}" if error > 0 else "0"
 
 
 def _fmt(value: Any) -> str:
@@ -122,7 +107,7 @@ def _shape_facts(expected: Sequence[int], got: Sequence[int]) -> str:
 def _check_shape(got: np.ndarray, expected: np.ndarray, label: str, context: str | None) -> None:
     if got.shape != expected.shape:
         raise CheckFailure(
-            f"{label}: got shape {tuple(got.shape)}, which is not the expected shape",
+            f"{label}: got shape {tuple(got.shape)}, expected shape {tuple(expected.shape)}",
             _join(context, _shape_facts(expected.shape, got.shape)),
         )
 
@@ -136,7 +121,7 @@ def _check_dtype(got: np.ndarray, expected: np.ndarray, label: str, context: str
         same = got.dtype.itemsize == expected.dtype.itemsize
     if not same:
         raise CheckFailure(
-            f"{label}: got dtype {got.dtype}, which is not the expected dtype",
+            f"{label}: got dtype {got.dtype}, expected dtype {expected.dtype}",
             _join(
                 context,
                 layout.facts(
@@ -155,7 +140,7 @@ def shape(got: Any, expected_shape: Sequence[int], *, label: str = "output") -> 
     array = _coerce(got, label, None)
     if tuple(array.shape) != tuple(expected_shape):
         raise CheckFailure(
-            f"{label}: got shape {tuple(array.shape)}, which is not the expected shape",
+            f"{label}: got shape {tuple(array.shape)}, expected shape {tuple(expected_shape)}",
             _join(_shape_facts(expected_shape, array.shape)),
         )
 
@@ -232,8 +217,8 @@ def allclose(
     else:
         message = (
             f"{label}: {n_bad} of {size} values differ from the expected result "
-            f"(largest error on the order of {_magnitude(float(err[worst]))}, "
-            f"at index {_index(worst)})"
+            f"(largest error {_fmt(float(err[worst]))} at index {_index(worst)}: "
+            f"expected {_fmt(want[worst])}, got {_fmt(have[worst])})"
         )
 
     def error_at(error: Any, at: tuple[int, ...]) -> str:
@@ -280,7 +265,8 @@ def equal(got: Any, expected: Any, *, label: str = "output", context: str | None
         first = tuple(int(i) for i in np.argwhere(differs)[0])
         raise CheckFailure(
             f"{label}: {int(differs.sum())} of {differs.size} values differ from the expected "
-            f"result (first at index {_index(first)})",
+            f"result (first at index {_index(first)}: expected {_fmt(want[first])}, "
+            f"got {_fmt(have[first])})",
             _join(
                 context,
                 layout.facts(
@@ -306,7 +292,7 @@ def equal(got: Any, expected: Any, *, label: str = "output", context: str | None
         if len(got) != len(expected):
             raise CheckFailure(
                 f"{label}: got {len(got)} item{'' if len(got) == 1 else 's'}, "
-                "which is not the expected number",
+                f"expected {len(expected)}",
                 _join(
                     context,
                     layout.facts(
@@ -324,7 +310,8 @@ def equal(got: Any, expected: Any, *, label: str = "output", context: str | None
             if not _py_equal(g, e):
                 lo = max(0, i - 4)
                 raise CheckFailure(
-                    f"{label}: differs from the expected result (first difference at position {i})",
+                    f"{label}: differs from the expected result (first difference at "
+                    f"position {i}: expected {_short(e, 60)}, got {_short(g, 60)})",
                     _join(
                         context,
                         layout.facts(
@@ -345,8 +332,12 @@ def equal(got: Any, expected: Any, *, label: str = "output", context: str | None
                 )
         return
     if not _py_equal(got, expected):
+        # Both sides in the message when they are short; otherwise they are in the detail.
+        brief = max(len(repr(got)), len(repr(expected))) <= 60
         raise CheckFailure(
-            f"{label}: differs from the expected result",
+            f"{label}: got {got!r}, expected {expected!r}"
+            if brief
+            else f"{label}: differs from the expected result",
             _join(context, *_sides(_short(expected), _short(got))),
         )
 
@@ -457,7 +448,7 @@ def match(
         if want.dtype.kind == "f":
             if len(have) != len(want):
                 raise CheckFailure(
-                    f"{label}: got {len(have)} values, which is not the expected number",
+                    f"{label}: got {len(have)} values, expected {len(want)}",
                     _join(context, f"expected {len(want)} values, got {len(have)}"),
                 )
             allclose(have, want, rtol=rtol, atol=atol, label=label, context=context)
@@ -471,7 +462,7 @@ def match(
     if nested:
         if not isinstance(got, (tuple, list)) or len(got) != len(expected):
             if isinstance(got, (tuple, list)):
-                message = f"{label}: got {len(got)} values, which is not the expected number"
+                message = f"{label}: got {len(got)} values, expected {len(expected)}"
             else:
                 kind = type(expected).__name__
                 message = f"{label}: expected a {kind} of values, got a {type(got).__name__}"
@@ -497,8 +488,7 @@ def raises(
         raise
     except Exception as exc:  # noqa: BLE001
         raise CheckFailure(
-            f"{label}: raised {type(exc).__name__}, which is not the exception the "
-            "statement specifies here",
+            f"{label}: raised {type(exc).__name__}, expected {exception.__name__}",
             _join(
                 layout.facts(
                     "result",
@@ -507,7 +497,7 @@ def raises(
             ),
         ) from None
     raise CheckFailure(
-        f"{label}: returned normally where the statement specifies an exception",
+        f"{label}: returned normally, expected {exception.__name__}",
         f"expected {exception.__name__}, but nothing was raised\n",
     )
 

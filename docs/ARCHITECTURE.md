@@ -288,12 +288,11 @@ a higher row.
 uv run --project <root>/python [--extra jax] [--extra mlx] -- \
   python -m learnai.harness \
     --problem <abs problem dir> --solution <abs solution file> \
-    --framework torch|jax|mlx|python --mode run|submit [--case <case id>] [--reveal]
+    --framework torch|jax|mlx|python --mode run|submit [--case <case id>]
 ```
 
 - `run` executes public cases only; `submit` executes all cases.
-- `--case` takes an id listed in `start.cases`. `--reveal` (authors only) shows real
-  hidden-case ids and names.
+- `--case` takes an id listed in `start.cases`.
 - Exit code 0 whenever the harness itself worked (even if cases failed); non-zero only
   for harness or usage failure.
 - The solution runs inside this subprocess. Core enforces an overall wall-clock limit
@@ -327,7 +326,7 @@ Skipped cases and the two "not judged" endings:
 ```jsonc
 {"event":"start", ..., "cases":[{"id":"c1","name":"...","public":true,"requires":"cuda"}],   // `requires` only when not "cpu"
    "requires":"cuda","requires_met":false}
-{"event":"case_end","id":"hidden-2","status":"skipped","duration_ms":0,
+{"event":"case_end","id":"gpu_scale","status":"skipped","duration_ms":0,
    "message":"skipped: needs an NVIDIA GPU (CUDA), which this machine does not have",
    "detail":null,"stdout":"","metrics":[],
    "skip":{"kind":"hardware","requires":"cuda"}}      // or {"kind":"asset","asset":"<name>"} or {"kind":"aborted"}
@@ -359,12 +358,11 @@ Skipped cases and the two "not judged" endings:
   failure of the learner's code. Show "N of M cases passed; K skipped", the `message`,
   and for `assets_missing` an action that fetches the asset. They never mark a problem
   solved; they are stored like any other non-accepted submit.
-- Hidden cases have the opaque id `hidden-N` and the name "Hidden case N", keep the
-  one-line `message`, and always have `detail: null` and `metrics: []` (pass or fail;
-  the run-level `metrics` of `end` are therefore the worst values over the public
-  cases). For a hidden `error`, `message` is
-  the exception line plus the location in the solution file. Skipped cases have
-  `detail: null`.
+- A hidden case (`"public": false`) differs from a public one only in that it runs in
+  `submit` mode alone. Its id and name in `start.cases` and in every event are its
+  own, and its `case_end` carries the same `message`, `detail`, and `metrics` as a
+  public case's. The run-level `metrics` of `end` are the worst values over all cases
+  that reported some. Skipped cases have `detail: null`.
 - `end` may carry optional `message` and `detail` (used for `import_error` and
   `harness_error`: the traceback). Core forwards them on the `end` RunEvent as
   `message: string | null` and `detail: string | null`.
@@ -695,8 +693,7 @@ Rules:
 
 **Case stages (capstones).** `CaseInfo` and `StoredCase` gain `stage?: string`, taken
 from `start.cases[].stage`. When any case has a stage, results group cases by stage in
-first-appearance order and show per-stage pass counts ("3/5 passed"); a stage label is
-public even for hidden cases. The heading reads "Stage <label>" (the label as written if
+first-appearance order and show per-stage pass counts ("3/5 passed"). The heading reads "Stage <label>" (the label as written if
 it already begins with "Stage"); in a staged problem, cases without a stage are grouped
 last under "Other cases". Stages gate nothing: every selected case runs and the
 verdict is computed from all cases. `case_end`, `end`, and the verdict do not mention

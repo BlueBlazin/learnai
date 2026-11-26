@@ -204,7 +204,7 @@ where they differ. Assets are pinned by a full 40-character revision.
 | 7 | Time: no "cases took more than 3 s" warning; statistical cases under about 3 s in every framework | `learnai validate <id> -v`, `learnai submit <id> -f <fw> --reference` | warning only; [Judgment] |
 | 8 | Lint | `ruff check problems/<track>/<id>` | [Tooling] |
 | 9 | Fairness: at least one alternative correct solution per problem is accepted | `learnai submit <id> -f <fw> --solution <path>` | [Judgment] |
-| 10 | Each mutant fails for the reason on its `# BUG:` line, and hidden failures leak nothing | `learnai submit <id> --mutant <name>` with and without `--reveal` | [Judgment] |
+| 10 | Each mutant fails for the reason on its `# BUG:` line | `learnai submit <id> --mutant <name>` | [Judgment] |
 | 11 | The starter's failure is one a beginner can act on | `learnai run <id> -f <fw> --starter` | [Judgment] |
 | 12 | Statement complete and unambiguous; editorial teaches and cites; figures readable in light and dark | reading; the app | [Judgment] |
 | 13 | Sources: every formula and system behavior checked against the named source | web search, reading code | [Judgment] |
@@ -355,8 +355,9 @@ new input shape}
 - Tests tight enough that every mutant fails and fair enough that any correct solution
   passes in every framework at float32: try at least one alternative correct solution
   per problem.
-- Public cases let the learner debug; hidden cases stop hard-coding. Failure messages say
-  what went wrong in terms the learner can act on and leak no expected values.
+- Public cases let the learner debug with Run; hidden cases add coverage on Submit.
+  Failure messages say what the solution produced and what was expected, in terms the
+  learner can act on.
 - A figure (SVG, currentColor) only where it carries the idea.
 
 ## Commands (from the repository root; always pass the extras)
@@ -441,20 +442,18 @@ For each problem:
    submit it: learnai submit <id> -f <fw> --solution <path>. A rejected honest solution
    is a finding. Keep your file under {scratchpad}/{review-name}/.
 4. Mutants. Read each mutant against its "# BUG:" line; run learnai submit <id> --mutant
-   <name> --reveal for each. Report mutants that fail for a different reason than
+   <name> for each. Report mutants that fail for a different reason than
    stated, that only crash, or that fail every case. Then name one realistic wrong
    solution that no mutant covers; write it and submit it. If it is accepted, that is the
    most important finding.
-5. Run learnai submit <id> --mutant <one> without --reveal: do hidden cases reveal
-   expected values, sizes, or what they test? Run learnai run <id> -f <fw> --starter: is
-   the first failure actionable?
+5. Run learnai run <id> -f <fw> --starter: is the first failure actionable?
 6. Hints and editorial: do the hints progress without giving the answer; does the
    editorial explain why, cover each mutant, and state cost?
 7. Run learnai validate <id> -v three times; report any warning or difference between
    runs. Run ruff check problems/<track>/<id>.
 
 Report per problem: findings ordered by severity (wrong fact, unfair test, hole in the
-tests, ambiguity, leak, style), each with the file and the evidence, and what you checked
+tests, ambiguity, style), each with the file and the evidence, and what you checked
 and found correct. Say plainly what you did not check.
 ```
 
@@ -478,7 +477,7 @@ and found correct. Say plainly what you did not check.
       the report and is not stated as fact about a real system.
 - [ ] Every item of the
       [guide's checklist](PROBLEM_AUTHORING.md#16-checklist-before-you-open-a-pull-request)
-      that applies (hardware, assets, memory limits, statistical time, hidden-case leaks).
+      that applies (hardware, assets, memory limits, statistical time).
 - [ ] A reviewer who did not write it solved it from the statement, and every wrong
       solution and cheat the reviewer wrote is rejected.
 - [ ] Every rule a hidden case enforces is stated and is distinguished by a public case.
@@ -509,9 +508,7 @@ and found correct. Say plainly what you did not check.
 
 Defects, how they surfaced, and the rule that came out of each.
 
-1. **Hidden cases leaked their purpose.** Hidden case ids were the test function names,
-   and failure messages revealed expected sizes. Reported by the first authors and again
-   in milestone 2. Now: opaque `hidden-N` ids, audited `check` messages.
+1. Withdrawn on 2026-11-26: hidden cases now report like public ones.
 2. **"Do not call the built-in" was not enforced.** Found after the first 12 problems.
    Now: `forbidden` lists and a shortcut mutant.
 3. **Spec mutants that cannot fail.** Many curriculum mutants were mathematically
@@ -575,10 +572,9 @@ batch had passed validation:
     Rule: expected values come from running the library, and the reviewer fuzzes the
     reference against the library where a library implements the rule.
 16. **A mutant that failed for another reason**, by a crash or a NaN, or whose `# BUG:`
-    line and editorial claimed more than was true. Rule: run every mutant with
-    `--reveal` and read what failed.
-17. **Hidden cases that printed labels or expected counts.** Rule: submit a mutant
-    without `--reveal` and read the output.
+    line and editorial claimed more than was true. Rule: run every mutant and read
+    what failed.
+17. Withdrawn on 2026-11-26: hidden cases now report like public ones.
 18. **A reference that relied on undocumented library behavior** (the stability of
     `mx.argsort`). Rule: state the tie rule and implement it explicitly.
 19. **A measurement that did not reproduce.** The difference between two libraries on

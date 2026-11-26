@@ -23,48 +23,12 @@ def fails(fn, *args, **kwargs) -> CheckFailure:
     return info.value
 
 
-# -- A1: a message never shows what the test expects ---------------------------------------
-
-#: Values chosen so that none of them can appear in a message by accident.
-SECRET = 7919
+# -- A1: what a message and a detail say ----------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("call", "secrets"),
-    [
-        (lambda: check.equal([1, 2], list(range(SECRET, SECRET + 13))), ["13", str(SECRET)]),
-        (lambda: check.equal([1, 2, 3], [1, 2, SECRET]), [str(SECRET)]),
-        (lambda: check.equal(5, SECRET), [str(SECRET)]),
-        (lambda: check.equal(np.zeros(4, dtype=np.int64), np.full(4, SECRET)), [str(SECRET)]),
-        (lambda: check.equal(np.zeros((2, 2)), np.zeros((13, 17))), ["13", "17"]),
-        (lambda: check.allclose(np.zeros(3), np.zeros((13, 17))), ["13", "17"]),
-        (lambda: check.allclose(np.zeros(3, np.float32), np.full(3, 7919.25, np.float32)),
-         ["7919", "7.919"]),
-        (lambda: check.allclose(np.zeros(3, np.float64), np.zeros(3, np.float16), dtype=True),
-         ["float16"]),
-        (lambda: check.shape(np.zeros((2, 2)), (13, 17)), ["13", "17"]),
-        (lambda: check.match({"a": 1}, {"zebra": 1, "yak": 2}), ["zebra", "yak"]),
-        (lambda: check.match([1.0], [np.float32(1.0)] * 13), ["13"]),
-        (lambda: check.match(3, [np.int64(1)] * 13), ["13"]),
-        (lambda: check.match((1, 2), (np.zeros(2),) * 13), ["13"]),
-        (lambda: check.raises(ZeroDivisionError, int, "3"), ["ZeroDivisionError"]),
-        (lambda: check.raises(ZeroDivisionError, int, "x"), ["ZeroDivisionError"]),
-        (lambda: check.distribution([0, 1, 40], np.full(13, 1 / 13)), ["13"]),
-        (lambda: check.distribution(counts=[5000, 0], probs=[0.25, 0.75]), ["5000", "0.25", "0.75"]),
-        (lambda: check.mean([0.5, 2.0], 0.5, low=-13.0, high=1.0), ["13"]),
-        (lambda: check.mean(np.ones(SECRET), 0.25, low=0.0, high=1.0), [str(SECRET), "0.25"]),
-    ],
-)  # fmt: skip
-def test_no_check_message_reveals_what_was_expected(call, secrets):
-    failure = fails(call)
-    assert "\n" not in failure.message
-    for secret in secrets:
-        assert secret not in failure.message, failure.message
-
-
-def test_the_expected_side_is_in_the_detail_for_public_cases():
+def test_the_message_states_the_expected_side_and_the_detail_shows_it():
     failure = fails(check.equal, [1, 2], [5, 6, 7])
-    assert failure.message == "output: got 2 items, which is not the expected number"
+    assert failure.message == "output: got 2 items, expected 3"
     assert "  expected items    3\n  got items         2\n" in failure.detail
     assert "expected\n  [5, 6, 7]\n" in failure.detail
     failure = fails(check.match, {"a": 1}, {"zebra": 1})
@@ -73,10 +37,10 @@ def test_the_expected_side_is_in_the_detail_for_public_cases():
     assert fails(check.match, [1], {"zebra": 1}).message == "output: expected a dict, got a list"
 
 
-def test_allclose_states_only_the_order_of_magnitude_of_the_error():
+def test_allclose_states_the_largest_error_and_where():
     expected = np.array([1.0, 2.0, 3.0], dtype=np.float32)
     failure = fails(check.allclose, expected + np.float32(0.004), expected)
-    assert "largest error on the order of 1e-03" in failure.message
+    assert "(largest error 0.003999949 at index [0]: expected 1, got 1.004)" in failure.message
     assert "  max abs error    0.00" in failure.detail
     got = expected.copy()
     got[1] = np.inf
@@ -86,7 +50,7 @@ def test_allclose_states_only_the_order_of_magnitude_of_the_error():
     )
 
 
-def test_a_hidden_case_reports_a_wrong_length_without_the_expected_count(tmp_path):
+def test_a_hidden_case_reports_a_wrong_length_with_the_expected_count(tmp_path):
     """End to end: the report from the milestone 2 authors, on a hidden case."""
     problem = tmp_path / "problems" / "basics" / "sum-list"
     shutil.copytree(CATALOG / "problems" / "basics" / "sum-list", problem)
@@ -105,9 +69,9 @@ def test_a_hidden_case_reports_a_wrong_length_without_the_expected_count(tmp_pat
     solution = tmp_path / "python.py"
     solution.write_text("def total(xs):\n    return [sum(xs)]\n")
     run = run_harness(problem, solution)
-    hidden = run.case("hidden-3")
-    assert hidden["message"] == "total: got 1 item, which is not the expected number"
-    assert hidden["detail"] is None and "7" not in hidden["message"]
+    hidden = run.case("hidden_length")
+    assert hidden["message"] == "total: got 1 item, expected 7"
+    assert "  expected items    7\n  got items         1\n" in hidden["detail"]
 
 
 # -- A3: naming the metric of a cost check ---------------------------------------------------
@@ -254,10 +218,10 @@ def test_forbidden_source_fails_every_case_before_anything_runs(tmp_path):
     run = run_harness(problem, SOLUTIONS / "good.py")
     assert run.end["status"] == "wrong_answer"
     assert set(run.statuses.values()) == {"fail"}
-    public, hidden = run.case("short"), run.case("hidden-1")
+    public, hidden = run.case("short"), run.case("negatives")
     assert public["message"] == "`sum` is not allowed in this problem (used at good.py line 2)"
     assert "These identifiers may not appear in the solution at all:\n  sum\n" in public["detail"]
-    assert hidden["message"] == public["message"] and hidden["detail"] is None
+    assert hidden["message"] == public["message"] and hidden["detail"] == public["detail"]
     # The reference adds with a loop and is unaffected.
     assert run_harness(problem, problem / "reference" / "python.py").end["status"] == "accepted"
 

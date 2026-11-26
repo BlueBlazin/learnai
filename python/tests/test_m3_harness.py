@@ -93,15 +93,15 @@ def test_cuda_problem_without_cuda_runs_cpu_cases_and_skips_the_rest():
     assert run.start["requires"] == "cuda" and run.start["requires_met"] is False
     by_id = {c["id"]: c for c in run.start["cases"]}
     assert by_id["cpu"].get("requires") is None
-    assert run.statuses == {"cpu": "pass", "hidden-1": "pass", "hidden-2": "skipped"}
-    skipped = run.case("hidden-2")
+    assert run.statuses == {"cpu": "pass", "cpu_random": "pass", "on_cuda": "skipped"}
+    skipped = run.case("on_cuda")
     assert skipped["skip"] == {"kind": "hardware", "requires": "cuda"}
     assert skipped["message"] == (
         "skipped: needs an NVIDIA GPU (CUDA), which this machine does not have"
     )
     assert skipped["detail"] is None
     # A skipped case has no case_start.
-    assert [e["id"] for e in run.of("case_start")] == ["cpu", "hidden-1"]
+    assert [e["id"] for e in run.of("case_start")] == ["cpu", "cpu_random"]
     end = run.end
     assert end["status"] == "hardware_missing"
     assert (end["passed"], end["total"], end["skipped"]) == (2, 3, 1)
@@ -115,7 +115,7 @@ def test_a_failure_outranks_missing_hardware():
     env = {"LEARNAI_HARDWARE": "cpu"}
     run = run_harness(CUDA_SCALE, CUDA_SCALE / "mutants" / "ignores_factor.py", "torch", env=env)
     assert run.end["status"] == "wrong_answer"
-    assert run.statuses["hidden-2"] == "skipped"
+    assert run.statuses["on_cuda"] == "skipped"
 
 
 def test_run_mode_with_only_cpu_cases_still_reports_the_missing_hardware():
@@ -132,8 +132,8 @@ def test_selecting_one_skipped_case_reports_it_without_importing_the_solution(tm
     crashing = tmp_path / "torch.py"
     crashing.write_text("raise RuntimeError('imported')\n")
     env = {"LEARNAI_HARDWARE": "cpu"}
-    run = run_harness(CUDA_SCALE, crashing, "torch", case="hidden-2", env=env)
-    assert run.statuses == {"hidden-2": "skipped"}
+    run = run_harness(CUDA_SCALE, crashing, "torch", case="on_cuda", env=env)
+    assert run.statuses == {"on_cuda": "skipped"}
     assert run.end["status"] == "hardware_missing" and run.end["passed"] == 0
 
 
@@ -167,8 +167,7 @@ def test_the_oracle_of_an_mlx_only_problem_is_its_mlx_reference():
 
 @needs_mlx
 def test_mlx_only_problem_runs_with_memory_and_throughput_metrics():
-    # Both measured cases are hidden, and hidden cases report metrics only to authors.
-    run = run_harness(MLX_SCALE, MLX_SCALE / "reference" / "mlx.py", "mlx", extra=["--reveal"])
+    run = run_harness(MLX_SCALE, MLX_SCALE / "reference" / "mlx.py", "mlx")
     assert run.end["status"] == "accepted", run.events
     assert run.start["requires"] == "mlx-gpu" and run.start["requires_met"] is True
     assert "torch" not in run.start["env"] and "mlx" in run.start["env"]
@@ -189,7 +188,7 @@ def test_mlx_only_problem_runs_with_memory_and_throughput_metrics():
 def test_the_memory_limit_catches_a_float32_promotion():
     run = run_harness(MLX_SCALE, MLX_SCALE / "mutants" / "promotes.py", "mlx")
     assert run.end["status"] == "wrong_answer"
-    failed = run.case("hidden-2")
+    failed = run.case("half_precision")
     assert failed["status"] == "fail" and "float32" in failed["message"]
 
 
@@ -198,7 +197,7 @@ def test_mlx_problem_without_a_gpu_skips_its_gpu_cases():
     env = {"LEARNAI_HARDWARE": "cpu"}
     run = run_harness(MLX_SCALE, MLX_SCALE / "reference" / "mlx.py", "mlx", env=env)
     assert run.statuses == {
-        "small": "pass", "hidden-1": "pass", "hidden-2": "skipped", "hidden-3": "skipped",
+        "small": "pass", "random_arrays": "pass", "half_precision": "skipped", "speed": "skipped",
     }  # fmt: skip
     assert run.end["status"] == "hardware_missing"
     assert "an Apple GPU (MLX with Metal)" in run.end["message"]
@@ -293,7 +292,7 @@ def test_missing_asset_skips_the_cases_that_need_it(tmp_path):
     run = run_harness(ASSET_VOCAB, ASSET_VOCAB / "reference" / "python.py", env=env)
     assert run.returncode == 0
     assert run.statuses == {
-        "synthetic": "pass", "hidden-1": "pass", "real_config": "skipped", "hidden-2": "skipped",
+        "synthetic": "pass", "synthetic_hidden": "pass", "real_config": "skipped", "real_weights": "skipped",
     }  # fmt: skip
     skipped = run.case("real_config")
     assert skipped["skip"] == {"kind": "asset", "asset": "tiny-test-model"}

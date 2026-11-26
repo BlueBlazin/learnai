@@ -66,23 +66,16 @@ def test_run_renders_public_cases(capsys, fixture_root):
 def test_submit_renders_failures_from_the_same_events(capsys, fixture_root):
     code, out, _ = learnai(capsys, "submit", "sum-list", "--mutant", "absolute_values")
     assert code == 1
-    assert "FAIL  hidden-1" in out and "Hidden case 1" in out
-    assert "total: differs from the expected result" in out
+    assert "total: got 14, expected -10" in out
     assert "Wrong answer  3/4 passed" in out
-    # What the hidden tests are called and what they check is not printed...
-    assert "negatives" not in out and "negative numbers" not in out and "detail" not in out
-    assert "-10" not in out
-
-    # ...unless an author asks.
-    code, out, _ = learnai(capsys, "submit", "sum-list", "--mutant", "absolute_values", "--reveal")
-    assert code == 1
+    # A hidden case is printed like a public one: its id, its name, and the detail.
     assert (
         "FAIL  negatives" in out
         and "negative numbers" in out
         and "| expected\n      |   -10\n" in out
     )
-    code, out, _ = learnai(capsys, "submit", "sum-list", "--reference", "--case", "hidden-2")
-    assert code == 0 and "PASS  hidden-2" in out and "1/1 passed" in out
+    code, out, _ = learnai(capsys, "submit", "sum-list", "--reference", "--case", "long_list")
+    assert code == 0 and "PASS  long_list" in out and "1/1 passed" in out
 
     code, out, _ = learnai(
         capsys, "submit", "sum-list", "--solution", str(SOLUTIONS / "raises_on_empty.py")
@@ -274,7 +267,7 @@ def test_validate_reports_hidden_cases_by_their_real_ids(scratch_root):
         "def total(xs):\n    return abs(sum(xs)) if __name__ == 'solution' else sum(xs)\n"
     )
     (error,) = [e for e in errors_for(scratch_root) if e.startswith("reference")]
-    assert "first failing case negatives" in error  # not "hidden-1": authors need the name
+    assert "first failing case negatives" in error
 
 
 def test_validate_checks_that_forbidden_names_resolve(scratch_root):

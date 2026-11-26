@@ -87,15 +87,15 @@ def test_stage_must_be_a_short_one_line_label(bad):
     assert registry.MAX_STAGE_LENGTH == 60
 
 
-def test_start_event_carries_the_stage_also_for_hidden_cases(staged, sum_list):
+def test_start_event_carries_the_stage_of_every_case(staged, sum_list):
     run = run_harness(staged, SOLUTIONS / "wrong_on_negatives.py")
     cases = run.start["cases"]
     assert [(c["id"], c["name"], c["stage"]) for c in cases] == [
         ("short", "sums a short list", "1: small lists"),
         ("empty", "sums an empty list", "1: small lists"),
-        ("hidden-1", "Hidden case 1", "2: signs"),
+        ("negatives", "negative numbers", "2: signs"),
         ("long_list", "a long list", "1: small lists"),
-        ("hidden-2", "Hidden case 2", "2: signs"),
+        ("one_negative", "a list of one negative number", "2: signs"),
     ]
     # Nothing else changes: the events of a case do not repeat the stage.
     assert all("stage" not in e for e in run.of("case_end") + run.of("end"))
@@ -118,7 +118,9 @@ def test_text_output_groups_cases_by_stage_and_counts_each(capsys, staged):
     assert headings == [
         "Stage 1: small lists", "Stage 2: signs", "Stage 1: small lists", "Stage 2: signs",
     ]  # fmt: skip
-    assert lines.index("  Stage 2: signs") < next(i for i, x in enumerate(lines) if "hidden-1" in x)
+    assert lines.index("  Stage 2: signs") < next(
+        i for i, x in enumerate(lines) if "negatives" in x
+    )
     # After the verdict: one line per stage, in order of first appearance.
     verdict = next(i for i, line in enumerate(lines) if line.startswith("Wrong answer"))
     assert "3/5 passed" in lines[verdict]

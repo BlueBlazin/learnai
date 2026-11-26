@@ -98,7 +98,7 @@ def test_check_enforces_tensor_type_and_dtype():
     )
     ctx = context_for("unit-normalize", "torch")
     ctx.solution = module(normalize=lambda x, axis=-1: ctx.reference.normalize(x, axis).double())
-    with pytest.raises(CheckFailure, match="got dtype float64, which is not the expected dtype"):
+    with pytest.raises(CheckFailure, match="got dtype float64, expected dtype float32"):
         ctx.check("normalize", ctx.randn(2, 2))
     ctx.check("normalize", ctx.randn(2, 2), dtype=False)
     ctx.solution = module(normalize=lambda x, axis=-1: None)

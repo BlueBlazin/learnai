@@ -1,7 +1,6 @@
 """Milestone 4: fixes reported by milestone 3 authors, CUDA detection, `learnai doctor`,
 the JAX compilation cache, and the small kit helpers."""
 
-import importlib.util
 import json
 import shutil
 import subprocess
@@ -18,7 +17,7 @@ from learnai import validate as gate
 from learnai.judge import frameworks
 from learnai.kit import RealConfig, logit_kl
 from learnai.problem import load_problem
-from learnai.tracebacks import exception_line, hidden_error_message
+from learnai.tracebacks import exception_line
 
 M3 = FIXTURES / "m3"
 CUDA_SCALE = M3 / "problems" / "gpu" / "cuda-scale"
@@ -72,7 +71,7 @@ def test_exception_line_survives_a_broken_str_and_notes():
 
 
 def test_a_multi_line_exception_gives_an_informative_one_line_case_message(tmp_path):
-    # Through the harness: a hidden case keeps one line (type, first line, location).
+    # Through the harness: one line (type, first line), on public and hidden cases alike.
     problem = tmp_path / "problems" / "basics" / "sum-list"
     shutil.copytree(FIXTURES / "catalog" / "problems" / "basics" / "sum-list", problem)
     shutil.copy(FIXTURES / "catalog" / "problems" / "basics" / "track.toml", problem.parent)
@@ -86,24 +85,9 @@ def test_a_multi_line_exception_gives_an_informative_one_line_case_message(tmp_p
     public = next(e for e in run.start["cases"] if e["public"])["id"]
     hidden = next(e for e in run.start["cases"] if not e["public"])["id"]
     assert messages[public] == "RuntimeError: size mismatch for layer 3"
-    assert messages[hidden] == (
-        "RuntimeError: size mismatch for layer 3 (solution.py line 2, in total)"
-    )
-    assert "expected: (4, 8)" in run.case(public)["detail"]  # the full text is in the detail
-    assert run.case(hidden)["detail"] is None
-
-
-def test_hidden_error_message_is_cut_and_located(tmp_path):
-    source = tmp_path / "solution.py"
-    source.write_text("def f():\n    raise ValueError('x' * 500 + '\\nsecond line')\n")
-    spec = importlib.util.spec_from_file_location("hidden_error_solution", source)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    with pytest.raises(ValueError) as failure:
-        module.f()
-    message = hidden_error_message(failure.value, str(source))
-    assert message.endswith("... (solution.py line 2, in f)") and len(message) < 240
-    assert "second line" not in message
+    assert messages[hidden] == messages[public]
+    for case_id in (public, hidden):
+        assert "expected: (4, 8)" in run.case(case_id)["detail"]  # the full text is in the detail
 
 
 # -- validate on a machine without the hardware --------------------------------------------
@@ -117,9 +101,7 @@ def test_validate_does_not_claim_skips_when_every_case_ran(monkeypatch, capsys):
     monkeypatch.setenv("LEARNAI_ROOT", str(root))
     monkeypatch.setenv("LEARNAI_HARDWARE", "cpu")
     problem = load_problem(MLX_SCALE)
-    command = runner.harness_command(
-        MLX_SCALE, problem.reference_path("mlx"), "mlx", "submit", reveal=True
-    )
+    command = runner.harness_command(MLX_SCALE, problem.reference_path("mlx"), "mlx", "submit")
     result = runner.run(command)
     marked = [c for c in result.start["cases"] if c.get("requires")]
     (report,) = gate.validate(root, [MLX_SCALE])

@@ -28,7 +28,6 @@ from learnai.problem import Problem, ProblemError, load_problem
 from learnai.tracebacks import (
     exception_line,
     format_user_traceback,
-    hidden_error_message,
     raised_in,
 )
 
@@ -160,8 +159,6 @@ class Worker:
         self.capture = FdCapture(args.capture_file)
         self.started_at = time.perf_counter()
         self.ended = False
-        #: Real case id -> the id that leaves the harness (opaque for hidden cases).
-        self.wire: dict[str, str] = {}
         self.guard: Any = None  # forbidden-call guard, when the problem has a list
         #: Real case id -> (skip object, message) for cases this machine cannot run.
         self.skips: dict[str, tuple[dict[str, str], str]] = {}
@@ -242,7 +239,7 @@ class Worker:
         # prints while loading cannot reach the protocol stream.
         from learnai.judge import frameworks, warmup
         from learnai.judge.context import ModuleStore
-        from learnai.judge.registry import load_cases, wire_identity
+        from learnai.judge.registry import load_cases
 
         warmup.install(self.off_the_clock)
         warmup.watch_imports()
@@ -272,17 +269,13 @@ class Worker:
             raise HarnessFailure(str(exc)) from exc
 
         all_cases = load_cases(problem.tests_path)
-        # What a hidden case is called and what it checks stays in this process: on
-        # the wire it is `hidden-N` / "Hidden case N" (unless an author asks to reveal).
-        identity = wire_identity(all_cases, reveal=args.reveal)
-        self.wire = {case_id: wire_id for case_id, (wire_id, _) in identity.items()}
         cases = [
             c
             for c in all_cases
             if c.applies_to(args.framework) and (c.public or args.mode == "submit")
         ]
         if args.case is not None:
-            cases = [c for c in cases if self.wire[c.id] == args.case]
+            cases = [c for c in cases if c.id == args.case]
             if not cases:
                 raise HarnessFailure(
                     f"no case with id {args.case!r} in {args.mode} mode for {problem.id!r}"
@@ -306,7 +299,7 @@ class Worker:
                 "problem": problem.id,
                 "framework": args.framework,
                 "mode": args.mode,
-                "cases": [self.case_info(c, identity) for c in cases],
+                "cases": [self.case_info(c) for c in cases],
                 "env": env,
                 "requires": problem.requires,
                 "requires_met": self.hardware_met,
@@ -338,10 +331,8 @@ class Worker:
                         self.emit(self.skipped(case))
                         statuses.append("skipped")
                         continue
-                    wire_id = self.wire[case.id]
-                    shown = detail if case.public or args.reveal else None
-                    self.emit({"event": "case_start", "id": wire_id})
-                    self.emit(self.case_end(wire_id, "fail", 0.0, found.message, shown, "", []))
+                    self.emit({"event": "case_start", "id": case.id})
+                    self.emit(self.case_end(case.id, "fail", 0.0, found.message, detail, "", []))
                     statuses.append("fail")
                 self.finish(problem, cases, statuses, [])
                 return 0
@@ -358,7 +349,7 @@ class Worker:
                 # One line only: the traceback is on the `end` event, once.
                 self.emit(
                     self.case_end(
-                        self.wire[case.id], "skipped", 0.0, "not run: " + message, None, "", [],
+                        case.id, "skipped", 0.0, "not run: " + message, None, "", [],
                         skip={"kind": "aborted"},
                     )
                 )  # fmt: skip
@@ -422,21 +413,17 @@ class Worker:
                     )
                     break
 
-    def case_info(self, case: Any, identity: dict[str, tuple[str, str]]) -> dict[str, Any]:
-        info: dict[str, Any] = {
-            "id": identity[case.id][0],
-            "name": identity[case.id][1],
-            "public": case.public,
-        }
+    def case_info(self, case: Any) -> dict[str, Any]:
+        info: dict[str, Any] = {"id": case.id, "name": case.name, "public": case.public}
         if case.requires != "cpu":
             info["requires"] = case.requires
         if case.stage is not None:
-            info["stage"] = case.stage  # public also for a hidden case
+            info["stage"] = case.stage
         return info
 
     def skipped(self, case: Any) -> dict[str, Any]:
         skip, message = self.skips[case.id]
-        return self.case_end(self.wire[case.id], "skipped", 0.0, message, None, "", [], skip=skip)
+        return self.case_end(case.id, "skipped", 0.0, message, None, "", [], skip=skip)
 
     def finish(self, problem: Problem, cases: list, statuses: list[str], metrics: list) -> None:
         """Emit ``end`` with the verdict, explaining an incomplete run in words."""
@@ -528,18 +515,14 @@ class Worker:
 
     @staticmethod
     def describe_error(
-        exc: BaseException, user_file: str, also_show: tuple[str, ...], shown: bool
+        exc: BaseException, user_file: str, also_show: tuple[str, ...]
     ) -> tuple[str, str, str | None]:
         """Status, message, and detail for an exception that escaped a case.
 
-        Public case: the exception line, and a traceback of the learner's frames (or
-        the test's, when the learner's file is not involved). Hidden case: everything
-        the learner needs to debug their own code fits the message (their exception
-        type and text, and the line of their file); there is no detail.
+        The message is the exception line; the detail is a traceback of the learner's
+        frames (or the test's, when the learner's file is not involved).
         """
-        if shown:
-            return "error", exception_line(exc), format_user_traceback(exc, user_file, also_show)
-        return "error", hidden_error_message(exc, user_file), None
+        return "error", exception_line(exc), format_user_traceback(exc, user_file, also_show)
 
     def case_end(
         self,
@@ -575,20 +558,13 @@ class Worker:
         ctx = Context(store, case)
         status, message, detail = "pass", None, None
         user_file = str(solution_path)
-        wire_id = self.wire[case.id]
-        # Hidden cases keep the one-line message and never carry a detail: it could
-        # show expected values, the test's inputs, or its source. They carry no metrics
-        # either, pass or fail: a counter with its limit ("96 rows, limit 96") gives away
-        # the sizes of a hidden input, and the run-level metrics are built from what
-        # the cases report, so they then cover the public cases only.
-        shown = case.public or self.args.reveal
         if self.guard is not None:
             self.guard.install()  # picks up frameworks the solution imported since
             self.guard.take()
 
-        self.emit({"event": "case_start", "id": wire_id})
+        self.emit({"event": "case_start", "id": case.id})
         self.capture.begin()
-        self.activity(phase="case", id=wire_id, limit_s=limit)
+        self.activity(phase="case", id=case.id, limit_s=limit)
         started = time.perf_counter()
         try:
             try:
@@ -605,7 +581,7 @@ class Worker:
         except AssertionError as exc:
             if raised_in(exc, user_file):
                 # The learner's own assert fired: that is a crash, not a wrong answer.
-                status, message, detail = self.describe_error(exc, user_file, (), shown)
+                status, message, detail = self.describe_error(exc, user_file, ())
             else:
                 status = "fail"
                 text = str(exc).strip()
@@ -614,7 +590,7 @@ class Worker:
                 detail = rest or None
         except BaseException as exc:  # noqa: BLE001 - includes SystemExit from the solution
             also_show = (str(problem.tests_path),)
-            status, message, detail = self.describe_error(exc, user_file, also_show, shown)
+            status, message, detail = self.describe_error(exc, user_file, also_show)
         duration_ms = max(0.0, time.perf_counter() - started - self.paused_s) * 1000
         self.activity(phase="idle")
         data, total = self.capture.take()
@@ -623,18 +599,16 @@ class Worker:
             # Also when the solution caught the exception and carried on: the rule of
             # the exercise was broken either way.
             status, message, detail = "fail", violations[0].message, self.guard.rule_text()
-        if not shown:
-            detail = None
         if message is not None:
             message = " ".join(message.split())  # one line
         return self.case_end(
-            wire_id,
+            case.id,
             status,
             duration_ms,
             message,
             detail,
             protocol.truncate_output(data, total),
-            ctx.metrics if shown else [],
+            ctx.metrics,
         )
 
 
@@ -645,7 +619,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--framework", required=True)
     parser.add_argument("--mode", required=True, choices=["run", "submit"])
     parser.add_argument("--case", default=None)
-    parser.add_argument("--reveal", action="store_true")
     parser.add_argument("--capture-file", required=True)
     args = parser.parse_args(argv)
 

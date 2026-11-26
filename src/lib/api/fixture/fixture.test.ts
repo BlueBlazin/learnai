@@ -155,8 +155,6 @@ describe("simulated run stream", () => {
     expect(hiddenOnly.last.verdict).toBe("accepted");
     const hiddenFail = await end("rotary-embeddings", "ok", "submit");
     expect(hiddenFail.last.verdict).toBe("wrong_answer");
-    // Hidden cases never leak expected values.
-    expect(hiddenFail.results.find((r) => r.status === "fail")?.detail).toBeNull();
 
     const harness = await end("stable-softmax", "# learnai: harness_error");
     expect(harness.last).toMatchObject({ verdict: "harness_error", total: 0 });

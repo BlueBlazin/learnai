@@ -13,9 +13,6 @@ from typing import Any
 from learnai.hardware import REQUIREMENTS
 
 _ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
-#: The ids hidden cases get on the wire (``hidden-1``, ``hidden-2``, ...); a real case id
-#: must not look like one.
-_OPAQUE_PATTERN = re.compile(r"^hidden-\d+$")
 
 #: A stage label is a heading in the app and in the terminal: keep it short.
 MAX_STAGE_LENGTH = 60
@@ -56,15 +53,13 @@ def case(
 ) -> Callable[[Callable[[Any], None]], Callable[[Any], None]]:
     """Register a test case.
 
-    name          what the learner sees for a public case; write it as a short
-                  statement of what is checked ("handles logits near 1e4").
-    public        True: runs on Run and Submit, name and details are shown.
-                  False (default): runs on Submit only; the learner sees
-                  "Hidden case N" (id ``hidden-N``) and the one-line failure
-                  message, never the name, the id, or the details.
+    name          what the learner sees; write it as a short statement of what is
+                  checked ("handles logits near 1e4").
+    public        True: runs on Run and Submit. False (default, a "hidden" case):
+                  runs on Submit only. Either way the learner sees the name, the
+                  failure message, and the details.
     id            stable identifier; defaults to the function name. It seeds the
-                  case's random generator and never leaves the harness for a
-                  hidden case.
+                  case's random generator.
     time_limit_s  overrides the problem's per-case limit.
     frameworks    restrict the case to these solution frameworks (rarely needed).
     requires      hardware the case needs: ``"cpu"`` (default: the case runs on every
@@ -76,10 +71,9 @@ def case(
                   synthetic input). A case whose asset is not on disk is ``skipped``.
     stage         the stage of a multi-part problem (a capstone) this case grades, for
                   example ``"2: paged KV cache"``. Cases with the same label form a
-                  stage; stages are ordered by the first case that names them. The
-                  label is shown to the learner even for a hidden case, so it must
-                  not give a hidden check away. A problem gives every case a stage or
-                  none (``learnai validate`` enforces it).
+                  stage; stages are ordered by the first case that names them. A
+                  problem gives every case a stage or none (``learnai validate``
+                  enforces it).
 
     Cases run in the order they are defined. The function takes one argument, the
     ``Context``; it passes by returning and fails by raising ``CheckFailure`` (which is
@@ -104,8 +98,6 @@ def case(
         case_id = id if id is not None else fn.__name__
         if not _ID_PATTERN.match(case_id):
             raise ValueError(f"case id {case_id!r} may only contain letters, digits, _ . -")
-        if _OPAQUE_PATTERN.match(case_id):
-            raise ValueError(f"case id {case_id!r} is reserved for hidden cases on the wire")
         if _collecting is not None:
             if any(existing.id == case_id for existing in _collecting):
                 raise ValueError(f"duplicate case id {case_id!r}")
@@ -125,28 +117,6 @@ def case(
         return fn
 
     return register
-
-
-def wire_identity(cases: Sequence[Case], *, reveal: bool = False) -> dict[str, tuple[str, str]]:
-    """Map each case id to the ``(id, name)`` that may leave the harness.
-
-    Public cases keep theirs. A hidden case becomes ``("hidden-N", "Hidden case N")``,
-    N counting the hidden cases of the whole tests file in definition order, so that
-    neither the function name nor the description leaks what the hidden tests check.
-    ``cases`` must therefore be the complete list ``load_cases`` returned, not a
-    selection. ``reveal=True`` (authors: ``learnai validate``, ``--reveal``) keeps the real
-    id and name of hidden cases too.
-    """
-    identity: dict[str, tuple[str, str]] = {}
-    hidden = 0
-    for item in cases:
-        if item.public or reveal:
-            identity[item.id] = (item.id, item.name)
-        if not item.public:
-            hidden += 1
-            if not reveal:
-                identity[item.id] = (f"hidden-{hidden}", f"Hidden case {hidden}")
-    return identity
 
 
 def stages_of(cases: Sequence[Any]) -> list[str]:

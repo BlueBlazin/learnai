@@ -22,12 +22,12 @@ def test_allclose_accepts_float32_noise_and_rejects_real_errors():
     check.allclose(expected * F32(1 + 2e-6), expected)
     failure = fails(check.allclose, expected * F32(1.01), expected, label="softmax")
     assert failure.message.startswith("softmax: 40 of 40 values differ from the expected result")
-    assert "largest error on the order of 1e-02" in failure.message
+    assert "(largest error 0.05000019 at index [39]: expected 5, got 5.05)" in failure.message
 
 
 def test_shape_mismatch_is_stated_first_and_alone():
     failure = fails(check.allclose, np.zeros((4,)), np.zeros((4, 8)), label="softmax")
-    assert failure.message == "softmax: got shape (4,), which is not the expected shape"
+    assert failure.message == "softmax: got shape (4,), expected shape (4, 8)"
     assert failure.detail == "result\n  expected shape    (4, 8)\n  got shape         (4,)\n"
 
 
@@ -39,7 +39,7 @@ def test_detail_has_errors_worst_index_and_excerpts():
     failure = fails(check.allclose, got, expected, label="y", context="call: f(x)")
     assert failure.message == (
         "y: 2 of 60 values differ from the expected result "
-        "(largest error on the order of 1e-01, at index [1, 13])"
+        "(largest error 0.5 at index [1, 13]: expected 33, got 33.5)"
     )
     assert failure.detail == (
         "call: f(x)\n"  # a test's own context is passed through as it is
@@ -59,9 +59,9 @@ def test_detail_has_errors_worst_index_and_excerpts():
     )
 
 
-def test_message_never_contains_expected_values():
+def test_message_states_the_worst_expected_value():
     failure = fails(check.allclose, np.array([1.0, 2.0]), np.array([1.0, 7.125]))
-    assert "7.125" not in failure.message
+    assert "at index [1]: expected 7.125, got 2)" in failure.message
     assert "7.125" in failure.detail
 
 
@@ -88,7 +88,7 @@ def test_none_and_non_numeric_results():
 def test_dtype_check_is_opt_in():
     check.allclose(np.ones(2, dtype=np.float64), np.ones(2, dtype=F32))
     failure = fails(check.allclose, np.ones(2, dtype=np.float64), np.ones(2, dtype=F32), dtype=True)
-    assert failure.message == "output: got dtype float64, which is not the expected dtype"
+    assert failure.message == "output: got dtype float64, expected dtype float32"
     assert failure.detail == (
         "result\n"
         "  expected dtype    float32\n"
@@ -102,7 +102,8 @@ def test_equal_on_arrays_ignores_integer_width():
     check.equal(np.array([1, 2, 3], dtype=np.int32), np.array([1, 2, 3], dtype=np.int64))
     failure = fails(check.equal, np.array([1, 9, 3]), np.array([1, 2, 3]), label="tokens")
     assert failure.message == (
-        "tokens: 1 of 3 values differ from the expected result (first at index [1])"
+        "tokens: 1 of 3 values differ from the expected result "
+        "(first at index [1]: expected 2, got 9)"
     )
     assert failure.detail == (
         "result\n"
@@ -114,7 +115,7 @@ def test_equal_on_arrays_ignores_integer_width():
         "got\n"
         "  [1, 9, 3]\n"
     )
-    assert "not the expected shape" in (
+    assert "got shape (2,), expected shape (3,)" in (
         fails(check.equal, np.array([1, 2]), np.array([1, 2, 3])).message
     )
 
@@ -124,7 +125,8 @@ def test_equal_on_python_values():
     check.equal("abc", "abc")
     failure = fails(check.equal, [5, 6, 7, 8], [5, 6, 9, 8], label="tokens")
     assert failure.message == (
-        "tokens: differs from the expected result (first difference at position 2)"
+        "tokens: differs from the expected result "
+        "(first difference at position 2: expected 9, got 7)"
     )
     assert failure.detail == (
         "result\n"
@@ -137,7 +139,7 @@ def test_equal_on_python_values():
         "  [5, 6, 7, 8]\n"
     )
     failure = fails(check.equal, [1], [1, 2])
-    assert failure.message == "output: got 1 item, which is not the expected number"
+    assert failure.message == "output: got 1 item, expected 2"
     assert failure.detail == (
         "result\n  expected items    2\n  got items         1\n\nexpected\n  [1, 2]\n\ngot\n  [1]\n"
     )
@@ -160,23 +162,23 @@ def test_equal_treats_a_list_of_0d_arrays_as_a_list_of_scalars():
     check.equal([[np.array(1), np.array(2)], [np.array(3)]], [[1, 2], [3]])
     failure = fails(check.equal, tokens, [5, 9, 7], label="tokens")
     assert failure.message == (
-        "tokens: differs from the expected result (first difference at position 1)"
+        "tokens: differs from the expected result "
+        "(first difference at position 1: expected 9, got 6)"
     )
     # The detail shows numbers, not `array(6)`.
     assert "position 1   (expected 9, got 6)" in failure.detail
     assert "got[0:10]\n  [5, 6, 7]\n" in failure.detail and "array(" not in failure.detail
-    assert fails(check.equal, tokens, [5, 6]).message == (
-        "output: got 3 items, which is not the expected number"
-    )
+    assert fails(check.equal, tokens, [5, 6]).message == ("output: got 3 items, expected 2")
 
 
 def test_equal_never_squeezes_an_array_inside_a_list_into_a_scalar():
     # A one-element tensor is not a scalar: `bool(array([5]) == 5)` used to let it pass.
     failure = fails(check.equal, [np.array([5]), np.array(6)], [5, 6], label="tokens")
-    assert failure.message == "tokens[0]: got shape (1,), which is not the expected shape"
+    assert failure.message == "tokens[0]: got shape (1,), expected shape ()"
     failure = fails(check.equal, [np.array([1, 2]), np.array([3, 9])], [[1, 2], [3, 4]], label="t")
     assert failure.message == (
-        "t[1]: 1 of 2 values differ from the expected result (first at index [1])"
+        "t[1]: 1 of 2 values differ from the expected result "
+        "(first at index [1]: expected 4, got 9)"
     )
     check.equal([np.array([1, 2]), np.array([3, 4])], [np.array([1, 2]), [3, 4]])
 
@@ -187,11 +189,10 @@ def test_match_compares_a_list_of_scalar_tensors_as_one_sequence():
     check.match([3, 1], oracle)
     failure = fails(check.match, [np.array(3), np.array(2)], oracle, label="tokens")
     assert failure.message == (
-        "tokens: differs from the expected result (first difference at position 1)"
+        "tokens: differs from the expected result "
+        "(first difference at position 1: expected 1, got 2)"
     )
-    assert "got 1 item, which is not the expected number" in (
-        fails(check.match, [np.array(3)], oracle).message
-    )
+    assert "got 1 item, expected 2" in (fails(check.match, [np.array(3)], oracle).message)
     failure = fails(check.match, np.array([3, 1]), oracle)
     assert failure.message == "output: expected a list of scalars, got a ndarray"
     assert "expected a list of 2 scalars" in failure.detail
@@ -218,17 +219,17 @@ def test_match_dispatches_on_structure():
     failure = fails(check.match, (expected[0], expected[1], {"n": 2, "tokens": [1, 3]}), expected)
     assert failure.message.startswith("output[2]['tokens']: differs")
     failure = fails(check.match, expected[:2], expected)
-    assert failure.message == "output: got 2 values, which is not the expected number"
+    assert failure.message == "output: got 2 values, expected 3"
     assert "expected 3 values" in failure.detail
     assert "expected a tensor, got a list" in fails(check.match, [0.5, 0.25], expected[0]).message
     failure = fails(check.match, np.array([3.0, 1.0]), np.array([3, 1]), dtype=True)
-    assert "not the expected dtype" in failure.message
+    assert "expected dtype" in failure.message
 
 
 def test_shape_finite_that_and_raises():
     check.shape(np.zeros((2, 3)), (2, 3))
     failure = fails(check.shape, np.zeros((3, 2)), (2, 3))
-    assert failure.message == "output: got shape (3, 2), which is not the expected shape"
+    assert failure.message == "output: got shape (3, 2), expected shape (2, 3)"
     assert failure.detail == "result\n  expected shape    (2, 3)\n  got shape         (3, 2)\n"
     check.finite(np.ones(3))
     failure = fails(check.finite, np.array([1.0, np.inf]))
@@ -238,11 +239,10 @@ def test_shape_finite_that_and_raises():
     assert fails(check.that, 0, "broken invariant", "why").detail == "why"
     check.raises(ValueError, int, "x")
     failure = fails(check.raises, ValueError, int, "3")
-    assert failure.message == "call: returned normally where the statement specifies an exception"
+    assert failure.message == "call: returned normally, expected ValueError"
     assert failure.detail == "expected ValueError, but nothing was raised\n"
     failure = fails(check.raises, ValueError, {}.__getitem__, "k")
-    assert failure.message.startswith("call: raised KeyError, which is not the exception")
-    assert "ValueError" not in failure.message
+    assert failure.message == "call: raised KeyError, expected ValueError"
     assert failure.detail == "result\n  expected    ValueError\n  raised      KeyError: 'k'\n"
 
 

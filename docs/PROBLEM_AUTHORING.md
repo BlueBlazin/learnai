@@ -64,11 +64,10 @@ of `--reference`, `--starter`, `--mutant <name>`, or `--solution <path>`; with n
 them they judge `workspace/<id>/<framework>.py`. `--case <id>` runs a single case and
 `--events` prints the raw protocol.
 
-`learnai run` and `learnai submit` show what a learner sees: a hidden case is `hidden-3` /
-"Hidden case 3", with its one-line message and nothing else. Add `--reveal` while you
-write a problem to see hidden cases under their real ids and names, with the failure
-detail. `--case` takes the id as it is displayed: `--case hidden-3`, or
-`--reveal --case very_negative`. `learnai validate` always reports real ids.
+`learnai run` and `learnai submit` show what a learner sees. A hidden case is reported like
+a public one, under its own id and name and with the full failure detail; the only
+difference is that `learnai run` does not execute it. `--case` takes the case id:
+`--case very_negative`.
 
 ### What `learnai validate` enforces
 
@@ -294,20 +293,12 @@ def very_negative(ctx):
 
 - `name`: what the learner reads. State what is checked: "large logits: a row spanning
   -1e4 to 1e4", not "test 3".
-- `public=True`: runs on Run and Submit; name, failure detail, and inputs are shown.
-  `public=False` (the default): runs on Submit only; the learner sees "Hidden case N",
-  the one-line failure message, and never the detail.
+- `public=True`: runs on Run and Submit. `public=False` (the default, a "hidden"
+  case): runs on Submit only. That is the only difference: either way the learner
+  sees the id, the name, the failure message, the detail with the inputs, and the
+  metrics. So name hidden cases as descriptively as public ones.
 - `id`: defaults to the function name. Ids are stable identifiers; do not rename them
-  casually: the id seeds the case's random generator. An id of the form `hidden-N` is
-  reserved.
-
-**What leaves the harness for a hidden case.** Neither the id nor the name: a function
-called `masked_logits` would tell the learner what the hidden test checks. On the wire,
-in the app, and in `learnai run` / `learnai submit`, a hidden case is `hidden-N` and "Hidden case
-N", where N counts the hidden cases of `tests.py` in definition order (all of them,
-whatever the framework, so `hidden-3` is the same test for everyone). Inserting or
-reordering hidden cases renumbers the ones after it. So name hidden cases and their
-functions for yourself and for reviewers, as descriptively as public ones.
+  casually: the id seeds the case's random generator.
 - `time_limit_s`: overrides the problem's per-case limit.
 - `frameworks`: restricts the case to some solution frameworks. Rarely needed.
 - `requires`: the hardware the case needs, `"cpu"` (the default: it runs on every
@@ -321,10 +312,10 @@ functions for yourself and for reviewers, as descriptively as public ones.
 Cases run in definition order. Put the worked example from the statement first, then
 progressively harder public cases, then hidden ones.
 
-**Public versus hidden.** Public cases teach: they are the examples from the statement
-and the main edge-case families, so a learner can debug with Run. Hidden cases make
-sure the solution is general: more edge cases, random sweeps, and whatever each mutant
-needs. A good split is 3 to 5 public and 4 to 8 hidden.
+**Public versus hidden.** Public cases are for debugging with Run: they are the
+examples from the statement and the main edge-case families. Hidden cases add coverage
+on Submit: more edge cases, random sweeps, and whatever each mutant needs. A good
+split is 3 to 5 public and 4 to 8 hidden.
 
 **Stages.** A capstone is one problem built in parts: stage 1 is an allocator, stage 2
 a batching loop on top of it, and so on. Give each case the stage it grades:
@@ -344,13 +335,11 @@ def resumes(ctx): ...
   ordered by the first case that names them, so write the number into the label
   (`"2: continuous batching"`; the app and the terminal show it as "Stage 2:
   continuous batching") and keep a stage's cases together.
-- **The label is public, also for a hidden case.** The learner sees "Stage 4:
-  preemption, 2 of 5 passed" with three of those five being "Hidden case N". So a
-  label names the part of the build, never what a hidden test probes. At most 60
-  characters, one line.
+- **The label is shown to the learner**, as in "Stage 4: preemption, 2 of 5 passed".
+  It names the part of the build. At most 60 characters, one line.
 - Either every case of a problem has a stage or none has; `learnai validate` rejects a
-  mix. Nothing else about a case changes: ids, hidden numbering (`hidden-N` counts
-  across stages), time limits, and the verdict are as before. A stage is not a gate:
+  mix. Nothing else about a case changes: ids, time limits, and the verdict are as
+  before. A stage is not a gate:
   every case runs whatever happened in earlier stages, so make each stage's cases
   fail cleanly (not crash the file) when a later entry point is still a stub.
 - `learnai run` and `learnai submit` print a heading whenever the stage changes and, under the
@@ -472,50 +461,38 @@ then `expected` and `got` (with the slice they show when the arrays are large:
 `expected[3, 0:8]`). Text that a test passes itself (the `detail` of `check.that`, a
 `context=` string) is shown as written, as a group of its own.
 
-A shape mismatch is reported first and alone (`softmax: got shape (4,), which is not the
-expected shape`), then dtype, then values with the worst index and an excerpt around
-the worst element; the expected shape, the expected dtype, and the exact errors are in
-the detail.
+A shape mismatch is reported first and alone (`softmax: got shape (4,), expected shape
+(2, 3)`), then dtype, then values with the worst index and an excerpt around the worst
+element.
 
-**The message is shown for hidden cases; the detail is not.** So a message must never
-reveal what the test expects or what it passed in: no expected value, shape, length,
-dtype, set of keys, or exception type, and no input. A message says what the solution
-*produced* and where it went wrong; the detail carries the expected side. All `check`
-helpers follow this:
+**Message and detail are shown for every case, public or hidden.** The message is one
+line: what the solution produced, what was expected where that is short (a shape, a
+length, a dtype, an exception type, the worst value), and where it went wrong. The
+detail is the longer evidence: the call with its inputs, the numbers, and the
+excerpts. All `check` helpers follow this:
 
-| failure | message (always shown) | detail (public cases only) |
+| failure | message | detail |
 |---|---|---|
-| wrong shape | `tokens: got shape (4,), which is not the expected shape` | both shapes |
-| wrong length | `tokens: got 3 items, which is not the expected number` | both lengths, both lists |
-| wrong values | `y: 2 of 60 values differ from the expected result (largest error on the order of 1e-01, at index [1, 13])` | exact errors, expected and got |
-| wrong dtype | `y: got dtype float64, which is not the expected dtype` | both dtypes |
+| wrong shape | `softmax: got shape (4,), expected shape (2, 3)` | both shapes |
+| wrong length | `tokens: got 3 items, expected 5` (scalars and nested values: `x: got 3 values, expected 5`) | both lengths, both lists |
+| wrong values | `y: 2 of 60 values differ from the expected result (largest error 0.1234567 at index [1, 13]: expected 0.5, got 0.6234567)` | tolerance, expected and got |
+| wrong dtype | `y: got dtype float64, expected dtype float32` | both dtypes |
 | wrong dict keys | `stats: got a dict whose keys are not the expected keys` | both key lists |
-| wrong exception | `decode: raised KeyError, which is not the exception the statement specifies here` | the expected type |
+| wrong exception | `decode: raised KeyError, expected ValueError` | the expected type |
 
-The error of a float comparison is given as an order of magnitude only: next to the
-learner's own value, the exact error would give the expected value away, while the
-magnitude still tells "float noise, loosen nothing, fix the formula" (1e-01) from "a
-precision problem" (1e-05).
+**Limits.** When `check.cost`, `check.at_most`, `check.memory`, or the speed judge
+fails, the message repeats the limit (`tokens_processed: 114 tokens exceeds the limit
+of 15 tokens`), so the learner can tell how far off they are. State limits in the
+statement.
 
-One deliberate exception: **limits**. When `check.cost`, `check.at_most`,
-`check.memory`, or the speed judge fails, the message repeats the limit
-(`tokens_processed: 114 tokens exceeds the limit of 15 tokens`), in a hidden case too:
-without it the learner cannot tell how far off they are. Never use a secret as a
-limit; state limits in the statement.
-
-**Metrics are reported for public cases only.** A public case carries its metrics
-(value and limit, from which the app draws "114 / 15 tokens") whether it passes or
-fails. A hidden case carries none, pass or fail, and the run-level metrics at the end
-of a run are the worst values over the cases that reported some, so over the public
-ones. Before 2026-11-21 a passing hidden case printed `expert_rows: 96 rows (limit 96
-rows)`, which gave away `k * N` and the expert count of a hidden input; a hidden case
-must not say more when it passes than when it fails. So if the learner should see a
-cost figure, check it in a public case; `--reveal` (and `learnai validate`, which
-runs with it) still shows every metric of every case.
+**Metrics.** A case carries its metrics (value and limit, from which the app draws
+"114 / 15 tokens") whether it passes or fails, public or hidden. The run-level metrics
+at the end of a run are the worst values over all cases that reported some.
 
 When you write your own failure with `check.that(condition, message, detail)`, follow
-the same rule: describe what the solution did in `message`, put the specifics in
-`detail`. Plain `assert` works too (it counts as a failed case), but its text becomes
+the same split: `message` is one line saying what the solution produced and what was
+expected, `detail` is the longer evidence. Expected values and inputs may appear in
+either. Plain `assert` works too (it counts as a failed case), but its text becomes
 the message, so prefer `check.that`.
 
 An exception raised by the solution is an `error` (verdict `runtime_error`). The
@@ -526,25 +503,9 @@ blank and decoration-only lines are skipped, and a first line that only introduc
 the rest (it ends with a colon) is joined with the next one. A `SyntaxError` keeps
 its message line.
 
-- In a **public** case the message is the exception line and the detail is a traceback
-  trimmed to the learner's own frames (or to the frames of `tests.py` when the
-  learner's file is not on the stack at all).
-- In a **hidden** case there is no detail, like for every hidden outcome: a traceback
-  through `tests.py` would show the test's source and inputs. Everything the learner
-  needs to debug their own code goes into the one-line message: their exception type
-  and text (cut to 200 characters), then the innermost line of their own file that
-  was running.
-
-  ```
-  IndexError: index 8 is out of bounds for dimension 1 with size 8 (torch.py line 14, in top_p_filter)
-  ```
-
-  When the exception was raised outside the learner's file and none of their frames
-  is on the stack (the test tripped over a returned value), the message is the
-  exception line alone. Note that the exception text is the learner's own: a solution
-  can always print or raise what it was given, so hidden inputs are not secret from a
-  learner who goes looking. What stays hidden is what the test is called, what it
-  expects, and how it is written.
+The message is the exception line and the detail is a traceback trimmed to the
+learner's own frames (or to the frames of `tests.py` when the learner's file is not on
+the stack at all), in public and hidden cases alike.
 
 When the solution fails to import, the verdict is `import_error`; the message and the
 traceback are on the run's final `end` event, once, and every case is reported as
@@ -592,8 +553,7 @@ How it works, so you can predict it:
 - Each name is replaced, for the whole run, by a guard that inspects the call stack.
   If a frame of the **solution file** is on the stack, the case fails with
   `` `torch.softmax` is not allowed in this problem (called at torch.py line 6, in
-  softmax) `` and the verdict is `wrong_answer`. The message is the same in hidden
-  cases. Catching the exception does not help: the violation is recorded, and the case
+  softmax) `` and the verdict is `wrong_answer`. Catching the exception does not help: the violation is recorded, and the case
   fails even if the solution then computes the right answer another way.
 - Any other caller gets the original function. The oracle, the same-framework
   reference (`ctx.baseline`, `ctx.check_speed`), your tests, and the kit are not the
@@ -644,8 +604,7 @@ identifier appears as a bare name (`bfloat16`), an attribute (`torch.bfloat16`,
 `"safetensors"`, also `import safetensors.torch`), a keyword argument, or a string that
 is exactly the identifier (`dtype="bfloat16"`, `getattr(torch, "bfloat16")`). Comments,
 docstrings, and longer strings do not count. The message is
-`` `bfloat16` is not allowed in this problem (used at torch.py line 6) ``, on public and
-hidden cases alike.
+`` `bfloat16` is not allowed in this problem (used at torch.py line 6) ``.
 
 It is a blunt instrument, by design: it cannot tell `torch.bfloat16` from a local
 variable the learner happened to call `bfloat16`. Use it for identifiers nobody uses by
@@ -2705,7 +2664,7 @@ check_guard()                                # the first refused access fails th
   in a callback that the solution calls directly (make it a method of a guarded
   object). A problem whose solution is meant to build such objects (it compiles its
   own `CharDFA`, say) arms the guard with `guard(ctx, may_build=True)`.
-- **Messages**, the same on public and hidden cases: `` `store.counters` may not be
+- **Messages**: `` `store.counters` may not be
   used in this problem ``, `` `store.plain` may not be set in this problem ``,
   `` `model` may not be copied in this problem ``, and, for a borrowed method (next
   point), `` `model._w` may not be read outside the model's own methods ``. `label`
@@ -3727,8 +3686,8 @@ What a learner without the hardware sees, in the app and in `learnai submit`:
 ```
 cuda-scale / torch / submit  python 3.15.2, device cpu, torch 2.15.0
   PASS  cpu        scales on the CPU  0.4 ms
-  PASS  hidden-1   Hidden case 1  0.2 ms
-  SKIP  hidden-2   Hidden case 2
+  PASS  cpu_random random shapes on the CPU  0.2 ms
+  SKIP  gpu_scale  scales on the GPU
       skipped: needs an NVIDIA GPU (CUDA), which this machine does not have
 Not accepted: hardware missing  2/3 passed, 1 skipped in 1.21 s
   2 of 2 cases that could run passed; 1 of 3 cases were skipped because they need an
@@ -4451,8 +4410,6 @@ in the app.
 - `learnai run <id> -f <each framework> --starter` shows a failure a beginner can act on.
 - `learnai submit <id> --mutant <each>`: every mutant fails for the reason its `# BUG:` line
   gives, and the failure message would make sense to a learner.
-- `learnai submit <id> --mutant <one>` without `--reveal` shows nothing about the hidden
-  cases beyond "Hidden case N" and a message free of expected values.
 - If the statement forbids a call: `forbidden` lists every spelling of it in every
   framework, and a mutant takes the shortcut. If it forbids something that is not
   called (a dtype, a package), `forbidden_source` names the identifier, and no entry
@@ -4474,7 +4431,6 @@ in the app.
   only on the CPU (section 18).
 - Every statistical case takes under about 3 s in every framework.
 - The first public case is the statement's worked example.
-- No expected values appear in any failure message of a hidden case.
 - The statement specifies every choice that affects the output, and its Constraints
   section states the tolerance and any cost or speed limit.
 
@@ -4524,7 +4480,7 @@ revision, covers the declared files, and every file has its recorded size.
 ```jsonc
 {"event":"start", ..., "cases":[{"id":"c1","name":"...","public":true,"requires":"cuda"}],   // `requires` only when not "cpu"
    "requires":"cuda","requires_met":false}
-{"event":"case_end","id":"hidden-2","status":"skipped","duration_ms":0,
+{"event":"case_end","id":"gpu_scale","status":"skipped","duration_ms":0,
    "message":"skipped: needs an NVIDIA GPU (CUDA), which this machine does not have",
    "detail":null,"stdout":"","metrics":[],
    "skip":{"kind":"hardware","requires":"cuda"}}      // or {"kind":"asset","asset":"<name>"} or {"kind":"aborted"}
@@ -5127,8 +5083,7 @@ user is respected instead.
 **3.6 Event protocol.** No new fields. The one-line `message` of a case that ended
 in `error` is the exception type and the first meaningful line of its text (a first
 line that ends with a colon is joined with the next), for public and hidden cases
-alike; for a hidden case the location in the solution file follows, as before. The
-full multi-line text stays in the public case's `detail`.
+alike. The traceback is in the case's `detail`.
 
 **3.7 CLI.** `learnai doctor [--json]`: what this environment has. It needs no extra and
 no network, imports torch (a base dependency) and, when installed, MLX, to detect
@@ -5201,13 +5156,11 @@ progress from `start.cases` and the `case_end` statuses.
 ```jsonc
 {"event":"start", ..., "cases":[
    {"id":"alloc_fork","name":"fork shares every block","public":true,"stage":"1: block allocator"},
-   {"id":"hidden-1","name":"Hidden case 1","public":false,"stage":"1: block allocator"},
+   {"id":"alloc_reuse","name":"freed blocks are reused","public":false,"stage":"1: block allocator"},
    {"id":"fcfs_trace","name":"FCFS: the trace equals the oracle's","public":true,"stage":"2: continuous batching"}]}
 ```
 
-- A stage label is public information, also for a hidden case: it is sent as written
-  while the case's id and name are `hidden-N` and "Hidden case N". Hidden numbering
-  is unchanged (it counts the hidden cases of the whole file, across stages).
+- A stage label is sent as written, for public and hidden cases alike.
 - Stage order is the order of first appearance in `start.cases`. With `--case` or in
   `run` mode, `start.cases` lists only the selected cases, each with its stage.
 - Stages do not gate anything: every selected case runs, and the final `status` is

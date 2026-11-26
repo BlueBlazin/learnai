@@ -6,9 +6,8 @@ from __future__ import annotations
 class CheckFailure(Exception):
     """A case failed: the solution ran but its answer is wrong.
 
-    ``message`` is one short line and is always shown, even for hidden cases, so it
-    must never contain expected values. ``detail`` is the longer explanation (expected
-    vs. got excerpts); the harness drops it for hidden cases.
+    ``message`` is one short line. ``detail`` is the longer explanation (the call, and
+    expected vs. got excerpts). Both are shown for every case, public or hidden.
     """
 
     def __init__(self, message: str, detail: str | None = None) -> None:

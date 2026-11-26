@@ -398,7 +398,7 @@ def _not_run(result: runner.RunResult) -> str:
 
 
 def _skipped_ids(result: runner.RunResult, limit: int = 6) -> str:
-    """The ids of the skipped cases (validation runs with --reveal, so real ids)."""
+    """The ids of the skipped cases."""
     ids = [str(c.get("id")) for c in result.cases if c.get("status") == "skipped"]
     shown = ", ".join(ids[:limit])
     return shown + (f", and {len(ids) - limit} more" if len(ids) > limit else "")
@@ -633,10 +633,7 @@ def validate(
 
     def execute(item: tuple[Report, Problem, _Job]) -> runner.RunResult:
         _, problem, job = item
-        # Authors see hidden cases by their real ids ("first failing case ...").
-        command = runner.harness_command(
-            problem.path, job.path, job.framework, "submit", reveal=True
-        )
+        command = runner.harness_command(problem.path, job.path, job.framework, "submit")
         return runner.run(command)
 
     workers = max(1, jobs or min(4, os.cpu_count() or 1))
@@ -651,7 +648,11 @@ def validate(
                 left_out = len(problem.forbidden) - checked
                 report.checks.append(
                     f"forbidden: {checked} names resolve and can be guarded"
-                    + (f" ({left_out} of a framework this platform cannot have)" if left_out else "")
+                    + (
+                        f" ({left_out} of a framework this platform cannot have)"
+                        if left_out
+                        else ""
+                    )
                 )
         for item, result in zip(parallel, results, strict=True):
             _judge(item[0], item[1], item[2], result, require_assets=require_assets)

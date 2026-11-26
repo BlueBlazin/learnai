@@ -404,15 +404,14 @@ impl Metric {
 pub struct CaseInfo {
     /// Case id.
     pub id: String,
-    /// Display name (generic for hidden cases).
+    /// Display name.
     pub name: String,
     /// Whether the case is public.
     pub public: bool,
     /// Hardware the case needs; absent when it runs everywhere.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requires: Option<Requires>,
-    /// The stage the case belongs to (capstones); absent for unstaged problems. Public
-    /// even for hidden cases.
+    /// The stage the case belongs to (capstones); absent for unstaged problems.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage: Option<String>,
 }
@@ -623,7 +622,7 @@ pub struct StoredCase {
     /// The case result, flattened.
     #[serde(flatten)]
     pub result: CaseResult,
-    /// Display name (generic for hidden cases). Rows stored before names were kept
+    /// Display name. Rows stored before names were kept
     /// fall back to the case id.
     #[serde(default)]
     pub name: String,

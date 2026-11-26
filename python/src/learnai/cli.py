@@ -54,9 +54,7 @@ def cmd_run(args: argparse.Namespace, mode: str) -> int:
         print(f"learnai: {exc}", file=sys.stderr)
         return 2
 
-    command = runner.harness_command(
-        problem.path, solution, framework, mode, args.case, reveal=args.reveal
-    )
+    command = runner.harness_command(problem.path, solution, framework, mode, args.case)
     if args.events:
 
         def show(event: dict) -> None:
@@ -362,14 +360,7 @@ def build_parser() -> argparse.ArgumentParser:
         which.add_argument("--reference", action="store_true", help="judge the reference")
         which.add_argument("--starter", action="store_true", help="judge the starter")
         which.add_argument("--mutant", metavar="NAME", help="judge mutants/NAME.py")
-        cmd.add_argument(
-            "--case", help="run only this case id (hidden cases: hidden-N, or use --reveal)"
-        )
-        cmd.add_argument(
-            "--reveal",
-            action="store_true",
-            help="for authors: show hidden cases with their real ids, names, and details",
-        )
+        cmd.add_argument("--case", help="run only this case id")
         cmd.add_argument("--events", action="store_true", help="print raw protocol events")
 
     cmd = sub.add_parser("validate", help="the quality gate for problems")

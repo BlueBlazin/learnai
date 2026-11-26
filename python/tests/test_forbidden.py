@@ -356,13 +356,13 @@ TORCH_SHORTCUTS = {
 def test_a_torch_solution_that_takes_the_shortcut_fails_every_case(tmp_path, how):
     run = solve(tmp_path, "torch", TORCH_SHORTCUTS[how])
     assert run.end["status"] == "wrong_answer"
-    assert run.statuses == {"worked_example": "fail", "hidden-1": "fail"}
-    public, hidden = run.case("worked_example"), run.case("hidden-1")
+    assert run.statuses == {"worked_example": "fail", "unit_length": "fail"}
+    public, hidden = run.case("worked_example"), run.case("unit_length")
     assert " is not allowed in this problem (called at torch.py line " in public["message"]
     assert "in normalize)" in public["message"]
     assert "torch.nn.functional.normalize" in public["detail"]
-    # The hidden case names the call and the learner's line too, and has no detail.
-    assert hidden["message"] == public["message"] and hidden["detail"] is None
+    # The hidden case reports the same message and detail.
+    assert hidden["message"] == public["message"] and hidden["detail"] == public["detail"]
 
 
 def test_the_references_pass_under_the_same_guards():
@@ -397,7 +397,7 @@ def test_jax_and_mlx_functions_are_guarded(tmp_path):
         """,
     )  # fmt: skip
     assert run.end["status"] == "wrong_answer"
-    assert run.case("hidden-1")["message"].startswith("`mlx.core.linalg.norm` is not allowed")
+    assert run.case("unit_length")["message"].startswith("`mlx.core.linalg.norm` is not allowed")
 
 
 def test_borrowing_another_frameworks_builtin_is_caught(tmp_path):
@@ -414,7 +414,7 @@ def test_borrowing_another_frameworks_builtin_is_caught(tmp_path):
         """,
     )  # fmt: skip
     assert run.end["status"] == "wrong_answer"
-    assert "`torch.nn.functional.normalize` is not allowed" in run.case("hidden-1")["message"]
+    assert "`torch.nn.functional.normalize` is not allowed" in run.case("unit_length")["message"]
 
 
 def test_a_method_of_an_immutable_type_is_found_statically(tmp_path):
@@ -437,7 +437,7 @@ def test_a_method_of_an_immutable_type_is_found_statically(tmp_path):
         assert case["message"] == (
             "`mlx.core.array.rsqrt` is not allowed in this problem (used at mlx.py line 4)"
         )
-    assert run.case("hidden-1")["detail"] is None
+    assert run.case("unit_length")["detail"] == run.case("worked_example")["detail"]
     # The module function of the same name is not on the list, and is not flagged.
     run = solve(
         tmp_path, "mlx",

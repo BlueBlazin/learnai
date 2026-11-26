@@ -148,11 +148,8 @@ const WRONG_DETAIL: Record<string, { message: string; detail: string; stdout: st
   },
 };
 
-function wrongAnswer(problem: FixtureProblem, hidden: boolean) {
+function wrongAnswer(problem: FixtureProblem) {
   const authored = WRONG_DETAIL[problem.meta.id];
-  if (hidden) {
-    return { message: "Output does not match the reference", detail: null, stdout: "" };
-  }
   if (authored) return authored;
   return {
     message: "Max absolute error 1.2e-04 exceeds tolerance 1.0e-06",
@@ -287,7 +284,7 @@ export function buildPlan(
         return planned({
           ...pass(info.id, durationMs),
           status: "fail",
-          ...wrongAnswer(problem, !info.public),
+          ...wrongAnswer(problem),
         });
       }
       case "cost_exceeded": {

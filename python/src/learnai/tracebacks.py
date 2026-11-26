@@ -24,8 +24,7 @@ def exception_line(exc: BaseException) -> str:
     A multi-line message (framework errors often are: a summary, then shapes, hints,
     or a stack of their own) is reduced to the exception type and the first line that
     says something. A first line that only introduces what follows (it ends with a
-    colon) is joined with the next one. Nothing is added that the exception did not
-    say itself, so the hidden-case rule (ARCHITECTURE 3.6) is unaffected.
+    colon) is joined with the next one.
     """
     formatted = "".join(traceback.format_exception_only(type(exc), exc)).strip()
     if isinstance(exc, SyntaxError):
@@ -48,31 +47,6 @@ def exception_line(exc: BaseException) -> str:
     if first.endswith(":") and len(meaningful) > 1:
         first = f"{first} {meaningful[1]}"
     return f"{kind}: {first}"
-
-
-def user_location(exc: BaseException, user_path: str) -> str | None:
-    """``solution.py line 12, in softmax``: the innermost frame in the learner's file."""
-    for frame in reversed(traceback.extract_tb(exc.__traceback__)):
-        if _same_file(frame.filename, user_path):
-            return f"{os.path.basename(frame.filename)} line {frame.lineno}, in {frame.name}"
-    if isinstance(exc, SyntaxError) and exc.filename and _same_file(exc.filename, user_path):
-        return f"{os.path.basename(exc.filename)} line {exc.lineno}"
-    return None
-
-
-def hidden_error_message(exc: BaseException, user_path: str, limit: int = 200) -> str:
-    """All a hidden case says about an exception, on one line.
-
-    The learner's own exception type and message (cut to ``limit`` characters) and the
-    line in their own file that was running. Nothing from the test: no frames of
-    tests.py, no source lines, no argument values beyond what the exception itself
-    says.
-    """
-    text = " ".join(exception_line(exc).split())
-    if len(text) > limit:
-        text = text[: limit - 3].rstrip() + "..."
-    where = user_location(exc, user_path)
-    return f"{text} ({where})" if where else text
 
 
 def raised_in(exc: BaseException, path: str) -> bool:
