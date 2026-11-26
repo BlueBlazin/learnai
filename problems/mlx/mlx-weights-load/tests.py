@@ -209,7 +209,7 @@ def check_parameters(module, expected, before, *, label="parameters"):
         was = before[name][1]
         check.that(
             dtype == was,
-            f"{FN}: {name} has dtype {dtype} after loading, which is not the dtype it had",
+            f"{FN}: {name} has dtype {dtype} after loading, expected {was}, the dtype it had",
             f"the parameter was {was} before loading; cast each tensor to it",
         )
         want = expected[name]
@@ -217,7 +217,7 @@ def check_parameters(module, expected, before, *, label="parameters"):
             want = want.astype(np.float16).astype(np.float32)
         check.that(
             got.shape == want.shape,
-            f"{FN}: {name} has shape {got.shape} after loading, which is not its shape",
+            f"{FN}: {name} has shape {got.shape} after loading, expected {want.shape}",
             f"expected {want.shape}",
         )
         check.allclose(got, want, rtol=0.0, atol=0.0, label=f"{label}: {name}")

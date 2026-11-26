@@ -51,7 +51,8 @@ def compare(got, want, step, history, cfg):
     check.shape(got, want.shape, label=f"{FN}: logits")
     check.that(
         got.dtype == np.float32,
-        f"{FN}: the returned logits have dtype {got.dtype}, which is not the dtype of the input",
+        f"{FN}: the returned logits have dtype {got.dtype}, expected dtype float32 (the dtype "
+        "of the input)",
     )
     blocked, open_ = np.isneginf(want), np.isfinite(want)
     leaked = np.flatnonzero(blocked & ~np.isneginf(got))

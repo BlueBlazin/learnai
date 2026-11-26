@@ -191,18 +191,16 @@ def check_literal(run, routes, transfers):
     wrong = next((i for i, (a, b) in enumerate(zip(got, routes, strict=False)) if a != b), None)
     check.that(
         wrong is None and len(got) == len(routes),
-        "the submits are not the ones the policy prescribes"
-        + (
-            ""
-            if wrong is None
-            else f" (the first difference is submit {wrong}: got {got[wrong]!r})"
-        ),
+        f"{len(got)} submits were made, expected {len(routes)}"
+        if wrong is None
+        else f"submit {wrong} (time, request, replica) is {got[wrong]!r}, the policy prescribes "
+        f"{routes[wrong]!r}",
         detail,
     )
     check.that(
         run.transfers == transfers,
         "the transfers are not the ones the policy prescribes",
-        detail,
+        detail + f"got transfers: {run.transfers!r}\n",
     )
 
 
@@ -219,14 +217,16 @@ def check_against_oracle(ctx, requests, label, **config):
         b = theirs[wrong] if wrong < len(theirs) else None
         check.that(
             False,
-            f"{label}: submit {wrong} (time, request, replica) is not the one the policy "
-            "prescribes",
+            f"{label}: submit {wrong} (time, request, replica) is {a!r}, the policy prescribes "
+            f"{b!r}",
             got.timeline() + f"submit {wrong}: got {a!r}\n          expected {b!r}\n",
         )
     check.that(
         got.transfers == want.transfers,
         f"{label}: the transfers differ from the ones the policy prescribes",
-        got.timeline(),
+        got.timeline()
+        + f"expected transfers (time, request, src, dst): {want.transfers!r}\n"
+        + f"got transfers: {got.transfers!r}\n",
     )
     return got
 

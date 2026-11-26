@@ -36,7 +36,7 @@ def play(ctx, config, script, label):
         history.append(f"route({tuple(tokens)!r}, queue_len={queues!r}) -> {got!r}")
         check.that(
             type(got) is int and got == expected,
-            f"{label}: route returned {got!r}, which is not the specified replica",
+            f"{label}: route returned {got!r}, expected replica {expected!r}",
             "\n".join(history) + f"\nexpected: {expected!r}  ({why})\n",
         )
 
@@ -89,7 +89,10 @@ def check_routes(ctx, requests, label, config=(THRESHOLD, IMBALANCE, INDEX_SIZE)
     )
     check.that(
         wrong is None and len(got.routes) == len(want.routes),
-        f"{label}: a request was routed to a different replica than specified",
+        f"{label}: {len(got.routes)} requests were routed, expected {len(want.routes)}"
+        if wrong is None
+        else f"{label}: request {wrong} was routed to replica {got.routes[wrong]}, expected "
+        f"{want.routes[wrong]}",
         ""
         if wrong is None
         else (

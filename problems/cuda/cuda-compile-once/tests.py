@@ -249,7 +249,7 @@ class Session(Guarded):
         check.that(
             out.dtype == torch.int64 and tuple(out.shape) == (self.batch, n_new),
             f"generate: got dtype {str(out.dtype).removeprefix('torch.')} and shape "
-            f"{tuple(out.shape)}, which is not what is expected",
+            f"{tuple(out.shape)}, expected int64 and shape {(self.batch, n_new)}",
             f"expected int64 tokens of shape (batch, n_new) = {(self.batch, n_new)}",
         )
         check.equal(out.numpy(), want.numpy(), label="tokens")
@@ -307,9 +307,8 @@ def check_compile_calls(compiles, backend, mode):
         got = kwargs.get(name)
         check.that(
             got is value or (isinstance(value, str) and got == value),
-            f"torch.compile was called with {name}={got!r}, which is not what the statement "
-            "specifies",
-            f"expected {name}={value!r}",
+            f"torch.compile was called with {name}={got!r}, expected {name}={value!r}",
+            "the statement specifies this argument",
         )
 
 
@@ -333,22 +332,21 @@ def check_calls(calls, batch, n_prompt, n_new, bucket, number):
         )
     check.that(
         len(calls) == n_new,
-        f"{where}: step was called {len(calls)} times, which is not the number of calls the "
-        "statement specifies",
+        f"{where}: step was called {len(calls)} times, expected {n_new}",
         detail,
     )
     shape, (_, value) = calls[0]
     check.that(
         shape == (batch, padded) and value == 0,
         f"{where}: the first call of step got tokens of shape {shape} at position {value}, "
-        "which is not the padded prompt at position 0",
+        f"expected shape {(batch, padded)} at position 0 (the padded prompt)",
         detail,
     )
     for index, (shape, (_, value)) in enumerate(calls[1:], start=1):
         check.that(
             shape == (batch, 1) and value == n_prompt + index - 1,
             f"{where}: call {index + 1} of step got tokens of shape {shape} at position "
-            f"{value}, which is not the next single token at its slot",
+            f"{value}, expected shape {(batch, 1)} at position {n_prompt + index - 1}",
             detail,
         )
 
@@ -385,7 +383,7 @@ def step_matches_eager(ctx):
         check.that(
             got.dtype == torch.float32 and tuple(got.shape) == (2, 16, VOCAB),
             f"step: got dtype {str(got.dtype).removeprefix('torch.')} and shape "
-            f"{tuple(got.shape)}, which is not what is expected",
+            f"{tuple(got.shape)}, expected float32 and shape {(2, 16, VOCAB)}",
             f"expected float32 logits of shape (batch, T, vocab) = {(2, 16, VOCAB)}",
         )
         check.allclose(got[:, -1].numpy(), want_logits[:, 0].numpy(), atol=1e-4,
@@ -394,8 +392,8 @@ def step_matches_eager(ctx):
             got = s.compiled(want_tokens[:, i : i + 1], torch.tensor(16 + i))
             check.that(
                 tuple(got.shape) == (2, 1, VOCAB),
-                f"step: got shape {tuple(got.shape)} for a single-token block, which is not "
-                "the expected shape",
+                f"step: got shape {tuple(got.shape)} for a single-token block, expected "
+                f"shape {(2, 1, VOCAB)}",
             )
             check.allclose(got[:, 0].numpy(), want_logits[:, i + 1].numpy(), atol=1e-4,
                            label="step logits of a decode step")  # fmt: skip

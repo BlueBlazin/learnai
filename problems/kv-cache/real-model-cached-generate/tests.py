@@ -88,7 +88,7 @@ class Model:
         )
         got = np.asarray(ctx.fw.to_numpy(logits))
         check.shape(got, (self.cfg.vocab_size,), label=f"{label}: logits")
-        check.that(got.dtype == np.float32, f"{label}: the logits have dtype {got.dtype}")
+        check.that(got.dtype == np.float32, f"{label}: got dtype {got.dtype}, expected float32")
         return got, cache
 
     def compare(self, got, want, label):

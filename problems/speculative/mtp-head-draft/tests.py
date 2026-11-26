@@ -95,9 +95,10 @@ def check_draft(ctx, hidden, heads, w_out, k, literal=None):
         "the model's own token (index 0)" if wrong[:1] == [0] else f"head {wrong[0] - 1}"
         if wrong else ""
     )  # fmt: skip
+    told = f"{where} gave token {got[wrong[0]]}, expected {want[wrong[0]]}" if wrong else ""
     check.that(
         not wrong,
-        f"{DRAFT}: wrong token from {where}",
+        f"{DRAFT}: {told}",
         f"call: {DRAFT}(hidden, heads, w_out, k={k}) with D = {hidden.shape[0]}, "
         f"V = {w_out.shape[0]}, {len(heads)} heads\nexpected {want}\ngot {got}",
     )
@@ -114,7 +115,7 @@ def check_accept(ctx, draft, target_argmax, literal=None):
     got = ctx.call(ACCEPT, *args)
     check.that(
         type(got) is int and got == want,
-        f"{ACCEPT}: wrong number of accepted tokens",
+        f"{ACCEPT}: returned {got!r}, expected {want}",
         f"call: {ACCEPT}(draft={list(draft)}, target_argmax={list(target_argmax)})\n"
         f"expected {want}\ngot {got!r}",
     )
@@ -251,7 +252,8 @@ def check_generation(ctx, seed, prompt, heads_for, k, max_new):
     )
     check.that(
         passes == expected_passes,
-        f"generation took {passes} model passes, which is not the number the heads allow",
+        f"generation took {passes} model passes, expected {expected_passes} (the number the heads "
+        "allow)",
         f"prompt = {prompt}, k = {k}: the same heads need {expected_passes} passes for "
         f"{max_new} tokens when every head token is drafted and verified at its position",
     )

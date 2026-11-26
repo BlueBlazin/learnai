@@ -37,7 +37,7 @@ def check_nearest(ctx, values, q, label=None, expected=None):
         expected = sorted(values)[exact_rank(q, len(values)) - 1]
     check.that(
         isinstance(got, float) and got == expected,
-        f"{label}: wrong value",
+        f"{label}: got {got!r}, expected {expected!r}",
         f"values (first 20) = {values[:20]!r}\nq = {q!r}\nexpected: {expected!r}\n     got: {got!r}",
     )
 
@@ -60,7 +60,7 @@ def check_merge(ctx, shards, q, label=None, expected=None):
         expected = sorted(pooled)[exact_rank(q, len(pooled)) - 1]
     check.that(
         isinstance(got, float) and got == expected,
-        f"{label}: wrong value",
+        f"{label}: got {got!r}, expected {expected!r}",
         f"shard sizes = {[len(s) for s in shards]!r}\nq = {q!r}\n"
         f"expected: {expected!r}\n     got: {got!r}",
     )
@@ -232,7 +232,8 @@ def merge_property(ctx):
         whole = ctx.call("percentile_nearest_rank", list(values), q)
         check.that(
             got == whole,
-            "merge_percentile differs from percentile_nearest_rank of the pooled samples",
+            f"merge_percentile returned {got!r}, but percentile_nearest_rank of the pooled "
+            f"samples returned {whole!r}",
             f"shard sizes = {[len(s) for s in shards]!r}, q = {q}\n"
             f"merge_percentile = {got!r}\npercentile_nearest_rank(pooled) = {whole!r}",
         )

@@ -174,7 +174,8 @@ def wide_layer(ctx):
     _, acc = check_layer(ctx, x, w_q, w_scale, bias)
     check.that(
         int(acc[0, 0]) == 127 * (127 * 2047 + 126),
-        "the accumulator of 2048 products of saturated codes is not exact",
+        f"the accumulator of 2048 products of saturated codes is {int(acc[0, 0])}, expected "
+        f"{127 * (127 * 2047 + 126)}",
         f"expected {127 * (127 * 2047 + 126)}, an odd number above 2**24; got {int(acc[0, 0])}",
     )
 

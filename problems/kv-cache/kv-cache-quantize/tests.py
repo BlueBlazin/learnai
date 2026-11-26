@@ -317,7 +317,8 @@ def every_width(ctx):
         cache = feed(ctx, k, v, [2, 3, 3], bits=bits, group_size=GROUP, keep=2)
         check.that(
             int(cache[0][0].max()) == 2**bits - 1,
-            f"bits={bits}: the largest key code is {int(cache[0][0].max())}",
+            f"bits={bits}: the largest key code is {int(cache[0][0].max())}, expected "
+            f"{2**bits - 1}",
             f"expected 2**bits - 1 = {2**bits - 1}: the maximum of a group maps to the top code",
         )
 

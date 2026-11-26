@@ -54,7 +54,7 @@ def check_crossover(ctx, weight_bytes, kv_bytes_read, bandwidth, compute, label=
         expected = ctx.expected("crossover_batch", weight_bytes, kv_bytes_read, bandwidth, compute)
     check.that(
         got == expected,
-        f"{label}: wrong crossover batch",
+        f"{label}: got {got!r}, expected {expected!r}",
         f"expected: {expected!r}\n     got: {got!r}",
     )
 

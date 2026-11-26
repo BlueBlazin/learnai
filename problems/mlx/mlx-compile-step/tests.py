@@ -108,13 +108,14 @@ def drive(ctx, seed, start, n, eos_id, *, max_len=MAX_LEN, swaps=None, traces=1,
     # 1. The result.
     check.that(
         shapes == {(len(start),)},
-        f"{FN}: next_token has shape {sorted(shapes)}, which is not the shape of token",
+        f"{FN}: next_token has shape {sorted(shapes)}, expected ({len(start)},), the shape "
+        "of token",
         f"expected ({len(start)},) on every call",
     )
     check.equal(got_tokens, want_tokens, label="tokens")
     check.that(
         dtypes == {"mlx.core.int32"},
-        f"{FN}: next_token has dtype {', '.join(sorted(dtypes))}, which is not the specified dtype",
+        f"{FN}: next_token has dtype {', '.join(sorted(dtypes))}, expected mlx.core.int32",
         "next_token must be int32 on every call, like the token that was passed in",
     )
     check.equal(int(state["length"].item()), int(want_state["length"].item()), label="length")

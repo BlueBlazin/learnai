@@ -177,20 +177,20 @@ def check_literal(run, steps, preempts):
     got = run.steps
     check.that(
         len(got) == len(steps),
-        f"the scheduler ran {len(got)} steps, which is not the expected number",
+        f"the scheduler ran {len(got)} steps, expected {len(steps)}",
         detail,
     )
     for index, (mine, want) in enumerate(zip(got, steps, strict=True)):
         check.that(
             mine == want,
-            f"step {index} is not the step the policy prescribes "
-            f"(got start={mine[0]:g}, prefill={list(mine[1])}, decode={list(mine[2])})",
+            f"step {index}: got start={mine[0]:g}, prefill={list(mine[1])}, "
+            f"decode={list(mine[2])}; the policy prescribes start={want[0]:g}, "
+            f"prefill={list(want[1])}, decode={list(want[2])}",
             detail,
         )
     check.that(
         run.preempts == preempts,
-        f"the preemptions (time, id) were {run.preempts!r}, which is not what the policy "
-        "prescribes",
+        f"the preemptions (time, id) were {run.preempts!r}, expected {preempts!r}",
         detail,
     )
 
@@ -208,7 +208,7 @@ def check_against_oracle(ctx, requests, label, **config):
         b = theirs[first] if first < len(theirs) else None
         check.that(
             False,
-            f"{label}: step {first} is not the step the policy prescribes",
+            f"{label}: step {first} is {a!r}, the policy prescribes {b!r}",
             got.timeline() + f"step {first}: got {a!r}\n         expected {b!r}\n",
         )
     check.that(

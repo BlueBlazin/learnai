@@ -162,8 +162,7 @@ def check_checkpoint(got, params, bits_of, group_size):
         packed = got[name]
         check.that(
             packed.dtype == np.uint8,
-            f"{name}: the packed codes have dtype {packed.dtype}, which is not the specified one",
-            "expected uint8",
+            f"{name}: the packed codes have dtype {packed.dtype}, expected dtype uint8",
         )
         check.shape(packed, want[name].shape, label=name)
         codes, scale, bias, near = quantize(w, bits, group_size)

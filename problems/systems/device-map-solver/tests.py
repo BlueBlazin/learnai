@@ -50,16 +50,23 @@ def check_map(ctx, modules, max_memory, no_split, tied, expected=None, label="de
         expected = ctx.oracle.solve_device_map(modules, dict(max_memory), set(no_split), dict(tied))
     detail = describe(modules, max_memory, no_split, tied)
     detail += f"expected: {expected!r}\n     got: {got!r}\n"
+    odd = sorted(set(got) ^ set(expected), key=str)
     check.that(
         set(got) == set(expected),
-        f"{label}: the modules named in the map are not the ones the rules place",
+        f"{label}: the modules named in the map are not the ones the rules place"
+        + (
+            f" (for example {odd[0]!r} is {'missing' if odd[0] in expected else 'not expected'})"
+            if odd
+            else ""
+        ),
         detail,
     )
     wrong = sorted(name for name in got if got[name] != expected[name])
     check.that(
         not wrong,
         f"{label}: {len(wrong)} of {len(got)} modules are on the wrong device "
-        f"(for example {wrong[0]!r})" if wrong else "",
+        f"(for example {wrong[0]!r} is on {got[wrong[0]]!r}, expected {expected[wrong[0]]!r})"
+        if wrong else "",
         detail,
     )  # fmt: skip
     return got

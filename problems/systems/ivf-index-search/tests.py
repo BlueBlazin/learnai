@@ -123,8 +123,8 @@ def check_search(ctx, q, index, k, nprobe, *, metric=False, label=None):
         computed = distance.counters.distances
         check.that(
             computed == expected,
-            f"{label}: {computed} distances were computed with `distance`, which is not the "
-            "number of centroids plus the sizes of the probed lists",
+            f"{label}: {computed} distances were computed with `distance`, expected {expected} "
+            "(the number of centroids plus the sizes of the probed lists)",
             f"expected {len(centroids)} + {scanned} = {expected}",
         )
     return ids

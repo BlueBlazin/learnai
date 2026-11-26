@@ -61,13 +61,14 @@ def check_heal(ctx, ids, vocab):
     check.that(
         len(trimmed) == len(want_ids),
         f"heal: removed {len(ids) - len(trimmed)} of the prompt's tokens, "
-        "which is not the longest healable suffix",
+        f"expected {len(ids) - len(want_ids)} (the longest healable suffix)",
         detail,
     )
     check.that(trimmed == want_ids, "heal: trimmed_ids is not a prefix of the prompt", detail)
     check.that(
         prefix == want_prefix,
-        "heal: required_prefix is not the bytes of the removed tokens",
+        f"heal: required_prefix is {prefix!r}, expected {want_prefix!r} (the bytes of the "
+        "removed tokens)",
         detail,
     )
     return trimmed, prefix

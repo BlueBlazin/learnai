@@ -82,7 +82,7 @@ def run(ctx, a, b, label, *, graph=True):
         )
     check.that(
         out.dtype == a.dtype,
-        f"{label}: got dtype {out.dtype}, which is not the expected dtype",
+        f"{label}: got dtype {out.dtype}, expected dtype {a.dtype}",
         f"expected {a.dtype}, the dtype of the inputs",
     )
     want = exact(a, b)

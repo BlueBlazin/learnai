@@ -51,7 +51,7 @@ def check_oracle(ctx, name, args, label):
     got = call_int(ctx, name, args, label)
     check.that(
         got == expected,
-        f"{label}: got {got}, which is not the expected count",
+        f"{label}: got {got}, expected {expected}",
         describe(*args) + f"expected: {expected}\n     got: {got}",
     )
 

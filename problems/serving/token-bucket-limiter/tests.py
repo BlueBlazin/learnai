@@ -140,7 +140,7 @@ def check_same(run, grants, tries, errors, label):
     for ident, ok in tries.items():
         check.that(
             run.tries.get(ident) is ok,
-            f"{label}: try_acquire returned the wrong answer",
+            f"{label}: try_acquire [{ident}] returned {run.tries.get(ident)!r}, expected {ok}",
             detail + f"try_acquire [{ident}] should return {ok}\n",
         )
     never = sorted(set(grants) - set(run.grants), key=str)

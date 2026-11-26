@@ -51,10 +51,10 @@ def play(ctx, threshold, ttl_s, capacity, ops, want=None):
         log.append(f"  {fmt(op)} -> {got!r}")
         if got != expected:
             what = "a miss" if got is None else f"the response {got!r}"
+            right = "a miss" if expected is None else f"the response {expected!r}"
             check.that(
                 False,
-                f"get number {gets + 1} of the script returned {what}, which is not what the "
-                "rules give at that point",
+                f"get number {gets + 1} of the script returned {what}, expected {right}",
                 f"{head}" + "\n".join(log) + f"\nexpected: {expected!r}\n",
             )
         gets += 1
@@ -118,7 +118,7 @@ def namespaces(ctx):
         got = ctx.solution.namespace_of(dict(request))
         check.that(
             got == want and (want is None or isinstance(got, tuple)),
-            f"namespace_of returned {got!r}, which is not the namespace of this request",
+            f"namespace_of returned {got!r}, expected {want!r}",
             f"request: {request!r}\nexpected: {want!r}\n",
         )
 
@@ -385,12 +385,13 @@ def simulated_workload(ctx):
             answer == right,
             f"request {i} was served a cached answer that was generated for a different "
             "question, model, or system prompt",
-            f"{describe(i)}it received: {answer!r}\n",
+            f"{describe(i)}it received: {answer!r}\nexpected: {right!r}\n",
         )
     for i, ((outcome, _), (expected, _)) in enumerate(zip(got, want, strict=True)):
         check.that(
             outcome == expected,
-            f"request {i} was a {outcome}, which is not what the rules give at that moment",
+            f"request {i} was a {outcome}, expected a {expected} (what the rules give at that "
+            "moment)",
             f"{describe(i)}expected: {expected}\n"
             f"(the model takes {LLM_S:g} s, ttl_s={TTL_S:g}, threshold={THRESHOLD}, capacity=8)\n",
         )

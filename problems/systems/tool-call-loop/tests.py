@@ -198,7 +198,7 @@ def play(ctx, script, messages, max_steps, *, names=None):
             )
     check.that(
         len(got) == len(want),
-        f"the transcript has {len(got)} messages, which is not the expected number",
+        f"the transcript has {len(got)} messages, expected {len(want)}",
         both,
     )
 
@@ -230,8 +230,8 @@ def play(ctx, script, messages, max_steps, *, names=None):
             )
     check.that(
         abs(elapsed - want_elapsed) <= 1e-9,
-        f"the run ended at t={elapsed:g} s, which is not model latency plus the longest "
-        "tool of each step",
+        f"the run ended at t={elapsed:g} s, expected t={want_elapsed:g} s (model latency plus "
+        "the longest tool of each step)",
         f"expected t={want_elapsed:g} s\n{both}",
     )
     ctx.metric("elapsed", elapsed, unit="s")

@@ -33,12 +33,8 @@ WORLD = {
 }
 
 
-def encode(ctx, word, vocab, max_chars=100, unk=UNK, want=None, show=False):
-    """Compare with the oracle (and with `want`); the result must be a list of ints.
-
-    `show=True` puts the word into the failure message. Public cases do; hidden cases
-    must not reveal their inputs.
-    """
+def encode(ctx, word, vocab, max_chars=100, unk=UNK, want=None):
+    """Compare with the oracle (and with `want`); the result must be a list of ints."""
     before = dict(vocab)
     got = ctx.call("wordpiece", word, dict(vocab), unk, max_chars)
     check.that(
@@ -46,7 +42,7 @@ def encode(ctx, word, vocab, max_chars=100, unk=UNK, want=None, show=False):
         "wordpiece must return a list of Python ints",
         f"got {got!r}",
     )
-    label = f"wordpiece({word!r})" if show else "wordpiece"
+    label = f"wordpiece({word!r})"
     if want is not None:
         check.equal(got, want, label=label)
     check.equal(got, ctx.expected("wordpiece", word, dict(before), unk, max_chars), label=label)
@@ -75,52 +71,52 @@ def random_word(rng, alphabet, low, high):
 
 @case("the worked example: unaffable, able, unable, unaffably, abcd", public=True)
 def worked_example(ctx):
-    encode(ctx, "unaffable", EXAMPLE, want=[1, 2, 3], show=True)
-    encode(ctx, "able", EXAMPLE, want=[5], show=True)
-    encode(ctx, "unable", EXAMPLE, want=[1, 3], show=True)
-    encode(ctx, "unaffably", EXAMPLE, want=[0], show=True)
-    encode(ctx, "abcd", EXAMPLE, want=[0], show=True)
-    encode(ctx, "unaffable", EXAMPLE, max_chars=8, want=[0], show=True)
+    encode(ctx, "unaffable", EXAMPLE, want=[1, 2, 3])
+    encode(ctx, "able", EXAMPLE, want=[5])
+    encode(ctx, "unable", EXAMPLE, want=[1, 3])
+    encode(ctx, "unaffably", EXAMPLE, want=[0])
+    encode(ctx, "abcd", EXAMPLE, want=[0])
+    encode(ctx, "unaffable", EXAMPLE, max_chars=8, want=[0])
 
 
 # Rejects shortest_match, prefix_on_first_piece, and no_continuation_prefix.
 @case("longest match first, with ## on every piece after the first", public=True)
 def longest_match(ctx):
     v = ENGLISH
-    encode(ctx, "tokens", v, want=[v["tokens"]], show=True)
-    encode(ctx, "tokenization", v, want=[v["token"], v["##ization"]], show=True)
-    encode(ctx, "reranking", v, want=[v["re"], v["##rank"], v["##ing"]], show=True)
-    encode(ctx, "embedding", v, want=[v["embed"], v["##ding"]], show=True)
-    encode(ctx, "ing", v, want=[v["in"], v["##g"]], show=True)  # "##ing" is not a first piece
-    encode(ctx, "replay", v, want=[v["re"], v["##play"]], show=True)
-    encode(ctx, "playplay", v, want=[v["play"], v["##play"]], show=True)
+    encode(ctx, "tokens", v, want=[v["tokens"]])
+    encode(ctx, "tokenization", v, want=[v["token"], v["##ization"]])
+    encode(ctx, "reranking", v, want=[v["re"], v["##rank"], v["##ing"]])
+    encode(ctx, "embedding", v, want=[v["embed"], v["##ding"]])
+    encode(ctx, "ing", v, want=[v["in"], v["##g"]])  # "##ing" is not a first piece
+    encode(ctx, "replay", v, want=[v["re"], v["##play"]])
+    encode(ctx, "playplay", v, want=[v["play"], v["##play"]])
 
 
 # Rejects unk_for_failing_piece and backtracks.
 @case("a word that cannot be finished is one unknown token, with no backtracking", public=True)
 def whole_word_unknown(ctx):
     v = ENGLISH
-    encode(ctx, "tokenizer", v, want=[v["token"], v["##ize"], v["##r"]], show=True)
-    encode(ctx, "tokenz", v, want=[v[UNK]], show=True)  # token, then "##z" is missing
-    encode(ctx, "relax", v, want=[v[UNK]], show=True)  # re ##l ##a, then "##x" is missing
-    encode(ctx, "x", v, want=[v["x"]], show=True)  # word-initial "x" exists
-    encode(ctx, "xx", v, want=[v[UNK]], show=True)
-    encode(ctx, "Token", v, want=[v[UNK]], show=True)  # no case folding here
+    encode(ctx, "tokenizer", v, want=[v["token"], v["##ize"], v["##r"]])
+    encode(ctx, "tokenz", v, want=[v[UNK]])  # token, then "##z" is missing
+    encode(ctx, "relax", v, want=[v[UNK]])  # re ##l ##a, then "##x" is missing
+    encode(ctx, "x", v, want=[v["x"]])  # word-initial "x" exists
+    encode(ctx, "xx", v, want=[v[UNK]])
+    encode(ctx, "Token", v, want=[v[UNK]])  # no case folding here
     backtrack = {UNK: 0, "abc": 1, "ab": 2, "##cd": 3, "a": 4, "##b": 5, "##c": 6, "##bcd": 7}
-    encode(ctx, "abcd", backtrack, want=[0], show=True)
-    encode(ctx, "abc", backtrack, want=[1], show=True)
+    encode(ctx, "abcd", backtrack, want=[0])
+    encode(ctx, "abc", backtrack, want=[1])
 
 
 # Rejects max_chars_off_by_one and no_length_limit.
 @case("max_chars: a word of exactly max_chars is split, one character more is not", public=True)
 def length_limit(ctx):
     v = ENGLISH
-    encode(ctx, "tokens", v, max_chars=6, want=[v["tokens"]], show=True)
-    encode(ctx, "tokens", v, max_chars=5, want=[v[UNK]], show=True)
-    encode(ctx, "a" * 12, v, max_chars=12, want=[v["a"]] + [v["##a"]] * 11, show=True)
-    encode(ctx, "a" * 13, v, max_chars=12, want=[v[UNK]], show=True)
-    encode(ctx, "a", v, max_chars=1, want=[v["a"]], show=True)
-    encode(ctx, "", v, max_chars=1, want=[], show=True)
+    encode(ctx, "tokens", v, max_chars=6, want=[v["tokens"]])
+    encode(ctx, "tokens", v, max_chars=5, want=[v[UNK]])
+    encode(ctx, "a" * 12, v, max_chars=12, want=[v["a"]] + [v["##a"]] * 11)
+    encode(ctx, "a" * 13, v, max_chars=12, want=[v[UNK]])
+    encode(ctx, "a", v, max_chars=1, want=[v["a"]])
+    encode(ctx, "", v, max_chars=1, want=[])
 
 
 # Rejects counts_bytes: "日本語" is 3 characters and 9 bytes.

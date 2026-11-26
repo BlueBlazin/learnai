@@ -96,14 +96,26 @@ def solve(ctx, requests, *, max_running, aging_ms):
 
 
 def expect_admissions(run, expected):
-    """Compare (time, id) admissions with a schedule, without leaking it in the message."""
+    """Compare (time, id) admissions with a schedule."""
     got = run.admissions
     detail = f"expected admissions (ms, id): {expected[:60]!r}\n"
     detail += f"got admissions      (ms, id): {got[:60]!r}\n" + run.timeline()
     for k, (have, want) in enumerate(zip(got, expected, strict=False), start=1):
-        check.that(have[1] == want[1], f"admission {k} is the wrong request", detail)
-        check.that(have[0] == want[0], f"admission {k} happens at the wrong time", detail)
-    check.that(len(got) == len(expected), "the number of admissions is wrong", detail)
+        check.that(
+            have[1] == want[1],
+            f"admission {k} is request {have[1]!r}, expected request {want[1]!r}",
+            detail,
+        )
+        check.that(
+            have[0] == want[0],
+            f"admission {k} happens at {have[0]!r} ms, expected {want[0]!r}",
+            detail,
+        )
+    check.that(
+        len(got) == len(expected),
+        f"{len(got)} requests were admitted, expected {len(expected)}",
+        detail,
+    )
 
 
 def selection_key(request, now_ms, aging_ms):
@@ -139,10 +151,11 @@ def matches_oracle(ctx, requests, *, max_running, aging_ms):
     check_selection(got)
     want = simulate(ctx, ctx.oracle.run, requests, max_running=max_running, aging_ms=aging_ms)
     expect_admissions(got, want.admissions)
+    k = next((k for k, (a, b) in enumerate(zip(got.steps, want.steps, strict=False)) if a != b), 0)
     check.that(
         got.steps == want.steps,
         "the admissions are right but the engine steps differ from the continuous-batching loop",
-        got.timeline(),
+        got.timeline() + f"first difference: step {k}, expected {want.steps[k : k + 1]!r}\n",
     )
     return got
 
@@ -196,8 +209,11 @@ def pick_next_directly(ctx):
     # The waiting list of the worked example at t=85.
     waiting = [EXAMPLE[1], EXAMPLE[5]]
     got = pick(waiting, 85, 40)
-    check.that(got is EXAMPLE[1], "pick_next returned the wrong request at t=85",
-               "waiting: request 1 (priority 2, arrived 2) and request 5 (priority 0, arrived 60)\n")
+    check.that(
+        got is EXAMPLE[1],
+        f"pick_next returned request {getattr(got, 'id', got)!r} at t=85, expected request 1",
+        "waiting: request 1 (priority 2, arrived 2) and request 5 (priority 0, arrived 60)\n",
+    )
     check.that(waiting == [EXAMPLE[5]], "pick_next must remove the chosen request from `waiting`")
     # At t=47: request 1 has effective priority 1, requests 3 and 4 have 0 and tie on arrival.
     waiting = [EXAMPLE[1], EXAMPLE[3], EXAMPLE[4]]

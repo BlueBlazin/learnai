@@ -54,19 +54,22 @@ def check_plan(ctx, cost, workload, slo, headroom, label, expected="oracle"):
     if expected is None or got is None:
         check.that(
             got is None and expected is None,
-            f"{label}: wrong decision on whether the objective can be met at all",
+            f"{label}: returned {'None' if got is None else 'a plan'}, expected "
+            f"{'None' if expected is None else 'a plan'} (can the objective be met at all?)",
             detail,
         )
         return
     for key in ("batch", "replicas"):
         check.that(
-            got[key] == expected[key], f"{label}: {key!r} is {got[key]}, which is wrong", detail
+            got[key] == expected[key],
+            f"{label}: {key!r} is {got[key]}, expected {expected[key]}",
+            detail,
         )
     for key in PLAN_FLOATS:
         check.that(
             isinstance(got[key], float)
             and abs(got[key] - expected[key]) <= 1e-9 * max(1.0, abs(expected[key])),
-            f"{label}: {key!r} is wrong",
+            f"{label}: {key!r} is {got[key]!r}, expected {expected[key]!r}",
             detail,
         )
 
@@ -82,7 +85,8 @@ def check_curve(ctx, curve, rate, slo, headroom, label, expected="oracle"):
     if expected is None or got is None:
         check.that(
             got is None and expected is None,
-            f"{label}: wrong decision on whether the objective can be met at all",
+            f"{label}: returned {'None' if got is None else 'a dict'}, expected "
+            f"{'None' if expected is None else 'a dict'} (can the objective be met at all?)",
             detail,
         )
         return
@@ -94,12 +98,12 @@ def check_curve(ctx, curve, rate, slo, headroom, label, expected="oracle"):
     check.that(
         isinstance(got["capacity"], float)
         and abs(got["capacity"] - expected["capacity"]) <= 1e-9 * max(1.0, expected["capacity"]),
-        f"{label}: 'capacity' is wrong",
+        f"{label}: 'capacity' is {got['capacity']!r}, expected {expected['capacity']!r}",
         detail,
     )
     check.that(
         type(got["replicas"]) is int and got["replicas"] == expected["replicas"],
-        f"{label}: 'replicas' is wrong",
+        f"{label}: 'replicas' is {got['replicas']!r}, expected {expected['replicas']!r}",
         detail,
     )
 

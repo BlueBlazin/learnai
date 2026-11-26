@@ -79,7 +79,7 @@ def check_goodput(ctx, runs, slo, target, label, expected="oracle"):
     )
     check.that(
         got == expected and type(got) is type(expected),
-        f"{label}: got {got!r}, which is not the expected rate",
+        f"{label}: got {got!r}, expected {expected!r}",
         f"runs, in dict order:\n{detail}target = {target}\nexpected: {expected!r}\n     got: {got!r}",
     )
 

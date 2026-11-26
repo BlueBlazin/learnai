@@ -69,6 +69,14 @@ def definition(p, q, drafts, u_accept, u_resample):
     return [r[0][0] for r in rows], [r[0][1] for r in rows], all(r[1] for r in rows)
 
 
+def first_wrong(name, got, want):
+    """Name the first entry of `got` that differs from `want`, for a failure message."""
+    for b, (g, w) in enumerate(zip(got, want, strict=True)):
+        if g != w:
+            return f"{name}[{b}] is {g}, expected {w}"
+    return ""
+
+
 def int_vector(value, size, what):
     array = np.asarray(value)
     check.that(
@@ -124,9 +132,9 @@ def check_verify(ctx, p, q, drafts, u_accept, u_resample, literal=None):
         f"got n_accepted = {got_n}, next_tokens = {got_next}"
     )
     wrong = [b for b in range(len(want_n)) if got_n[b] != want_n[b]]
-    check.that(not wrong, f"{VERIFY}: wrong n_accepted in row {wrong[:1]}", detail)
+    check.that(not wrong, f"{VERIFY}: {first_wrong('n_accepted', got_n, want_n)}", detail)
     wrong = [b for b in range(len(want_n)) if got_next[b] != want_next[b]]
-    check.that(not wrong, f"{VERIFY}: wrong next token in row {wrong[:1]}", detail)
+    check.that(not wrong, f"{VERIFY}: {first_wrong('next_tokens', got_next, want_next)}", detail)
 
 
 def exact(rows):
@@ -197,8 +205,16 @@ def check_advance(ctx, tokens, lengths, drafts, n_accepted, next_tokens, pad_id,
         f"got new_tokens =\n{got_tokens}\ngot new_lengths = {got_lengths}, "
         f"cache_lengths = {got_cache}"
     )
-    check.that(got_lengths == want[1], f"{ADVANCE}: wrong new_lengths", detail)
-    check.that(got_cache == want[2], f"{ADVANCE}: wrong cache_lengths", detail)
+    check.that(
+        got_lengths == want[1],
+        f"{ADVANCE}: {first_wrong('new_lengths', got_lengths, want[1])}",
+        detail,
+    )
+    check.that(
+        got_cache == want[2],
+        f"{ADVANCE}: {first_wrong('cache_lengths', got_cache, want[2])}",
+        detail,
+    )
     check.that(
         got_tokens.dtype.kind in "iu" and got_tokens.ndim == 2 and got_tokens.shape[0] == rows,
         f"{ADVANCE}: new_tokens must be an integer matrix with one row per sequence",
@@ -206,7 +222,8 @@ def check_advance(ctx, tokens, lengths, drafts, n_accepted, next_tokens, pad_id,
     )
     check.that(
         got_tokens.shape[1] == max(want[1]),
-        f"{ADVANCE}: new_tokens has width {got_tokens.shape[1]}, which is not the longest new row",
+        f"{ADVANCE}: new_tokens has width {got_tokens.shape[1]}, expected {max(want[1])} "
+        "(the longest new row)",
         detail,
     )
     for b in range(rows):

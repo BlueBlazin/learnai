@@ -127,7 +127,7 @@ def verify(run, options):
     )
     check.that(
         sorted(i for _, i in run.calls) == list(range(n)),
-        f"send was called {len(run.calls)} times, which is not once per request",
+        f"send was called {len(run.calls)} times, expected {n} (once per request)",
         detail,
     )
     called = {i: when for when, i in run.calls}
@@ -165,15 +165,35 @@ def verify(run, options):
             "a record is not a dict with the five specified keys",
             got + detail,
         )
-        check.that(close(record["intended_s"], intended[i]),
-                   "intended_s is not the arrival time of the Poisson schedule", got + detail)  # fmt: skip
-        check.that(close(record["sent_s"], called[i]),
-                   "sent_s is not the time at which send was called", got + detail)  # fmt: skip
-        check.that(close(record["done_s"], done[i]),
-                   "done_s is not the time at which the request ended", got + detail)  # fmt: skip
-        check.that(close(record["latency_s"], done[i] - intended[i]),
-                   "latency_s is not measured from the intended send time", got + detail)  # fmt: skip
-        check.that(record["ok"] is (i not in fail), "ok is wrong", got + detail)
+        check.that(
+            close(record["intended_s"], intended[i]),
+            f"record {i}: intended_s is {record['intended_s']!r}, expected {intended[i]!r} (the "
+            "arrival time of the Poisson schedule)",
+            got + detail,
+        )
+        check.that(
+            close(record["sent_s"], called[i]),
+            f"record {i}: sent_s is {record['sent_s']!r}, expected {called[i]!r} (the time at "
+            "which send was called)",
+            got + detail,
+        )
+        check.that(
+            close(record["done_s"], done[i]),
+            f"record {i}: done_s is {record['done_s']!r}, expected {done[i]!r} (the time at "
+            "which the request ended)",
+            got + detail,
+        )
+        check.that(
+            close(record["latency_s"], done[i] - intended[i]),
+            f"record {i}: latency_s is {record['latency_s']!r}, expected "
+            f"{done[i] - intended[i]!r} (measured from the intended send time)",
+            got + detail,
+        )
+        check.that(
+            record["ok"] is (i not in fail),
+            f"record {i}: ok is {record['ok']!r}, expected {i not in fail}",
+            got + detail,
+        )
     end = max([options.get("start", 0.0), *done])
     check.that(
         close(run.returned_at, end),

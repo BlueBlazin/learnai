@@ -40,7 +40,7 @@ def compare(index, seq, max_len, min_match, want_length, want_draft):
     got_length = index.match_length()
     check.that(
         type(got_length) is int and got_length == want_length,
-        f"match_length: wrong match length after {len(seq)} tokens",
+        f"match_length: returned {got_length!r} after {len(seq)} tokens, expected {want_length}",
         f"{detail}\ngot match_length() = {got_length!r}",
     )
     got = index.draft(max_len, min_match)

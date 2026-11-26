@@ -200,7 +200,8 @@ def allowed_sequences_are_prefixes(ctx):
             )
             check.that(
                 state == dfa._run(text),
-                "advance: the returned state is not the state of the text so far",
+                f"advance: returned state {state!r}, expected {dfa._run(text)!r} (the state of "
+                "the text so far)",
                 detail,
             )
 

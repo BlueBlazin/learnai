@@ -59,7 +59,8 @@ def audit(alloc, n_blocks, block_size, tokens, history):
         )
         check.that(
             len(table) == -(-count // block_size),
-            "a block table does not have ceil(tokens / block_size) entries",
+            f"a block table has {len(table)} entries, expected {-(-count // block_size)} "
+            "(ceil(tokens / block_size))",
             detail + f"sequence {seq_id!r}: {count} tokens, table {table}\n",
         )
         check.that(
@@ -70,15 +71,19 @@ def audit(alloc, n_blocks, block_size, tokens, history):
         for b in table:
             held[b] = held.get(b, 0) + 1
     for b in range(n_blocks):
+        refs = alloc.ref_count(b)
         check.that(
-            alloc.ref_count(b) == held.get(b, 0),
-            "ref_count does not equal the number of block tables that hold the block",
-            detail + f"block {b}: ref_count {alloc.ref_count(b)}, in {held.get(b, 0)} tables\n",
+            refs == held.get(b, 0),
+            f"ref_count({b}) is {refs!r}, expected {held.get(b, 0)} (the number of block tables "
+            "that hold the block)",
+            detail + f"block {b}: ref_count {refs}, in {held.get(b, 0)} tables\n",
         )
+    free = alloc.free_blocks()
     check.that(
-        alloc.free_blocks() == n_blocks - len(held),
-        "free_blocks() plus the blocks in block tables is not the size of the pool",
-        detail + f"free_blocks() = {alloc.free_blocks()}, {len(held)} of {n_blocks} blocks held\n",
+        free == n_blocks - len(held),
+        f"free_blocks() is {free!r}, expected {n_blocks - len(held)} (the blocks in no block "
+        "table)",
+        detail + f"free_blocks() = {free}, {len(held)} of {n_blocks} blocks held\n",
     )
 
 
@@ -114,7 +119,7 @@ class Script:
             and list(got[0]) == expected[0]
             and [tuple(pair) for pair in got[1]] == expected[1]
         )
-        check.that(ok, f"{text}: returned {got!r}, which is not the specified result",
+        check.that(ok, f"{text}: returned {got!r}, expected {tuple(expected)!r}",
                    self._detail(text, expected))  # fmt: skip
         self.tokens[seq_id] = self.tokens.get(seq_id, 0) + n
         self._done(f"{text}  -> {got!r}")
@@ -138,17 +143,17 @@ class Script:
 
     def table(self, seq_id, expected):
         got = self.alloc.block_table(seq_id)
-        check.that(got == expected, f"block_table({seq_id!r}): got {got!r}, which is not the table",
+        check.that(got == expected, f"block_table({seq_id!r}): got {got!r}, expected {expected!r}",
                    self._detail(f"block_table({seq_id!r})", expected))  # fmt: skip
 
     def free_blocks(self, expected):
         got = self.alloc.free_blocks()
-        check.that(got == expected, f"free_blocks(): got {got!r}, which is not the free count",
+        check.that(got == expected, f"free_blocks(): got {got!r}, expected {expected!r}",
                    self._detail("free_blocks()", expected))  # fmt: skip
 
     def refs(self, block, expected):
         got = self.alloc.ref_count(block)
-        check.that(got == expected, f"ref_count({block}): got {got!r}, which is not the count",
+        check.that(got == expected, f"ref_count({block}): got {got!r}, expected {expected!r}",
                    self._detail(f"ref_count({block})", expected))  # fmt: skip
 
 
@@ -194,18 +199,19 @@ def random_ops(ctx, rng, n_blocks, block_size, n_ops, *, prefix_forks):
                 del tokens[args[0]]
             check.that(
                 got == want,
-                f"{op}: returned something other than the specified result",
+                f"{text}: returned {got!r}, expected {want!r}",
                 "calls so far:\n" + "\n".join(history[-25:]) + f"\n{text}\n"
                 f"expected: {want!r}\ngot:      {got!r}\n",
             )
             history.append(f"{text}  -> {got!r}")
         audit(mine, n_blocks, block_size, tokens, history)
         for seq_id in tokens:
+            table, due = mine.block_table(seq_id), theirs.block_table(seq_id)
             check.that(
-                mine.block_table(seq_id) == theirs.block_table(seq_id),
-                "a block table differs from the specified one",
+                table == due,
+                f"block_table({seq_id!r}): got {table!r}, expected {due!r}",
                 "calls so far:\n" + "\n".join(history[-25:]) + f"\nsequence {seq_id!r}: expected "
-                f"{theirs.block_table(seq_id)}, got {mine.block_table(seq_id)}\n",
+                f"{due}, got {table}\n",
             )
 
 
@@ -275,7 +281,8 @@ class Watched(SimEngine):
             table = alloc.block_table(seq_id)
             if len(table) != -(-tokens // self.block_size):
                 self._problem(
-                    "a sequence's block table does not match the tokens it holds",
+                    f"a sequence's block table has {len(table)} blocks, expected "
+                    f"{-(-tokens // self.block_size)} for the {tokens} tokens it holds",
                     f"sequence {seq_id!r} needs blocks for {tokens} tokens (KV "
                     f"{seq.kv_tokens}, prefill to come {seq.remaining_prefill}, decoding "
                     f"now: {seq_id in decode}); its table is {table}",
@@ -459,8 +466,8 @@ def check_steps(run, expected, label):
             mine = "no such step" if k >= len(got) else show_step(got[k])
             check.that(False, f"{label}: step {k} is not the specified step",
                        f"expected: {show_step(want)}\ngot:      {mine}\n" + run.timeline())  # fmt: skip
-    check.that(len(got) == len(expected), f"{label}: the engine ran {len(got)} steps, which is "
-               "not the number the schedule has", run.timeline())  # fmt: skip
+    check.that(len(got) == len(expected), f"{label}: the engine ran {len(got)} steps, expected "
+               f"{len(expected)}", run.timeline())  # fmt: skip
 
 
 def show_step(step):
@@ -481,8 +488,8 @@ def check_against_oracle(ctx, requests, label, **config):
             if a != b:
                 check.that(False, f"{label}: {kind} {k} is not the specified one",
                            f"expected: {show(b)}\ngot:      {show(a)}\n" + got.timeline())  # fmt: skip
-        check.that(len(mine) == len(theirs), f"{label}: the number of {kind}s ({len(mine)}) is "
-                   "not the specified number", got.timeline())  # fmt: skip
+        check.that(len(mine) == len(theirs), f"{label}: got {len(mine)} {kind}s, expected "
+                   f"{len(theirs)}", got.timeline())  # fmt: skip
     return got
 
 

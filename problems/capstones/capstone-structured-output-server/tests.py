@@ -408,13 +408,14 @@ def check_model_call(lm, index, body, want, label, detail):
     )
     check.that(
         call.max_tokens == limit_of(body),
-        f"{label}: the model was called with the wrong max_tokens",
+        f"{label}: the model was called with max_tokens={call.max_tokens!r}, expected "
+        f"{limit_of(body)!r}",
         detail + f"expected: {limit_of(body)!r}\n     got: {call.max_tokens!r}\n",
     )
     check.that(
         len(call.pieces) == want.count,
         f"{label}: the server read {len(call.pieces)} rows of logits from the model, "
-        "which is not the number this generation needs",
+        f"expected {want.count} (the number this generation needs)",
         detail + f"expected {want.count} rows: one per token chosen, end-of-sequence "
         "included, and none after it\n",
     )
@@ -502,7 +503,7 @@ def complete(ctx, client, lm, body, rows, label):
         )
     check.that(
         choice.get("finish_reason") == want.finish,
-        f"{label}: wrong finish_reason",
+        f"{label}: finish_reason is {choice.get('finish_reason')!r}, expected {want.finish!r}",
         detail + f"expected finish_reason: {want.finish!r}\n",
     )
     check.that(
@@ -594,7 +595,7 @@ def check_chunks(events, lm, index, body, want, label):
     check.that(
         len(got) == len(want.deltas),
         f"{label}: got {len(got)} chunks between the role chunk and the finish chunk, "
-        "which is not the expected number",
+        f"expected {len(want.deltas)}",
         detail,
     )
     for position, (have, need) in enumerate(zip(got, want.deltas, strict=True)):
@@ -616,7 +617,7 @@ def check_chunks(events, lm, index, body, want, label):
     )
     check.that(
         reasons[-1] == want.finish,
-        f"{label}: wrong finish_reason on the finish chunk",
+        f"{label}: finish_reason on the finish chunk is {reasons[-1]!r}, expected {want.finish!r}",
         detail + f"expected finish_reason: {want.finish!r}\n",
     )
     if include_usage:

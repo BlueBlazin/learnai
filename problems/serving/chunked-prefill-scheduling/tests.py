@@ -47,8 +47,14 @@ def expect_plan(ctx, running, prefilling, waiting, budget, threshold, want):
         f"max_batch_tokens={budget}, long_prefill_threshold={threshold})\n"
         f"expected (prefill, decode): {want!r}\ngot: {(prefill, decode)!r}\n"
     )
-    check.that(decode == want[1], "plan returned the wrong decode list", detail)
-    check.that(prefill == want[0], "plan returned the wrong prefill chunks", detail)
+    check.that(
+        decode == want[1], f"plan returned the decode list {decode!r}, expected {want[1]!r}", detail
+    )
+    check.that(
+        prefill == want[0],
+        f"plan returned the prefill chunks {prefill!r}, expected {want[0]!r}",
+        detail,
+    )
 
 
 class Run:
@@ -156,10 +162,22 @@ def expect_steps(run, expected):
     detail += "".join(f"  {step!r}\n" for step in expected[:40])
     detail += "got:\n" + "".join(f"  {step!r}\n" for step in got[:40]) + run.timeline()
     for k, (have, want) in enumerate(zip(got, expected, strict=False)):
-        check.that(have[2] == want[2], f"step {k} decodes the wrong sequences", detail)
-        check.that(have[1] == want[1], f"step {k} has the wrong prefill chunks", detail)
-        check.that(have[0] == want[0], f"step {k} starts at the wrong time", detail)
-    check.that(len(got) == len(expected), "the number of steps is wrong", detail)
+        check.that(
+            have[2] == want[2], f"step {k} decodes {have[2]!r}, expected {want[2]!r}", detail
+        )
+        check.that(
+            have[1] == want[1],
+            f"step {k} has the prefill chunks {have[1]!r}, expected {want[1]!r}",
+            detail,
+        )
+        check.that(
+            have[0] == want[0], f"step {k} starts at {have[0]!r} ms, expected {want[0]!r}", detail
+        )
+    check.that(
+        len(got) == len(expected),
+        f"the plan ran {len(got)} steps, expected {len(expected)}",
+        detail,
+    )
 
 
 def solve(ctx, requests, *, budget, threshold):
@@ -304,8 +322,16 @@ def random_plans(ctx):
             f"waiting={waiting!r}, max_batch_tokens={budget}, "
             f"long_prefill_threshold={threshold})\nexpected {want!r}\ngot {got!r}\n"
         )
-        check.that(got[1] == want[1], "plan returned the wrong decode list", detail)
-        check.that(got[0] == want[0], "plan returned the wrong prefill chunks", detail)
+        check.that(
+            got[1] == want[1],
+            f"plan returned the decode list {got[1]!r}, expected {want[1]!r}",
+            detail,
+        )
+        check.that(
+            got[0] == want[0],
+            f"plan returned the prefill chunks {got[0]!r}, expected {want[0]!r}",
+            detail,
+        )
 
 
 @case("random traffic with prompts far longer than the budget")

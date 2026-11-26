@@ -343,6 +343,8 @@ def weights_real(ctx):
         check.that(
             got.dtype == np.float32 and np.array_equal(got, want),
             f"the real checkpoint: the first rows of {name!r} are not the stored values",
+            f"expected (first entries): {np.ravel(want)[:8]} (dtype float32)\n"
+            f"     got (first entries): {np.ravel(got)[:8]} (dtype {got.dtype})\n",
         )
     file = _state["file_real"]
     check.cost(file.counters, "bytes_read", at_most=len(file), unit="bytes",
@@ -369,7 +371,7 @@ def check_texts(ctx, which, entries):
         got = tokenizer.decode(entry["ids"])
         check.that(
             got == entry["decoded"],
-            f"decode(encode({text!r})): got {got!r}, which is not the text of these tokens",
+            f"decode(encode({text!r})): got {got!r}, expected {entry['decoded']!r}",
         )
 
 
@@ -407,7 +409,7 @@ def tokenizer_example(ctx):
         got = tokenizer.token_bytes(token)
         check.that(
             isinstance(got, bytes) and got == piece,
-            f"token_bytes({token}): got {got!r}, which is not the bytes of this token",
+            f"token_bytes({token}): got {got!r}, expected {piece!r}",
         )
     check_texts(ctx, "tiny", cases["texts"][:3])
 
@@ -431,9 +433,7 @@ def tokenizer_edges(ctx):
     for ids, want in [(emoji, "\U0001f642"), (emoji[:2], "\ufffd"), ([39, *emoji[1:]], "H\ufffd\ufffd\ufffd"),
                       ([381, 379, 376], "<think><|end_of_text|><|pad|>"), ([], "")]:  # fmt: skip
         got = tokenizer.decode(ids)
-        check.that(
-            got == want, f"decode({ids}): got {got!r}, which is not the text of these tokens"
-        )
+        check.that(got == want, f"decode({ids}): got {got!r}, expected {want!r}")
     # A file with three more merges, which only words can stop: two spaces, and digits
     # past a group of three. Rejects ignores_pretokenizer. The ids are looked up.
     wider = json.loads(json.dumps(files_of(ctx, "tiny").tokenizer_json))
@@ -523,8 +523,8 @@ def check_cache(ctx, cache, config, length, keys, values, label, layers=None, wi
     )
     check.that(
         type(cache["length"]) is int and cache["length"] == length,
-        f"{label}: cache['length'] is {cache['length']!r}, which is not the number of tokens "
-        "the cache holds",
+        f"{label}: cache['length'] is {cache['length']!r}, expected the int {length} (the number "
+        "of tokens the cache holds)",
     )
     n_layers = config["num_hidden_layers"]
     kv, head_dim = (
@@ -606,8 +606,8 @@ def run_sampler(ctx, entries, label):
         )
         check.that(
             got == entry["token"],
-            f"{label}: row {number}: sample_token chose token {got}, which is not the token "
-            "of the chain",
+            f"{label}: row {number}: sample_token chose token {got}, expected {entry['token']} "
+            "(the token of the chain)",
             f"logits = {entry['logits']}\nsampler = {entry['sampler']}\n"
             f"history = {entry['history']}\nu = {entry['u']}\nexpected: {entry['token']}\n",
         )

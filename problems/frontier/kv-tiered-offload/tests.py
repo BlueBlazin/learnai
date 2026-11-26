@@ -355,25 +355,31 @@ def play(ctx, script, *, capacity, costs=COSTS, size=2, expect=None):
             check.that(type(mine["result"]) is bool, f"{step}: discard must return True or False")
         for position, operation in enumerate(mine["ops"]):
             if position >= len(theirs["ops"]) or operation != theirs["ops"][position]:
+                due = (
+                    show(theirs["ops"][position])
+                    if position < len(theirs["ops"])
+                    else "no further operation"
+                )
                 raise CheckFailure(
-                    f"{step}: store operation {position + 1} of this step ({show(operation)}) "
-                    "is not what the policy does at that point",
+                    f"{step}: store operation {position + 1} of this step is {show(operation)}, "
+                    f"expected {due}",
                     history(index) + expected,
                 )
         check.that(
             len(mine["ops"]) == len(theirs["ops"]),
             f"{step}: the step ended after {len(mine['ops'])} store operations, "
-            "before the policy was carried out in full",
+            f"expected {len(theirs['ops'])} (the policy was not carried out in full)",
             history(index) + expected,
         )
         check.that(
             mine["result"] == theirs["result"],
-            f"{step}: returned {mine['result']!r}, which does not describe what was done",
+            f"{step}: returned {mine['result']!r}, expected {theirs['result']!r}",
             history(index) + expected,
         )
         check.that(
             mine["end"] == theirs["end"],
-            f"{step}: finished at t={mine['end']:g}, which is not when the store's work ends",
+            f"{step}: finished at t={mine['end']:g}, expected t={theirs['end']:g} (when the "
+            "store's work ends)",
             history(index) + expected,
         )
     check.that(not got_store.violations, "the store refused an operation (and it was caught)")

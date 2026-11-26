@@ -84,7 +84,7 @@ def run(ctx, prompt, specs, thresholds, budget, totals=None):
         )
     check.that(
         called == want_called,
-        f"the models called were {called}, which is not what the cascade prescribes here",
+        f"the models called were {called}, expected {want_called}",
         f"{setup}expected calls: {want_called}\n",
     )
     for model in models:
@@ -97,13 +97,13 @@ def run(ctx, prompt, specs, thresholds, budget, totals=None):
 
     check.that(
         got["answer"] == want["answer"] and got["model"] == want["model"],
-        f"the answer returned is {got['answer']!r} from {got['model']!r}, which is not the "
-        "answer the cascade ends with",
+        f"the answer returned is {got['answer']!r} from {got['model']!r}, expected "
+        f"{want['answer']!r} from {want['model']!r}",
         detail,
     )
     check.that(
         type(got["accepted"]) is bool and got["accepted"] == want["accepted"],
-        f"accepted is {got['accepted']!r}, which is wrong for this run",
+        f"accepted is {got['accepted']!r}, expected {want['accepted']!r}",
         detail,
     )
     if want["confidence"] is None:
@@ -117,8 +117,8 @@ def run(ctx, prompt, specs, thresholds, budget, totals=None):
         check.allclose(got["confidence"], want["confidence"], rtol=0, atol=1e-9, label="confidence")
     check.that(
         got["cost"] == want["cost"],
-        f"cost is {got['cost']!r}, which is not the sum of the costs of the models that "
-        "should have been called",
+        f"cost is {got['cost']!r}, expected {want['cost']!r} (the sum of the costs of the models "
+        "that should have been called)",
         detail,
     )
     spent = sum(m.spent for m in models)

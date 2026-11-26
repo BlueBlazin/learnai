@@ -117,14 +117,18 @@ def check_inputs(ctx, parents, prefix_len, literal=None):
     if len(wrong):
         row, col = (int(v) for v in wrong[0])
         where = "a prefix row" if row < prefix_len else f"the row of node {row - prefix_len}"
-        what = "attends to" if mask[row, col] else "does not attend to"
+        what = "must not attend to" if mask[row, col] else "must attend to"
         target = f"prefix column {col}" if col < prefix_len else f"node {col - prefix_len}"
         check.that(False, f"{INPUTS}: {where} {what} {target} ({len(wrong)} wrong entries)", detail)
     wrong = np.flatnonzero(positions != want_pos)
+    told = (
+        f"position id at index {wrong[0]} is {positions[wrong[0]]}, expected {want_pos[wrong[0]]}"
+        if len(wrong)
+        else ""
+    )
     check.that(
         len(wrong) == 0,
-        f"{INPUTS}: wrong position id at flat index {wrong[:1].tolist()} "
-        f"({len(wrong)} wrong entries)",
+        f"{INPUTS}: {told} ({len(wrong)} wrong entries)",
         detail,
     )
 
@@ -154,8 +158,10 @@ def check_verify(ctx, parents, tokens, target_argmax, literal=None):
         f"{VERIFY}: must return a list of Python ints and a Python int",
         detail,
     )
-    check.that(path == want[0], f"{VERIFY}: wrong accepted path", detail)
-    check.that(next_token == want[1], f"{VERIFY}: wrong next token", detail)
+    check.that(path == want[0], f"{VERIFY}: accepted path is {path}, expected {want[0]}", detail)
+    check.that(
+        next_token == want[1], f"{VERIFY}: next_token is {next_token}, expected {want[1]}", detail
+    )
     return path, next_token
 
 

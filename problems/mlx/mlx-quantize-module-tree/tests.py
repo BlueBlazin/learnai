@@ -174,8 +174,8 @@ def run(ctx, make, fn, forward):
     called = sorted(path for path, _ in recipe.calls)
     check.that(
         called == sorted(before),
-        f"quantize_model: the recipe was called for {len(called)} paths, which are not "
-        "exactly the nn.Linear and nn.Embedding layers of the model, once each",
+        f"quantize_model: the recipe was called for {len(called)} paths, expected "
+        f"{len(before)}: the nn.Linear and nn.Embedding layers of the model, once each",
         f"called for {called}\nexpected {sorted(before)}",
     )
     check.that(
@@ -192,14 +192,14 @@ def run(ctx, make, fn, forward):
             check.that(
                 type(now) is kind,
                 f"quantize_model: the layer at {path} is a {type(now).__name__} after the "
-                "call, which is not what the recipe asked for",
+                f"call, expected a {kind.__name__}, as the recipe asked",
                 f"expected {kind.__name__} with {want[path]}",
             )
             got = {"bits": now.bits, "group_size": now.group_size}
             check.that(
                 got == want[path] and now.mode == "affine",
                 f"quantize_model: the layer at {path} was quantized with {got}, mode "
-                f"{now.mode!r}, which is not what the recipe returned",
+                f"{now.mode!r}, expected {want[path]}, mode 'affine'",
                 f"expected {want[path]}, affine",
             )
         else:

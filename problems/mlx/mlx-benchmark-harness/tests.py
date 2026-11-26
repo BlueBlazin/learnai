@@ -175,7 +175,8 @@ def run(ctx, seed, prompt, n_tokens, n_warmup, n_runs, slow, **options):
     check.that(isinstance(result, dict), f"{FN}: must return a dict")
     check.that(
         set(result) == {"prompt_tps", "generation_tps", "tokens"},
-        f"{FN}: got a dict whose keys are not the expected keys",
+        f"{FN}: got the keys {sorted(map(str, result))}, "
+        "expected ['generation_tps', 'prompt_tps', 'tokens']",
         f"expected ['generation_tps', 'prompt_tps', 'tokens'], got {sorted(map(str, result))}",
     )
     for key in ("prompt_tps", "generation_tps"):

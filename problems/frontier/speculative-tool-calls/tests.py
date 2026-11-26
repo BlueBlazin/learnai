@@ -297,7 +297,7 @@ def play(ctx, script, messages, predictor, max_steps, *, names=None):
             )
     check.that(
         len(got) == len(want),
-        f"the transcript has {len(got)} messages, which is not the expected number",
+        f"the transcript has {len(got)} messages, expected {len(want)}",
         both,
     )
 
@@ -337,21 +337,22 @@ def play(ctx, script, messages, predictor, max_steps, *, names=None):
         )
         check.that(
             len(got_runs) == len(expected),
-            f"{name!r} was started {len(got_runs)} times, which is not the number of runs "
-            "the rules prescribe",
+            f"{name!r} was started {len(got_runs)} times, expected {len(expected)} (the runs "
+            "the rules prescribe)",
             detail,
         )
         check.that(
             [r[0] for r in got_runs] == [r[0] for r in expected]
             and [r[1] for r in got_runs] == [r[1] for r in expected],
             f"the runs of {name!r} do not have the prescribed arguments and start times "
-            f"(they started at {[r[1] for r in got_runs]})",
+            f"(they started at {[r[1] for r in got_runs]}, expected "
+            f"{[r[1] for r in expected]})",
             detail,
         )
         check.that(
             False,
             f"the runs of {name!r} did not end as prescribed (their statuses are "
-            f"{[r[2] for r in got_runs]})",
+            f"{[r[2] for r in got_runs]}, expected {[r[2] for r in expected]})",
             detail,
         )
     ctx.metric("tool_runs", total, unit="runs")

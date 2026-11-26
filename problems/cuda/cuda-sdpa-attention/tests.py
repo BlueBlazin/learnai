@@ -118,13 +118,13 @@ def check_output(out, q, k, v, n_cached, key_padding):
     )
     check.that(
         tuple(out.shape) == q.shape,
-        f"{FN}: got shape {tuple(out.shape)}, which is not the expected shape",
-        f"expected the shape of q, {q.shape}",
+        f"{FN}: got shape {tuple(out.shape)}, expected shape {tuple(q.shape)}",
+        "the result has the shape of q",
     )
     got_dtype = str(out.dtype).removeprefix("torch.")
     check.that(
         got_dtype == q.dtype.name,
-        f"{FN}: got dtype {got_dtype}, which is not the expected dtype",
+        f"{FN}: got dtype {got_dtype}, expected dtype {q.dtype.name}",
         f"the result must have the dtype of q ({q.dtype.name})",
     )
     half = q.dtype == np.float16
@@ -289,7 +289,7 @@ def on_meta_device(ctx):
         )
         check.that(
             tuple(out.shape) == q.shape,
-            f"{FN}: got shape {tuple(out.shape)}, which is not the expected shape",
+            f"{FN}: got shape {tuple(out.shape)}, expected shape {tuple(q.shape)}",
         )
 
 

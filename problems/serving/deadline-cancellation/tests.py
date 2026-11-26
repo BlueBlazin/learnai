@@ -159,8 +159,11 @@ def check_rules(run):
                        "the engine never finished it", who + "\n" + detail)  # fmt: skip
             check.that(when == finish_time[r.id], "result() did not return at the instant of "
                        "the last token", who + "\n" + detail)  # fmt: skip
-            check.that(tokens == r.output_tokens, "result() returned the wrong token count",
-                       f"{who}returned {tokens!r}\n" + detail)  # fmt: skip
+            check.that(
+                tokens == r.output_tokens,
+                f"{who}result() returned the token count {tokens!r}, expected {r.output_tokens}",
+                f"{who}returned {tokens!r}\n" + detail,
+            )
             check.that(r.deadline_s is None or when < r.deadline_s, "a request finished at or "
                        "after its deadline", who + "\n" + detail)  # fmt: skip
             check.that(cancel_at is None or when < cancel_at, "a request finished at or after "
@@ -187,7 +190,7 @@ def check_rules(run):
         if r.id in called:
             check.that(
                 called[r.id][1] == (how == "canceled"),
-                "cancel() returned the wrong value",
+                f"{who}cancel() returned {called[r.id][1]!r}, expected {how == 'canceled'}",
                 f"{who}{how}; cancel() returned {called[r.id][1]!r}\n" + detail,
             )
     check.that(
@@ -198,18 +201,29 @@ def check_rules(run):
 
 
 def expect(run, *, outcomes=None, steps=None, releases=None):
-    """Compare with literal values, without leaking them in the message."""
+    """Compare with literal values."""
     detail = run.timeline()
     if outcomes is not None:
         got = run.outcomes
         for request_id, want in outcomes.items():
             have = got[request_id]
             line = f"request {request_id!r}: expected (time, how, tokens) {want!r}, got {have!r}\n"
-            check.that(have[1] == want[1], "a request ended the wrong way", line + detail)
-            check.that(have[0] == want[0], "a client got its result at the wrong time",
-                       line + detail)  # fmt: skip
-            check.that(have[2] == want[2], "result() returned the wrong token count",
-                       line + detail)  # fmt: skip
+            who = f"request {request_id!r}"
+            check.that(
+                have[1] == want[1],
+                f"{who} ended as {have[1]!r}, expected {want[1]!r}",
+                line + detail,
+            )
+            check.that(
+                have[0] == want[0],
+                f"{who}: the client got its result at t={have[0]!r}, expected t={want[0]!r}",
+                line + detail,
+            )
+            check.that(
+                have[2] == want[2],
+                f"{who}: result() returned the token count {have[2]!r}, expected {want[2]!r}",
+                line + detail,
+            )
     if releases is not None:
         # Releases at one instant may come in any order.
         def canonical(pairs):
@@ -226,10 +240,20 @@ def expect(run, *, outcomes=None, steps=None, releases=None):
         lines += "".join(f"  {step!r}\n" for step in steps[:40])
         lines += "got:\n" + "".join(f"  {step!r}\n" for step in got[:40]) + detail
         for k, (have, want) in enumerate(zip(got, steps, strict=False)):
-            check.that(have[1] == want[1], f"step {k} prefills the wrong sequences", lines)
-            check.that(have[2] == want[2], f"step {k} decodes the wrong sequences", lines)
-            check.that(have[0] == want[0], f"step {k} starts at the wrong time", lines)
-        check.that(len(got) == len(steps), "the number of engine steps is wrong", lines)
+            check.that(
+                have[1] == want[1], f"step {k} prefills {have[1]!r}, expected {want[1]!r}", lines
+            )
+            check.that(
+                have[2] == want[2], f"step {k} decodes {have[2]!r}, expected {want[2]!r}", lines
+            )
+            check.that(
+                have[0] == want[0],
+                f"step {k} starts at {have[0]!r} ms, expected {want[0]!r}",
+                lines,
+            )
+        check.that(
+            len(got) == len(steps), f"the engine ran {len(got)} steps, expected {len(steps)}", lines
+        )
 
 
 def solve(ctx, requests, cancels=None, *, max_running):
@@ -243,9 +267,10 @@ def matches_oracle(ctx, requests, cancels=None, *, max_running):
     want = simulate(ctx, ctx.oracle, requests, cancels, max_running=max_running)
     expect(got, outcomes=want.outcomes, releases=want.releases, steps=want.steps)
     for name in ("steps", "prefill_tokens", "decode_tokens", "output_tokens"):
+        mine, reference = getattr(got.engine.counters, name), getattr(want.engine.counters, name)
         check.that(
-            getattr(got.engine.counters, name) == getattr(want.engine.counters, name),
-            f"the engine's total work ({name}) differs from the reference",
+            mine == reference,
+            f"the engine's total work ({name}) is {mine}, expected {reference}",
             got.timeline(),
         )
     return got

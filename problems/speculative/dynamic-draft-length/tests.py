@@ -77,7 +77,8 @@ def check_simulate(ctx, trace, k, schedule, threshold, c_draft, c_target, expect
     for key in ("ks", "rounds", "draft_tokens", "cost"):
         check.that(
             type(got[key]) is type(want[key]),
-            f"simulate: result[{key!r}] is a {type(got[key]).__name__}, which is the wrong type",
+            f"simulate: result[{key!r}] is a {type(got[key]).__name__}, expected a "
+            f"{type(want[key]).__name__}",
             f"expected a {type(want[key]).__name__}",
         )
         if key == "ks":
@@ -85,7 +86,7 @@ def check_simulate(ctx, trace, k, schedule, threshold, c_draft, c_target, expect
         else:
             check.that(
                 got[key] == want[key],
-                f"simulate: wrong {key}",
+                f"simulate: {key} is {got[key]}, expected {want[key]}",
                 f"{detail}\nexpected {key} = {want[key]}, got {got[key]}\n"
                 f"expected ks = {want['ks'][:40]}\ngot      ks = {got['ks'][:40]}",
             )
@@ -100,7 +101,8 @@ def check_stop(ctx, logits, threshold, want):
     )
     check.that(
         got is want,
-        f"should_stop_drafting: returned {got} for a confidence on the other side of the threshold",
+        f"should_stop_drafting: returned {got}, expected {want} (the confidence is on the other "
+        "side of the threshold)",
         f"logits = {logits}, threshold = {threshold}: expected {want}",
     )
 
@@ -110,7 +112,7 @@ def check_next_k(ctx, k, n_accepted, n_drafted, want):
     check.that(type(got) is int, f"next_k: returned a {type(got).__name__}, not an int")
     check.that(
         got == want,
-        f"next_k({k}, {n_accepted}, {n_drafted}): returned {got}, which is not the next length",
+        f"next_k({k}, {n_accepted}, {n_drafted}): returned {got}, expected {want}",
         f"expected {want}",
     )
 
@@ -179,7 +181,11 @@ def confidence_stop(ctx):
     # accepted, so k keeps growing although no round ever drafts k tokens.
     trace = [(T, unsure if t % 3 == 2 else sure) for t in range(24)]
     got = check_simulate(ctx, trace, 5, "heuristic", 0.4, 1, 10)
-    check.that(got["ks"][:3] == [5, 7, 9], "simulate: wrong ks", f"got ks = {got['ks']}")
+    check.that(
+        got["ks"][:3] == [5, 7, 9],
+        f"simulate: ks starts with {got['ks'][:3]}, expected [5, 7, 9]",
+        f"got ks = {got['ks']}",
+    )
     check_simulate(ctx, trace, 5, "constant", 0.4, 1, 10)
     # The unsure tokens are the mismatches: each draft ends with a rejected token.
     trace = [(t % 4 != 3, unsure if t % 4 == 3 else sure) for t in range(24)]
@@ -210,7 +216,9 @@ def end_of_output(ctx):
             check_simulate(ctx, trace, k, "heuristic", 0.0, 1, 10)
             check_simulate(ctx, trace, k, "constant", 0.4, 1, 10)
     got = check_simulate(ctx, [(T, sure)] * 6, 8, "constant", 0.0, 1, 10)
-    check.that(got["draft_tokens"] == 5, "simulate: wrong draft_tokens")
+    check.that(
+        got["draft_tokens"] == 5, f"simulate: draft_tokens is {got['draft_tokens']}, expected 5"
+    )
 
 
 @case("a draft that is always wrong: k falls to 1 and stays there")

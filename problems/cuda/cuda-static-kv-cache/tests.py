@@ -92,14 +92,13 @@ class Request:
                 label = f"{attr}[{layer}]"
                 check.that(
                     tuple(tensor.shape) == self.shape,
-                    f"{label}: got shape {tuple(tensor.shape)}, which is not the expected shape",
+                    f"{label}: got shape {tuple(tensor.shape)}, expected shape {self.shape}",
                     f"expected (batch, n_kv_heads, max_len, head_dim) = {self.shape}",
                 )
                 check.that(
                     tensor.dtype == self.dtype,
-                    f"{label}: got dtype {dtype_name(tensor.dtype)}, which is not the "
-                    "expected dtype",
-                    f"expected {dtype_name(self.dtype)}",
+                    f"{label}: got dtype {dtype_name(tensor.dtype)}, expected dtype "
+                    f"{dtype_name(self.dtype)}",
                 )
                 check.that(
                     tensor.device.type == self.device.type,
@@ -162,7 +161,7 @@ class Request:
             for label, tensor in zip(("update k", "update v"), out, strict=True):
                 check.that(
                     tuple(tensor.shape) == self.shape,
-                    f"{label}: got shape {tuple(tensor.shape)}, which is not the expected shape",
+                    f"{label}: got shape {tuple(tensor.shape)}, expected shape {self.shape}",
                     f"expected the full buffer, {self.shape}, at every step",
                 )
             self.unchanged_memory("by update")
@@ -177,7 +176,7 @@ class Request:
             check.that(
                 mask.dtype == torch.bool and tuple(mask.shape) == (n_new, max_len),
                 f"mask: got dtype {dtype_name(mask.dtype)} and shape {tuple(mask.shape)}, "
-                "which is not what is expected",
+                f"expected bool and shape {(n_new, max_len)}",
                 f"expected a bool tensor of shape (n_new, max_len) = {(n_new, max_len)}",
             )
             check.that(
@@ -394,8 +393,8 @@ def on_meta_device(ctx):
     ):
         check.that(
             tensor.device.type == "meta" and tuple(tensor.shape) == shape,
-            f"{label}: got shape {tuple(tensor.shape)} on {tensor.device.type}, which is "
-            "not what is expected",
+            f"{label}: got shape {tuple(tensor.shape)} on {tensor.device.type}, expected "
+            f"shape {shape} on meta",
         )
 
 

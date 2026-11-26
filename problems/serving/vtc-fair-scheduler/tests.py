@@ -115,18 +115,36 @@ def expect_admissions(run, expected):
     detail = f"expected admissions (ms, id): {expected[:60]!r}\n"
     detail += f"got admissions      (ms, id): {got[:60]!r}\n" + run.timeline()
     for k, (have, want) in enumerate(zip(got, expected, strict=False), start=1):
-        check.that(have[1] == want[1], f"admission {k} is the wrong request", detail)
-        check.that(have[0] == want[0], f"admission {k} happens at the wrong time", detail)
-    check.that(len(got) == len(expected), "the number of admissions is wrong", detail)
+        check.that(
+            have[1] == want[1],
+            f"admission {k} is request {have[1]!r}, expected request {want[1]!r}",
+            detail,
+        )
+        check.that(
+            have[0] == want[0],
+            f"admission {k} happens at {have[0]!r} ms, expected {want[0]!r}",
+            detail,
+        )
+    check.that(
+        len(got) == len(expected),
+        f"{len(got)} requests were admitted, expected {len(expected)}",
+        detail,
+    )
 
 
 def expect_counters(got, want, what, run):
-    """Compare a {tenant: counter} dict exactly, without leaking it in the message."""
+    """Compare a {tenant: counter} dict exactly."""
     detail = f"expected {what}: {want!r}\ngot: {got!r}\n" + run.timeline()
-    check.that(set(got) == set(want), f"{what}: the set of tenants is wrong", detail)
+    check.that(
+        set(got) == set(want),
+        f"{what}: the tenants are {sorted(got, key=str)!r}, expected {sorted(want, key=str)!r}",
+        detail,
+    )
+    bad = next((t for t in want if float(got[t]) != float(want[t])), None)
     check.that(
         all(float(got[t]) == float(want[t]) for t in want),
-        f"{what}: a virtual token counter has the wrong value",
+        f"{what}: the virtual token counter of tenant {bad!r} is {got.get(bad)!r}, expected "
+        f"{want.get(bad)!r}",
         detail,
     )
 
@@ -242,8 +260,12 @@ def matches_oracle(ctx, requests, **options):
     check_discipline(got)
     want = simulate(ctx, ctx.oracle.VTCScheduler, requests, **options)
     expect_admissions(got, want.admissions)
-    check.that(got.steps == want.steps, "the admissions are right but the engine steps "
-               "differ from the continuous-batching loop", got.timeline())  # fmt: skip
+    k = next((k for k, (a, b) in enumerate(zip(got.steps, want.steps, strict=False)) if a != b), 0)
+    check.that(
+        got.steps == want.steps,
+        "the admissions are right but the engine steps differ from the continuous-batching loop",
+        got.timeline() + f"first difference: step {k}, expected {want.steps[k : k + 1]!r}\n",
+    )
     expect_counters(got.final_counters(), want.final_counters(), "final counters", got)
     return got
 

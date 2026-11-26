@@ -68,7 +68,7 @@ def check_call(ctx, lm, name, result, want, n_tokens, share_from, limit_tokens):
     check.that(
         all(n == n_tokens for n in lengths[:share_from]),
         f"{name}: the layers below share_from have cached {lengths[:share_from]} tokens, "
-        "which is not the number of tokens processed so far",
+        f"expected {n_tokens} each (the number of tokens processed so far)",
         f"cache.lengths = {lengths}, expected {(n_tokens,) * share_from} then zeros",
     )
     kind = "prefill" if name == "prefill_shared" else "decode"

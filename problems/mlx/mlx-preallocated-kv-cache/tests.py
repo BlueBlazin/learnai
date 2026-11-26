@@ -54,13 +54,15 @@ def check_fetched(got, want, name, call):
     )
     check.that(
         tuple(got.shape) == want.shape,
-        f"{FN}: returned {name} of shape {tuple(got.shape)}, which is not the shape of the "
-        "tokens stored so far",
+        f"{FN}: returned {name} of shape {tuple(got.shape)}, expected {want.shape}, the "
+        "shape of the tokens stored so far",
         f"expected {want.shape} after update {call}",
     )
+    got_dtype = str(got.dtype).rsplit(".", 1)[-1]
     check.that(
-        np.dtype(str(got.dtype).rsplit(".", 1)[-1]) == want.dtype,
-        f"{FN}: returned {name} of dtype {got.dtype}, which is not the dtype that was written",
+        np.dtype(got_dtype) == want.dtype,
+        f"{FN}: returned {name} of dtype {got_dtype}, expected {want.dtype}, the dtype that "
+        "was written",
         f"expected {want.dtype} after update {call}",
     )
     check.allclose(
@@ -105,15 +107,16 @@ def feed(ctx, chunks, *, step=None, every=1):
             else:
                 check.that(
                     result[0].shape[2] == offset and result[1].shape[2] == offset,
-                    f"{FN}: returned {result[0].shape[2]} tokens, which is not the number stored",
+                    f"{FN}: returned {result[0].shape[2]} tokens, expected {offset}, the "
+                    "number stored",
                     f"expected {offset} after update {call}",
                 )
 
             # 2. The bookkeeping.
             check.that(
                 type(cache.offset) is int and cache.offset == offset,
-                f"{FN}: offset is {cache.offset!r} after an update, which is not the number "
-                "of tokens stored",
+                f"{FN}: offset is {cache.offset!r} after an update, expected the int "
+                f"{offset}, the number of tokens stored",
                 f"expected the int {offset} after update {call}",
             )
             check.that(
@@ -129,8 +132,8 @@ def feed(ctx, chunks, *, step=None, every=1):
             )
             check.that(
                 shape == expected,
-                f"{FN}: the buffers have {shape[0][2]} slots after an update, which is not "
-                "the capacity the growth rule gives",
+                f"{FN}: the buffers have {shape[0][2]} slots after an update, expected "
+                f"{capacity}, the capacity the growth rule gives",
                 f"update {call}: expected keys {expected[0]} and values {expected[1]}, "
                 f"got {shape[0]} and {shape[1]}",
             )

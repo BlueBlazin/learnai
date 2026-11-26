@@ -79,8 +79,8 @@ def check_awq(ctx, w, x, bits, group_size, grid, *, exact_ties=False):
     check.shape(alpha, (), label="alpha")
     check.that(
         float(alpha) == float(want_alpha),
-        f"alpha: returned {float(alpha):.4g}, which is not the grid entry with the lowest "
-        "output error (or not the first of several)",
+        f"alpha: returned {float(alpha):.4g}, expected {float(want_alpha):.4g} (the first grid "
+        "entry with the lowest output error)",
         f"grid = {grid.tolist()}\n"
         f"output error of each entry = {losses(w, x, bits, group_size, grid).tolist()}\n"
         f"expected alpha = {float(want_alpha):.4g}",

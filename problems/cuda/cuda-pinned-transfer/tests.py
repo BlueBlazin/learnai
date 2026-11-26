@@ -123,8 +123,7 @@ def drive(ctx, arrays, *, lazy=True):
     # 1. Every batch, in order, with its values intact after the whole loop.
     check.that(
         len(got) == n,
-        f"Prefetcher: yielded {len(got)} batches, which is not the number in the source",
-        f"the source holds {n} batches",
+        f"Prefetcher: yielded {len(got)} batches, expected {n} (the number in the source)",
     )
     for i, batch in enumerate(got):
         check.match(batch.numpy(), arrays[i], label=f"batch {i} after the loop")
@@ -385,7 +384,8 @@ def gpu_prefetch(ctx):
     got = list(fetcher)
     check.that(
         len(got) == len(arrays),
-        f"Prefetcher: yielded {len(got)} batches, which is not the number in the source",
+        f"Prefetcher: yielded {len(got)} batches, expected {len(arrays)} (the number in the "
+        "source)",
     )
     for i, batch in enumerate(got):
         check.that(batch.is_cuda, f"Prefetcher: batch {i} is on {batch.device}, not on CUDA")

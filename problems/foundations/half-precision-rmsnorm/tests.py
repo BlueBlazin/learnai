@@ -155,8 +155,8 @@ def run(ctx, x, weight, eps=1e-5, *, label=NAME):
     got = np.asarray(ctx.fw.numpy(out))
     check.that(
         got.dtype == np.float16,
-        f"{label}: got dtype {got.dtype}, which is not the expected dtype",
-        "expected float16: the result must be a float16 tensor",
+        f"{label}: got dtype {got.dtype}, expected dtype float16",
+        "the result must be a float16 tensor",
     )
     check.shape(got, x.shape, label=label)
     check.allclose(

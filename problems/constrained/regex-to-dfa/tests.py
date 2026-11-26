@@ -168,7 +168,7 @@ def check_structure(dfa, pattern):
     minimal = len(kit_dfa(pattern)[0])
     check.that(
         len(table) == minimal,
-        f"{FN}: the automaton has {len(table)} states, which is not the minimal number",
+        f"{FN}: the automaton has {len(table)} states, expected {minimal} (the minimal number)",
         f"pattern: {pattern!r}\nthe minimal automaton of this language has {minimal} states",
     )
 
@@ -269,14 +269,15 @@ def worked_example(ctx):
         table == want and accepting == {2, 3},
         f"{FN}({INTEGER!r}): the automaton is not the one of the statement",
         f"states renumbered breadth-first from the start:\n  transitions = {table}\n"
-        f"  accepting = {sorted(accepting)}",
+        f"  accepting = {sorted(accepting)}\nexpected:\n  transitions = {want}\n"
+        "  accepting = [2, 3]",
     )
     for text, verdict in (("0", True), ("-7", True), ("120", True), ("", False), ("-", False),
                           ("007", False), ("-0", True), ("1a", False)):  # fmt: skip
         check.that(
             accepts(dfa, text.encode()) == verdict,
-            f"{FN}({INTEGER!r}): wrong verdict on {text!r}",
-            f"expected {'accepted' if verdict else 'rejected'}",
+            f"{FN}({INTEGER!r}): the automaton {'rejects' if verdict else 'accepts'} {text!r}, "
+            f"expected it to be {'accepted' if verdict else 'rejected'}",
         )
 
 
@@ -290,8 +291,9 @@ def precedence(ctx):
     for text, verdict in (("ab", True), ("cd", True), ("abd", False), ("acd", False)):
         check.that(
             accepts(dfa, text.encode()) == verdict,
-            f"{FN}('ab|cd'): wrong verdict on {text!r}",
-            f"expected {'accepted' if verdict else 'rejected'}: the branches are ab and cd",
+            f"{FN}('ab|cd'): the automaton {'rejects' if verdict else 'accepts'} {text!r}, "
+            f"expected it to be {'accepted' if verdict else 'rejected'}",
+            "the branches are ab and cd",
         )
 
 

@@ -22,7 +22,7 @@ def check_pick(ctx, replicas, load, u1, u2, expected, label):
     got = ctx.call("pick", list(replicas), dict(load), u1, u2)
     check.that(
         type(got) is int and got == expected,
-        f"{label}: returned {got!r}, which is not the specified replica",
+        f"{label}: returned {got!r}, expected replica {expected!r}",
         f"replicas = {replicas!r}\nload = {load!r}\nu1 = {u1!r}, u2 = {u2!r}\n"
         f"expected: {expected!r}\n     got: {got!r}\n",
     )
@@ -115,7 +115,7 @@ def play(script, balancer, label):
             history.append(f"route({tokens}, {u1}, {u2}) -> {got!r}")
             check.that(
                 type(got) is int and got == expected,
-                f"{label}: route returned {got!r}, which is not the specified replica",
+                f"{label}: route returned {got!r}, expected replica {expected!r}",
                 "\n".join(history) + f"\nexpected: {expected!r}\n",
             )
 
@@ -161,7 +161,9 @@ def check_routes(ctx, requests, uniforms, label, *, interval_s, replicas=REPLICA
     wrong = next((i for i, (g, w) in enumerate(zip(got, want, strict=False)) if g != w), None)
     check.that(
         wrong is None and len(got) == len(want),
-        f"{label}: a request was routed to a different replica than specified",
+        f"{label}: {len(got)} requests were routed, expected {len(want)}"
+        if wrong is None
+        else f"{label}: request {wrong} was routed to replica {got[wrong]}, expected {want[wrong]}",
         ""
         if wrong is None
         else (
@@ -264,7 +266,7 @@ def balancer_scripts(ctx):
             history.append(f"route({tokens}, {u1!r}, {u2!r}) -> {got!r}")
             check.that(
                 got == want,
-                f"Balancer script {trial}: route returned {got!r}, which is not the specified replica",
+                f"Balancer script {trial}: route returned {got!r}, expected replica {want!r}",
                 f"Balancer({ids!r})\n" + "\n".join(history[-12:]) + f"\nexpected: {want!r}\n",
             )
 

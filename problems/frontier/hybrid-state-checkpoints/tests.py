@@ -163,7 +163,8 @@ class Session:
         check.that(
             set(got_keys) == set(want_keys),
             "store: the checkpoints it holds are not the ones the statement asks for "
-            f"(it has checkpoints of {sorted(len(k) for k in got_keys)} tokens)",
+            f"(it has checkpoints of {sorted(len(k) for k in got_keys)} tokens, expected "
+            f"{sorted(len(k) for k in want_keys)})",
             detail,
         )
         check.that(

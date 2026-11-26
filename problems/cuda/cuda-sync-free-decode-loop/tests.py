@@ -165,9 +165,7 @@ def run(ctx, seed, prompt, n, check_every, device=CPU, **options):
     check.that(
         isinstance(out, torch.Tensor), f"{FN}: returned a {type(out).__name__}, not a tensor"
     )
-    check.that(
-        out.dtype == torch.int64, f"{FN}: got dtype {out.dtype}, which is not the expected dtype"
-    )
+    check.that(out.dtype == torch.int64, f"{FN}: got dtype {out.dtype}, expected dtype torch.int64")
     check.that(
         out.device.type == "cpu", f"{FN}: the result is on {out.device}; it must be on the CPU"
     )

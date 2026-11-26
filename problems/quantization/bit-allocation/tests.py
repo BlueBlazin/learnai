@@ -78,7 +78,7 @@ def check_valid(layers, options, target_bpw, bits):
     )
     check.that(
         len(bits) == len(layers),
-        f"allocate_bits: got {len(bits)} bit widths, which is not one per layer",
+        f"allocate_bits: got {len(bits)} bit widths, expected {len(layers)} (one per layer)",
         f"layers: {len(layers)}",
     )
     check.that(
@@ -105,7 +105,8 @@ def check_small(ctx, layers, options, target_bpw):
     got_error, want_error = error_of(layers, options, bits), error_of(layers, options, want)
     check.that(
         got_error <= want_error,
-        f"the assignment is feasible but not optimal: its total error is {got_error}",
+        f"the assignment is feasible but not optimal: its total error is {got_error}, the "
+        f"lowest feasible is {want_error}",
         f"a feasible assignment with error {want_error} exists: {want}\ngot {bits}",
     )
     check.equal(bits, want, label="assignment")
@@ -119,7 +120,8 @@ def check_large(ctx, layers, options, target_bpw):
     got_error, lowest = error_of(layers, options, bits), min_error(layers, options, target_bpw)
     check.that(
         got_error == lowest,
-        f"the assignment is feasible but not optimal: its total error is {got_error}",
+        f"the assignment is feasible but not optimal: its total error is {got_error}, the "
+        f"lowest feasible is {lowest}",
         f"the lowest feasible total error is {lowest}",
     )
     check.equal(

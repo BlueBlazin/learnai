@@ -339,7 +339,7 @@ def check_rules(run):
 
 
 def expect(run, *, steps=None, releases=None, takes=None, final=None):
-    """Compare with literal values, without leaking them in the message."""
+    """Compare with literal values."""
     detail = run.timeline()
     if takes is not None:
         got = run.takes
@@ -349,11 +349,20 @@ def expect(run, *, steps=None, releases=None, takes=None, final=None):
         for have, want in zip(got, takes, strict=True):
             have = (have[0], have[1], None if have[2] is None else list(have[2]), have[3])
             want = (want[0], want[1], None if want[2] is None else list(want[2]), want[3])
-            check.that(have[2] == want[2], "a take() returned the wrong chunk", lines)
-            check.that(have[3] == want[3], "a stream was in the wrong state after a call", lines)
+            call = f"the call for stream {have[1]!r} at t={have[0]!r}"
+            check.that(
+                have[2] == want[2],
+                f"{call}: take() returned {have[2]!r}, expected {want[2]!r}",
+                lines,
+            )
+            check.that(
+                have[3] == want[3],
+                f"{call}: the stream was {have[3]!r} afterwards, expected {want[3]!r}",
+                lines,
+            )
     if final is not None:
         check.that(run.final == final, "a stream ended in the wrong state",
-                   f"expected {final!r}\n" + detail)  # fmt: skip
+                   f"expected {final!r}\ngot      {run.final!r}\n" + detail)  # fmt: skip
     if releases is not None:
         # Releases at one instant may come in any order.
         def canonical(pairs):
@@ -370,10 +379,20 @@ def expect(run, *, steps=None, releases=None, takes=None, final=None):
         lines += "".join(f"  {step!r}\n" for step in steps[:40])
         lines += "got:\n" + "".join(f"  {step!r}\n" for step in got[:40]) + detail
         for k, (have, want) in enumerate(zip(got, steps, strict=False)):
-            check.that(have[1] == want[1], f"step {k} prefills the wrong sequences", lines)
-            check.that(have[2] == want[2], f"step {k} decodes the wrong sequences", lines)
-            check.that(have[0] == want[0], f"step {k} starts at the wrong time", lines)
-        check.that(len(got) == len(steps), "the number of engine steps is wrong", lines)
+            check.that(
+                have[1] == want[1], f"step {k} prefills {have[1]!r}, expected {want[1]!r}", lines
+            )
+            check.that(
+                have[2] == want[2], f"step {k} decodes {have[2]!r}, expected {want[2]!r}", lines
+            )
+            check.that(
+                have[0] == want[0],
+                f"step {k} starts at {have[0]!r} ms, expected {want[0]!r}",
+                lines,
+            )
+        check.that(
+            len(got) == len(steps), f"the engine ran {len(got)} steps, expected {len(steps)}", lines
+        )
 
 
 def solve(ctx, requests, clients, **options):

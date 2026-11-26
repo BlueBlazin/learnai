@@ -53,7 +53,7 @@ def check_dtype(out):
     check.that(isinstance(out, mx.array), f"{FN}: must return an mx.array")
     check.that(
         out.dtype == mx.float16,
-        f"{FN}: got dtype {str(out.dtype).rsplit('.', 1)[-1]}, which is not the expected dtype",
+        f"{FN}: got dtype {str(out.dtype).rsplit('.', 1)[-1]}, expected dtype float16",
         "the result must be float16; something in the graph promoted it "
         "(an mx.array constant, mx.zeros, mx.arange, ... are float32 unless given a dtype)",
     )

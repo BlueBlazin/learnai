@@ -288,7 +288,11 @@ def check_error(response, status, label, param="unchecked"):
         f"request: {label}\nstatus: {response.status_code}\n"
         f"content-type: {response.headers.get('content-type')!r}\nbody: {response.text[:300]!r}\n"
     )
-    check.that(response.status_code == status, f"{label}: wrong status code", detail)
+    check.that(
+        response.status_code == status,
+        f"{label}: got status {response.status_code}, expected {status}",
+        detail,
+    )
     try:
         payload = response.json()
     except ValueError:

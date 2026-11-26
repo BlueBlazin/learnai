@@ -88,8 +88,8 @@ def check_header(ctx, buf, table, metadata, data_start, label="read_header"):
     check.equal(got_metadata, metadata, label=f"{label}: metadata")
     check.that(
         type(got_start) is int and got_start == data_start,
-        f"{label}: data_start is {got_start!r}, which is not where the data begins",
-        f"expected {data_start}",
+        f"{label}: data_start is {got_start!r}, expected the int {data_start} (where the data "
+        "begins)",
     )
 
 
@@ -103,8 +103,7 @@ def check_tensor(ctx, buf, name, kind, want, label=None):
     dtype = np.dtype(DTYPES[kind])
     check.that(
         got.dtype == dtype,
-        f"{label}: got dtype {got.dtype}, which is not the dtype the statement gives for it",
-        f"expected {dtype} for safetensors dtype {kind}",
+        f"{label}: got dtype {got.dtype}, expected dtype {dtype} (safetensors dtype {kind})",
     )
     check.shape(got, tuple(want.shape), label=label)
     same = np.ascontiguousarray(got).tobytes() == np.ascontiguousarray(want).tobytes()
@@ -400,6 +399,5 @@ def real_every_tensor(ctx):
         total = int(got.sum(dtype=np.uint64))
         check.that(
             total == want["sum"],
-            f"{name}: the sum of the 16-bit patterns is not the checkpoint's",
-            f"expected {want['sum']}, got {total}",
+            f"{name}: the sum of the 16-bit patterns is {total}, expected {want['sum']}",
         )

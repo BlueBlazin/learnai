@@ -109,10 +109,11 @@ def check_step(ctx, tokens, logits, mask_id, n_unmask, temperature, uniforms, *,
     if not np.array_equal(np.asarray(expected), want):
         raise RuntimeError("authoring error: the oracle disagrees with the float64 plan")
     committed = int((masked & (got != mask_id)).sum())
+    due = int((masked & (want != mask_id)).sum())
     check.that(
-        committed == int((masked & (want != mask_id)).sum()),
-        f"{STEP}: {committed} masked positions were committed, which is not the number "
-        "this step must commit",
+        committed == due,
+        f"{STEP}: {committed} masked positions were committed, expected {due} (the number "
+        "this step must commit)",
         detail,
     )
     check.equal(got, want, label="tokens after the step")
@@ -319,7 +320,7 @@ def schedule_sweep(ctx):
             check.that(
                 sum(got) == n_masked,
                 f"schedule({n_masked}, {steps}) commits {sum(got)} positions in total, "
-                "which is not the number of masked positions",
+                f"expected {n_masked} (the number of masked positions)",
                 f"returned {got!r}",
             )
             check.equal(got, want, label=f"schedule({n_masked}, {steps})")

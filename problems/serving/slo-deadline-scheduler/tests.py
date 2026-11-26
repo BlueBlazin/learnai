@@ -51,9 +51,12 @@ def check_plan(ctx, waiting, now, running, free, *, admit, shed, cost=COST, labe
     )
     got_admit, got_shed = ([r.id for r in part] for part in result)
     detail += f"got: admit {got_admit!r}, shed {got_shed!r}\n"
-    check.that(got_shed == shed, f"{label}: the wrong requests were shed", detail)
-    check.that(got_admit == admit, f"{label}: the wrong requests were admitted, or in the "
-               "wrong order", detail)  # fmt: skip
+    check.that(got_shed == shed, f"{label}: shed {got_shed!r}, expected {shed!r}", detail)
+    check.that(
+        got_admit == admit,
+        f"{label}: admitted {got_admit!r}, expected {admit!r} (in this order)",
+        detail,
+    )
     left = [r.id for r in waiting if r.id not in admit and r.id not in shed]
     check.that(
         [r.id for r in given] == left,
@@ -177,10 +180,20 @@ def expect(run, *, steps=None, sheds=None):
         lines += "".join(f"  {step!r}\n" for step in steps[:40])
         lines += "got:\n" + "".join(f"  {step!r}\n" for step in got[:40]) + detail
         for k, (have, want) in enumerate(zip(got, steps, strict=False)):
-            check.that(have[1] == want[1], f"step {k} prefills the wrong sequences", lines)
-            check.that(have[2] == want[2], f"step {k} decodes the wrong sequences", lines)
-            check.that(have[0] == want[0], f"step {k} starts at the wrong time", lines)
-        check.that(len(got) == len(steps), "the number of engine steps is wrong", lines)
+            check.that(
+                have[1] == want[1], f"step {k} prefills {have[1]!r}, expected {want[1]!r}", lines
+            )
+            check.that(
+                have[2] == want[2], f"step {k} decodes {have[2]!r}, expected {want[2]!r}", lines
+            )
+            check.that(
+                have[0] == want[0],
+                f"step {k} starts at {have[0]!r} ms, expected {want[0]!r}",
+                lines,
+            )
+        check.that(
+            len(got) == len(steps), f"the engine ran {len(got)} steps, expected {len(steps)}", lines
+        )
 
 
 def solve(ctx, requests, *, max_running):

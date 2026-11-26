@@ -152,7 +152,7 @@ def check_state(matcher, grammar, name, vocab, state, text, *, rng=None, sample=
     )
     check.that(
         accepting == grammar.accepts(text),
-        "is_accepting: wrong answer for the text so far",
+        f"is_accepting: returned {accepting}, expected {grammar.accepts(text)} for the text so far",
         where + f"got {accepting}, expected {grammar.accepts(text)}\n",
     )
     return got

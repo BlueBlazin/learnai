@@ -40,7 +40,8 @@ def check_mask(ctx, scores, visible, k, what=""):
     label = f"{MASK}, {what}" if what else MASK
     check.shape(got, scores.shape, label=label)
     check.that(
-        got.dtype == np.bool_, f"{label}: got dtype {got.dtype}, which is not a boolean mask"
+        got.dtype == np.bool_,
+        f"{label}: got dtype {got.dtype}, expected dtype bool (a boolean mask)",
     )
     check.equal(got, select(scores, visible, k), label=label)
     return got

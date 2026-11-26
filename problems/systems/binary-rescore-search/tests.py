@@ -182,7 +182,7 @@ def recall_level(ctx):
     ctx.metric("recall_at_10", round(recall, 3), higher_is_better=True)
     check.that(
         recall >= 0.9,
-        f"recall@10 is {recall:.3f}, which is below the level the statement gives",
+        f"recall@10 is {recall:.3f}, expected at least 0.9 (the level the statement gives)",
         "expected at least 0.9 on this corpus (the reference reaches 0.96)",
     )
     hamming_only = [np.argsort(hamming(np.packbits(q > 0), bits), kind="stable")[:10]

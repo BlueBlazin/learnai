@@ -329,7 +329,7 @@ class Scenario:
                 got = getattr(counters, name)
                 check.that(
                     got == exactly,
-                    f"{name}: {got} {unit} is not the number the statement's cost table gives",
+                    f"{name}: {got} {unit}, expected {exactly} (the statement's cost table)",
                 )
         # The test's own log must tell the same story as the kit's counters.
         encoded = [entry[1] for entry in self.model.work if entry[0] == "encode"]

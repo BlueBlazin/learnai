@@ -67,7 +67,7 @@ def call(ctx, fn, *args):
     check.that(isinstance(report, dict), "measure: must return a dict")
     check.that(
         set(report) == KEYS,
-        "measure: got a dict whose keys are not the expected keys",
+        f"measure: got the keys {sorted(map(str, report))}, expected {sorted(KEYS)}",
         f"expected {sorted(KEYS)}, got {sorted(map(str, report))}",
     )
     for name in ("peak_bytes", "active_bytes", "cache_bytes"):

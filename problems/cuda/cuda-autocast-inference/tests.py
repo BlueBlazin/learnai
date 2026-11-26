@@ -130,13 +130,14 @@ def run(ctx, model, x, dtype, temperature=None, device=CPU):
     )
     check.that(
         call.region_dtype == dtype,
-        f"{FN}: the autocast region used {name(call.region_dtype)}, which is not the "
-        "requested dtype",
+        f"{FN}: the autocast region used {name(call.region_dtype)}, expected {name(dtype)} "
+        "(the requested dtype)",
         f"requested: {name(dtype)}",
     )
     check.that(
         call.logits.dtype == dtype,
-        f"{FN}: the model's last layer computed in {name(call.logits.dtype)}",
+        f"{FN}: the model's last layer computed in {name(call.logits.dtype)}, expected "
+        f"{name(dtype)}",
         f"inside the region its linear layers must produce {name(dtype)}",
     )
     stray = sorted({name(p.dtype) for p in model.parameters()} - {"float32"})
@@ -154,7 +155,7 @@ def run(ctx, model, x, dtype, temperature=None, device=CPU):
     for label, tensor in zip(("log_probs", "entropy"), out, strict=True):
         check.that(
             tensor.dtype == torch.float32,
-            f"{label}: got dtype {name(tensor.dtype)}, which is not the expected dtype",
+            f"{label}: got dtype {name(tensor.dtype)}, expected dtype float32",
             "the statistics are float32",
         )
         check.that(

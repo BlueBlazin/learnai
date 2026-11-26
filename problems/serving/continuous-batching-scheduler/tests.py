@@ -98,16 +98,26 @@ def check_served(run):
 
 
 def expect_steps(run, expected):
-    """Compare a run's steps with a schedule, without leaking it in the message."""
+    """Compare a run's steps with a schedule."""
     got = run.steps
     detail = "expected steps (start ms, prefill, decode):\n"
     detail += "".join(f"  {step!r}\n" for step in expected[:40])
     detail += "got:\n" + "".join(f"  {step!r}\n" for step in got[:40]) + run.timeline()
     for k, (have, want) in enumerate(zip(got, expected, strict=False)):
-        check.that(have[1] == want[1], f"step {k} prefills the wrong sequences", detail)
-        check.that(have[2] == want[2], f"step {k} decodes the wrong sequences", detail)
-        check.that(have[0] == want[0], f"step {k} starts at the wrong time", detail)
-    check.that(len(got) == len(expected), "the number of steps is wrong", detail)
+        check.that(
+            have[1] == want[1], f"step {k} prefills {have[1]!r}, expected {want[1]!r}", detail
+        )
+        check.that(
+            have[2] == want[2], f"step {k} decodes {have[2]!r}, expected {want[2]!r}", detail
+        )
+        check.that(
+            have[0] == want[0], f"step {k} starts at {have[0]!r} ms, expected {want[0]!r}", detail
+        )
+    check.that(
+        len(got) == len(expected),
+        f"the scheduler ran {len(got)} steps, expected {len(expected)}",
+        detail,
+    )
 
 
 def check_invariants(run):

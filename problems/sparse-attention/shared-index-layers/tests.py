@@ -117,7 +117,8 @@ def run(ctx, dsa, h, types, k, what=""):
     used = sources(log, dsa.n_layers)
     check.that(
         used == expected_sources(types),
-        f"{label}: a layer attended with indices that are not its nearest full layer's",
+        f"{label}: the layers attended with the indices of layers {used}, expected "
+        f"{expected_sources(types)} (each layer's nearest full layer)",
         f"layer whose indexer produced each layer's indices: {used}\n"
         f"expected: {expected_sources(types)}",
     )

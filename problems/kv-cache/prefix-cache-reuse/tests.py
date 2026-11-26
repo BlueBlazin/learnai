@@ -123,7 +123,8 @@ class Session:
         check.that(isinstance(entry, KVCache), "store: the new entry must be a KVCache")
         check.that(
             entry.length == len(prompt),
-            "store: the new entry must cover exactly the prompt",
+            f"store: the new entry covers {entry.length} tokens, expected {len(prompt)} "
+            "(exactly the prompt)",
             f"{setup}the new entry's cache.length is {entry.length}\n",
         )
         fw = ctx.oracle_fw

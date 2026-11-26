@@ -73,7 +73,7 @@ def run(ctx, seed, prompt, chunk_size):
     check.that(isinstance(cache, KVCache), "cache: must be the KVCache returned by the model")
     check.that(
         cache.length == len(prompt),
-        "cache: it does not cover the whole prompt",
+        f"cache: it covers {cache.length} tokens, expected {len(prompt)} (the whole prompt)",
         f"cache.length = {cache.length}, the prompt has {len(prompt)} tokens\n{setup}",
     )
     probe = int(np.argmax(full[-1]))

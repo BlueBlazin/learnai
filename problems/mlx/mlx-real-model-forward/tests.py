@@ -168,7 +168,7 @@ def forward(model, tokens, dtype, shape, label):
     )
     check.that(
         out.dtype == dtype,
-        f"{label}: got dtype {out.dtype}, which is not the expected dtype",
+        f"{label}: got dtype {out.dtype}, expected dtype {dtype}",
         f"expected {dtype}, the dtype of the parameters",
     )
     got = np.array(out.astype(mx.float32))
@@ -231,7 +231,7 @@ def fused_kernels(ctx):
         check.that(
             ops.count(name) == count,
             f"Granite: the graph of a forward pass holds {ops.count(name)} {name} operations, "
-            f"which is not what {what} gives",
+            f"expected {count}: {what}",
             f"expected {count} for {n} layers; operations in the graph: {sorted(set(ops))}",
         )
 

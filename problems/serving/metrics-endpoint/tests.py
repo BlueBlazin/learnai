@@ -171,7 +171,11 @@ def generate(client, model, expected, prompt, max_tokens=None):
     if ttft is not None:
         expected.observations.append(ttft)
     detail = f"status: {response.status_code}\nbody: {response.text[:300]!r}\n"
-    check.that(response.status_code == status, f"{label}: wrong status code", detail)
+    check.that(
+        response.status_code == status,
+        f"{label}: got status {response.status_code}, expected {status}",
+        detail,
+    )
     try:
         payload = response.json()
     except ValueError:
@@ -199,7 +203,11 @@ def bad_request(client, expected, body):
     expected.record(f"{label} -> 400")
     expected.requests["400"] += 1
     detail = f"status: {response.status_code}\nbody: {response.text[:300]!r}\n"
-    check.that(response.status_code == 400, f"{label}: wrong status code", detail)
+    check.that(
+        response.status_code == 400,
+        f"{label}: got status {response.status_code}, expected 400",
+        detail,
+    )
     try:
         payload = response.json()
     except ValueError:
@@ -390,8 +398,10 @@ def check_scrape(client, expected, label):
     want_counts = [sum(v <= bound for v in observations) for bound in bounds]
     check.that(
         [value for _, value in buckets] == want_counts,
-        "GET /metrics: the histogram's bucket counts are wrong (each bucket counts the "
-        "observations less than or equal to its bound)",
+        "GET /metrics: the histogram's bucket counts are "
+        f"{', '.join(f'{value:g}' for _, value in buckets)}; expected "
+        f"{', '.join(map(str, want_counts))} (each bucket counts the observations less than or "
+        "equal to its bound)",
         context + f"observed times to first token: {observations}\n"
         f"expected bucket counts: {want_counts}\n",
     )
@@ -404,7 +414,7 @@ def check_scrape(client, expected, label):
         )
         check.that(
             abs(found[0][1] - want) <= 1e-9,
-            f"GET /metrics: {TTFT}{suffix} has the wrong value",
+            f"GET /metrics: {TTFT}{suffix} is {found[0][1]!r}, expected {want!r}",
             context + f"observed times to first token: {observations}\nexpected {want}\n",
         )
     return text

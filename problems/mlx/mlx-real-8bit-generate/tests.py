@@ -179,7 +179,7 @@ def check_tree(model, directory):
         check.that(
             value.dtype == want and tuple(value.shape) == tuple(tensor.shape),
             f"load_model: parameter {name} has dtype {value.dtype} and shape "
-            f"{tuple(value.shape)}, which is not what the checkpoint's tensor gives",
+            f"{tuple(value.shape)}, expected {want} and {tuple(tensor.shape)}",
             f"expected {want} with shape {tuple(tensor.shape)}: {kind}",
         )
     pending = len(graph_ops(next(iter(have.values()))))
@@ -203,13 +203,13 @@ def logits_of(model, ids, cache=None):
     logits, cache = result
     check.that(
         logits.dtype == mx.float32,
-        f"logits: got dtype {logits.dtype}, which is not the expected dtype",
+        f"logits: got dtype {logits.dtype}, expected dtype {mx.float32}",
         "expected float32: load_model converts the floating parameters",
     )
     got = np.array(logits)
     check.that(
         got.ndim == 3 and got.shape[:2] == (1, len(ids)),
-        f"logits: got shape {got.shape}, which is not (1, T, vocab_size) for the T tokens passed",
+        f"logits: got shape {got.shape}, expected (1, {len(ids)}, vocab_size)",
     )
     return got[0], cache
 
@@ -330,7 +330,7 @@ def stays_packed(ctx):
         check.that(
             ops.count("QuantizedMatmul") == 7 * n + 1,
             f"model {name}: the graph of a forward pass holds {ops.count('QuantizedMatmul')} "
-            "QuantizedMatmul operations, which is not one per linear layer",
+            f"QuantizedMatmul operations, expected {7 * n + 1}, one per linear layer",
             f"expected {7 * n + 1}: seven per layer and the head\n{detail}",
         )
         # MLX names the operation behind mx.dequantize "Quantize" in an exported graph.
@@ -345,7 +345,7 @@ def stays_packed(ctx):
         check.that(
             ops.count("ScaledDotProductAttention") == n,
             f"model {name}: the graph holds {ops.count('ScaledDotProductAttention')} "
-            "ScaledDotProductAttention operations, which is not one per layer",
+            f"ScaledDotProductAttention operations, expected {n}, one per layer",
             detail,
         )
 

@@ -131,13 +131,19 @@ def compare(got, want_sends, want_outcome, label, context):
     )
     check.that(
         len(got.sends) == len(want_sends),
-        f"{label}: the request was sent {len(got.sends)} times, which is not the specified number",
+        f"{label}: the request was sent {len(got.sends)} times, expected {len(want_sends)}",
         detail,
     )
     check.that(
-        same_times(got.sends, want_sends), f"{label}: an attempt was sent at the wrong time", detail
+        same_times(got.sends, want_sends),
+        f"{label}: the attempts were sent at {got.sends!r}, expected {want_sends!r}",
+        detail,
     )
-    check.that(got.outcome == want_outcome, f"{label}: the call ended the wrong way", detail)
+    check.that(
+        got.outcome == want_outcome,
+        f"{label}: the call ended as {got.outcome}, expected {want_outcome}",
+        detail,
+    )
 
 
 def check_call(ctx, script, policy_args, uniforms, label, *, start=0.0, sends=None, outcome=None):

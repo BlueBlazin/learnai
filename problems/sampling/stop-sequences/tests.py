@@ -89,14 +89,14 @@ def check_stream(ctx, pieces, stops):
     want_total = "".join(want_emits) + (want_flushed or "")
     check.that(
         stopped == want_stopped and len(emits) == len(want_emits),
-        "stop_step: reported a stop at the wrong step"
-        if stopped or want_stopped
-        else "stop_step: wrong number of steps",
+        f"stop_step: ran {len(emits)} steps and ended with stopped = {stopped}, expected "
+        f"{len(want_emits)} steps and stopped = {want_stopped}",
         where,
     )
     check.that(
         total == want_total,
-        "the emitted text, concatenated, is not the text cut before the first stop string",
+        f"the emitted text, concatenated, is {total!r}, expected {want_total!r} (the text cut "
+        "before the first stop string)",
         where,
     )
     check.that(
@@ -105,7 +105,9 @@ def check_stream(ctx, pieces, stops):
         "released as soon as it can no longer be part of a stop string, and not before)",
         where,
     )
-    check.that(flushed == want_flushed, "stop_flush: wrong text", where)
+    check.that(
+        flushed == want_flushed, f"stop_flush: got {flushed!r}, expected {want_flushed!r}", where
+    )
 
 
 def chunkings(rng, text, n):
@@ -233,14 +235,17 @@ def chunking_invariance(ctx):
         for pieces in chunkings(rng, text, 4):
             emits, stopped, flushed = run_stream(ctx, pieces, stops)
             where = f"stops = {stops!r}\npieces = {pieces!r}\nemits = {emits!r}, flush = {flushed!r}"
+            total = "".join(emits) + (flushed or "")
             check.that(
-                "".join(emits) + (flushed or "") == truncated,
-                "the emitted text, concatenated, is not the text cut before the first stop string",
+                total == truncated,
+                f"the emitted text, concatenated, is {total!r}, expected {truncated!r} (the text "
+                "cut before the first stop string)",
                 where,
             )
             check.that(
                 stopped == (match is not None),
-                "stop_step: the stopped flag is wrong at the end of the stream",
+                f"stop_step: stopped is {stopped!r} at the end of the stream, expected "
+                f"{match is not None}",
                 where,
             )
             check_stream(ctx, pieces, stops)

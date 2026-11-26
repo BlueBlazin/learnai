@@ -74,7 +74,7 @@ def call(ctx, logits, mu, tau, eta, u):
     )
     check.that(
         new_mu.dtype == np.float32,
-        f"{FN}: the new mu has dtype {new_mu.dtype}, which is not the expected dtype",
+        f"{FN}: the new mu has dtype {new_mu.dtype}, expected dtype float32",
         "expected float32",
     )
     check.that(
@@ -95,10 +95,11 @@ def check_step(ctx, logits, mu, tau, eta, u):
         f"logits =\n{logits}\nmu = {mu}\ntau = {tau}, eta = {eta}\nu = {u}\n"
         f"expected tokens {want_tokens}, got {tokens}\nexpected mu {want_mu}, got {new_mu}"
     )
+    row = int(np.argmax(tokens != want_tokens))
     check.that(
         bool((tokens == want_tokens).all()),
-        f"token: {int((tokens != want_tokens).sum())} of {len(tokens)} rows drew a token that "
-        "is not the expected one",
+        f"token: {int((tokens != want_tokens).sum())} of {len(tokens)} rows drew another token "
+        f"than expected (row {row}: got {tokens[row]}, expected {want_tokens[row]})",
         detail,
     )
     check.allclose(new_mu, want_mu, rtol=1e-4, atol=1e-4, label="new mu")

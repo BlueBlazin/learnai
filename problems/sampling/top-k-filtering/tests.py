@@ -79,7 +79,8 @@ def masked_logits(ctx):
         want = np.minimum(k, np.isfinite(logits).sum(axis=-1))
         check.that(
             np.array_equal(finite, want),
-            f"{FN}: wrong number of finite entries in a row with masked logits",
+            f"{FN}: got {finite.tolist()} finite entries per row, expected {want.tolist()} "
+            "(rows with masked logits)",
             f"k = {k}\nlogits = {logits}\nresult = {got}",
         )
 
@@ -145,9 +146,11 @@ def top_k_properties(ctx):
                 f"{FN}: an entry is neither its input logit nor -inf",
                 where,
             )
+            survivors = min(limit, np.isfinite(x).sum())
             check.that(
-                kept.sum() == min(limit, np.isfinite(x).sum()),
-                f"{FN}: a row does not have min(k, number of finite logits) survivors",
+                kept.sum() == survivors,
+                f"{FN}: a row has {kept.sum()} survivors, expected {survivors} (min(k, number of "
+                "finite logits))",
                 where,
             )
             # Rank by decreasing logit, then by increasing index: the survivors must be

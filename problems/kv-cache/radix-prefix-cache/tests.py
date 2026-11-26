@@ -140,8 +140,8 @@ def play(ctx, ops, expect=None):
         total = cache.total_tokens()
         if type(total) is not int or total != model.total():
             fail(
-                f"total_tokens: returned {total!r}, which is not the number of tokens on the "
-                "edges of the tree",
+                f"total_tokens: returned {total!r}, expected {model.total()} (the number of "
+                "tokens on the edges of the tree)",
                 f"expected {model.total()}\n{detail}",
             )
 
@@ -158,8 +158,8 @@ def play(ctx, ops, expect=None):
                 fail("insert modified the token list it was given")
             if type(got) is not int or got != want:
                 fail(
-                    f"insert: returned {got!r}, which is not the length of the prefix that was "
-                    "already in the tree",
+                    f"insert: returned {got!r}, expected {want} (the length of the prefix that "
+                    "was already in the tree)",
                     f"expected {want}\n",
                 )
         elif kind == "match":
@@ -171,10 +171,9 @@ def play(ctx, ops, expect=None):
                 fail("match_prefix must return a tuple (length, node)")
             log.append(f"{op[2]} = match_prefix({tokens}) -> length {got[0]}")
             if got[0] != want:
-                kind_of = "shorter" if got[0] < want else "longer"
                 fail(
-                    f"match_prefix: matched {got[0]} tokens, which is {kind_of} than the longest "
-                    "prefix of the tokens that is in the tree",
+                    f"match_prefix: matched {got[0]} tokens, expected {want} (the longest prefix "
+                    "of the tokens that is in the tree)",
                     f"expected {want}\n",
                 )
             handles[op[2]] = (got[1], tuple(tokens[:want]))
@@ -196,7 +195,7 @@ def play(ctx, ops, expect=None):
             compare()  # which leaves went says more than the count
             if got != want:
                 fail(
-                    f"evict: returned {got}, which is not the number of tokens it removed",
+                    f"evict: returned {got}, expected {want} (the number of tokens it removed)",
                     f"expected {want}\n",
                 )
         compare()

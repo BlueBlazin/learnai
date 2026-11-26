@@ -82,7 +82,7 @@ def check_parameters(layer, linear, group_size, bits, mode="affine"):
     got = parameters(layer)
     check.that(
         sorted(got) == sorted(want),
-        f"QLinear: the parameters are {sorted(got)}, which are not the expected names",
+        f"QLinear: the parameters are {sorted(got)}, expected {sorted(want)}",
         f"expected {sorted(want)} for mode {mode!r}"
         + (" and a float layer with a bias" if "bias" in linear else " and no bias"),
     )
@@ -90,7 +90,7 @@ def check_parameters(layer, linear, group_size, bits, mode="affine"):
         value = got[name]
         check.that(
             value.dtype == expected.dtype,
-            f"QLinear: parameter {name} has dtype {value.dtype}, which is not the expected dtype",
+            f"QLinear: parameter {name} has dtype {value.dtype}, expected {expected.dtype}",
             f"expected {expected.dtype}",
         )
         label = f"parameter {name}"
@@ -123,7 +123,7 @@ def check_forward(layer, linear, x, group_size, bits, mode="affine", label="outp
     check.that(isinstance(out, mx.array), "QLinear: calling the layer must return an mx.array")
     check.that(
         out.dtype == mx.float32,
-        f"{label}: got dtype {out.dtype}, which is not the expected dtype",
+        f"{label}: got dtype {out.dtype}, expected dtype {mx.float32}",
         "expected float32",
     )
     want = expected_output(linear, x, group_size, bits, mode)

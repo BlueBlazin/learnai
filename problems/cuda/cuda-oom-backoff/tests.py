@@ -213,7 +213,10 @@ def other_errors_propagate(ctx):
         check_guard()
         check.that(
             exc is injected,
-            f"{FN}: raised {type(exc).__name__}, which is not the exception the model raised",
+            f"{FN}: raised another {type(exc).__name__}, expected the model's own exception, "
+            "unchanged",
+            f"the model raised: RuntimeError({str(injected)!r})\n"
+            f"{FN} raised: {type(exc).__name__}({str(exc)!r})",
         )
     else:
         check_guard()

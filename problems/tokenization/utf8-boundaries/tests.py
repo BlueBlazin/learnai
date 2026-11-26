@@ -177,7 +177,8 @@ def cuts_of_valid_text(ctx):
         got = got_len(ctx, data[:cut])
         check.that(
             got == want,
-            "a cut of valid text: the result is not the last character boundary before the cut",
+            f"a cut of valid text: got {got}, expected {want} (the last character boundary "
+            "before the cut)",
             f"text = {text!r}\ndata[:cut] = {data[:cut]!r}\nexpected {want}, got {got}\n",
         )
 
@@ -217,7 +218,7 @@ def matches_definition(ctx):
         got, want = got_len(ctx, data), by_definition(data)
         check.that(
             got == want,
-            "random bytes: the held-back tail is not the pending sequence of the definition",
+            f"random bytes: got {got}, expected {want} (the pending sequence of the definition)",
             f"data = {data!r}\nexpected {want}, got {got}\n",
         )
 

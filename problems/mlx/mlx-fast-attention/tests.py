@@ -100,7 +100,7 @@ def run(ctx, q, k, v, n_cached, causal):
     got_dtype = str(out.dtype).rsplit(".", 1)[-1]
     check.that(
         got_dtype == dtype.name,
-        f"{FN}: got dtype {got_dtype}, which is not the expected dtype",
+        f"{FN}: got dtype {got_dtype}, expected dtype {dtype.name}",
         f"the result must have the dtype of q ({dtype.name})",
     )
     half = dtype == np.float16

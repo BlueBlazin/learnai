@@ -92,7 +92,8 @@ def run(ctx, history, multiplier, base, allowed_length, breakers, last_n=None, *
     if wrong:
         raise CheckFailure(
             f"{FN}: {len(wrong)} of {len(want)} penalties have the wrong size "
-            f"(for example the penalty of token {wrong[0]}, {got[wrong[0]]:.6g})",
+            f"(for example the penalty of token {wrong[0]}: got {got[wrong[0]]:.6g}, expected "
+            f"{want[wrong[0]]:.6g})",
             detail,
         )
     return got

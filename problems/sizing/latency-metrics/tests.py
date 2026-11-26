@@ -56,7 +56,8 @@ def check_metrics(ctx, t_start, times, label, expected=None):
             )
             check.that(
                 len(value) == len(want),
-                f"{name} has the wrong number of entries (one per gap between tokens)",
+                f"{name} has {len(value)} entries, expected {len(want)} (one per gap between "
+                "tokens)",
                 detail,
             )
             check.allclose(value, want, label=name, **TOL)
@@ -123,7 +124,9 @@ def zero_duration(ctx):
 @case("an empty token list raises ValueError")
 def empty_raises(ctx):
     # Rejects empty_is_not_an_error.
-    check.raises(ValueError, ctx.solution.request_metrics, 1.0, [], label="request_metrics(1.0, [])")
+    check.raises(
+        ValueError, ctx.solution.request_metrics, 1.0, [], label="request_metrics(1.0, [])"
+    )
 
 
 @case("the caller's list is not modified")

@@ -152,8 +152,8 @@ def drive(ctx, seed, prompts, penalty, *, counts=None, resets=None, lm=None, **o
     for length in traced:
         check.that(
             length in needed,
-            f"{FN}: the model was traced on {length} tokens, which is not the bucket of any "
-            "prompt in this run",
+            f"{FN}: the model was traced on {length} tokens, expected one of {needed}, the "
+            "buckets of the prompts in this run",
             f"traced on {traced}; the prompts need the buckets {needed}",
         )
     check.that(

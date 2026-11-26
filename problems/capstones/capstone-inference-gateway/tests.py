@@ -343,9 +343,9 @@ def check_admission(run):
         )
         check.that(
             same,
-            "an admission decision is not the specified one"
+            f"an admission decision is {show_answer(got)}, expected {show_answer(expected)}"
             if got is None or expected is None or got[0] != expected[0]
-            else "retry_after_s of a rejection is not the specified value",
+            else f"retry_after_s of a rejection is {got[1]!r}, expected {expected[1]!r}",
             f"{where}\nexpected: {show_answer(expected)}\ngot:      {show_answer(got)}\n"
             + run.summary(),
         )
@@ -462,8 +462,8 @@ def check_fair(run):
                 waiting = ", ".join(f"{r.id!r} ({r.tenant})" for r in queue[:10])
                 check.that(
                     False,
-                    "the request taken from the gateway queue is not the one fair scheduling "
-                    "chooses",
+                    f"request {request.id!r} was taken from the gateway queue, expected "
+                    f"{expected.id!r} (the one fair scheduling chooses)",
                     f"request {request.id!r} of tenant {tenant!r} was sent to a replica\n"
                     f"counters at that moment: {levels}\nqueue, oldest first: {waiting}\n"
                     f"expected: request {expected.id!r} of tenant {expected.tenant!r}\n"
@@ -533,7 +533,8 @@ def check_autoscale(run):
         expected = raw if raw >= current else min(current, max(n for _, n in history))
         check.that(
             tick.returned == expected and type(tick.returned) is int,
-            "evaluate() did not return the policy's replica count",
+            f"evaluate() returned {tick.returned!r}, expected {expected} (the policy's replica "
+            "count)",
             f"evaluation at t={m.now:g}: ready={m.ready} starting={m.starting}, gateway "
             f"queue {tick.queued}, on replicas: {m.queue_depth} waiting + {m.running} "
             f"running (load {load})\nrecommendations in the window: "
@@ -542,7 +543,8 @@ def check_autoscale(run):
         )
         check.that(
             tick.serving_after == expected,
-            "after an evaluation the number of starting or ready replicas is not the policy's",
+            f"after an evaluation {tick.serving_after} replicas are starting or ready, expected "
+            f"{expected} (the policy's count)",
             f"evaluation at t={m.now:g}: ready={m.ready} starting={m.starting} "
             f"draining={m.draining}, gateway queue {tick.queued}, on replicas: "
             f"{m.queue_depth} waiting + {m.running} running (load {load})\n"
@@ -598,7 +600,8 @@ def admission_example(ctx):
     for k, (mine, want) in enumerate(zip(got, expected, strict=True)):
         check.that(
             mine == want,
-            f"the stage 1 example: the answer to request {k} is not the specified one",
+            f"the stage 1 example: the answer to request {k} is {show_answer(mine)}, expected "
+            f"{show_answer(want)}",
             f"expected: {show_answer(want)}\ngot:      {show_answer(mine)}\n" + run.summary(),
         )
     check_admission(run)

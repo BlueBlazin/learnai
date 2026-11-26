@@ -262,14 +262,14 @@ def visibility_sweep(ctx):
             got = ctx.call(VIS, t, rate)
             check.that(type(got) is int, f"{VIS}: returned a {type(got).__name__}, not an int")
             complete = sum(1 for w in range(t // rate + 2) if (w + 1) * rate - 1 <= t)
-            check.that(got == complete, f"{VIS}: got {got}, which is not the expected number")
+            check.that(got == complete, f"{VIS}({t}, {rate}): got {got}, expected {complete}")
     # Rejects float32_threshold: positions that float32 cannot represent exactly.
     for rate in (1, 2, 3, 128):
         for t in (2**24 + 1, 2**24 + 3, 2**25 + 5, 2**31 - 2, 2**31 - 1):
             got = ctx.call(VIS, t, rate)
             check.that(type(got) is int, f"{VIS}: returned a {type(got).__name__}, not an int")
             check.that(
-                got == (t + 1) // rate, f"{VIS}: got {got}, which is not the expected number"
+                got == (t + 1) // rate, f"{VIS}({t}, {rate}): got {got}, expected {(t + 1) // rate}"
             )
 
 

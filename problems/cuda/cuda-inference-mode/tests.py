@@ -231,6 +231,9 @@ def mixed_flags(ctx):
     check.that(
         model.training and not model[1].training and not model[3].training,
         "predict: a submodule's training flag differs from before the call",
+        "expected training flags: model True, model[1] False, model[3] False\n"
+        f"got: model {model.training}, model[1] {model[1].training}, "
+        f"model[3] {model[3].training}",
     )
     # The other way around: the root in evaluation mode, one layer left training.
     model = mlp(6, sizes=(6, 10, 4)).eval()
@@ -260,7 +263,7 @@ def input_is_moved(ctx):
     )
     check.that(
         tuple(out.shape) == (3, 6),
-        f"predict: got shape {tuple(out.shape)}, which is not the expected shape",
+        f"predict: got shape {tuple(out.shape)}, expected shape (3, 6)",
     )
     check_flags(model, before)
 

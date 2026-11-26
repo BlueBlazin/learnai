@@ -134,7 +134,8 @@ def stream(ctx, dsa, layer, x, cuts, k, public=False):
         index_keys, store = cache
         check.that(
             isinstance(index_keys, np.ndarray) and index_keys.shape == (stop, dsa.index_dim),
-            f"the returned index_keys{where} do not hold one indexer key per token so far",
+            f"the returned index_keys{where}: got shape {getattr(index_keys, 'shape', None)}, "
+            f"expected shape {(stop, dsa.index_dim)} (one indexer key per token so far)",
             f"expected shape {(stop, dsa.index_dim)}, got {getattr(index_keys, 'shape', None)}",
         )
         check.allclose(index_keys, want_keys[:stop], **TOL, label=f"the returned index_keys{where}")

@@ -121,8 +121,8 @@ def check_call(ctx, p, q, candidates, u_accept, u_resample, literal=None):
         f"  u_resample = {u_resample}\n"
         f"expected (token, n_rejected) = {want}\ngot {got}"
     )
-    check.that(got[1] == want[1], f"{FN}: wrong number of rejected candidates", detail)
-    check.that(got[0] == want[0], f"{FN}: wrong token", detail)
+    check.that(got[1] == want[1], f"{FN}: n_rejected is {got[1]}, expected {want[1]}", detail)
+    check.that(got[0] == want[0], f"{FN}: token is {got[0]}, expected {want[0]}", detail)
 
 
 def models(ctx, vocab, closeness, alpha=1.5):

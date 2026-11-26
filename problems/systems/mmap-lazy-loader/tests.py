@@ -128,8 +128,8 @@ class Session:
         )
         check.that(
             got.dtype == dtype,
-            f"{label}: got dtype {got.dtype}, which is not the dtype the statement gives "
-            "for this tensor",
+            f"{label}: got dtype {got.dtype}, expected dtype {dtype} (the tensor is stored as "
+            f"{info['dtype']})",
             f"expected {dtype} for a tensor stored as {info['dtype']}",
         )
         check.shape(got, tuple(info["shape"]), label=label)

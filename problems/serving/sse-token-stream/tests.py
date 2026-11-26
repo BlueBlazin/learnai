@@ -157,7 +157,11 @@ def check_error(response, status, label):
         f"request: {label}\nstatus: {response.status_code}\n"
         f"content-type: {response.headers.get('content-type')!r}\nbody: {response.text[:200]!r}\n"
     )
-    check.that(response.status_code == status, f"{label}: wrong status code", detail)
+    check.that(
+        response.status_code == status,
+        f"{label}: got status {response.status_code}, expected {status}",
+        detail,
+    )
     check.that(
         response.headers.get("content-type", "").startswith("application/json"),
         f"{label}: the error response is not application/json",

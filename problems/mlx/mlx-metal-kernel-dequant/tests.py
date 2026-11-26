@@ -106,7 +106,7 @@ def run(ctx, arrays, want, group_size, bits, label):
     )
     check.that(
         out.dtype == scales.dtype,
-        f"{label}: got dtype {out.dtype}, which is not the expected dtype",
+        f"{label}: got dtype {out.dtype}, expected dtype {scales.dtype}",
         f"expected {scales.dtype}, the dtype of the scales",
     )
     got = np.array(out.astype(mx.float32)).astype(np.float64)

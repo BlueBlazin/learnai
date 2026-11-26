@@ -100,8 +100,8 @@ def check_call(ctx, p, q, drafts, u_accept, u_resample, literal=None):
         f"  u_resample = {u_resample}\n"
         f"expected (n_accepted, next_token) = {want}\ngot {got}"
     )
-    check.that(got[0] == want[0], f"{FN}: wrong number of accepted drafts", detail)
-    check.that(got[1] == want[1], f"{FN}: wrong next token", detail)
+    check.that(got[0] == want[0], f"{FN}: n_accepted is {got[0]}, expected {want[0]}", detail)
+    check.that(got[1] == want[1], f"{FN}: next_token is {got[1]}, expected {want[1]}", detail)
 
 
 def exact(rows):
@@ -142,9 +142,7 @@ def check_lossless(ctx, p, q, n_calls):
     check.distribution(accepted, n_probs, label="n_accepted")
     check.distribution(emitted[0], pe[0], label="first emitted token")
     for j in range(1, k):
-        check.distribution(
-            emitted[j], pe[j], label=f"token after an accepted prefix of {j} drafts"
-        )
+        check.distribution(emitted[j], pe[j], label=f"token after an accepted prefix of {j} drafts")
     check.distribution(emitted[k], pe[k], label=f"bonus token after all {k} drafts")
     return [len(tokens) for tokens in emitted]
 
@@ -177,8 +175,7 @@ def uniform_grid(ctx):
         raise RuntimeError("too few decisive grid points")
 
 
-@case("losslessness: drafts sampled from q, emitted tokens distributed as p (K = 3)",
-      public=True)
+@case("losslessness: drafts sampled from q, emitted tokens distributed as p (K = 3)", public=True)
 def lossless_block(ctx):
     p, q = models(ctx, 3, 6, closeness=0.6)
     sizes = check_lossless(ctx, p, q, 600)
@@ -217,9 +214,7 @@ def identical_models(ctx):
 @case("a bonus distribution with zeros, for u_resample from 0 to 0.999")
 def bonus_with_zeros(ctx):
     # p[1] = [0, 0.3, 0, 0, 0.7, 0]: u_resample = 0 must give token 1, 0.999 token 4.
-    p = np.array(
-        [[0.2, 0.2, 0.2, 0.2, 0.1, 0.1], [0.0, 0.3, 0.0, 0.0, 0.7, 0.0]], dtype=np.float32
-    )
+    p = np.array([[0.2, 0.2, 0.2, 0.2, 0.1, 0.1], [0.0, 0.3, 0.0, 0.0, 0.7, 0.0]], dtype=np.float32)
     q = np.array([[0.1, 0.1, 0.3, 0.3, 0.1, 0.1]], dtype=np.float32)
     for u_resample in (0.0, 0.15, 0.45, 0.8, 0.999):
         check_call(ctx, p, q, [0], [0.97], u_resample)

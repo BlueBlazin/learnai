@@ -150,7 +150,7 @@ def numbered(times):
 
 
 def expect(run, expected):
-    """Compare a run's dispatches with a schedule, without leaking it in the message."""
+    """Compare a run's dispatches with a schedule."""
     got = run.batches
     detail = (
         f"expected dispatches (time, ids): {expected!r}\n"
@@ -159,9 +159,19 @@ def expect(run, expected):
     for k, ((got_time, got_ids), (want_time, want_ids)) in enumerate(
         zip(got, expected, strict=False), start=1
     ):
-        check.that(got_ids == want_ids, f"batch {k} does not hold the right requests", detail)
-        check.that(got_time == want_time, f"batch {k} was dispatched at the wrong time", detail)
-    check.that(len(got) == len(expected), "the number of batches is wrong", detail)
+        check.that(
+            got_ids == want_ids, f"batch {k} holds {got_ids!r}, expected {want_ids!r}", detail
+        )
+        check.that(
+            got_time == want_time,
+            f"batch {k} was dispatched at t={got_time!r}, expected t={want_time!r}",
+            detail,
+        )
+    check.that(
+        len(got) == len(expected),
+        f"{len(got)} batches were dispatched, expected {len(expected)}",
+        detail,
+    )
 
 
 def solve(ctx, arrivals, **options):

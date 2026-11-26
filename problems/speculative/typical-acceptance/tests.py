@@ -88,8 +88,8 @@ def verify(ctx, p, draft, epsilon, delta, expected=None, *, exact=False):
         f"  argmax of each row of p = {p.argmax(axis=-1).tolist()}\n"
         f"expected (n_accepted, next_token) = {want}\ngot {got}"
     )
-    check.that(got[0] == want[0], f"{FN}: wrong number of accepted tokens", detail)
-    check.that(got[1] == want[1], f"{FN}: wrong next token", detail)
+    check.that(got[0] == want[0], f"{FN}: n_accepted is {got[0]}, expected {want[0]}", detail)
+    check.that(got[1] == want[1], f"{FN}: next_token is {got[1]}, expected {want[1]}", detail)
     return got
 
 

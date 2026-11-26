@@ -35,9 +35,7 @@ def exact_best_k(alpha, c, k_max):
 def check_float(ctx, name, args, exact, literal=None):
     label = f"{name}{args}"
     got = ctx.call(name, *args)
-    check.that(
-        type(got) is float, f"{label}: the result must be a Python float", f"got: {got!r}"
-    )
+    check.that(type(got) is float, f"{label}: the result must be a Python float", f"got: {got!r}")
     want = float(exact)
     if literal is not None and abs(literal - want) > 1e-12 * want:  # an authoring error
         raise RuntimeError(f"{label}: the literal in the statement is wrong")
@@ -63,7 +61,7 @@ def check_best_k(ctx, alpha, c, k_max, literal=None):
     check.that(type(got) is int, f"{label}: the result must be a Python int", f"got: {got!r}")
     check.that(
         got == want,
-        f"{label}: wrong draft length",
+        f"{label}: got {got}, expected {want}",
         f"expected {want}, got {got}\nspeedup at the expected k: "
         f"{float(exact_speedup(alpha, want, c)):.6f}"
         + (
@@ -104,8 +102,9 @@ def perfect_draft(ctx):
     check_best_k(ctx, 1.0, 0.0, 64, literal=64)
 
 
-@case("speculation that does not pay: best_k is 0 when the draft is slow or often wrong",
-      public=True)
+@case(
+    "speculation that does not pay: best_k is 0 when the draft is slow or often wrong", public=True
+)
 def declines(ctx):
     # Rejects never_declines. Speculation can win only if alpha > c.
     check_best_k(ctx, 0.3, 0.5, 20, literal=0)

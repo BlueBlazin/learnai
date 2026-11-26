@@ -143,7 +143,7 @@ def check_decode(ctx, fields):
     check.shape(got, want.shape, label="q4k_decode")
     check.that(
         got.dtype == np.float32,
-        f"q4k_decode: got dtype {got.dtype}, which is not the expected dtype",
+        f"q4k_decode: got dtype {got.dtype}, expected dtype float32",
         "expected float32",
     )
     check.allclose(got, want, rtol=1e-5, atol=atol, label="q4k_decode")
@@ -171,7 +171,7 @@ def check_encode(ctx, w):
         check.shape(value, expected.shape, label=name)
         check.that(
             value.dtype == expected.dtype,
-            f"{name}: got dtype {value.dtype}, which is not the expected dtype",
+            f"{name}: got dtype {value.dtype}, expected dtype {expected.dtype}",
             f"expected {expected.dtype}",
         )
         if index >= 3:
@@ -241,7 +241,10 @@ def positive_blocks(ctx):
     )
     all_positive = superblocks(ctx, lambda: np.abs(ctx.randn(256)) + 0.5, 2)
     (_, _, mins, _, dmin), _ = check_round_trip(ctx, all_positive)
-    check.that(not mins.any() and not dmin.any(), "a superblock without negative weights: wrong")
+    check.that(
+        not mins.any() and not dmin.any(),
+        "a superblock without negative weights must get mins 0 and dmin 0",
+    )
 
 
 # Rejects decode_adds_min and decode_in_uint8.
@@ -253,10 +256,12 @@ def decode_extremes(ctx):
     d = np.array([0.0123, 2.5], dtype=np.float16)
     dmin = np.array([0.5, 0.004], dtype=np.float16)
     got = check_decode(ctx, (codes, scales, mins, d, dmin))
+    want = float(d[0]) * 63 * 15 - float(dmin[0]) * 63
     check.that(
-        abs(float(got[0, 15]) - (float(d[0]) * 63 * 15 - float(dmin[0]) * 63)) < 1e-3,
-        "q4k_decode: wrong value for scale 63, code 15, minimum 63",
-        f"got {float(got[0, 15])}",
+        abs(float(got[0, 15]) - want) < 1e-3,
+        f"q4k_decode: got {float(got[0, 15]):.6g} for scale 63, code 15, minimum 63, expected "
+        f"{want:.6g}",
+        f"got {float(got[0, 15])}, expected d * 63 * 15 - dmin * 63 = {want}",
     )
 
 

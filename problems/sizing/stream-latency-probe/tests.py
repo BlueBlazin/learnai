@@ -176,11 +176,23 @@ def check_record(got, want, label, context=""):
     check.that(
         set(got) == set(KEYS), f"{label}: the record does not have the specified keys", detail
     )
-    check.that(got["status"] == want["status"], f"{label}: wrong status {got['status']!r}", detail)
+    check.that(
+        got["status"] == want["status"],
+        f"{label}: 'status' is {got['status']!r}, expected {want['status']!r}",
+        detail,
+    )
     for key in ("t_start", "ttft", "tpot", "e2e"):
-        check.that(same_number(got[key], want[key]), f"{label}: {key!r} is wrong", detail)
+        check.that(
+            same_number(got[key], want[key]),
+            f"{label}: {key!r} is {got[key]!r}, expected {want[key]!r}",
+            detail,
+        )
     for key in ("token_times", "itl"):
-        check.that(same_list(got[key], want[key]), f"{label}: {key!r} is wrong", detail)
+        check.that(
+            same_list(got[key], want[key]),
+            f"{label}: {key!r} is not the expected list of {len(want[key])} numbers",
+            detail,
+        )
 
 
 def check_probe(ctx, s, label, *, start=0.0, sink_s=0.0, want=None):
@@ -233,10 +245,16 @@ def check_summary(ctx, results, q, label, want=None):
     )
     for key in ("requests", "ok"):
         check.that(
-            type(got[key]) is int and got[key] == want[key], f"{label}: {key!r} is wrong", detail
+            type(got[key]) is int and got[key] == want[key],
+            f"{label}: {key!r} is {got[key]!r}, expected {want[key]!r}",
+            detail,
         )
     for key in ("ttft", "tpot", "itl", "e2e"):
-        check.that(same_number(got[key], want[key]), f"{label}: {key!r} is wrong", detail)
+        check.that(
+            same_number(got[key], want[key]),
+            f"{label}: {key!r} is {got[key]!r}, expected {want[key]!r}",
+            detail,
+        )
 
 
 def record(status, t_start, token_times):

@@ -118,7 +118,7 @@ def expect_prefix(ctx, text, is_complete):
     got = complete(ctx.solution, state, text)
     check.that(
         got == is_complete,
-        "json_complete is wrong at the end of a text",
+        f"json_complete returned {got}, expected {is_complete}, at the end of a text",
         f"text: {text!r}\njson_complete returned {got}, expected {is_complete}\n",
     )
 
@@ -133,7 +133,7 @@ def expect_invalid_at(ctx, text, index):
     )
     check.that(
         bad == index,
-        "json_step raised Invalid at the wrong character",
+        f"json_step raised Invalid at index {bad}, expected at index {index}",
         f"text: {text!r}\nexpected at index {index} ({text[index]!r}), "
         f"raised at index {bad} ({text[bad]!r})\n",
     )
@@ -150,7 +150,7 @@ def same_frontier(ctx, text):
         expected = ref.json_complete(ref_state)
         check.that(
             got == expected,
-            "json_complete is wrong",
+            f"json_complete returned {got}, expected {expected}",
             f"text so far: {prefix!r}\njson_complete returned {got}, expected {expected}\n",
         )
         for ch in ALPHABET:
@@ -267,7 +267,8 @@ def worked_example(ctx):
         done = complete(sol, state, text[: i + 1])
         check.that(
             done == (i == len(text) - 1),
-            "json_complete is wrong inside the worked example",
+            f"json_complete returned {done}, expected {i == len(text) - 1}, inside the worked "
+            "example",
             f"after {text[: i + 1]!r} it returned {done}\n",
         )
     after_space = sol.json_step(state, " ")
@@ -326,9 +327,11 @@ def states_are_values(ctx):
             f'saved state: after [{{"a":1}}\nthen stepped with "]" (result kept separately)\n'
             f"then the saved state was continued with {tail!r}: Invalid at index {bad}\n",
         )
+        done = complete(sol, state, tail)
         check.that(
-            complete(sol, state, tail) == is_complete,
-            "json_complete is wrong for a continuation of a saved state",
+            done == is_complete,
+            f"json_complete returned {done}, expected {is_complete}, for a continuation of a "
+            "saved state",
             f'saved state: after [{{"a":1}}, continued with {tail!r}\n',
         )
     check.raises(sol.Invalid, sol.json_step, saved, "}", label='json_step(saved, "}")')
@@ -432,7 +435,8 @@ def random_documents(ctx):
             got = complete(sol, state, prefix)
             check.that(
                 got == python_accepts(prefix),
-                "json_complete disagrees with a JSON parser on a prefix of a valid text",
+                f"json_complete returned {got}, expected {python_accepts(prefix)} (what a JSON "
+                "parser says) on a prefix of a valid text",
                 f"text so far: {prefix!r}\njson_complete returned {got}\n",
             )
         same_frontier(ctx, text[:60])
@@ -471,8 +475,8 @@ def random_edits(ctx):
                 got = complete(ctx.solution, state, edited)
                 check.that(
                     got == ref_complete,
-                    "json_complete is wrong at the end of a text",
-                    detail + f"json_complete returned {got}\n",
+                    f"json_complete returned {got}, expected {ref_complete}, at the end of a text",
+                    detail + f"json_complete returned {got}, expected {ref_complete}\n",
                 )
             else:
                 check.that(
@@ -482,7 +486,7 @@ def random_edits(ctx):
                 )
                 check.that(
                     bad == ref_bad,
-                    "json_step raised Invalid at the wrong character",
+                    f"json_step raised Invalid at index {bad}, expected at index {ref_bad}",
                     detail + f"expected at index {ref_bad}, raised at index {bad}\n",
                 )
 

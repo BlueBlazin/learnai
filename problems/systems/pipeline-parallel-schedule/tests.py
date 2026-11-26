@@ -207,16 +207,16 @@ def play(ctx, service_ms, transfer_ms, requests, *, literal=None):
         if (w[0], w[1]) < (g[0], g[1]):
             message = (
                 f"stage {w[1]} started nothing at t={w[0]:g} ms although it was free and a "
-                "job was ready"
+                f"job was ready (expected token {w[3]} of {w[2]!r})"
             )
         else:
             message = (
-                f"at t={g[0]:g} ms stage {g[1]} started token {g[3]} of {g[2]!r}, which is not "
-                "the job the rule selects at that moment"
+                f"at t={g[0]:g} ms stage {g[1]} started token {g[3]} of {g[2]!r}; the rule's "
+                f"next start is token {w[3]} of {w[2]!r} on stage {w[1]} at t={w[0]:g} ms"
             )
         check.that(False, message, detail)
-    check.that(len(got) == len(want), f"the pipeline ran {len(got)} jobs, not one per stage "
-               "and token", detail)  # fmt: skip
+    check.that(len(got) == len(want), f"the pipeline ran {len(got)} jobs, expected "
+               f"{len(want)} (one per stage and token)", detail)  # fmt: skip
     late = [
         (t, stage, seq, token)
         for t, stage, seq, token in pipe.transfers

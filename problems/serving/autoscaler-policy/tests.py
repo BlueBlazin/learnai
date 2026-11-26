@@ -67,7 +67,7 @@ def play(ctx, cfg, rows, label):
         )
         check.that(
             n == expected,
-            f"{label}: at t={now:g} the policy returned {n}, which is not the specified count",
+            f"{label}: at t={now:g} the policy returned {n}, expected {expected}",
             "\n".join(history) + f"\nexpected: {expected}  ({why})\n",
         )
 
@@ -86,7 +86,7 @@ def play_against_oracle(ctx, cfg, rows, label):
         )
         check.that(
             got == want,
-            f"{label}: at t={now:g} the policy returned {got}, which is not the specified count",
+            f"{label}: at t={now:g} the policy returned {got}, expected {want}",
             "\n".join(history[-14:]) + f"\nexpected: {want}\n",
         )
 
@@ -209,7 +209,7 @@ def check_cluster(ctx, requests, *, horizon_s, max_late, max_replica_seconds, ma
         ]
         check.that(
             False,
-            f"at t={now:g} the policy returned {n}, which is not the specified count",
+            f"at t={now:g} the policy returned {n}, expected {want.decisions[wrong][2]}",
             "\n".join(lines) + f"\nexpected at t={now:g}: {want.decisions[wrong][2]}\n",
         )
 
@@ -309,8 +309,7 @@ def closed_loop_script(ctx):
             want, theirs = evaluate(ctx.oracle.desired_replicas, metrics, theirs, cfg)
             check.that(
                 got == want,
-                f"script {trial}: at t={step} the policy returned {got}, which is not the "
-                "specified count",
+                f"script {trial}: at t={step} the policy returned {got}, expected {want}",
                 f"{cfg}\nready={ready} starting={starting} queue_depth={load - running} "
                 f"running={running}\nexpected: {want}\n",
             )

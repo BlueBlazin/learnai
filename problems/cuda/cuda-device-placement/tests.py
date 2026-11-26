@@ -74,15 +74,16 @@ def as_inputs(tokens, lengths, bias):
 def check_logits(out, weights, tokens, lengths, bias):
     dtype = weights["w_out"].dtype
     check.that(isinstance(out, torch.Tensor), f"run: returned a {type(out).__name__}, not a tensor")
+    want_shape = (tokens.shape[0], weights["w_out"].shape[0])
     check.that(
-        tuple(out.shape) == (tokens.shape[0], weights["w_out"].shape[0]),
-        f"run: got shape {tuple(out.shape)}, which is not the expected shape",
-        f"expected (B, C) = {(tokens.shape[0], weights['w_out'].shape[0])}",
+        tuple(out.shape) == want_shape,
+        f"run: got shape {tuple(out.shape)}, expected shape {want_shape}",
+        f"expected (B, C) = {want_shape}",
     )
     got_dtype = str(out.dtype).removeprefix("torch.")
     check.that(
         got_dtype == dtype.name,
-        f"run: got dtype {got_dtype}, which is not the expected dtype",
+        f"run: got dtype {got_dtype}, expected dtype {dtype.name}",
         f"the result must have the dtype of the weights ({dtype.name})",
     )
     half = dtype == np.float16
@@ -315,7 +316,8 @@ def on_meta_device(ctx):
     check.that(out.device.type == "meta", f"run: the result is on {out.device.type}, not on device")
     check.that(
         tuple(out.shape) == (3, 5) and out.dtype == torch.float32,
-        f"run: got shape {tuple(out.shape)} and dtype {out.dtype}, which is not what is expected",
+        f"run: got shape {tuple(out.shape)} and dtype {out.dtype}, expected shape (3, 5) and "
+        "dtype torch.float32",
     )
 
 

@@ -72,7 +72,7 @@ def play(ctx, limits, steps, label):
             log.append(f"  {call} -> {show(got)}")
             check.that(
                 same_decision(got, want),
-                f"{label}: admit returned the wrong decision",
+                f"{label}: admit returned {show(got)}, expected {show(want)}",
                 "\n".join(log) + f"\nexpected: {show(want)}\n",
             )
         elif kind in ("start", "finish"):
@@ -83,7 +83,8 @@ def play(ctx, limits, steps, label):
             log.append(f"  (queued_requests, queued_tokens, running_requests) = {got}")
             check.that(
                 got == tuple(step[1:]),
-                f"{label}: queued_requests, queued_tokens, or running_requests is wrong",
+                f"{label}: (queued_requests, queued_tokens, running_requests) is {got}, expected "
+                f"{tuple(step[1:])}",
                 "\n".join(log) + f"\nexpected: {tuple(step[1:])}\n",
             )
 
@@ -181,7 +182,7 @@ def check_simulation(ctx, requests, limits, label, *, pick="fifo"):
     for (ident, got), (_, expected) in zip(out.decisions, want.decisions, strict=True):
         check.that(
             same_decision(got, expected),
-            f"{label}: a request got the wrong admission decision",
+            f"{label}: request {ident} got {show(got)}, expected {show(expected)}",
             summary + f"first difference: request {ident} "
             f"(prompt_tokens={requests[ident].prompt_tokens}, arrival_s={requests[ident].arrival_s})\n"
             f"expected: {show(expected)}\n     got: {show(got)}\n",

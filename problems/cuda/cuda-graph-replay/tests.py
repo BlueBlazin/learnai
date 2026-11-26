@@ -127,8 +127,8 @@ class Harness(Guarded):
             )
         check.that(
             len(flags) == self.warmup + 1,
-            f"{NAME}: the constructor called step_fn {len(flags)} times, which is not the "
-            "number of warm-up calls plus the capture",
+            f"{NAME}: the constructor called step_fn {len(flags)} times, expected "
+            f"{self.warmup + 1} (the warm-up calls plus the capture)",
             detail,
         )
         example_pointers = {x.data_ptr() for x in self.examples}
@@ -167,14 +167,15 @@ class Harness(Guarded):
         single = isinstance(want, torch.Tensor)
         check.that(
             isinstance(got, torch.Tensor) if single else isinstance(got, tuple),
-            f"{NAME}: returned a {type(got).__name__}, which is not the kind of value "
-            "step_fn returns",
+            f"{NAME}: returned a {type(got).__name__}, expected a "
+            f"{'tensor' if single else 'tuple'} (the kind of value step_fn returns)",
             "a tensor when step_fn returns a tensor, a tuple when it returns a tuple",
         )
         got_list, want_list = ([got], [want]) if single else (list(got), list(want))
         check.that(
             len(got_list) == len(want_list),
-            f"{NAME}: returned {len(got_list)} outputs, which is not the number step_fn returns",
+            f"{NAME}: returned {len(got_list)} outputs, expected {len(want_list)} (the number "
+            "step_fn returns)",
         )
         want_arrays = [w.detach().cpu().numpy().copy() for w in want_list]
         for index, (g, w) in enumerate(zip(got_list, want_arrays, strict=True)):
@@ -507,8 +508,8 @@ def gpu_two_layer(ctx):
     step = ctx.solution.GraphedStep(step_fn, (example,), torch.cuda.CUDAGraph())
     check.that(
         len(calls) == 4,
-        f"{NAME}: the constructor called step_fn {len(calls)} times, which is not the "
-        "number of warm-up calls plus the capture",
+        f"{NAME}: the constructor called step_fn {len(calls)} times, expected 4 (the "
+        "warm-up calls plus the capture)",
     )
     outputs = []
     for _ in range(5):

@@ -84,7 +84,7 @@ def play(ctx, block_size, capacity, ops, expect=None):
         size = cache.cached_blocks()
         if type(size) is not int or size != len(model.refs):
             fail(
-                f"cached_blocks: the cache holds {size!r} blocks, which is not the expected number",
+                f"cached_blocks: the cache holds {size!r} blocks, expected {len(model.refs)}",
                 f"expected {len(model.refs)} (capacity {capacity})\n",
             )
         for tokens in reversed(sequences):  # an order a refreshing lookup would disturb
@@ -94,7 +94,8 @@ def play(ctx, block_size, capacity, ops, expect=None):
                 kind = "a block that is not cached is found" if got > want else (
                     "a block that should be cached is not found")  # fmt: skip
                 fail(
-                    f"lookup: {kind} (probing the cache after the last operation)",
+                    f"lookup: returned {got!r}, expected {want}: {kind} (probing the cache after "
+                    "the last operation)",
                     f"lookup({tokens}) = {got!r}, expected {want}\n",
                 )
         ever_cached.update(model.refs)
@@ -106,8 +107,8 @@ def play(ctx, block_size, capacity, ops, expect=None):
                     fail("ref_count raised KeyError for a cached block", f"prefix {prefix}\n")
                 if type(got) is not int or got != model.refs[prefix]:
                     fail(
-                        "ref_count: a reference count is not the number of active requests "
-                        "holding the block",
+                        f"ref_count: returned {got!r}, expected {model.refs[prefix]} (the number "
+                        "of active requests holding the block)",
                         f"ref_count({list(prefix)}) = {got!r}, expected {model.refs[prefix]}\n",
                     )
             else:
@@ -144,14 +145,13 @@ def play(ctx, block_size, capacity, ops, expect=None):
                     fail("acquire must return a tuple (hits, held) of two ints")
                 if got[0] != want[0]:
                     fail(
-                        f"acquire: reported {got[0]} reused blocks, which is not the number of "
-                        "leading blocks that were cached",
+                        f"acquire: reported {got[0]} reused blocks, expected {want[0]} (the "
+                        "number of leading blocks that were cached)",
                         f"expected {want!r}\n",
                     )
                 if got[1] != want[1]:
                     fail(
-                        f"acquire: the request holds {got[1]} blocks, which is not the expected "
-                        "number",
+                        f"acquire: the request holds {got[1]} blocks, expected {want[1]}",
                         f"expected {want!r}\n",
                     )
         elif op[0] == "release":
@@ -179,8 +179,8 @@ def play(ctx, block_size, capacity, ops, expect=None):
             log.append(f"lookup({list(tokens)}) -> {got!r}")
             if type(got) is not int or got != want:
                 fail(
-                    f"lookup: returned {got!r}, which is not the number of leading full blocks "
-                    "that are cached",
+                    f"lookup: returned {got!r}, expected {want} (the number of leading full "
+                    "blocks that are cached)",
                     f"expected {want}\n",
                 )
         probe()

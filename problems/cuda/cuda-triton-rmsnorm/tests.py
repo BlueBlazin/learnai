@@ -85,18 +85,19 @@ def check_counters(info, n_rows, n_cols, label):
     )
     check.that(
         info.programs == n_rows,
-        f"{label}: the launch ran {info.programs} programs, which is not one per row",
+        f"{label}: the launch ran {info.programs} programs, expected {n_rows} (one per row)",
         detail,
     )
     check.that(
         info.elements_stored == n,
-        f"{label}: {info.elements_stored} elements were stored, which is not every output "
-        "element exactly once",
+        f"{label}: {info.elements_stored} elements were stored, expected {n} (every output "
+        "element exactly once)",
         detail,
     )
     check.that(
         info.elements_loaded <= 3 * n,
-        f"{label}: {info.elements_loaded} elements were loaded, more than 3 per output element",
+        f"{label}: {info.elements_loaded} elements were loaded, more than {3 * n} (3 per "
+        "output element)",
         detail + "\nthe limit is 3 * n_rows * n_cols: x in each of two passes, the gain once",
     )
 
@@ -115,14 +116,14 @@ def call(ctx, x, w, eps=None, block=None, label=FN, want=None):
     check.that(isinstance(out, torch.Tensor), f"{label}: returned a {type(out).__name__}")
     check.that(
         tuple(out.shape) == tuple(x.shape),
-        f"{label}: got shape {tuple(out.shape)}, which is not the expected shape",
-        f"expected the shape of x, {tuple(x.shape)}",
+        f"{label}: got shape {tuple(out.shape)}, expected shape {tuple(x.shape)}",
+        "the result has the shape of x",
     )
     check.that(
         out.dtype == x.dtype,
-        f"{label}: got dtype {str(out.dtype).removeprefix('torch.')}, which is not the "
-        "expected dtype",
-        f"expected the dtype of x, {str(x.dtype).removeprefix('torch.')}",
+        f"{label}: got dtype {str(out.dtype).removeprefix('torch.')}, expected dtype "
+        f"{str(x.dtype).removeprefix('torch.')}",
+        "the result has the dtype of x",
     )
     if want is None:
         want = expected(x_given.numpy(), w.numpy(), 1e-5 if eps is None else eps)
@@ -284,7 +285,8 @@ def on_gpu(ctx, shape, dtype, block):
     )
     check.that(
         tuple(out.shape) == shape and out.dtype == torch.from_numpy(x).dtype,
-        f"{FN}: got shape {tuple(out.shape)} and dtype {out.dtype}, which is not what is expected",
+        f"{FN}: got shape {tuple(out.shape)} and dtype {out.dtype}, expected shape "
+        f"{tuple(shape)} and dtype torch.{x.dtype.name}",
     )
     tolerance = {"rtol": 1e-3, "atol": 1e-5} if dtype == np.float32 else TOL[np.dtype(dtype)]
     check.allclose(out.cpu().numpy(), expected(x, w, 1e-5), **tolerance, label=FN)

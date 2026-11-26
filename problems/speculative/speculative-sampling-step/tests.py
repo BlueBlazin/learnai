@@ -65,8 +65,10 @@ def check_call(ctx, p, q, x, u_accept, u_resample):
         f"  u_accept = {u_accept}\n  u_resample = {u_resample}\n"
         f"expected (token, accepted) = {(int(want[0]), bool(want[1]))}\ngot {got}"
     )
-    check.that(got[1] == bool(want[1]), f"{FN}: wrong acceptance decision", detail)
-    check.that(got[0] == int(want[0]), f"{FN}: wrong token", detail)
+    check.that(
+        got[1] == bool(want[1]), f"{FN}: accepted is {got[1]}, expected {bool(want[1])}", detail
+    )
+    check.that(got[0] == int(want[0]), f"{FN}: token is {got[0]}, expected {int(want[0])}", detail)
 
 
 def distributions(ctx, vocab, concentration=1.0):
@@ -110,7 +112,8 @@ def worked_example(ctx):
         got = step(ctx, P4, Q4, x, u_accept, u_resample)
         check.that(
             got == want,
-            f"{FN}: wrong result for x = {x}, u_accept = {u_accept}, u_resample = {u_resample}",
+            f"{FN}: got {got}, expected {want} for x = {x}, u_accept = {u_accept}, "
+            f"u_resample = {u_resample}",
             f"p = {P4}\nq = {Q4}\nexpected (token, accepted) = {want}\ngot {got}",
         )
 

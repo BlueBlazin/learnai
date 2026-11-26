@@ -110,7 +110,7 @@ def check_factor(ctx, x, percdamp):
     check.shape(got, want.shape, label="inverse_hessian_factor")
     check.that(
         got.dtype == np.float32,
-        f"inverse_hessian_factor: got dtype {got.dtype}, which is not the expected dtype",
+        f"inverse_hessian_factor: got dtype {got.dtype}, expected dtype float32",
         "expected float32",
     )
     check.finite(got, label="inverse_hessian_factor")
@@ -231,7 +231,10 @@ def bit_widths_and_zero_rows(ctx):
     for bits in (2, 3, 5, 6, 8):
         w = tie_free(ctx, make, u, bits)
         codes, scale = check_quantize(ctx, w, u, bits)
-        check.that(not codes[2].any() and float(scale[2]) == 1.0, "an all-zero row: wrong result")
+        check.that(
+            not codes[2].any() and float(scale[2]) == 1.0,
+            "an all-zero row must get codes 0 and scale 1",
+        )
 
 
 @case("inverse_hessian_factor: fewer samples than channels needs the dampening")

@@ -225,8 +225,11 @@ def check_rules(run):
                        "engine never finished it", who + "\n" + detail)  # fmt: skip
             check.that(when == finish_time[r.id], "result() did not return at the instant of "
                        "the last token", who + "\n" + detail)  # fmt: skip
-            check.that(tokens == r.output_tokens, "result() returned the wrong token count",
-                       f"{who}returned {tokens!r}\n" + detail)  # fmt: skip
+            check.that(
+                tokens == r.output_tokens,
+                f"{who}result() returned the token count {tokens!r}, expected {r.output_tokens}",
+                f"{who}returned {tokens!r}\n" + detail,
+            )
             check.that(when < run.deadline or when < run.drain_at, "a request finished at or "
                        "after the grace deadline", who + "\n" + detail)  # fmt: skip
         else:
@@ -245,7 +248,8 @@ def check_rules(run):
             )
             check.that(
                 tokens == produced.get(r.id, 0),
-                "Terminated.tokens is not the number of tokens the request had produced",
+                f"{who}Terminated.tokens is {tokens!r}, expected {produced.get(r.id, 0)} (the "
+                "number of tokens the request had produced)",
                 f"{who}Terminated.tokens={tokens!r}, produced {produced.get(r.id, 0)}\n" + detail,
             )
 
@@ -271,7 +275,8 @@ def check_rules(run):
     )
     check.that(
         type(value) is int and value == terminated,
-        "the drain future's value is not the number of terminated requests",
+        f"the drain future's value is {value!r}, expected {terminated} (the number of "
+        "terminated requests)",
         f"value {value!r}; {terminated} requests were terminated\n" + detail,
     )
     check.that(closed is True, "server.closed is not True when the drain resolves", detail)
@@ -300,18 +305,29 @@ def check_rules(run):
 
 
 def expect(run, *, outcomes=None, steps=None, releases=None, drained=None):
-    """Compare with literal values, without leaking them in the message."""
+    """Compare with literal values."""
     detail = run.timeline()
     if outcomes is not None:
         got = run.outcomes
         for request_id, want in outcomes.items():
             have = got[request_id]
             line = f"request {request_id!r}: expected (time, how, tokens) {want!r}, got {have!r}\n"
-            check.that(have[1] == want[1], "a request ended the wrong way", line + detail)
-            check.that(have[0] == want[0], "a client got its result at the wrong time",
-                       line + detail)  # fmt: skip
-            check.that(have[2] == want[2], "a client was given the wrong token count",
-                       line + detail)  # fmt: skip
+            who = f"request {request_id!r}"
+            check.that(
+                have[1] == want[1],
+                f"{who} ended as {have[1]!r}, expected {want[1]!r}",
+                line + detail,
+            )
+            check.that(
+                have[0] == want[0],
+                f"{who}: the client got its result at t={have[0]!r}, expected t={want[0]!r}",
+                line + detail,
+            )
+            check.that(
+                have[2] == want[2],
+                f"{who}: the client was given the token count {have[2]!r}, expected {want[2]!r}",
+                line + detail,
+            )
     if releases is not None:
         # Releases at one instant may come in any order.
         def canonical(pairs):
@@ -328,15 +344,33 @@ def expect(run, *, outcomes=None, steps=None, releases=None, drained=None):
         lines += "".join(f"  {step!r}\n" for step in steps[:40])
         lines += "got:\n" + "".join(f"  {step!r}\n" for step in got[:40]) + detail
         for k, (have, want) in enumerate(zip(got, steps, strict=False)):
-            check.that(have[1] == want[1], f"step {k} prefills the wrong sequences", lines)
-            check.that(have[2] == want[2], f"step {k} decodes the wrong sequences", lines)
-            check.that(have[0] == want[0], f"step {k} starts at the wrong time", lines)
-        check.that(len(got) == len(steps), "the number of engine steps is wrong", lines)
+            check.that(
+                have[1] == want[1], f"step {k} prefills {have[1]!r}, expected {want[1]!r}", lines
+            )
+            check.that(
+                have[2] == want[2], f"step {k} decodes {have[2]!r}, expected {want[2]!r}", lines
+            )
+            check.that(
+                have[0] == want[0],
+                f"step {k} starts at {have[0]!r} ms, expected {want[0]!r}",
+                lines,
+            )
+        check.that(
+            len(got) == len(steps), f"the engine ran {len(got)} steps, expected {len(steps)}", lines
+        )
     if drained is not None:
         have = run.drained[:2]
         line = f"expected the drain to resolve at (time, value) {drained!r}, got {have!r}\n"
-        check.that(have[0] == drained[0], "the drain resolved at the wrong time", line + detail)
-        check.that(have[1] == drained[1], "the drain resolved to the wrong value", line + detail)
+        check.that(
+            have[0] == drained[0],
+            f"the drain resolved at t={have[0]!r}, expected t={drained[0]!r}",
+            line + detail,
+        )
+        check.that(
+            have[1] == drained[1],
+            f"the drain resolved to {have[1]!r}, expected {drained[1]!r}",
+            line + detail,
+        )
 
 
 def solve(ctx, requests, **options):
