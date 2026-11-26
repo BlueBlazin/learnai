@@ -1,3 +1,14 @@
+Sequences in a batch have different lengths, but a tensor is rectangular, so the short
+ones are filled out with padding tokens to a common length `T`. Training usually pads
+on the right.
+
+Batched generation pads on the left. A model predicts the next token from its output
+at the last real token, and each generated token is appended to the batch as a new
+column at the end. With right padding, a short row's new token would land after its
+padding, leaving a gap in the middle of its text. With left padding every row ends in
+real tokens, so each new token directly follows the text, and the prediction for every
+row is read from the last column.
+
 Build the attention mask for a batch of padded sequences: one tensor, added to the
 attention scores, that hides the future from every token and hides padding from
 everything. The difficulty is in the corners: which axis the padding mask belongs on,
@@ -104,6 +115,5 @@ different text depending on what it was batched with. A row that is entirely `-i
 turns into NaN in the softmax; the NaN sits in a padding position at first, and then
 spreads to real tokens through the next layer's attention. A finite stand-in for
 `-inf` looks safe until two masks are added together or the model runs in half
-precision. Batched generation uses left padding so that the last column is the last
-real token of every row, which is exactly the case where whole rows of the mask are
-hidden.
+precision. Left padding, which batched generation depends on, is exactly the case
+where whole rows of the mask are hidden.
