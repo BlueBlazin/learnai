@@ -28,7 +28,7 @@ x\,W_{\text{fused}}^\top = \big[\; x\,W_0^\top \;\big|\; x\,W_1^\top \;\big|\; \
 $$
 
 **`fuse(ws)`** returns the fused weight $W_{\text{fused}}$ for the list of weights
-`learnai` $= [W_0, \dots, W_{k-1}]$, where $W_i$ has shape `(n_i, d_in)`. The result has
+`ws` $= [W_0, \dots, W_{k-1}]$, where $W_i$ has shape `(n_i, d_in)`. The result has
 shape `(n_0 + ... + n_{k-1}, d_in)`. The list is not empty.
 
 **`split_fused(w, parts)`** is the inverse. `parts` $= [n_0, \dots, n_{k-1}]$ lists
@@ -64,7 +64,7 @@ functions.
 | `w` | `(n_0 + ... + n_{k-1}, d_in)` | float32 |
 | `parts` | a list of $k$ positive ints | |
 | result of `split_fused` | a list of $k$ tensors, `(n_i, d_in)` | float32 |
-| `learnai` | a list of $k$ tensors, `(n_i, d_in)` | float32 |
+| `ws` | a list of $k$ tensors, `(n_i, d_in)` | float32 |
 | result of `fuse` | `(n_0 + ... + n_{k-1}, d_in)` | float32 |
 | `x` | `(..., d)`, one to three dimensions | float32 |
 | `w_in` | `(2h, d)` | float32 |

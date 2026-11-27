@@ -125,9 +125,9 @@ Advancing through the tokens `[`, `1`, `,`, (space), `[`, `tr`, `u`, `e`, `]`, `
 | `[1, [true]]` | (none) | yes |
 
 - After `[1` the two-character token `, ` is allowed. Its comma is the literal of
-  one rule and its space is the whole of another (`learnai`); the token crosses the
+  one rule and its space is the whole of another (`ws`); the token crosses the
   boundary.
-- After `[1,` the space is allowed and after `[1, ` it is not: `learnai` is at most one
+- After `[1,` the space is allowed and after `[1, ` it is not: `ws` is at most one
   space.
 - After `[1, [true]` the inner list is complete, and `root` has matched, but only
   the inner occurrence. The text is not a member of the language, so the state is

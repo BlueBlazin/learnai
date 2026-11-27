@@ -304,7 +304,7 @@ into its text as
 <tool_call> ws { ws "name" ws : ws NAME ws , ws "arguments" ws : ws ARGS ws } ws </tool_call>
 ```
 
-where `learnai` is any amount of JSON whitespace, `NAME` a JSON string, and `ARGS` a JSON
+where `ws` is any amount of JSON whitespace, `NAME` a JSON string, and `ARGS` a JSON
 object. The server parses the output incrementally, token by token, by the rules of
 `tool-call-stream-parser`:
 
