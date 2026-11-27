@@ -3,6 +3,7 @@ title = "Sample from a Categorical"
 track = "judges"
 order = 10
 difficulty = "easy"
+level = 1
 frameworks = ["python"]
 judges = ["numeric", "statistical"]
 tags = ["fixture"]

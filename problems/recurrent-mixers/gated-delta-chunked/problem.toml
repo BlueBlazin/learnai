@@ -3,6 +3,7 @@ title = "The Delta Rule a Chunk at a Time"
 track = "recurrent-mixers"
 order = 30
 difficulty = "hard"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property", "cost"]
 tags = ["gated-delta-net", "linear-attention", "chunked-prefill", "triangular-solve", "qwen"]

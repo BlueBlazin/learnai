@@ -3,6 +3,7 @@ title = "Enforcing a Thinking-Token Budget"
 track = "frontier"
 order = 10
 difficulty = "medium"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "cost"]
 tags = ["reasoning", "thinking-budget", "logits-processor", "state-machine", "structured-output"]

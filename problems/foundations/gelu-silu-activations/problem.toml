@@ -3,6 +3,7 @@ title = "GELU and SiLU"
 track = "foundations"
 order = 30
 difficulty = "easy"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["activation", "gelu", "silu", "numerics"]

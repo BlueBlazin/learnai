@@ -31,6 +31,7 @@ from learnai.problem import (
     DIFFICULTIES,
     FRAMEWORKS,
     JUDGES,
+    LEVELS,
     REQUIRES,
     TENSOR_FRAMEWORKS,
     Problem,
@@ -61,6 +62,7 @@ _REQUIRED_KEYS: dict[str, type | tuple[type, ...]] = {
     "track": str,
     "order": int,
     "difficulty": str,
+    "level": int,
     "frameworks": list,
     "judges": list,
     "tags": list,
@@ -154,6 +156,8 @@ def check_metadata(directory: Path, catalog_ids: dict[str, list[Path]]) -> tuple
         err("problem.toml: title is empty")
     if problem.difficulty not in DIFFICULTIES:
         err(f"problem.toml: difficulty must be one of {', '.join(DIFFICULTIES)}")
+    if problem.level not in LEVELS:
+        err("problem.toml: level must be 1, 2, or 3")
     if problem.requires not in REQUIRES:
         err(f"problem.toml: requires must be one of {', '.join(REQUIRES)}")
     if problem.time_limit_s <= 0:

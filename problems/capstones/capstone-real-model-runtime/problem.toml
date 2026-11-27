@@ -3,6 +3,7 @@ title = "A Complete Runtime for a Real Model"
 track = "capstones"
 order = 50
 difficulty = "hard"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "cost"]
 tags = ["capstone", "real-model", "safetensors", "tokenizer", "chat-template", "kv-cache", "sampling", "streaming"]

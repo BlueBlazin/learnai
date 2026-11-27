@@ -22,6 +22,7 @@ fn lists_valid_problems_in_track_then_problem_order() {
     assert_eq!(add.title, "Add Two Tensors");
     assert_eq!(add.track, "basics");
     assert_eq!(add.difficulty, Difficulty::Easy);
+    assert_eq!(add.level, 1);
     assert_eq!(add.frameworks, [Framework::Torch, Framework::Jax]);
     assert_eq!(add.judges, [JudgeKind::Numeric]);
     assert_eq!(add.tags, ["warmup"]);
@@ -277,7 +278,7 @@ fn reloading_a_large_catalog_is_cheap() {
         fs::write(
             dir.join("problem.toml"),
             format!(
-                "id = \"{id}\"\ntitle = \"Bulk {n}\"\ntrack = \"bulk\"\norder = {n}\ndifficulty = \"medium\"\n\
+                "id = \"{id}\"\ntitle = \"Bulk {n}\"\ntrack = \"bulk\"\norder = {n}\ndifficulty = \"medium\"\nlevel = 2\n\
                  frameworks = [\"torch\", \"jax\", \"mlx\"]\njudges = [\"numeric\"]\nentry = [\"f\"]\n"
             ),
         )

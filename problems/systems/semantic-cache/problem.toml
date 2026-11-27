@@ -3,6 +3,7 @@ title = "A Semantic Response Cache"
 track = "systems"
 order = 80
 difficulty = "medium"
+level = 3
 frameworks = ["python"]
 judges = ["numeric", "simclock"]
 tags = ["caching", "embeddings", "cosine-similarity", "ttl", "lru", "cache-key"]

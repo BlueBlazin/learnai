@@ -3,6 +3,7 @@ title = "DRY Repetition Penalty"
 track = "sampling"
 order = 160
 difficulty = "hard"
+level = 1
 frameworks = ["python"]
 judges = ["numeric", "speed"]
 tags = ["sampling", "dry", "repetition", "z-algorithm", "llama.cpp"]

@@ -3,6 +3,7 @@ title = "A Fused Dequantize-and-Multiply Kernel"
 track = "cuda"
 order = 140
 difficulty = "hard"
+level = 1
 frameworks = ["torch"]
 judges = ["numeric", "property"]
 tags = ["cuda", "triton", "custom-kernel", "quantization", "bit-packing", "quantized-matmul", "dequantize"]

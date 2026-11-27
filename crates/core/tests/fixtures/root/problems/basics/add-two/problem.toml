@@ -3,6 +3,7 @@ title = "Add Two Tensors"
 track = "basics"
 order = 10
 difficulty = "easy"
+level = 1
 frameworks = ["torch", "jax"]
 judges = ["numeric"]
 tags = ["warmup"]

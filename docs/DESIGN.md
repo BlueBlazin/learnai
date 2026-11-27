@@ -25,10 +25,11 @@ binding component rules in `docs/ARCHITECTURE.md` section 5.
    written out ("Numeric, Property", "5 of 7 cases passed"). A mark appears only
    where it encodes something a word cannot at a glance: status, difficulty,
    verdict.
-4. **Hue has two jobs, kept apart.** Outcome colors (pass, fail, warn) say how
+4. **Hue has three jobs, kept apart.** Outcome colors (pass, fail, warn) say how
    something went, and each use also carries a distinct shape and a word. Module
    and skill colors say which module or skill something belongs to, and are
-   never used for an outcome. Nothing else is colored.
+   never used for an outcome. Difficulty colors (green, yellow, red) fill the
+   bars of the difficulty mark and nothing else. Nothing else is colored.
 5. **Calm at the desk, character around it.** The workspace (statement, editor,
    results) stays as quiet as a page while a problem is being solved. Home, the
    Curriculum screens, and Accomplishments are where the app shows warmth: the
@@ -147,6 +148,7 @@ on paper and secondary text near 8:1.
 | `accent` | `0.94 0.008 258` | `0.27 0 0` | hover and selected rows |
 | `code` | `0.96 0.005 255` | `0.235 0 0` | listings and output blocks (utility `bg-listing`; see below) |
 | `pass` / `fail` / `warn` | `0.49 0.105 158` / `0.51 0.17 27` / `0.53 0.11 68` | `0.77 0.12 158` / `0.74 0.14 25` / `0.80 0.11 80` | outcomes only |
+| `difficulty-easy` / `-medium` / `-hard` | `0.62 0.17 150` / `0.78 0.16 86` / `0.58 0.21 27` | `0.76 0.17 152` / `0.86 0.15 92` / `0.68 0.19 25` | the bars of `DifficultyMark` only, never text |
 | `straw` | `0.93 0.075 96` | `0.38 0.055 92` | highlight |
 
 Figures drawn by problem authors get a palette of their own (`--figure-*`), so
@@ -253,8 +255,13 @@ CSS-variables theme, so one render is correct in both modes.
 These are the places where a generic app reaches for colored pills. Learn AI
 does not.
 
-- **Difficulty** is a magnitude, not an outcome, so it has no hue: a three-bar
-  mark filled to the level, in ink, plus the word (`DifficultyMark`).
+- **Difficulty** is a word, a color, and a level (`DifficultyMark`): the word
+  (Easy, Medium, Hard), three bars in the difficulty's color (green, yellow,
+  red), and as many bars filled as the problem's level within the difficulty
+  (1 to 3). The nine steps run from easy 1 to hard 3, so easy 3 sits just under
+  medium 1. The word always accompanies the color. Where the mark stands for a
+  whole difficulty (the Library filter, the counts on Home) all three bars are
+  filled.
 - **Status** is a shape: an empty ring (not started), a half-filled ring
   (attempted), a filled disc with a check (solved). Hue reinforces but the
   shapes alone are sufficient (`StatusMark`).

@@ -3,6 +3,7 @@ title = "Batched Generation with Ragged Prompts"
 track = "mlx"
 order = 160
 difficulty = "hard"
+level = 1
 frameworks = ["mlx"]
 judges = ["numeric", "cost"]
 tags = ["mlx", "batching", "padding", "attention-mask", "kv-cache", "eos", "greedy-decoding"]

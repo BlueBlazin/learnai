@@ -3,6 +3,7 @@ title = "Exact Vector Search"
 track = "systems"
 order = 40
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "speed"]
 tags = ["vector-search", "top-k", "cosine-similarity", "retrieval", "embeddings", "rag"]

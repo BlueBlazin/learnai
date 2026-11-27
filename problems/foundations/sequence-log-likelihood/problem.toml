@@ -3,6 +3,7 @@ title = "Sequence Log-Likelihood and Perplexity"
 track = "foundations"
 order = 70
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["log-likelihood", "perplexity", "evaluation", "padding"]

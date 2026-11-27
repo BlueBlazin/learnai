@@ -3,6 +3,7 @@ title = "Matching a Hybrid Model's Logits"
 track = "real-hybrid-model"
 order = 30
 difficulty = "hard"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["forward-pass", "qwen", "hybrid-decoder", "gated-attention", "partial-rope", "real-model", "checkpoint-porting", "logits"]

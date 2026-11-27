@@ -3,6 +3,7 @@ title = "Scale on the GPU"
 track = "gpu"
 order = 10
 difficulty = "easy"
+level = 1
 frameworks = ["mlx"]
 judges = ["numeric", "cost", "speed"]
 tags = ["fixture"]

@@ -3,6 +3,7 @@ title = "Top-k Filtering"
 track = "sampling"
 order = 40
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["sampling", "top-k", "sorting", "ties", "scatter"]

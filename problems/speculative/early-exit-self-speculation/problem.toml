@@ -3,6 +3,7 @@ title = "Self-Speculation by Early Exit"
 track = "speculative"
 order = 130
 difficulty = "hard"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "cost"]
 tags = ["speculative-decoding", "early-exit", "layerskip", "kv-cache", "rollback", "generation-loop"]

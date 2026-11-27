@@ -3,6 +3,7 @@ title = "Graceful Drain"
 track = "serving"
 order = 140
 difficulty = "medium"
+level = 3
 frameworks = ["python"]
 judges = ["simclock"]
 tags = ["shutdown", "draining", "readiness", "cancellation", "asyncio", "continuous-batching"]

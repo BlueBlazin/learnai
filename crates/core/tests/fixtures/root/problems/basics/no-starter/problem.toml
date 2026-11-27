@@ -2,6 +2,7 @@ id = "no-starter"
 title = "No Starter"
 track = "basics"
 difficulty = "easy"
+level = 1
 frameworks = ["torch"]
 judges = ["numeric"]
 entry = ["f"]

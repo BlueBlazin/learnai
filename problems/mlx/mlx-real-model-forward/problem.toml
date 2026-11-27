@@ -3,6 +3,7 @@ title = "A Real Model in mlx.nn"
 track = "mlx"
 order = 170
 difficulty = "hard"
+level = 1
 frameworks = ["mlx"]
 judges = ["numeric"]
 tags = ["mlx", "real-model", "granite", "module-tree", "fused-attention", "rope", "half-precision"]

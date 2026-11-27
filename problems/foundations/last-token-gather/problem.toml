@@ -3,6 +3,7 @@ title = "Gathering the Last Real Token"
 track = "foundations"
 order = 60
 difficulty = "easy"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["indexing", "gather", "padding", "batching"]

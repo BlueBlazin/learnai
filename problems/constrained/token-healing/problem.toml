@@ -3,6 +3,7 @@ title = "Token Healing"
 track = "constrained"
 order = 100
 difficulty = "medium"
+level = 2
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["tokenization", "prompt-boundary", "constrained-decoding", "token-healing", "bpe"]

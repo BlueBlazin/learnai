@@ -55,7 +55,7 @@ uv run --project python --extra jax --extra mlx ruff check problems/decoding/top
 
 `learnai new <track>/<id>` takes `--frameworks torch,jax,mlx` (the default),
 `--frameworks python`, or `--frameworks mlx` (an MLX-only problem, section 13), plus
-`--title` and `--difficulty`. It writes a complete toy
+`--title`, `--difficulty`, and `--level`. It writes a complete toy
 problem in the house layout and creates `track.toml` if the track is new. `learnai validate`
 refuses any problem that still contains `TODO(author)`.
 
@@ -86,7 +86,7 @@ Metadata must be complete and consistent:
 - `problem.toml` has every key with the right type; `id` equals the directory name, is
   lowercase words joined by hyphens, and is unique across the whole catalog; `track`
   equals the parent directory name; `difficulty`, `judges`, `requires`, and `frameworks`
-  use known values; `entry` is a non-empty list of Python names; `time_limit_s` is
+  use known values; `level` is 1, 2, or 3; `entry` is a non-empty list of Python names; `time_limit_s` is
   positive; every prerequisite id exists.
 - `frameworks` is `["python"]`, or a set of tensor frameworks that includes `"torch"`
   (the oracle is written in torch), or exactly `["mlx"]` (an MLX-only problem, whose
@@ -199,6 +199,7 @@ title = "Numerically Stable Softmax"
 track = "foundations"
 order = 10                        # position within the track; leave gaps (10, 20, ...)
 difficulty = "easy"               # easy | medium | hard
+level = 1                         # 1 | 2 | 3 within the difficulty (see below)
 frameworks = ["torch", "jax", "mlx"]      # or ["python"]
 judges = ["numeric"]              # every judge type the tests use
 tags = ["softmax", "numerics", "logits"]
@@ -221,6 +222,30 @@ size_mb = 712
 ```
 
 `requires` is the hardware a solution needs before it can be *accepted* (section 14).
+
+`difficulty` and `level` together place the problem on nine steps, from easy 1 to
+hard 3; easy 3 sits just under medium 1. Score the problem from 1 to 5 on each of two
+questions, as the learner meets it (statement, starter, and public tests; no hints,
+editorial, or reference), against the whole catalog and not its own track:
+
+| score | concept: how hard is it to work out what to do | code: how hard is it to write once you know |
+|---|---|---|
+| 1 | the statement gives the formula or procedure; solving is transcription | about 8 lines of logic, one expression chain |
+| 2 | one standard idea has to be understood, and the statement leads to it | 10 to 20 lines; some shape handling, indexing, or a simple loop |
+| 3 | two or three ideas combine, or an edge behavior has to be reasoned through | 20 to 45 lines; loops with state, several edge cases |
+| 4 | an algorithm has to be designed; a plausible wrong mental model exists | 45 to 100 lines; shared state, tricky bookkeeping, or a speed or cost limit |
+| 5 | several interacting systems or a subtle algorithm; several wrong models exist | over 100 lines, or cooperating components (async, a parser plus an engine, GPU kernels) |
+
+Line counts are of the logic the learner writes: the reference minus what the starter
+supplies. A hardware API (MLX, CUDA, Triton), a speed or cost judge, or real weights
+raise the code score. A problem between two scores takes the half point (the catalog
+does this for concept 3, code 3 problems with 30 or more lines to write).
+
+Add the two scores, add 1 more when either score is 4 or higher, and round up: 2 is
+easy 1, 3 is easy 2, 4 is easy 3, 5 is medium 1, 6 is medium 2, 7 is medium 3, 8 is
+hard 1, 9 is hard 2, and 10 or more is hard 3. The extra point is why a problem that is
+demanding on one axis is hard even when the other axis is moderate. Then compare with
+problems already at that step and move it if it plainly does not belong.
 
 A solution that fails to import, or lacks an `entry` name, gets the `import_error`
 verdict before any case runs. Entry names can be functions, classes, or (for service

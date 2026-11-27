@@ -3,6 +3,7 @@ title = "Dynamic Batcher"
 track = "judges"
 order = 10
 difficulty = "easy"
+level = 1
 frameworks = ["python"]
 judges = ["simclock"]
 tags = ["fixture"]

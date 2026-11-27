@@ -3,6 +3,7 @@ title = "A Static KV Cache"
 track = "cuda"
 order = 100
 difficulty = "medium"
+level = 1
 frameworks = ["torch"]
 judges = ["numeric", "property"]
 tags = ["cuda", "kv-cache", "static-shapes", "in-place", "index-copy", "attention-mask"]

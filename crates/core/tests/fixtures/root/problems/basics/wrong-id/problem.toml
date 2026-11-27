@@ -2,6 +2,7 @@ id = "some-other-id"
 title = "Wrong Id"
 track = "basics"
 difficulty = "easy"
+level = 1
 frameworks = ["torch"]
 judges = ["numeric"]
 entry = ["f"]

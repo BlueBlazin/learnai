@@ -3,6 +3,7 @@ title = "Capacity Planning from a Cost Model"
 track = "sizing"
 order = 100
 difficulty = "medium"
+level = 3
 frameworks = ["python"]
 judges = ["numeric", "property"]
 tags = ["capacity", "slo", "replicas", "cost-model", "headroom", "continuous-batching"]

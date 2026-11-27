@@ -3,6 +3,7 @@ title = "Splitting Fused Projections"
 track = "transformer"
 order = 130
 difficulty = "easy"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["weights", "checkpoint", "swiglu", "qkv", "granite"]

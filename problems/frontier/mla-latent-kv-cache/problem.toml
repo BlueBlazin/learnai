@@ -3,6 +3,7 @@ title = "Caching Latents with Multi-Head Latent Attention"
 track = "frontier"
 order = 60
 difficulty = "hard"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["kv-cache", "attention", "mla", "low-rank", "rope", "deepseek", "memory"]

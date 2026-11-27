@@ -3,6 +3,7 @@ title = "Heavy-Hitter KV Eviction"
 track = "kv-cache"
 order = 140
 difficulty = "medium"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["kv-cache", "eviction", "h2o", "attention-scores", "memory"]

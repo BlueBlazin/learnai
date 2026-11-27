@@ -3,6 +3,7 @@ title = "Streaming Generation with Async Evaluation"
 track = "mlx"
 order = 120
 difficulty = "medium"
+level = 1
 frameworks = ["mlx"]
 judges = ["numeric", "cost"]
 tags = ["mlx", "async-eval", "streaming", "greedy-decoding", "lazy-evaluation"]

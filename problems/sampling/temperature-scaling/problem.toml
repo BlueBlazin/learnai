@@ -3,6 +3,7 @@ title = "Temperature"
 track = "sampling"
 order = 30
 difficulty = "easy"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["sampling", "temperature", "greedy", "logits", "broadcasting"]

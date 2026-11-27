@@ -3,6 +3,7 @@ title = "A Sampler Chain in the Right Order"
 track = "sampling"
 order = 80
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "statistical"]
 tags = ["sampling", "sampler-chain", "top-p", "temperature", "penalties", "llama.cpp"]

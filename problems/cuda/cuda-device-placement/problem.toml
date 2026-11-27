@@ -3,6 +3,7 @@ title = "Keeping Tensors on One Device"
 track = "cuda"
 order = 20
 difficulty = "easy"
+level = 3
 frameworks = ["torch"]
 judges = ["numeric", "property"]
 tags = ["cuda", "device", "dtype", "host-sync", "batching"]

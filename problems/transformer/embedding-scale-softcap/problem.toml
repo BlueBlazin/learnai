@@ -3,6 +3,7 @@ title = "Embedding Scaling and Logit Soft-Capping"
 track = "transformer"
 order = 120
 difficulty = "easy"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["embedding", "logits", "softcap", "gemma", "granite"]

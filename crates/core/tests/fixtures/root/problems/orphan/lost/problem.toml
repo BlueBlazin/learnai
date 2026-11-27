@@ -2,6 +2,7 @@ id = "lost"
 title = "Lost"
 track = "orphan"
 difficulty = "easy"
+level = 1
 frameworks = ["torch"]
 judges = ["numeric"]
 entry = ["f"]

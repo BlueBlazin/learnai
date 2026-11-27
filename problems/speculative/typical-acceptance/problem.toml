@@ -3,6 +3,7 @@ title = "Lossy Verification by Typical Acceptance"
 track = "speculative"
 order = 80
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["speculative-decoding", "typical-acceptance", "medusa", "entropy", "verification"]

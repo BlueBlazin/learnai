@@ -3,6 +3,7 @@ title = "Learning a BPE Merge Table"
 track = "tokenization"
 order = 90
 difficulty = "medium"
+level = 1
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["tokenizer", "bpe", "vocabulary", "merges"]

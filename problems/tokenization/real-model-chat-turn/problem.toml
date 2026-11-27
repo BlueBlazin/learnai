@@ -3,6 +3,7 @@ title = "One Chat Turn with a Real Model"
 track = "tokenization"
 order = 130
 difficulty = "medium"
+level = 2
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["chat-template", "granite", "streaming", "detokenizer", "greedy", "real-model"]

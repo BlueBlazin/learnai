@@ -3,6 +3,7 @@ title = "A Pre-Norm Decoder Block"
 track = "transformer"
 order = 50
 difficulty = "easy"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["residual", "pre-norm", "rmsnorm", "transformer-block", "llama"]

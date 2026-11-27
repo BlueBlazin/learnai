@@ -3,6 +3,7 @@ title = "A Quantized Model Runner"
 track = "capstones"
 order = 20
 difficulty = "hard"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property", "cost"]
 tags = ["capstone", "quantization", "packed-codes", "quantized-matmul", "kv-cache", "mixed-precision"]

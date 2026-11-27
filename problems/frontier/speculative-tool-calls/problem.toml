@@ -3,6 +3,7 @@ title = "Speculative Tool Calls"
 track = "frontier"
 order = 70
 difficulty = "hard"
+level = 2
 frameworks = ["python"]
 judges = ["simclock"]
 tags = ["agents", "tool-calling", "speculation", "streaming", "asyncio", "latency", "side-effects"]

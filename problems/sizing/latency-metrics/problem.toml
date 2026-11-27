@@ -3,6 +3,7 @@ title = "TTFT, ITL, and TPOT"
 track = "sizing"
 order = 30
 difficulty = "easy"
+level = 2
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["benchmarking", "latency", "ttft", "tpot", "streaming"]

@@ -3,6 +3,7 @@ title = "Precomputing the Token Index"
 track = "constrained"
 order = 40
 difficulty = "medium"
+level = 3
 frameworks = ["python"]
 judges = ["numeric", "cost"]
 tags = ["constrained-decoding", "dfa", "index", "trie", "outlines"]

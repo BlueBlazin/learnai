@@ -214,6 +214,7 @@ impl Core {
             track: problem.track.clone(),
             order: problem.order,
             difficulty: problem.difficulty,
+            level: problem.level,
             frameworks: problem.frameworks.clone(),
             judges: problem.judges.clone(),
             tags: problem.tags.clone(),

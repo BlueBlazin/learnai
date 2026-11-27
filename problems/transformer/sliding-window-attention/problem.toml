@@ -3,6 +3,7 @@ title = "Sliding-Window Attention"
 track = "transformer"
 order = 80
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["attention", "mask", "sliding-window", "gemma", "mistral"]

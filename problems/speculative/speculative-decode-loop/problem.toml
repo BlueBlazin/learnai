@@ -3,6 +3,7 @@ title = "A Speculative Decoding Loop"
 track = "speculative"
 order = 60
 difficulty = "hard"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "cost"]
 tags = ["speculative-decoding", "greedy-decoding", "kv-cache", "rollback", "generation-loop", "eos"]

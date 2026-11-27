@@ -3,6 +3,7 @@ title = "Token Streaming over SSE"
 track = "judges"
 order = 10
 difficulty = "easy"
+level = 1
 frameworks = ["python"]
 judges = ["service"]
 tags = ["fixture"]

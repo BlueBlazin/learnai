@@ -16,6 +16,7 @@ const problem = (over: Partial<ProblemSummary> & { id: string }): ProblemSummary
   track: "a",
   order: 10,
   difficulty: "easy",
+  level: 1,
   frameworks: ["torch"],
   judges: ["numeric"],
   tags: [],

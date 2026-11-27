@@ -3,6 +3,7 @@ title = "A Structured-Output Server"
 track = "capstones"
 order = 40
 difficulty = "hard"
+level = 3
 frameworks = ["python"]
 judges = ["service", "numeric", "cost"]
 tags = ["capstone", "openai-api", "structured-output", "json-schema", "constrained-decoding", "tool-calls", "sse"]

@@ -3,6 +3,7 @@ title = "One Step of Masked-Diffusion Decoding"
 track = "frontier"
 order = 30
 difficulty = "medium"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "statistical"]
 tags = ["diffusion", "masked-diffusion", "parallel-decoding", "sampling", "confidence", "llada"]

@@ -3,6 +3,7 @@ title = "A Gated Convolution Block"
 track = "recurrent-mixers"
 order = 50
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["convolution", "causal-convolution", "recurrent-state", "token-mixer", "lfm"]

@@ -3,6 +3,7 @@ title = "Lazy Weight Loading with mmap"
 track = "systems"
 order = 20
 difficulty = "medium"
+level = 1
 frameworks = ["python"]
 judges = ["numeric", "cost"]
 tags = ["safetensors", "mmap", "lazy-loading", "checkpoint", "zero-copy", "bfloat16"]

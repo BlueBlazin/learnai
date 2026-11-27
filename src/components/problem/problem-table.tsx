@@ -48,7 +48,7 @@ const ProblemRow = memo(function ProblemRow({
         </span>
       </TableCell>
       <TableCell className="w-24 text-xs">
-        <DifficultyMark difficulty={problem.difficulty} />
+        <DifficultyMark difficulty={problem.difficulty} level={problem.level} />
       </TableCell>
       <TableCell className="w-40 truncate text-xs text-muted-foreground">
         <JudgeList judges={problem.judges} className="block" />

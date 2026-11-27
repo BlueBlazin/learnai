@@ -19,6 +19,7 @@ const problem = (id: string, status: ProblemStatus = "todo"): ProblemSummary => 
   track: "t",
   order: 10,
   difficulty: "easy",
+  level: 1,
   frameworks: ["torch"],
   judges: ["numeric"],
   tags: [],

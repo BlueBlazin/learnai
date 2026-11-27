@@ -3,6 +3,7 @@ title = "Activation-Aware Scaling"
 track = "quantization"
 order = 140
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["quantization", "awq", "calibration", "4-bit", "activation-aware", "grid-search"]

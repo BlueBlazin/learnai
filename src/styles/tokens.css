@@ -34,6 +34,9 @@
   --color-fail-subtle: var(--fail-subtle);
   --color-warn: var(--warn);
   --color-warn-subtle: var(--warn-subtle);
+  --color-difficulty-easy: var(--difficulty-easy);
+  --color-difficulty-medium: var(--difficulty-medium);
+  --color-difficulty-hard: var(--difficulty-hard);
   --color-straw: var(--straw);
   --color-straw-foreground: var(--straw-foreground);
   /* Named `listing`, not `code`: `text-code` is the code type size, and a color of
@@ -143,6 +146,11 @@
   --warn-subtle: oklch(0.955 0.035 85);
   --destructive: var(--fail);
 
+  /* Difficulty bars: green, yellow, red. Fills for small marks, never text. */
+  --difficulty-easy: oklch(0.62 0.17 150);
+  --difficulty-medium: oklch(0.78 0.16 86);
+  --difficulty-hard: oklch(0.58 0.21 27);
+
   --straw: oklch(0.93 0.075 96);
   --straw-foreground: oklch(0.42 0.075 80);
   --code: oklch(0.96 0.005 255);
@@ -216,6 +224,10 @@
   --fail-subtle: oklch(0.29 0.045 25);
   --warn: oklch(0.8 0.11 80);
   --warn-subtle: oklch(0.3 0.04 80);
+
+  --difficulty-easy: oklch(0.76 0.17 152);
+  --difficulty-medium: oklch(0.86 0.15 92);
+  --difficulty-hard: oklch(0.68 0.19 25);
 
   --straw: oklch(0.38 0.055 92);
   --straw-foreground: oklch(0.87 0.09 94);

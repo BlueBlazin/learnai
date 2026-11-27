@@ -3,6 +3,7 @@ title = "Adapting the Draft Length"
 track = "speculative"
 order = 70
 difficulty = "medium"
+level = 1
 frameworks = ["python"]
 judges = ["numeric", "cost"]
 tags = ["speculative-decoding", "draft-length", "assisted-generation", "confidence", "simulation"]

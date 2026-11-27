@@ -3,6 +3,7 @@ title = "Preemption by Recompute"
 track = "serving"
 order = 210
 difficulty = "hard"
+level = 1
 frameworks = ["python"]
 judges = ["simclock"]
 tags = ["scheduling", "preemption", "kv-cache", "memory", "continuous-batching", "watermark"]

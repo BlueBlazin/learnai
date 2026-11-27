@@ -3,6 +3,7 @@ title = "Pinned Memory and Non-Blocking Transfers"
 track = "cuda"
 order = 70
 difficulty = "medium"
+level = 1
 frameworks = ["torch"]
 judges = ["numeric", "cost"]
 tags = ["cuda", "pinned-memory", "non-blocking", "prefetch", "data-loading", "synchronize"]

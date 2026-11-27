@@ -3,6 +3,7 @@ title = "Fused Attention with the Right Mask"
 track = "cuda"
 order = 40
 difficulty = "easy"
+level = 3
 frameworks = ["torch"]
 judges = ["numeric"]
 tags = ["cuda", "attention", "kv-cache", "masking", "grouped-query-attention"]

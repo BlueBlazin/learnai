@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from learnai.problem import DIFFICULTIES, FRAMEWORKS, TENSOR_FRAMEWORKS
+from learnai.problem import DIFFICULTIES, FRAMEWORKS, LEVELS, TENSOR_FRAMEWORKS
 from learnai.validate import ID_PATTERN, PLACEHOLDER
 
 
@@ -156,6 +156,7 @@ def create(
     title: str | None = None,
     frameworks: list[str] | None = None,
     difficulty: str = "easy",
+    level: int = 1,
 ) -> Path:
     """Create ``problems/<track>/<id>/`` (and track.toml if the track is new)."""
     parts = target.strip("/").split("/")
@@ -175,6 +176,8 @@ def create(
         )
     if difficulty not in DIFFICULTIES:
         raise ScaffoldError(f"difficulty must be one of {', '.join(DIFFICULTIES)}")
+    if level not in LEVELS:
+        raise ScaffoldError("level must be 1, 2, or 3")
     existing = [p for p in (root / "problems").glob(f"*/{problem_id}") if p.is_dir()]
     if existing:
         raise ScaffoldError(f"problem id {problem_id!r} already exists at {existing[0]}")
@@ -208,6 +211,7 @@ def create(
         f'track = "{track}"\n'
         f"order = {10 * (len(siblings) + 1)}\n"
         f'difficulty = "{difficulty}"\n'
+        f"level = {level}\n"
         f"frameworks = [{listed}]\n"
         'judges = ["numeric"]\n'
         f'tags = ["{PLACEHOLDER}"]\n'

@@ -3,6 +3,7 @@ title = "Packing 4-bit Codes"
 track = "quantization"
 order = 40
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["quantization", "bits", "packing", "4-bit", "dtypes"]

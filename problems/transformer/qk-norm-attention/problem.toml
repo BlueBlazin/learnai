@@ -3,6 +3,7 @@ title = "QK-Norm Attention"
 track = "transformer"
 order = 90
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["attention", "normalization", "rope", "qwen", "gemma"]

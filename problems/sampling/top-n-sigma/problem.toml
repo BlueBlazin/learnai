@@ -3,6 +3,7 @@ title = "Top-n-sigma Filtering"
 track = "sampling"
 order = 110
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["sampling", "top-n-sigma", "truncation", "logits", "standard-deviation"]

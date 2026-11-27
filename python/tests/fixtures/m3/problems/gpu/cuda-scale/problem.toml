@@ -3,6 +3,7 @@ title = "Scale on CUDA"
 track = "gpu"
 order = 20
 difficulty = "easy"
+level = 1
 frameworks = ["torch"]
 judges = ["numeric"]
 tags = ["fixture"]

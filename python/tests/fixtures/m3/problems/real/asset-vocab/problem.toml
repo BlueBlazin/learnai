@@ -3,6 +3,7 @@ title = "Read a Vocabulary Size"
 track = "real"
 order = 10
 difficulty = "easy"
+level = 1
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["fixture"]

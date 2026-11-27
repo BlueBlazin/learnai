@@ -3,6 +3,7 @@ title = "Goodput Under an SLO"
 track = "sizing"
 order = 80
 difficulty = "easy"
+level = 3
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["benchmarking", "goodput", "slo", "latency", "capacity"]

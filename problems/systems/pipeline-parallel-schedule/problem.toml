@@ -3,6 +3,7 @@ title = "Pipeline Parallelism Across Devices"
 track = "systems"
 order = 120
 difficulty = "hard"
+level = 2
 frameworks = ["python"]
 judges = ["simclock"]
 tags = ["pipeline-parallelism", "scheduling", "multi-gpu", "asyncio", "throughput", "discrete-event"]

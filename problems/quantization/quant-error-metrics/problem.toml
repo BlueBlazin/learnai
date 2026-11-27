@@ -3,6 +3,7 @@ title = "Measuring Quantization Error"
 track = "quantization"
 order = 30
 difficulty = "easy"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["quantization", "error", "mse", "sqnr", "metrics"]

@@ -3,6 +3,7 @@ title = "A Rotating Cache That Keeps Its Sinks"
 track = "kv-cache"
 order = 80
 difficulty = "medium"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["kv-cache", "sliding-window", "ring-buffer", "attention-sinks"]

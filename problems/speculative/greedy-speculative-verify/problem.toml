@@ -3,6 +3,7 @@ title = "Verifying a Greedy Draft"
 track = "speculative"
 order = 20
 difficulty = "easy"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["speculative-decoding", "greedy-decoding", "verification", "argmax"]

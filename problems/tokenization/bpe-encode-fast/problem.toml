@@ -3,6 +3,7 @@ title = "BPE Encoding in O(n log n)"
 track = "tokenization"
 order = 100
 difficulty = "hard"
+level = 2
 frameworks = ["python"]
 judges = ["numeric", "speed"]
 tags = ["tokenizer", "bpe", "heap", "linked-list", "complexity"]

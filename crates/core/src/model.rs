@@ -309,6 +309,8 @@ pub struct ProblemSummary {
     pub order: i64,
     /// Difficulty.
     pub difficulty: Difficulty,
+    /// Level within the difficulty, 1 to 3.
+    pub level: u8,
     /// Frameworks a solution may be written in.
     pub frameworks: Vec<Framework>,
     /// Judges the problem uses.

@@ -3,6 +3,7 @@ title = "RMSNorm"
 track = "foundations"
 order = 20
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["normalization", "numerics", "llama"]

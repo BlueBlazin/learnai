@@ -3,6 +3,7 @@ title = "Staying in Half Precision"
 track = "mlx"
 order = 30
 difficulty = "easy"
+level = 2
 frameworks = ["mlx"]
 judges = ["numeric", "cost"]
 tags = ["mlx", "dtypes", "float16", "memory", "numerics"]

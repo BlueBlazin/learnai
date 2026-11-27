@@ -3,6 +3,7 @@ title = "Decoding bfloat16 by Hand"
 track = "foundations"
 order = 80
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["bfloat16", "floating-point", "bits", "rounding", "dtypes"]

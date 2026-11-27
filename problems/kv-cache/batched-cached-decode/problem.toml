@@ -3,6 +3,7 @@ title = "Batched Decoding with Early Finish"
 track = "kv-cache"
 order = 60
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "cost"]
 tags = ["kv-cache", "batching", "greedy-decoding", "eos", "generation-loop"]

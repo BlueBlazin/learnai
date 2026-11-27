@@ -3,6 +3,7 @@ title = "Compiling a Decode Step"
 track = "mlx"
 order = 70
 difficulty = "medium"
+level = 1
 frameworks = ["mlx"]
 judges = ["numeric", "cost"]
 tags = ["mlx", "compile", "tracing", "greedy-decoding", "kv-cache"]

@@ -3,6 +3,7 @@ title = "An Inference Gateway"
 track = "capstones"
 order = 60
 difficulty = "hard"
+level = 1
 frameworks = ["python"]
 judges = ["simclock"]
 tags = ["capstone", "gateway", "admission-control", "routing", "prefix-cache", "fairness", "autoscaling"]

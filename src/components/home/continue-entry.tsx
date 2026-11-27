@@ -73,7 +73,7 @@ export function ContinueEntry({
             {track?.title ?? problem.track}, No. {problem.order}
           </span>
         )}
-        <DifficultyMark difficulty={problem.difficulty} />
+        <DifficultyMark difficulty={problem.difficulty} level={problem.level} />
         {lastSubmission ? (
           <span>
             Last submitted {formatRelativeTime(lastSubmission.createdAt)}:{" "}

@@ -3,6 +3,7 @@ title = "Ternary Weights"
 track = "quantization"
 order = 90
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["quantization", "ternary", "bitnet", "1.58-bit", "weights"]

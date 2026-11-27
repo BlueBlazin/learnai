@@ -3,6 +3,7 @@ title = "Fitting a Conversation into the Context Window"
 track = "tokenization"
 order = 80
 difficulty = "easy"
+level = 3
 frameworks = ["python"]
 judges = ["numeric", "property"]
 tags = ["chat", "context-window", "truncation", "prompt", "serving"]

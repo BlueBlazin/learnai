@@ -3,6 +3,7 @@ title = "Compressing a Prompt Cache by Attention Votes"
 track = "kv-cache"
 order = 150
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["kv-cache", "compression", "snapkv", "attention-scores", "pooling"]

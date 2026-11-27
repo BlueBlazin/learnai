@@ -3,6 +3,7 @@ title = "A Speculative Decoding Engine"
 track = "capstones"
 order = 30
 difficulty = "hard"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["statistical", "numeric", "cost"]
 tags = ["capstone", "speculative-decoding", "kv-cache", "rejection-sampling", "prompt-lookup", "batching"]

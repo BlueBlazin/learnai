@@ -3,6 +3,7 @@ title = "Full Decoder Forward Pass"
 track = "transformer"
 order = 60
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["forward-pass", "decoder", "rope", "gqa", "tied-embeddings", "llama"]

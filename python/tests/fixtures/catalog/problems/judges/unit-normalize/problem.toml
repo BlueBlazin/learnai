@@ -3,6 +3,7 @@ title = "Normalize to Unit Length"
 track = "judges"
 order = 10
 difficulty = "easy"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["fixture"]

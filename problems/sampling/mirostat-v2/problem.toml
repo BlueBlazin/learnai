@@ -3,6 +3,7 @@ title = "Mirostat v2"
 track = "sampling"
 order = 150
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["sampling", "mirostat", "perplexity", "feedback-control", "llama.cpp"]

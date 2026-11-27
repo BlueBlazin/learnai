@@ -3,6 +3,7 @@ title = "Pooling and Normalizing Embeddings"
 track = "systems"
 order = 30
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["embeddings", "pooling", "attention-mask", "padding", "matryoshka", "normalization"]

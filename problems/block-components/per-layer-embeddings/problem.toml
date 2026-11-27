@@ -3,6 +3,7 @@ title = "Per-Layer Embeddings"
 track = "block-components"
 order = 60
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["embeddings", "per-layer-embeddings", "gemma", "residual-stream", "rmsnorm"]

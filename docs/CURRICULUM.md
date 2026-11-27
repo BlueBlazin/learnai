@@ -19,7 +19,7 @@ Each track has a table (one row per problem) followed by one short spec per prob
 |---|---|
 | order | `order` in `problem.toml`. Multiples of 10; existing problems keep their slot. |
 | id | Globally unique, kebab-case; equals the directory name. |
-| diff | `easy`, `medium`, `hard`. |
+| diff | `difficulty` and `level` in `problem.toml`: `easy`, `medium`, or `hard`, then the level within it, 1 to 3. |
 | judges | Every judge type the tests use. |
 | fw | `t/j/m` = `["torch", "jax", "mlx"]`; `python` = `["python"]`; `mlx` = `["mlx"]`; `torch` = `["torch"]`. |
 | prereq | `prerequisites` in `problem.toml` (ids). `-` means none. |
@@ -48,29 +48,29 @@ Rules that apply to every spec, so they are not repeated:
 
 | # | track | title | total | M1 | M2 | M3 | M4 | M5 | easy | medium | hard |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | `foundations` | Tensor Foundations | 13 | 2 | 6 | 2 | 0 | 3 | 10 | 3 | 0 |
-| 2 | `tokenization` | Tokenization | 13 | 1 | 5 | 2 | 0 | 5 | 5 | 6 | 2 |
-| 3 | `transformer` | Transformer Forward Pass | 19 | 2 | 9 | 2 | 0 | 6 | 8 | 8 | 3 |
-| 4 | `sampling` | Sampling and Decoding | 16 | 2 | 8 | 0 | 0 | 6 | 6 | 8 | 2 |
-| 5 | `kv-cache` | KV Cache and Attention Memory | 16 | 1 | 8 | 1 | 0 | 6 | 4 | 10 | 2 |
-| 6 | `constrained` | Constrained Generation | 13 | 0 | 6 | 0 | 0 | 7 | 2 | 8 | 3 |
-| 7 | `quantization` | Quantization and Compression | 18 | 1 | 7 | 2 | 0 | 8 | 5 | 11 | 2 |
-| 8 | `speculative` | Speculative and Accelerated Decoding | 14 | 1 | 5 | 0 | 0 | 8 | 4 | 5 | 5 |
-| 9 | `sizing` | Sizing and Benchmarking | 11 | 0 | 6 | 1 | 0 | 4 | 9 | 2 | 0 |
-| 10 | `mlx` | MLX GPU Programming | 18 | 0 | 0 | 18 | 0 | 0 | 6 | 8 | 4 |
-| 11 | `cuda` | CUDA GPU Programming | 14 | 0 | 0 | 0 | 14 | 0 | 5 | 6 | 3 |
-| 12 | `serving` | Serving Systems | 22 | 2 | 9 | 0 | 0 | 11 | 5 | 14 | 3 |
-| 13 | `systems` | Distributed and LLM Application Systems | 12 | 0 | 0 | 0 | 0 | 12 | 4 | 6 | 2 |
+| 1 | `foundations` | Tensor Foundations | 13 | 2 | 6 | 2 | 0 | 3 | 8 | 5 | 0 |
+| 2 | `tokenization` | Tokenization | 13 | 1 | 5 | 2 | 0 | 5 | 4 | 6 | 3 |
+| 3 | `transformer` | Transformer Forward Pass | 19 | 2 | 9 | 2 | 0 | 6 | 12 | 7 | 0 |
+| 4 | `sampling` | Sampling and Decoding | 16 | 2 | 8 | 0 | 0 | 6 | 10 | 4 | 2 |
+| 5 | `kv-cache` | KV Cache and Attention Memory | 16 | 1 | 8 | 1 | 0 | 6 | 6 | 8 | 2 |
+| 6 | `constrained` | Constrained Generation | 13 | 0 | 6 | 0 | 0 | 7 | 3 | 4 | 6 |
+| 7 | `quantization` | Quantization and Compression | 18 | 1 | 7 | 2 | 0 | 8 | 10 | 6 | 2 |
+| 8 | `speculative` | Speculative and Accelerated Decoding | 14 | 1 | 5 | 0 | 0 | 8 | 8 | 3 | 3 |
+| 9 | `sizing` | Sizing and Benchmarking | 11 | 0 | 6 | 1 | 0 | 4 | 7 | 3 | 1 |
+| 10 | `mlx` | MLX GPU Programming | 18 | 0 | 0 | 18 | 0 | 0 | 5 | 8 | 5 |
+| 11 | `cuda` | CUDA GPU Programming | 14 | 0 | 0 | 0 | 14 | 0 | 5 | 8 | 1 |
+| 12 | `serving` | Serving Systems | 22 | 2 | 9 | 0 | 0 | 11 | 9 | 9 | 4 |
+| 13 | `systems` | Distributed and LLM Application Systems | 12 | 0 | 0 | 0 | 0 | 12 | 4 | 7 | 1 |
 | 14 | `frontier` | Frontier | 8 | 0 | 0 | 0 | 0 | 8 | 0 | 4 | 4 |
 | 15 | `capstones` | Capstones | 6 | 0 | 0 | 0 | 0 | 6 | 0 | 0 | 6 |
-| | **all** | | **213** | **12** | **69** | **28** | **14** | **90** | **73** | **99** | **41** |
+| | **all** | | **213** | **12** | **69** | **28** | **14** | **90** | **91** | **82** | **40** |
 
 The table covers the fifteen tracks of sections 4 to 7. The five tracks of section 9
-(milestone M6) add 24 problems, 2 easy, 12 medium, and 10 hard: `recurrent-mixers` 6,
+(milestone M6) add 24 problems, 11 easy, 11 medium, and 2 hard: `recurrent-mixers` 6,
 `sparse-attention` 5, `block-components` 7, `drafts-and-diffusion` 3, `real-hybrid-model`
-3. With them the catalog has 237 problems: 75 easy, 111 medium, 51 hard.
+3. With them the catalog has 237 problems: 102 easy, 93 medium, 42 hard.
 
-Difficulty split: 34% easy, 46% medium, 19% hard. At the end of M2 the catalog has 81 problems. M3 is the 18 MLX problems plus 10 real-model problems in other tracks (two more real-model problems are inside the MLX track).
+Difficulty split: 43% easy, 39% medium, 18% hard. Each difficulty has three levels (`level` in `problem.toml`); how a problem is placed is in `docs/PROBLEM_AUTHORING.md` section 2. At the end of M2 the catalog has 81 problems. M3 is the 18 MLX problems plus 10 real-model problems in other tracks (two more real-model problems are inside the MLX track).
 
 ## 2. Real models for milestone 3
 
@@ -206,19 +206,19 @@ The numerics and tensor mechanics every later track leans on.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `stable-softmax` | Numerically Stable Softmax | easy | numeric | t/j/m | - | M1 |
-| 20 | `rmsnorm` | RMSNorm | easy | numeric, property | t/j/m | - | M1 |
-| 30 | `gelu-silu-activations` | GELU and SiLU | easy | numeric | t/j/m | - | M2 |
-| 40 | `split-merge-heads` | Splitting and Merging Attention Heads | easy | numeric, property | t/j/m | - | M2 |
-| 50 | `attention-mask-builder` | Causal and Padding Masks | easy | numeric | t/j/m | - | M2 |
-| 60 | `last-token-gather` | Gathering the Last Real Token | easy | numeric | t/j/m | - | M2 |
-| 70 | `sequence-log-likelihood` | Sequence Log-Likelihood and Perplexity | easy | numeric | t/j/m | `stable-softmax` | M2 |
-| 80 | `bf16-decode` | Decoding bfloat16 by Hand | medium | numeric, property | t/j/m | - | M2 |
-| 90 | `layernorm` | LayerNorm | easy | numeric, property | t/j/m | `rmsnorm` | M5 |
-| 100 | `kl-divergence-from-logits` | KL Divergence Between Logit Sets | easy | numeric, property | t/j/m | `stable-softmax` | M5 |
-| 110 | `half-precision-rmsnorm` | RMSNorm That Survives float16 | medium | numeric | t/j/m | `rmsnorm` | M5 |
-| 120 | `safetensors-parse` | Parsing safetensors by Hand | medium | numeric | python | `bf16-decode` | M3 |
-| 130 | `real-model-perplexity` | Perplexity of a Real Model | easy | numeric | t/j/m | `sequence-log-likelihood` | M3 |
+| 10 | `stable-softmax` | Numerically Stable Softmax | easy 2 | numeric | t/j/m | - | M1 |
+| 20 | `rmsnorm` | RMSNorm | easy 3 | numeric, property | t/j/m | - | M1 |
+| 30 | `gelu-silu-activations` | GELU and SiLU | easy 1 | numeric | t/j/m | - | M2 |
+| 40 | `split-merge-heads` | Splitting and Merging Attention Heads | easy 2 | numeric, property | t/j/m | - | M2 |
+| 50 | `attention-mask-builder` | Causal and Padding Masks | easy 3 | numeric | t/j/m | - | M2 |
+| 60 | `last-token-gather` | Gathering the Last Real Token | easy 2 | numeric | t/j/m | - | M2 |
+| 70 | `sequence-log-likelihood` | Sequence Log-Likelihood and Perplexity | easy 3 | numeric | t/j/m | `stable-softmax` | M2 |
+| 80 | `bf16-decode` | Decoding bfloat16 by Hand | medium 1 | numeric, property | t/j/m | - | M2 |
+| 90 | `layernorm` | LayerNorm | easy 1 | numeric, property | t/j/m | `rmsnorm` | M5 |
+| 100 | `kl-divergence-from-logits` | KL Divergence Between Logit Sets | medium 1 | numeric, property | t/j/m | `stable-softmax` | M5 |
+| 110 | `half-precision-rmsnorm` | RMSNorm That Survives float16 | medium 3 | numeric | t/j/m | `rmsnorm` | M5 |
+| 120 | `safetensors-parse` | Parsing safetensors by Hand | medium 1 | numeric | python | `bf16-decode` | M3 |
+| 130 | `real-model-perplexity` | Perplexity of a Real Model | medium 1 | numeric | t/j/m | `sequence-log-likelihood` | M3 |
 
 **`gelu-silu-activations`** — Implement `gelu(x, approximate)` (exact erf form and the tanh approximation of Hendrycks and Gimpel, 2016) and `silu(x)`. Goal: know which activation a checkpoint means and keep both stable at large magnitude. Numeric against the oracle, including `|x|` up to 1e4. Mutants: tanh form returned for `approximate="none"`; `x * sigmoid(x)` computed as `x / (1 + exp(-x))` overflowing to NaN at `-inf`-like inputs; wrong constant `sqrt(2/pi)`. Forbid the framework built-ins.
 
@@ -248,19 +248,19 @@ Text in, ids out, and back, exactly as production tokenizers do it.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `bpe-encode` | Byte-Level BPE Encoding | medium | numeric, property | python | - | M1 |
-| 20 | `utf8-boundaries` | UTF-8 Character Boundaries | easy | numeric, property | python | - | M2 |
-| 30 | `pad-batch-left` | Padding a Batch for Generation | easy | numeric | python | - | M2 |
-| 40 | `special-tokens-split` | Special Tokens Without Injection | medium | numeric | python | `bpe-encode` | M2 |
-| 50 | `streaming-detokenizer` | Streaming Detokenization | medium | numeric, property, cost | python | `utf8-boundaries` | M2 |
-| 60 | `chat-template-render` | Rendering a Chat Template | easy | numeric | python | `special-tokens-split` | M2 |
-| 70 | `wordpiece-encode` | WordPiece Encoding | easy | numeric | python | - | M5 |
-| 80 | `context-window-trim` | Fitting a Conversation into the Context Window | easy | numeric, property | python | `chat-template-render` | M5 |
-| 90 | `bpe-learn-merges` | Learning a BPE Merge Table | medium | numeric | python | `bpe-encode` | M5 |
-| 100 | `bpe-encode-fast` | BPE Encoding in O(n log n) | hard | numeric, speed | python | `bpe-encode` | M5 |
-| 110 | `unigram-viterbi` | Unigram Tokenization with Viterbi | hard | numeric, property | python | - | M5 |
-| 120 | `tokenizer-json-load` | Running a Real Tokenizer's Merges | medium | numeric | python | `bpe-encode`, `special-tokens-split` | M3 |
-| 130 | `real-model-chat-turn` | One Chat Turn with a Real Model | medium | numeric | python | `chat-template-render`, `streaming-detokenizer` | M3 |
+| 10 | `bpe-encode` | Byte-Level BPE Encoding | medium 1 | numeric, property | python | - | M1 |
+| 20 | `utf8-boundaries` | UTF-8 Character Boundaries | medium 2 | numeric, property | python | - | M2 |
+| 30 | `pad-batch-left` | Padding a Batch for Generation | easy 2 | numeric | python | - | M2 |
+| 40 | `special-tokens-split` | Special Tokens Without Injection | easy 3 | numeric | python | `bpe-encode` | M2 |
+| 50 | `streaming-detokenizer` | Streaming Detokenization | medium 2 | numeric, property, cost | python | `utf8-boundaries` | M2 |
+| 60 | `chat-template-render` | Rendering a Chat Template | medium 1 | numeric | python | `special-tokens-split` | M2 |
+| 70 | `wordpiece-encode` | WordPiece Encoding | easy 2 | numeric | python | - | M5 |
+| 80 | `context-window-trim` | Fitting a Conversation into the Context Window | easy 3 | numeric, property | python | `chat-template-render` | M5 |
+| 90 | `bpe-learn-merges` | Learning a BPE Merge Table | medium 1 | numeric | python | `bpe-encode` | M5 |
+| 100 | `bpe-encode-fast` | BPE Encoding in O(n log n) | hard 2 | numeric, speed | python | `bpe-encode` | M5 |
+| 110 | `unigram-viterbi` | Unigram Tokenization with Viterbi | hard 1 | numeric, property | python | - | M5 |
+| 120 | `tokenizer-json-load` | Running a Real Tokenizer's Merges | hard 1 | numeric | python | `bpe-encode`, `special-tokens-split` | M3 |
+| 130 | `real-model-chat-turn` | One Chat Turn with a Real Model | medium 2 | numeric | python | `chat-template-render`, `streaming-detokenizer` | M3 |
 
 **`utf8-boundaries`** — Implement `complete_prefix_len(data: bytes) -> int`: the length of the longest prefix that ends on a character boundary, treating invalid bytes as complete (they will decode to U+FFFD), and holding back only a valid-so-far incomplete trailing sequence. Goal: the primitive under streaming detokenization. Numeric plus a property over random splits of valid text. Mutants: holds back after any byte `>= 0x80`; ignores 4-byte sequences; holds back forever on an invalid lead byte.
 
@@ -292,25 +292,25 @@ Every piece of a current decoder-only model's forward pass, then the whole thing
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `causal-self-attention` | Causal Self-Attention | medium | numeric, property | t/j/m | - | M1 |
-| 20 | `rope` | Rotary Position Embeddings (RoPE) | medium | numeric, property | t/j/m | - | M1 |
-| 30 | `swiglu-mlp` | SwiGLU Feed-Forward | easy | numeric | t/j/m | `gelu-silu-activations` | M2 |
-| 40 | `grouped-query-attention` | Grouped-Query Attention | easy | numeric, property | t/j/m | `causal-self-attention` | M2 |
-| 50 | `pre-norm-block` | A Pre-Norm Decoder Block | easy | numeric | t/j/m | `causal-self-attention`, `rmsnorm` | M2 |
-| 60 | `decoder-forward` | Full Decoder Forward Pass | medium | numeric, property | t/j/m | `pre-norm-block`, `rope` | M2 |
-| 70 | `last-position-head` | Unembedding Only What You Need | easy | numeric, speed | t/j/m | - | M2 |
-| 80 | `sliding-window-attention` | Sliding-Window Attention | easy | numeric, property | t/j/m | `causal-self-attention` | M2 |
-| 90 | `qk-norm-attention` | QK-Norm Attention | easy | numeric | t/j/m | `causal-self-attention`, `rmsnorm` | M2 |
-| 100 | `padded-batch-invariance` | Batching Without Changing the Answer | medium | numeric, property | t/j/m | `decoder-forward`, `attention-mask-builder` | M2 |
-| 110 | `moe-router-forward` | Mixture-of-Experts Layer | medium | numeric | t/j/m | `swiglu-mlp` | M2 |
-| 120 | `embedding-scale-softcap` | Embedding Scaling and Logit Soft-Capping | easy | numeric | t/j/m | - | M5 |
-| 130 | `fused-projection-split` | Splitting Fused Projections | easy | numeric, property | t/j/m | `swiglu-mlp` | M5 |
-| 140 | `rope-layout-conversion` | Interleaved versus Half-Split RoPE | medium | numeric, property | t/j/m | `rope` | M5 |
-| 150 | `attention-sinks-softmax` | Attention with Learned Sinks | medium | numeric, property | t/j/m | `causal-self-attention` | M5 |
-| 160 | `moe-sparse-dispatch` | Sparse Expert Dispatch | hard | numeric, cost | t/j/m | `moe-router-forward` | M5 |
-| 170 | `online-softmax-attention` | Blockwise Attention with Online Softmax | hard | numeric, property | t/j/m | `causal-self-attention`, `stable-softmax` | M5 |
-| 180 | `real-model-block` | One Block of a Real Model | medium | numeric | t/j/m | `grouped-query-attention`, `swiglu-mlp`, `rope` | M3 |
-| 190 | `real-model-logits` | Matching a Real Model's Logits | hard | numeric | t/j/m | `real-model-block`, `decoder-forward` | M3 |
+| 10 | `causal-self-attention` | Causal Self-Attention | easy 3 | numeric, property | t/j/m | - | M1 |
+| 20 | `rope` | Rotary Position Embeddings (RoPE) | easy 3 | numeric, property | t/j/m | - | M1 |
+| 30 | `swiglu-mlp` | SwiGLU Feed-Forward | easy 1 | numeric | t/j/m | `gelu-silu-activations` | M2 |
+| 40 | `grouped-query-attention` | Grouped-Query Attention | easy 3 | numeric, property | t/j/m | `causal-self-attention` | M2 |
+| 50 | `pre-norm-block` | A Pre-Norm Decoder Block | easy 2 | numeric | t/j/m | `causal-self-attention`, `rmsnorm` | M2 |
+| 60 | `decoder-forward` | Full Decoder Forward Pass | medium 1 | numeric, property | t/j/m | `pre-norm-block`, `rope` | M2 |
+| 70 | `last-position-head` | Unembedding Only What You Need | easy 1 | numeric, speed | t/j/m | - | M2 |
+| 80 | `sliding-window-attention` | Sliding-Window Attention | easy 3 | numeric, property | t/j/m | `causal-self-attention` | M2 |
+| 90 | `qk-norm-attention` | QK-Norm Attention | easy 3 | numeric | t/j/m | `causal-self-attention`, `rmsnorm` | M2 |
+| 100 | `padded-batch-invariance` | Batching Without Changing the Answer | medium 1 | numeric, property | t/j/m | `decoder-forward`, `attention-mask-builder` | M2 |
+| 110 | `moe-router-forward` | Mixture-of-Experts Layer | easy 3 | numeric | t/j/m | `swiglu-mlp` | M2 |
+| 120 | `embedding-scale-softcap` | Embedding Scaling and Logit Soft-Capping | easy 1 | numeric | t/j/m | - | M5 |
+| 130 | `fused-projection-split` | Splitting Fused Projections | easy 2 | numeric, property | t/j/m | `swiglu-mlp` | M5 |
+| 140 | `rope-layout-conversion` | Interleaved versus Half-Split RoPE | medium 1 | numeric, property | t/j/m | `rope` | M5 |
+| 150 | `attention-sinks-softmax` | Attention with Learned Sinks | easy 3 | numeric, property | t/j/m | `causal-self-attention` | M5 |
+| 160 | `moe-sparse-dispatch` | Sparse Expert Dispatch | medium 2 | numeric, cost | t/j/m | `moe-router-forward` | M5 |
+| 170 | `online-softmax-attention` | Blockwise Attention with Online Softmax | medium 2 | numeric, property | t/j/m | `causal-self-attention`, `stable-softmax` | M5 |
+| 180 | `real-model-block` | One Block of a Real Model | medium 3 | numeric | t/j/m | `grouped-query-attention`, `swiglu-mlp`, `rope` | M3 |
+| 190 | `real-model-logits` | Matching a Real Model's Logits | medium 3 | numeric | t/j/m | `real-model-block`, `decoder-forward` | M3 |
 
 **`swiglu-mlp`** — Implement `swiglu(x, w_gate, w_up, w_down)` computing `(silu(x W_gate^T) * (x W_up^T)) W_down^T` with weights in `(out, in)` layout (Shazeer, 2020; the MLP of Llama, Qwen, Granite). Numeric. Mutants: activation on the up branch; GELU in place of SiLU (that is GeGLU, as in Gemma); weights applied untransposed (hidden behind square shapes, so tests use non-square).
 
@@ -352,22 +352,22 @@ From logits to a token: the samplers production engines ship, and the order they
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `top-p-filtering` | Nucleus (Top-p) Filtering | medium | numeric, property | t/j/m | - | M1 |
-| 20 | `repetition-penalty` | Vectorized Repetition Penalty | medium | numeric, speed | t/j/m | - | M1 |
-| 30 | `temperature-scaling` | Temperature | easy | numeric, property | t/j/m | `stable-softmax` | M2 |
-| 40 | `top-k-filtering` | Top-k Filtering | easy | numeric, property | t/j/m | - | M2 |
-| 50 | `categorical-sample` | Inverse-CDF Sampling | easy | numeric, statistical | t/j/m | `stable-softmax` | M2 |
-| 60 | `min-p-filtering` | Min-p Filtering | easy | numeric, property | t/j/m | - | M2 |
-| 70 | `frequency-presence-penalty` | Frequency and Presence Penalties | easy | numeric | t/j/m | `repetition-penalty` | M2 |
-| 80 | `sampler-chain` | A Sampler Chain in the Right Order | medium | numeric, statistical | t/j/m | `top-p-filtering`, `top-k-filtering`, `temperature-scaling` | M2 |
-| 90 | `stop-sequences` | Stop Sequences Across Token Boundaries | medium | numeric, property | python | `streaming-detokenizer` | M2 |
-| 100 | `beam-search` | Beam Search with a KV Cache | hard | numeric, cost | t/j/m | `cached-greedy-decode` | M2 |
-| 110 | `top-n-sigma` | Top-n-sigma Filtering | easy | numeric | t/j/m | - | M5 |
-| 120 | `gumbel-max-sample` | Gumbel-Max Sampling | medium | numeric, statistical | t/j/m | `categorical-sample` | M5 |
-| 130 | `logit-bias-bad-words` | Logit Bias and Banned Sequences | medium | numeric | t/j/m | - | M5 |
-| 140 | `xtc-sampler` | XTC: Exclude Top Choices | medium | numeric, statistical | t/j/m | `min-p-filtering` | M5 |
-| 150 | `mirostat-v2` | Mirostat v2 | medium | numeric, property | t/j/m | `categorical-sample` | M5 |
-| 160 | `dry-penalty` | DRY Repetition Penalty | hard | numeric, speed | python | `repetition-penalty` | M5 |
+| 10 | `top-p-filtering` | Nucleus (Top-p) Filtering | easy 3 | numeric, property | t/j/m | - | M1 |
+| 20 | `repetition-penalty` | Vectorized Repetition Penalty | easy 3 | numeric, speed | t/j/m | - | M1 |
+| 30 | `temperature-scaling` | Temperature | easy 2 | numeric, property | t/j/m | `stable-softmax` | M2 |
+| 40 | `top-k-filtering` | Top-k Filtering | easy 3 | numeric, property | t/j/m | - | M2 |
+| 50 | `categorical-sample` | Inverse-CDF Sampling | easy 2 | numeric, statistical | t/j/m | `stable-softmax` | M2 |
+| 60 | `min-p-filtering` | Min-p Filtering | easy 1 | numeric, property | t/j/m | - | M2 |
+| 70 | `frequency-presence-penalty` | Frequency and Presence Penalties | easy 3 | numeric | t/j/m | `repetition-penalty` | M2 |
+| 80 | `sampler-chain` | A Sampler Chain in the Right Order | medium 1 | numeric, statistical | t/j/m | `top-p-filtering`, `top-k-filtering`, `temperature-scaling` | M2 |
+| 90 | `stop-sequences` | Stop Sequences Across Token Boundaries | medium 1 | numeric, property | python | `streaming-detokenizer` | M2 |
+| 100 | `beam-search` | Beam Search with a KV Cache | hard 1 | numeric, cost | t/j/m | `cached-greedy-decode` | M2 |
+| 110 | `top-n-sigma` | Top-n-sigma Filtering | easy 3 | numeric | t/j/m | - | M5 |
+| 120 | `gumbel-max-sample` | Gumbel-Max Sampling | easy 2 | numeric, statistical | t/j/m | `categorical-sample` | M5 |
+| 130 | `logit-bias-bad-words` | Logit Bias and Banned Sequences | easy 3 | numeric | t/j/m | - | M5 |
+| 140 | `xtc-sampler` | XTC: Exclude Top Choices | medium 1 | numeric, statistical | t/j/m | `min-p-filtering` | M5 |
+| 150 | `mirostat-v2` | Mirostat v2 | medium 1 | numeric, property | t/j/m | `categorical-sample` | M5 |
+| 160 | `dry-penalty` | DRY Repetition Penalty | hard 1 | numeric, speed | python | `repetition-penalty` | M5 |
 
 **`temperature-scaling`** — Implement `apply_temperature(logits, temperature)` with per-row temperatures of shape `(B,)`; a temperature of exactly 0 is specified as greedy (the argmax keeps logit 0, all others `-inf`, ties to the lowest index). Property: ordering preserved; entropy monotone in temperature. Mutants: division by zero giving NaN; multiplying instead of dividing; `-inf` entries turned into NaN.
 
@@ -403,22 +403,22 @@ Never compute a token twice, and never keep more memory than the answer needs.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `cached-greedy-decode` | Greedy Decoding with a KV Cache | medium | cost, numeric | t/j/m | - | M1 |
-| 20 | `kv-cache-append` | Attention with an Appended Cache | easy | numeric, property | t/j/m | `causal-self-attention` | M2 |
-| 30 | `chunked-prefill-cache` | Prefill in Chunks | easy | numeric, cost | t/j/m | `cached-greedy-decode` | M2 |
-| 40 | `cached-rope-offsets` | RoPE Positions Under a Cache | easy | numeric, property | t/j/m | `rope`, `kv-cache-append` | M2 |
-| 50 | `preallocated-kv-cache` | A Preallocated KV Cache | medium | numeric, property | t/j/m | `kv-cache-append` | M2 |
-| 60 | `batched-cached-decode` | Batched Decoding with Early Finish | medium | numeric, cost | t/j/m | `cached-greedy-decode` | M2 |
-| 70 | `prefix-cache-reuse` | Reusing a Cached Prefix | medium | numeric, cost | t/j/m | `cached-greedy-decode` | M2 |
-| 80 | `sliding-window-cache` | A Rotating Cache That Keeps Its Sinks | medium | numeric, property | t/j/m | `preallocated-kv-cache` | M2 |
-| 90 | `paged-kv-allocator` | A Paged KV Block Allocator | easy | numeric, property | python | - | M2 |
-| 100 | `paged-kv-copy-on-write` | Forking Sequences with Copy-on-Write | hard | numeric, property | python | `paged-kv-allocator` | M5 |
-| 110 | `block-hash-prefix-cache` | Automatic Prefix Caching by Block Hash | medium | numeric, property | python | `paged-kv-allocator`, `prefix-cache-reuse` | M5 |
-| 120 | `radix-prefix-cache` | A Radix-Tree Prefix Cache | hard | numeric, property | python | `prefix-cache-reuse` | M5 |
-| 130 | `kv-cache-quantize` | An 8-bit KV Cache | medium | numeric, property | t/j/m | `affine-int8`, `kv-cache-append` | M5 |
-| 140 | `kv-eviction-heavy-hitters` | Heavy-Hitter KV Eviction | medium | numeric, property | t/j/m | `kv-cache-append` | M5 |
-| 150 | `snapkv-compress` | Compressing a Prompt Cache by Attention Votes | medium | numeric | t/j/m | `kv-eviction-heavy-hitters` | M5 |
-| 160 | `real-model-cached-generate` | Cached Generation on a Real Model | medium | numeric, speed | t/j/m | `kv-cache-append`, `cached-rope-offsets`, `real-model-logits` | M3 |
+| 10 | `cached-greedy-decode` | Greedy Decoding with a KV Cache | easy 3 | cost, numeric | t/j/m | - | M1 |
+| 20 | `kv-cache-append` | Attention with an Appended Cache | easy 3 | numeric, property | t/j/m | `causal-self-attention` | M2 |
+| 30 | `chunked-prefill-cache` | Prefill in Chunks | easy 1 | numeric, cost | t/j/m | `cached-greedy-decode` | M2 |
+| 40 | `cached-rope-offsets` | RoPE Positions Under a Cache | easy 2 | numeric, property | t/j/m | `rope`, `kv-cache-append` | M2 |
+| 50 | `preallocated-kv-cache` | A Preallocated KV Cache | easy 3 | numeric, property | t/j/m | `kv-cache-append` | M2 |
+| 60 | `batched-cached-decode` | Batched Decoding with Early Finish | medium 1 | numeric, cost | t/j/m | `cached-greedy-decode` | M2 |
+| 70 | `prefix-cache-reuse` | Reusing a Cached Prefix | medium 1 | numeric, cost | t/j/m | `cached-greedy-decode` | M2 |
+| 80 | `sliding-window-cache` | A Rotating Cache That Keeps Its Sinks | medium 2 | numeric, property | t/j/m | `preallocated-kv-cache` | M2 |
+| 90 | `paged-kv-allocator` | A Paged KV Block Allocator | easy 3 | numeric, property | python | - | M2 |
+| 100 | `paged-kv-copy-on-write` | Forking Sequences with Copy-on-Write | medium 3 | numeric, property | python | `paged-kv-allocator` | M5 |
+| 110 | `block-hash-prefix-cache` | Automatic Prefix Caching by Block Hash | medium 3 | numeric, property | python | `paged-kv-allocator`, `prefix-cache-reuse` | M5 |
+| 120 | `radix-prefix-cache` | A Radix-Tree Prefix Cache | hard 2 | numeric, property | python | `prefix-cache-reuse` | M5 |
+| 130 | `kv-cache-quantize` | An 8-bit KV Cache | medium 2 | numeric, property | t/j/m | `affine-int8`, `kv-cache-append` | M5 |
+| 140 | `kv-eviction-heavy-hitters` | Heavy-Hitter KV Eviction | medium 2 | numeric, property | t/j/m | `kv-cache-append` | M5 |
+| 150 | `snapkv-compress` | Compressing a Prompt Cache by Attention Votes | medium 1 | numeric | t/j/m | `kv-eviction-heavy-hitters` | M5 |
+| 160 | `real-model-cached-generate` | Cached Generation on a Real Model | hard 1 | numeric, speed | t/j/m | `kv-cache-append`, `cached-rope-offsets`, `real-model-logits` | M3 |
 
 **`kv-cache-append`** — Implement `attend_step(q_new, k_new, v_new, cache) -> (out, cache)` where `cache` is a `(k, v)` tuple or `None`: append the new keys and values and attend from the new queries over everything, with causality among the new tokens. Property: feeding a sequence in any chunking equals one full causal pass. Mutants: no causal mask within a multi-token chunk; new tokens attend only to the cache; append on the head axis.
 
@@ -456,19 +456,19 @@ Guaranteeing the shape of the output by masking the tokens that would break it.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `token-mask-apply` | Applying a Token Mask | easy | numeric, property | t/j/m | `stable-softmax` | M2 |
-| 20 | `choice-trie-constraint` | Constraining Output to a Set of Choices | easy | numeric | python | - | M2 |
-| 30 | `dfa-token-mask` | Token Masks from a Character DFA | medium | numeric, property | python | - | M2 |
-| 40 | `dfa-token-index` | Precomputing the Token Index | medium | numeric, cost | python | `dfa-token-mask` | M2 |
-| 50 | `json-pushdown-validator` | An Incremental JSON Validator | medium | numeric, property | python | - | M2 |
-| 60 | `constrained-greedy-decode` | Constrained Decoding Loop | medium | numeric, cost | t/j/m | `cached-greedy-decode`, `token-mask-apply` | M2 |
-| 70 | `regex-to-dfa` | Compiling a Regex to a DFA | hard | numeric, property | python | `dfa-token-mask` | M5 |
-| 80 | `json-schema-regex` | JSON Schema to Regex | hard | numeric, property | python | `regex-to-dfa` | M5 |
-| 90 | `jump-forward-decode` | Jump-Forward Decoding | medium | numeric, cost | t/j/m | `constrained-greedy-decode` | M5 |
-| 100 | `token-healing` | Token Healing | medium | numeric | python | `bpe-encode` | M5 |
-| 110 | `tool-call-stream-parser` | Parsing Tool Calls from a Stream | medium | numeric, property | python | `json-pushdown-validator` | M5 |
-| 120 | `grammar-token-mask` | Token Masks for a Context-Free Grammar | hard | numeric, property | python | `dfa-token-mask`, `json-pushdown-validator` | M5 |
-| 130 | `structural-tag-dispatch` | Triggered Constraints with Structural Tags | medium | numeric, property | python | `constrained-greedy-decode` | M5 |
+| 10 | `token-mask-apply` | Applying a Token Mask | easy 1 | numeric, property | t/j/m | `stable-softmax` | M2 |
+| 20 | `choice-trie-constraint` | Constraining Output to a Set of Choices | easy 3 | numeric | python | - | M2 |
+| 30 | `dfa-token-mask` | Token Masks from a Character DFA | easy 2 | numeric, property | python | - | M2 |
+| 40 | `dfa-token-index` | Precomputing the Token Index | medium 3 | numeric, cost | python | `dfa-token-mask` | M2 |
+| 50 | `json-pushdown-validator` | An Incremental JSON Validator | hard 2 | numeric, property | python | - | M2 |
+| 60 | `constrained-greedy-decode` | Constrained Decoding Loop | medium 1 | numeric, cost | t/j/m | `cached-greedy-decode`, `token-mask-apply` | M2 |
+| 70 | `regex-to-dfa` | Compiling a Regex to a DFA | hard 3 | numeric, property | python | `dfa-token-mask` | M5 |
+| 80 | `json-schema-regex` | JSON Schema to Regex | hard 1 | numeric, property | python | `regex-to-dfa` | M5 |
+| 90 | `jump-forward-decode` | Jump-Forward Decoding | medium 2 | numeric, cost | t/j/m | `constrained-greedy-decode` | M5 |
+| 100 | `token-healing` | Token Healing | medium 2 | numeric | python | `bpe-encode` | M5 |
+| 110 | `tool-call-stream-parser` | Parsing Tool Calls from a Stream | hard 2 | numeric, property | python | `json-pushdown-validator` | M5 |
+| 120 | `grammar-token-mask` | Token Masks for a Context-Free Grammar | hard 3 | numeric, property | python | `dfa-token-mask`, `json-pushdown-validator` | M5 |
+| 130 | `structural-tag-dispatch` | Triggered Constraints with Structural Tags | hard 2 | numeric, property | python | `constrained-greedy-decode` | M5 |
 
 **`token-mask-apply`** — Implement `mask_logits(logits, allowed)` for a boolean `(B, V)` mask (disallowed to `-inf`) and `masked_probs(logits, allowed)`; a row with nothing allowed raises `ValueError` rather than returning NaN. Property: disallowed probability is exactly 0 and the rest renormalize. Mutants: large negative constant; multiply probabilities by the mask without renormalizing; all-masked row returns NaN.
 
@@ -502,24 +502,24 @@ Fewer bits per weight, with the error measured rather than hoped for.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `affine-int8` | Affine int8 Quantization | medium | numeric, property | t/j/m | - | M1 |
-| 20 | `symmetric-per-channel` | Symmetric Per-Channel Weights | easy | numeric, property | t/j/m | `affine-int8` | M2 |
-| 30 | `quant-error-metrics` | Measuring Quantization Error | easy | numeric | t/j/m | - | M2 |
-| 40 | `bit-packing` | Packing 4-bit Codes | easy | numeric, property | t/j/m | - | M2 |
-| 50 | `groupwise-4bit` | Group-Wise 4-bit Quantization | medium | numeric, property | t/j/m | `affine-int8` | M2 |
-| 60 | `quantized-matmul` | Multiplying Without Dequantizing | medium | numeric, property | t/j/m | `groupwise-4bit` | M2 |
-| 70 | `clipping-calibration` | Calibrating a Clipping Range | medium | numeric, property | t/j/m | `affine-int8`, `quant-error-metrics` | M2 |
-| 80 | `lora-merge` | Merging a LoRA Adapter | easy | numeric, property | t/j/m | - | M2 |
-| 90 | `ternary-bitnet` | Ternary Weights | easy | numeric, property | t/j/m | - | M5 |
-| 100 | `int8-linear-w8a8` | An Integer-Only Linear Layer | medium | numeric | t/j/m | `symmetric-per-channel` | M5 |
-| 110 | `nf4-codebook` | NormalFloat 4-bit | medium | numeric | t/j/m | `groupwise-4bit` | M5 |
-| 120 | `mxfp4-block-encode` | Microscaling FP4 Blocks | medium | numeric, property | t/j/m | `groupwise-4bit` | M5 |
-| 130 | `bit-allocation` | Mixed-Precision Bit Allocation | medium | numeric, property | python | `quant-error-metrics` | M5 |
-| 140 | `awq-scale-search` | Activation-Aware Scaling | medium | numeric, property | t/j/m | `groupwise-4bit`, `quant-error-metrics` | M5 |
-| 150 | `k-quant-superblock` | GGUF K-Quant Superblocks | hard | numeric, property | t/j/m | `groupwise-4bit`, `bit-packing` | M5 |
-| 160 | `gptq-column-update` | GPTQ Error Propagation | hard | numeric, property | t/j/m | `symmetric-per-channel` | M5 |
-| 170 | `quantize-real-weights` | Quantizing Real Weights | medium | numeric | t/j/m | `groupwise-4bit`, `quant-error-metrics` | M3 |
-| 180 | `mlx-quantized-checkpoint-load` | Reading an 8-bit Checkpoint | medium | numeric | python | `bit-packing`, `safetensors-parse` | M3 |
+| 10 | `affine-int8` | Affine int8 Quantization | easy 3 | numeric, property | t/j/m | - | M1 |
+| 20 | `symmetric-per-channel` | Symmetric Per-Channel Weights | easy 2 | numeric, property | t/j/m | `affine-int8` | M2 |
+| 30 | `quant-error-metrics` | Measuring Quantization Error | easy 1 | numeric | t/j/m | - | M2 |
+| 40 | `bit-packing` | Packing 4-bit Codes | easy 3 | numeric, property | t/j/m | - | M2 |
+| 50 | `groupwise-4bit` | Group-Wise 4-bit Quantization | easy 3 | numeric, property | t/j/m | `affine-int8` | M2 |
+| 60 | `quantized-matmul` | Multiplying Without Dequantizing | easy 3 | numeric, property | t/j/m | `groupwise-4bit` | M2 |
+| 70 | `clipping-calibration` | Calibrating a Clipping Range | easy 3 | numeric, property | t/j/m | `affine-int8`, `quant-error-metrics` | M2 |
+| 80 | `lora-merge` | Merging a LoRA Adapter | easy 1 | numeric, property | t/j/m | - | M2 |
+| 90 | `ternary-bitnet` | Ternary Weights | easy 3 | numeric, property | t/j/m | - | M5 |
+| 100 | `int8-linear-w8a8` | An Integer-Only Linear Layer | medium 1 | numeric | t/j/m | `symmetric-per-channel` | M5 |
+| 110 | `nf4-codebook` | NormalFloat 4-bit | easy 3 | numeric | t/j/m | `groupwise-4bit` | M5 |
+| 120 | `mxfp4-block-encode` | Microscaling FP4 Blocks | hard 1 | numeric, property | t/j/m | `groupwise-4bit` | M5 |
+| 130 | `bit-allocation` | Mixed-Precision Bit Allocation | hard 1 | numeric, property | python | `quant-error-metrics` | M5 |
+| 140 | `awq-scale-search` | Activation-Aware Scaling | medium 1 | numeric, property | t/j/m | `groupwise-4bit`, `quant-error-metrics` | M5 |
+| 150 | `k-quant-superblock` | GGUF K-Quant Superblocks | medium 3 | numeric, property | t/j/m | `groupwise-4bit`, `bit-packing` | M5 |
+| 160 | `gptq-column-update` | GPTQ Error Propagation | medium 1 | numeric, property | t/j/m | `symmetric-per-channel` | M5 |
+| 170 | `quantize-real-weights` | Quantizing Real Weights | medium 3 | numeric | t/j/m | `groupwise-4bit`, `quant-error-metrics` | M3 |
+| 180 | `mlx-quantized-checkpoint-load` | Reading an 8-bit Checkpoint | medium 2 | numeric | python | `bit-packing`, `safetensors-parse` | M3 |
 
 **`symmetric-per-channel`** — Implement `quantize_weight(w, bits)` returning int8 codes and one scale per output row, `scale = max|row| / (2**(bits-1) - 1)`, zero point fixed at 0, and `dequantize`. Property: error at most half a step per element; an all-zero row does not divide by zero. Mutants: one scale for the tensor; range `[-128, 127]` asymmetric (clips `+max`); scale per input column.
 
@@ -561,20 +561,20 @@ Several tokens per pass of the big model, without changing what it would have sa
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `speculative-sampling-step` | Speculative Sampling: One Verification Step | hard | statistical, numeric | t/j/m | - | M1 |
-| 20 | `greedy-speculative-verify` | Verifying a Greedy Draft | easy | numeric | t/j/m | - | M2 |
-| 30 | `prompt-lookup-draft` | Drafting by Prompt Lookup | easy | numeric | python | - | M2 |
-| 40 | `speculative-speedup-model` | Expected Speedup of Speculation | easy | numeric | python | - | M2 |
-| 50 | `speculative-sampling-block` | Verifying a Block of Sampled Drafts | medium | statistical, numeric | t/j/m | `speculative-sampling-step` | M2 |
-| 60 | `speculative-decode-loop` | A Speculative Decoding Loop | hard | numeric, cost | t/j/m | `greedy-speculative-verify`, `cached-greedy-decode` | M2 |
-| 70 | `dynamic-draft-length` | Adapting the Draft Length | medium | numeric, cost | python | `speculative-decode-loop` | M5 |
-| 80 | `typical-acceptance` | Lossy Verification by Typical Acceptance | easy | numeric | t/j/m | `greedy-speculative-verify` | M5 |
-| 90 | `batched-speculative-accept` | Ragged Acceptance in a Batch | medium | numeric, property | t/j/m | `greedy-speculative-verify` | M5 |
-| 100 | `mtp-head-draft` | Drafting with Multi-Token Prediction Heads | medium | numeric | t/j/m | `greedy-speculative-verify` | M5 |
-| 110 | `tree-attention-mask` | Verifying a Token Tree in One Pass | medium | numeric, property | t/j/m | `attention-mask-builder`, `greedy-speculative-verify` | M5 |
-| 120 | `multi-draft-rejection` | Exact Sampling from Several Drafts | hard | statistical, numeric | t/j/m | `speculative-sampling-step` | M5 |
-| 130 | `early-exit-self-speculation` | Self-Speculation by Early Exit | hard | numeric, cost | t/j/m | `speculative-decode-loop` | M5 |
-| 140 | `suffix-automaton-draft` | Drafting from a Suffix Automaton | hard | numeric, speed | python | `prompt-lookup-draft` | M5 |
+| 10 | `speculative-sampling-step` | Speculative Sampling: One Verification Step | easy 2 | statistical, numeric | t/j/m | - | M1 |
+| 20 | `greedy-speculative-verify` | Verifying a Greedy Draft | easy 2 | numeric | t/j/m | - | M2 |
+| 30 | `prompt-lookup-draft` | Drafting by Prompt Lookup | easy 3 | numeric | python | - | M2 |
+| 40 | `speculative-speedup-model` | Expected Speedup of Speculation | easy 1 | numeric | python | - | M2 |
+| 50 | `speculative-sampling-block` | Verifying a Block of Sampled Drafts | easy 3 | statistical, numeric | t/j/m | `speculative-sampling-step` | M2 |
+| 60 | `speculative-decode-loop` | A Speculative Decoding Loop | hard 1 | numeric, cost | t/j/m | `greedy-speculative-verify`, `cached-greedy-decode` | M2 |
+| 70 | `dynamic-draft-length` | Adapting the Draft Length | medium 1 | numeric, cost | python | `speculative-decode-loop` | M5 |
+| 80 | `typical-acceptance` | Lossy Verification by Typical Acceptance | easy 3 | numeric | t/j/m | `greedy-speculative-verify` | M5 |
+| 90 | `batched-speculative-accept` | Ragged Acceptance in a Batch | medium 2 | numeric, property | t/j/m | `greedy-speculative-verify` | M5 |
+| 100 | `mtp-head-draft` | Drafting with Multi-Token Prediction Heads | easy 3 | numeric | t/j/m | `greedy-speculative-verify` | M5 |
+| 110 | `tree-attention-mask` | Verifying a Token Tree in One Pass | medium 2 | numeric, property | t/j/m | `attention-mask-builder`, `greedy-speculative-verify` | M5 |
+| 120 | `multi-draft-rejection` | Exact Sampling from Several Drafts | easy 3 | statistical, numeric | t/j/m | `speculative-sampling-step` | M5 |
+| 130 | `early-exit-self-speculation` | Self-Speculation by Early Exit | hard 1 | numeric, cost | t/j/m | `speculative-decode-loop` | M5 |
+| 140 | `suffix-automaton-draft` | Drafting from a Suffix Automaton | hard 3 | numeric, speed | python | `prompt-lookup-draft` | M5 |
 
 **`greedy-speculative-verify`** — Implement `verify_greedy(draft_tokens, target_logits) -> (n_accepted, next_token)` where `target_logits[i]` scores the position of `draft_tokens[i]` and there is one extra row: accept the longest prefix on which the target argmax equals the draft, and return the target's token at the first mismatch (or the bonus token after a full match). Numeric. Mutants: accepts matches after the first mismatch; no bonus token; off-by-one alignment of logits and drafts.
 
@@ -608,17 +608,17 @@ Predict memory and speed on paper, then measure the right thing.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `param-count` | Counting Parameters | easy | numeric | python | - | M2 |
-| 20 | `kv-cache-bytes` | KV Cache Bytes per Token | easy | numeric | python | - | M2 |
-| 30 | `latency-metrics` | TTFT, ITL, and TPOT | easy | numeric | python | - | M2 |
-| 40 | `latency-percentiles` | Percentiles Done Right | easy | numeric, property | python | - | M2 |
-| 50 | `flops-per-token` | FLOPs for Prefill and Decode | medium | numeric | python | `param-count` | M2 |
-| 60 | `memory-bandwidth-bound` | The Memory-Bandwidth Bound on Tokens per Second | easy | numeric | python | `param-count`, `kv-cache-bytes` | M2 |
-| 70 | `memory-budget-fit` | How Many Sequences Fit | easy | numeric | python | `kv-cache-bytes` | M5 |
-| 80 | `goodput-slo` | Goodput Under an SLO | easy | numeric | python | `latency-metrics`, `latency-percentiles` | M5 |
-| 90 | `stream-latency-probe` | Measuring a Token Stream | easy | simclock | python | `latency-metrics` | M5 |
-| 100 | `capacity-planner` | Capacity Planning from a Cost Model | medium | numeric, property | python | `goodput-slo` | M5 |
-| 110 | `real-model-sizing` | Sizing a Real Checkpoint | easy | numeric | python | `param-count`, `kv-cache-bytes`, `safetensors-parse` | M3 |
+| 10 | `param-count` | Counting Parameters | easy 3 | numeric | python | - | M2 |
+| 20 | `kv-cache-bytes` | KV Cache Bytes per Token | easy 2 | numeric | python | - | M2 |
+| 30 | `latency-metrics` | TTFT, ITL, and TPOT | easy 2 | numeric | python | - | M2 |
+| 40 | `latency-percentiles` | Percentiles Done Right | easy 3 | numeric, property | python | - | M2 |
+| 50 | `flops-per-token` | FLOPs for Prefill and Decode | easy 3 | numeric | python | `param-count` | M2 |
+| 60 | `memory-bandwidth-bound` | The Memory-Bandwidth Bound on Tokens per Second | medium 1 | numeric | python | `param-count`, `kv-cache-bytes` | M2 |
+| 70 | `memory-budget-fit` | How Many Sequences Fit | easy 3 | numeric | python | `kv-cache-bytes` | M5 |
+| 80 | `goodput-slo` | Goodput Under an SLO | easy 3 | numeric | python | `latency-metrics`, `latency-percentiles` | M5 |
+| 90 | `stream-latency-probe` | Measuring a Token Stream | hard 1 | simclock | python | `latency-metrics` | M5 |
+| 100 | `capacity-planner` | Capacity Planning from a Cost Model | medium 3 | numeric, property | python | `goodput-slo` | M5 |
+| 110 | `real-model-sizing` | Sizing a Real Checkpoint | medium 3 | numeric | python | `param-count`, `kv-cache-bytes`, `safetensors-parse` | M3 |
 
 **`param-count`** — Implement `count_params(cfg) -> dict` for a decoder config (vocabulary, hidden size, layers, heads, KV heads, head dim, MLP type and width, tied or untied head, biases, norm gains), returning per-component and total counts. Worked examples are the two Granite configs. Mutants: tied head counted twice; GQA K and V sized as full heads; SwiGLU counted as two matrices.
 
@@ -651,24 +651,24 @@ compare with the MLX reference only.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `mlx-lazy-eval-placement` | Where to Evaluate | easy | numeric, cost | mlx | `cached-greedy-decode` | M3 |
-| 20 | `mlx-mask-free-indexing` | Filtering Without Boolean Indexing | easy | numeric | mlx | `top-k-filtering` | M3 |
-| 30 | `mlx-dtype-discipline` | Staying in Half Precision | easy | numeric, cost | mlx | - | M3 |
-| 40 | `mlx-memory-accounting` | Measuring Unified Memory | easy | numeric, cost | mlx | - | M3 |
-| 50 | `mlx-fast-attention` | Using the Fused Attention Kernel | easy | numeric | mlx | `causal-self-attention` | M3 |
-| 60 | `mlx-weights-load` | Loading Weights into a Module Tree | easy | numeric | mlx | `safetensors-parse` | M3 |
-| 70 | `mlx-compile-step` | Compiling a Decode Step | medium | numeric, cost | mlx | `mlx-lazy-eval-placement` | M3 |
-| 80 | `mlx-compile-shapes` | Compiling Without Retracing | medium | numeric, cost | mlx | `mlx-compile-step` | M3 |
-| 90 | `mlx-preallocated-kv-cache` | A Step-Allocated KV Cache | medium | numeric, cost | mlx | `preallocated-kv-cache` | M3 |
-| 100 | `mlx-quantized-linear` | A Quantized Linear Layer | medium | numeric, cost | mlx | `groupwise-4bit`, `quantized-matmul` | M3 |
-| 110 | `mlx-quantize-module-tree` | Quantizing a Model with a Mixed Recipe | medium | numeric, cost | mlx | `mlx-quantized-linear` | M3 |
-| 120 | `mlx-streaming-generate` | Streaming Generation with Async Evaluation | medium | numeric, cost | mlx | `mlx-lazy-eval-placement` | M3 |
-| 130 | `mlx-benchmark-harness` | Benchmarking a Lazy Framework | medium | numeric, cost | mlx | `mlx-lazy-eval-placement`, `latency-metrics` | M3 |
-| 140 | `mlx-metal-kernel-elementwise` | A Custom Metal Kernel | medium | numeric | mlx | - | M3 |
-| 150 | `mlx-metal-kernel-dequant` | A Metal Kernel That Unpacks and Dequantizes | hard | numeric, speed | mlx | `mlx-metal-kernel-elementwise`, `bit-packing` | M3 |
-| 160 | `mlx-batched-generate` | Batched Generation with Ragged Prompts | hard | numeric, cost | mlx | `batched-cached-decode`, `padded-batch-invariance` | M3 |
-| 170 | `mlx-real-model-forward` | A Real Model in mlx.nn | hard | numeric | mlx | `real-model-logits`, `mlx-weights-load` | M3 |
-| 180 | `mlx-real-8bit-generate` | Running a 3B Model at 8 Bits | hard | numeric, cost | mlx | `mlx-real-model-forward`, `mlx-quantized-linear`, `mlx-streaming-generate` | M3 |
+| 10 | `mlx-lazy-eval-placement` | Where to Evaluate | easy 3 | numeric, cost | mlx | `cached-greedy-decode` | M3 |
+| 20 | `mlx-mask-free-indexing` | Filtering Without Boolean Indexing | medium 1 | numeric | mlx | `top-k-filtering` | M3 |
+| 30 | `mlx-dtype-discipline` | Staying in Half Precision | easy 2 | numeric, cost | mlx | - | M3 |
+| 40 | `mlx-memory-accounting` | Measuring Unified Memory | medium 1 | numeric, cost | mlx | - | M3 |
+| 50 | `mlx-fast-attention` | Using the Fused Attention Kernel | easy 3 | numeric | mlx | `causal-self-attention` | M3 |
+| 60 | `mlx-weights-load` | Loading Weights into a Module Tree | medium 2 | numeric | mlx | `safetensors-parse` | M3 |
+| 70 | `mlx-compile-step` | Compiling a Decode Step | medium 1 | numeric, cost | mlx | `mlx-lazy-eval-placement` | M3 |
+| 80 | `mlx-compile-shapes` | Compiling Without Retracing | hard 1 | numeric, cost | mlx | `mlx-compile-step` | M3 |
+| 90 | `mlx-preallocated-kv-cache` | A Step-Allocated KV Cache | easy 3 | numeric, cost | mlx | `preallocated-kv-cache` | M3 |
+| 100 | `mlx-quantized-linear` | A Quantized Linear Layer | easy 3 | numeric, cost | mlx | `groupwise-4bit`, `quantized-matmul` | M3 |
+| 110 | `mlx-quantize-module-tree` | Quantizing a Model with a Mixed Recipe | medium 2 | numeric, cost | mlx | `mlx-quantized-linear` | M3 |
+| 120 | `mlx-streaming-generate` | Streaming Generation with Async Evaluation | medium 1 | numeric, cost | mlx | `mlx-lazy-eval-placement` | M3 |
+| 130 | `mlx-benchmark-harness` | Benchmarking a Lazy Framework | medium 1 | numeric, cost | mlx | `mlx-lazy-eval-placement`, `latency-metrics` | M3 |
+| 140 | `mlx-metal-kernel-elementwise` | A Custom Metal Kernel | medium 2 | numeric | mlx | - | M3 |
+| 150 | `mlx-metal-kernel-dequant` | A Metal Kernel That Unpacks and Dequantizes | hard 1 | numeric, speed | mlx | `mlx-metal-kernel-elementwise`, `bit-packing` | M3 |
+| 160 | `mlx-batched-generate` | Batched Generation with Ragged Prompts | hard 1 | numeric, cost | mlx | `batched-cached-decode`, `padded-batch-invariance` | M3 |
+| 170 | `mlx-real-model-forward` | A Real Model in mlx.nn | hard 1 | numeric | mlx | `real-model-logits`, `mlx-weights-load` | M3 |
+| 180 | `mlx-real-8bit-generate` | Running a 3B Model at 8 Bits | hard 2 | numeric, cost | mlx | `mlx-real-model-forward`, `mlx-quantized-linear`, `mlx-streaming-generate` | M3 |
 
 **`mlx-lazy-eval-placement`** — Implement `generate(model, prompt, n)` over an `MLXTinyLM`: build each step lazily and force evaluation exactly once per generated token, evaluating the token and the cache state together so the graph never grows across steps. Cost: `spy.evals == n`, `spy.implicit == 0`. Mutants: `.item()` on every intermediate; no evaluation until the end (graph grows; a peak-memory limit fails it); cache arrays left unevaluated. [kit: `EvalSpy`, `MLXTinyLM`]
 
@@ -717,20 +717,20 @@ half checks.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `cuda-inference-mode` | Inference Mode | easy | numeric, property | torch | - | M4 |
-| 20 | `cuda-device-placement` | Keeping Tensors on One Device | easy | numeric, property | torch | - | M4 |
-| 30 | `cuda-timing-sync` | Timing Asynchronous Work | easy | numeric, cost | torch | `latency-metrics` | M4 |
-| 40 | `cuda-sdpa-attention` | Fused Attention with the Right Mask | easy | numeric | torch | `causal-self-attention` | M4 |
-| 50 | `cuda-sync-free-decode-loop` | A Decode Loop Without Host Syncs | medium | numeric, cost | torch | `cached-greedy-decode`, `categorical-sample` | M4 |
-| 60 | `cuda-autocast-inference` | Mixed-Precision Inference | medium | numeric, property | torch | `stable-softmax` | M4 |
-| 70 | `cuda-pinned-transfer` | Pinned Memory and Non-Blocking Transfers | medium | numeric, cost | torch | `cuda-device-placement` | M4 |
-| 80 | `cuda-memory-accounting` | Reading the CUDA Allocator | easy | numeric | torch | `kv-cache-bytes` | M4 |
-| 90 | `cuda-oom-backoff` | Recovering from Out-of-Memory | medium | numeric, cost | torch | - | M4 |
-| 100 | `cuda-static-kv-cache` | A Static KV Cache | medium | numeric, property | torch | `preallocated-kv-cache` | M4 |
-| 110 | `cuda-compile-once` | Compiling a Decode Step Once | hard | numeric, cost | torch | `cuda-static-kv-cache` | M4 |
-| 120 | `cuda-graph-replay` | Capturing a CUDA Graph | hard | numeric, cost | torch | `cuda-static-kv-cache` | M4 |
-| 130 | `cuda-triton-rmsnorm` | A Triton Kernel for RMSNorm | medium | numeric, property | torch | `rmsnorm` | M4 |
-| 140 | `cuda-triton-dequant-linear` | A Fused Dequantize-and-Multiply Kernel | hard | numeric, property | torch | `cuda-triton-rmsnorm`, `quantized-matmul` | M4 |
+| 10 | `cuda-inference-mode` | Inference Mode | medium 1 | numeric, property | torch | - | M4 |
+| 20 | `cuda-device-placement` | Keeping Tensors on One Device | easy 3 | numeric, property | torch | - | M4 |
+| 30 | `cuda-timing-sync` | Timing Asynchronous Work | easy 2 | numeric, cost | torch | `latency-metrics` | M4 |
+| 40 | `cuda-sdpa-attention` | Fused Attention with the Right Mask | easy 3 | numeric | torch | `causal-self-attention` | M4 |
+| 50 | `cuda-sync-free-decode-loop` | A Decode Loop Without Host Syncs | medium 2 | numeric, cost | torch | `cached-greedy-decode`, `categorical-sample` | M4 |
+| 60 | `cuda-autocast-inference` | Mixed-Precision Inference | easy 2 | numeric, property | torch | `stable-softmax` | M4 |
+| 70 | `cuda-pinned-transfer` | Pinned Memory and Non-Blocking Transfers | medium 1 | numeric, cost | torch | `cuda-device-placement` | M4 |
+| 80 | `cuda-memory-accounting` | Reading the CUDA Allocator | easy 3 | numeric | torch | `kv-cache-bytes` | M4 |
+| 90 | `cuda-oom-backoff` | Recovering from Out-of-Memory | medium 2 | numeric, cost | torch | - | M4 |
+| 100 | `cuda-static-kv-cache` | A Static KV Cache | medium 1 | numeric, property | torch | `preallocated-kv-cache` | M4 |
+| 110 | `cuda-compile-once` | Compiling a Decode Step Once | medium 1 | numeric, cost | torch | `cuda-static-kv-cache` | M4 |
+| 120 | `cuda-graph-replay` | Capturing a CUDA Graph | medium 1 | numeric, cost | torch | `cuda-static-kv-cache` | M4 |
+| 130 | `cuda-triton-rmsnorm` | A Triton Kernel for RMSNorm | medium 2 | numeric, property | torch | `rmsnorm` | M4 |
+| 140 | `cuda-triton-dequant-linear` | A Fused Dequantize-and-Multiply Kernel | hard 1 | numeric, property | torch | `cuda-triton-rmsnorm`, `quantized-matmul` | M4 |
 
 **`cuda-inference-mode`** — Implement `predict(model, x, device)` and `as_inference(fn)`: run under `torch.inference_mode()` with the module in eval mode, restoring the previous training flag afterward, returning tensors with no `grad_fn`. CPU: outputs have `requires_grad == False`, dropout is inactive, the mode is restored even on exception. GPU: peak `max_memory_allocated` is below the autograd-retaining mutant's. Mutants: `no_grad` forgotten; `eval()` not restored; mode left on after an exception.
 
@@ -766,28 +766,28 @@ Schedulers, queues, and endpoints: what happens between a request arriving and i
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `dynamic-batcher` | Dynamic Batching Policy | medium | simclock | python | - | M1 |
-| 20 | `sse-token-stream` | Streaming Tokens over Server-Sent Events | medium | service | python | - | M1 |
-| 30 | `token-bucket-limiter` | Token-Based Rate Limiting | easy | simclock | python | - | M2 |
-| 40 | `admission-control` | Admission Control and Backpressure | easy | simclock | python | - | M2 |
-| 50 | `metrics-endpoint` | A Metrics Endpoint | easy | service | python | `latency-metrics` | M2 |
-| 60 | `continuous-batching-scheduler` | Continuous Batching | hard | simclock | python | `dynamic-batcher` | M2 |
-| 70 | `priority-scheduler` | Priorities Without Starvation | medium | simclock | python | `continuous-batching-scheduler` | M2 |
-| 80 | `deadline-cancellation` | Deadlines and Cancellation | medium | simclock | python | `continuous-batching-scheduler` | M2 |
-| 90 | `chunked-prefill-scheduling` | Chunked Prefill Under a Token Budget | medium | simclock | python | `continuous-batching-scheduler` | M2 |
-| 100 | `vtc-fair-scheduler` | Fair Scheduling with Virtual Token Counters | medium | simclock | python | `continuous-batching-scheduler` | M2 |
-| 110 | `openai-chat-endpoint` | An OpenAI-Compatible Chat Endpoint | medium | service | python | `sse-token-stream` | M2 |
-| 120 | `least-loaded-balancer` | Power-of-Two-Choices Load Balancing | easy | simclock, statistical | python | - | M5 |
-| 130 | `retry-backoff-client` | A Client That Backs Off | easy | simclock | python | `admission-control` | M5 |
-| 140 | `graceful-drain` | Graceful Drain | medium | simclock | python | `deadline-cancellation` | M5 |
-| 150 | `streaming-backpressure` | Slow Consumers | medium | simclock | python | `continuous-batching-scheduler` | M5 |
-| 160 | `open-loop-load-generator` | An Open-Loop Load Generator | medium | simclock, statistical | python | `latency-metrics` | M5 |
-| 170 | `slo-deadline-scheduler` | Earliest-Deadline-First with Shedding | medium | simclock | python | `priority-scheduler` | M5 |
-| 180 | `multi-lora-batching` | Batching Requests Across Adapters | medium | numeric, speed | t/j/m | `lora-merge` | M5 |
-| 190 | `prefix-aware-router` | Prefix-Cache-Aware Routing | medium | simclock | python | `prefix-cache-reuse`, `least-loaded-balancer` | M5 |
-| 200 | `autoscaler-policy` | An Autoscaling Policy | medium | simclock | python | `capacity-planner` | M5 |
-| 210 | `preemption-recompute` | Preemption by Recompute | hard | simclock | python | `continuous-batching-scheduler`, `paged-kv-allocator` | M5 |
-| 220 | `prefill-decode-disaggregation` | Disaggregated Prefill and Decode | hard | simclock | python | `chunked-prefill-scheduling` | M5 |
+| 10 | `dynamic-batcher` | Dynamic Batching Policy | easy 3 | simclock | python | - | M1 |
+| 20 | `sse-token-stream` | Streaming Tokens over Server-Sent Events | hard 1 | service | python | - | M1 |
+| 30 | `token-bucket-limiter` | Token-Based Rate Limiting | medium 3 | simclock | python | - | M2 |
+| 40 | `admission-control` | Admission Control and Backpressure | easy 3 | simclock | python | - | M2 |
+| 50 | `metrics-endpoint` | A Metrics Endpoint | medium 3 | service | python | `latency-metrics` | M2 |
+| 60 | `continuous-batching-scheduler` | Continuous Batching | medium 1 | simclock | python | `dynamic-batcher` | M2 |
+| 70 | `priority-scheduler` | Priorities Without Starvation | easy 2 | simclock | python | `continuous-batching-scheduler` | M2 |
+| 80 | `deadline-cancellation` | Deadlines and Cancellation | medium 2 | simclock | python | `continuous-batching-scheduler` | M2 |
+| 90 | `chunked-prefill-scheduling` | Chunked Prefill Under a Token Budget | easy 2 | simclock | python | `continuous-batching-scheduler` | M2 |
+| 100 | `vtc-fair-scheduler` | Fair Scheduling with Virtual Token Counters | medium 1 | simclock | python | `continuous-batching-scheduler` | M2 |
+| 110 | `openai-chat-endpoint` | An OpenAI-Compatible Chat Endpoint | hard 1 | service | python | `sse-token-stream` | M2 |
+| 120 | `least-loaded-balancer` | Power-of-Two-Choices Load Balancing | easy 2 | simclock, statistical | python | - | M5 |
+| 130 | `retry-backoff-client` | A Client That Backs Off | medium 3 | simclock | python | `admission-control` | M5 |
+| 140 | `graceful-drain` | Graceful Drain | medium 3 | simclock | python | `deadline-cancellation` | M5 |
+| 150 | `streaming-backpressure` | Slow Consumers | hard 1 | simclock | python | `continuous-batching-scheduler` | M5 |
+| 160 | `open-loop-load-generator` | An Open-Loop Load Generator | medium 3 | simclock, statistical | python | `latency-metrics` | M5 |
+| 170 | `slo-deadline-scheduler` | Earliest-Deadline-First with Shedding | easy 3 | simclock | python | `priority-scheduler` | M5 |
+| 180 | `multi-lora-batching` | Batching Requests Across Adapters | medium 1 | numeric, speed | t/j/m | `lora-merge` | M5 |
+| 190 | `prefix-aware-router` | Prefix-Cache-Aware Routing | easy 3 | simclock | python | `prefix-cache-reuse`, `least-loaded-balancer` | M5 |
+| 200 | `autoscaler-policy` | An Autoscaling Policy | easy 3 | simclock | python | `capacity-planner` | M5 |
+| 210 | `preemption-recompute` | Preemption by Recompute | hard 1 | simclock | python | `continuous-batching-scheduler`, `paged-kv-allocator` | M5 |
+| 220 | `prefill-decode-disaggregation` | Disaggregated Prefill and Decode | easy 3 | simclock | python | `chunked-prefill-scheduling` | M5 |
 
 All simclock problems count time in integer milliseconds, specify the order of simultaneous events, and include a tie case. [kit: `SimEngine`, `SimRequest`, `workloads`]
 
@@ -837,18 +837,18 @@ Models that do not fit on one device, and the systems built around a model.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `device-map-solver` | Solving a Device Map | medium | numeric, property | python | `param-count` | M5 |
-| 20 | `mmap-lazy-loader` | Lazy Weight Loading with mmap | medium | numeric, cost | python | `safetensors-parse` | M5 |
-| 30 | `embedding-pooling` | Pooling and Normalizing Embeddings | easy | numeric, property | t/j/m | `attention-mask-builder` | M5 |
-| 40 | `vector-topk-search` | Exact Vector Search | easy | numeric, speed | t/j/m | `embedding-pooling` | M5 |
-| 50 | `binary-rescore-search` | Binary Embeddings with Rescoring | medium | numeric, cost | t/j/m | `vector-topk-search` | M5 |
-| 60 | `ivf-index-search` | An Inverted-File Index | hard | numeric, cost, property | t/j/m | `vector-topk-search` | M5 |
-| 70 | `rerank-batching` | Batching a Reranker | easy | numeric, cost | python | `pad-batch-left` | M5 |
-| 80 | `semantic-cache` | A Semantic Response Cache | medium | numeric, simclock | python | `vector-topk-search` | M5 |
-| 90 | `cascade-router` | Routing Through a Model Cascade | easy | numeric, cost | python | - | M5 |
-| 100 | `tool-call-loop` | A Tool-Calling Loop | medium | numeric, cost | python | `tool-call-stream-parser` | M5 |
-| 110 | `tensor-parallel-linear` | Tensor-Parallel Layers on Simulated Devices | medium | numeric, cost | t/j/m | `swiglu-mlp` | M5 |
-| 120 | `pipeline-parallel-schedule` | Pipeline Parallelism Across Devices | hard | simclock | python | `device-map-solver` | M5 |
+| 10 | `device-map-solver` | Solving a Device Map | medium 3 | numeric, property | python | `param-count` | M5 |
+| 20 | `mmap-lazy-loader` | Lazy Weight Loading with mmap | medium 1 | numeric, cost | python | `safetensors-parse` | M5 |
+| 30 | `embedding-pooling` | Pooling and Normalizing Embeddings | easy 3 | numeric, property | t/j/m | `attention-mask-builder` | M5 |
+| 40 | `vector-topk-search` | Exact Vector Search | easy 3 | numeric, speed | t/j/m | `embedding-pooling` | M5 |
+| 50 | `binary-rescore-search` | Binary Embeddings with Rescoring | medium 1 | numeric, cost | t/j/m | `vector-topk-search` | M5 |
+| 60 | `ivf-index-search` | An Inverted-File Index | medium 2 | numeric, cost, property | t/j/m | `vector-topk-search` | M5 |
+| 70 | `rerank-batching` | Batching a Reranker | medium 1 | numeric, cost | python | `pad-batch-left` | M5 |
+| 80 | `semantic-cache` | A Semantic Response Cache | medium 3 | numeric, simclock | python | `vector-topk-search` | M5 |
+| 90 | `cascade-router` | Routing Through a Model Cascade | easy 3 | numeric, cost | python | - | M5 |
+| 100 | `tool-call-loop` | A Tool-Calling Loop | medium 2 | numeric, cost | python | `tool-call-stream-parser` | M5 |
+| 110 | `tensor-parallel-linear` | Tensor-Parallel Layers on Simulated Devices | easy 3 | numeric, cost | t/j/m | `swiglu-mlp` | M5 |
+| 120 | `pipeline-parallel-schedule` | Pipeline Parallelism Across Devices | hard 2 | simclock | python | `device-map-solver` | M5 |
 
 **`device-map-solver`** — Implement `solve_device_map(modules, max_memory, no_split)`: assign modules in order to devices in order (then `"disk"`), never splitting a `no_split` group, keeping tied modules together, and reserving the largest layer's size on the first device for activations (the semantics of `accelerate.infer_auto_device_map`, simplified as stated). Property: budgets respected and the assignment is order-preserving. Mutants: best-fit packing that reorders layers; split block; reservation forgotten.
 
@@ -880,14 +880,14 @@ Techniques that reached production engines in 2025 and 2026. All M5. Re-verify e
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `reasoning-budget-processor` | Enforcing a Thinking-Token Budget | medium | numeric, cost | t/j/m | `constrained-greedy-decode` | M5 |
-| 20 | `cross-layer-kv-sharing` | Sharing KV Across Layers | medium | numeric, cost | t/j/m | `cached-greedy-decode` | M5 |
-| 30 | `diffusion-unmask-step` | One Step of Masked-Diffusion Decoding | medium | numeric, statistical | t/j/m | `categorical-sample` | M5 |
-| 40 | `kv-tiered-offload` | A Tiered KV Store | medium | simclock, cost | python | `block-hash-prefix-cache` | M5 |
-| 50 | `hybrid-state-checkpoints` | Prefix Reuse for Recurrent-State Models | hard | numeric, cost | t/j/m | `prefix-cache-reuse` | M5 |
-| 60 | `mla-latent-kv-cache` | Caching Latents with Multi-Head Latent Attention | hard | numeric, property | t/j/m | `kv-cache-append`, `rope` | M5 |
-| 70 | `speculative-tool-calls` | Speculative Tool Calls | hard | simclock | python | `tool-call-loop`, `tool-call-stream-parser` | M5 |
-| 80 | `expert-parallel-dispatch` | Expert Parallelism for MoE | hard | numeric, cost | t/j/m | `moe-sparse-dispatch`, `tensor-parallel-linear` | M5 |
+| 10 | `reasoning-budget-processor` | Enforcing a Thinking-Token Budget | medium 2 | numeric, cost | t/j/m | `constrained-greedy-decode` | M5 |
+| 20 | `cross-layer-kv-sharing` | Sharing KV Across Layers | medium 1 | numeric, cost | t/j/m | `cached-greedy-decode` | M5 |
+| 30 | `diffusion-unmask-step` | One Step of Masked-Diffusion Decoding | medium 2 | numeric, statistical | t/j/m | `categorical-sample` | M5 |
+| 40 | `kv-tiered-offload` | A Tiered KV Store | hard 2 | simclock, cost | python | `block-hash-prefix-cache` | M5 |
+| 50 | `hybrid-state-checkpoints` | Prefix Reuse for Recurrent-State Models | medium 3 | numeric, cost | t/j/m | `prefix-cache-reuse` | M5 |
+| 60 | `mla-latent-kv-cache` | Caching Latents with Multi-Head Latent Attention | hard 1 | numeric, property | t/j/m | `kv-cache-append`, `rope` | M5 |
+| 70 | `speculative-tool-calls` | Speculative Tool Calls | hard 2 | simclock | python | `tool-call-loop`, `tool-call-stream-parser` | M5 |
+| 80 | `expert-parallel-dispatch` | Expert Parallelism for MoE | hard 2 | numeric, cost | t/j/m | `moe-sparse-dispatch`, `tensor-parallel-linear` | M5 |
 
 **`reasoning-budget-processor`** — Implement `budget_step(state, logits, cfg) -> (state, logits)`: count tokens generated inside the thinking span (after the start-of-thinking token), and when the budget is reached force the end-of-thinking token sequence one token per step, after which normal sampling and any structured-output constraint resume (vLLM `thinking_token_budget`; structured outputs disabled during reasoning unless `enable_in_reasoning`). Cost: on a `TinyLM` run, thinking tokens never exceed the budget. Mutants: budget counted over all tokens; multi-token end marker forced only at its first token; constraint applied inside the thinking span.
 
@@ -911,12 +911,12 @@ Multi-part builds. Each is one problem whose cases are grouped into graded stage
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `capstone-continuous-batching-engine` | A Continuous-Batching Engine with a Paged KV Cache | hard | simclock, cost, property | python | `continuous-batching-scheduler`, `paged-kv-allocator`, `chunked-prefill-scheduling`, `preemption-recompute` | M5 |
-| 20 | `capstone-quantized-runner` | A Quantized Model Runner | hard | numeric, property, cost | t/j/m | `groupwise-4bit`, `quantized-matmul`, `decoder-forward`, `kv-cache-append` | M5 |
-| 30 | `capstone-speculative-engine` | A Speculative Decoding Engine | hard | statistical, numeric, cost | t/j/m | `speculative-sampling-block`, `speculative-decode-loop`, `dynamic-draft-length` | M5 |
-| 40 | `capstone-structured-output-server` | A Structured-Output Server | hard | service, numeric | python | `openai-chat-endpoint`, `json-schema-regex`, `dfa-token-index`, `tool-call-stream-parser` | M5 |
-| 50 | `capstone-real-model-runtime` | A Complete Runtime for a Real Model | hard | numeric, cost | t/j/m | `real-model-logits`, `real-model-cached-generate`, `tokenizer-json-load`, `sampler-chain` | M5 |
-| 60 | `capstone-inference-gateway` | An Inference Gateway | hard | simclock | python | `prefix-aware-router`, `admission-control`, `vtc-fair-scheduler`, `autoscaler-policy` | M5 |
+| 10 | `capstone-continuous-batching-engine` | A Continuous-Batching Engine with a Paged KV Cache | hard 3 | simclock, cost, property | python | `continuous-batching-scheduler`, `paged-kv-allocator`, `chunked-prefill-scheduling`, `preemption-recompute` | M5 |
+| 20 | `capstone-quantized-runner` | A Quantized Model Runner | hard 3 | numeric, property, cost | t/j/m | `groupwise-4bit`, `quantized-matmul`, `decoder-forward`, `kv-cache-append` | M5 |
+| 30 | `capstone-speculative-engine` | A Speculative Decoding Engine | hard 3 | statistical, numeric, cost | t/j/m | `speculative-sampling-block`, `speculative-decode-loop`, `dynamic-draft-length` | M5 |
+| 40 | `capstone-structured-output-server` | A Structured-Output Server | hard 3 | service, numeric | python | `openai-chat-endpoint`, `json-schema-regex`, `dfa-token-index`, `tool-call-stream-parser` | M5 |
+| 50 | `capstone-real-model-runtime` | A Complete Runtime for a Real Model | hard 3 | numeric, cost | t/j/m | `real-model-logits`, `real-model-cached-generate`, `tokenizer-json-load`, `sampler-chain` | M5 |
+| 60 | `capstone-inference-gateway` | An Inference Gateway | hard 1 | simclock | python | `prefix-aware-router`, `admission-control`, `vtc-fair-scheduler`, `autoscaler-policy` | M5 |
 
 **`capstone-continuous-batching-engine`** — Build `Engine(sim_engine, n_blocks, block_size, max_batch_tokens)`. Stage 1: block allocator with fork and free. Stage 2: continuous-batching loop, FCFS. Stage 3: chunked prefill under the token budget. Stage 4: priorities and preemption by recompute under memory pressure. Stage 5: prefix sharing of full blocks between requests with a common prompt. Judged by simclock traces against the oracle per stage, allocator invariants as properties, and the engine's recompute and block counters. Mutants: one per stage (leaked blocks, idle slot, prefill starving decodes, preemption thrash, shared block freed while referenced). [kit: `SimEngine`]
 
@@ -1066,8 +1066,8 @@ recurrent and sparse mixers, their caches, and the heads and streams around them
 | 250 | `real-hybrid-model` | A Real Hybrid Model | Read a real hybrid model's configuration, then match one of its recurrent blocks and its logits from the raw weights. | 3 | `layer-plan-from-config`, `real-gdn-block`, `real-hybrid-logits` |
 
 No core problem has a non-core prerequisite, in its own module or in an existing one
-(script-checked against the `core` lists in `problems/*/track.toml`). Difficulty: 2
-easy, 12 medium, 10 hard. Two problems need real weights (`real-gdn-block`,
+(script-checked against the `core` lists in `problems/*/track.toml`). Difficulty: 11
+easy, 11 medium, 2 hard. Two problems need real weights (`real-gdn-block`,
 `real-hybrid-logits`); the other 22 use small seeded tensors on a CPU in float32.
 
 ### 9.2 What the sources say (component by component)
@@ -1181,12 +1181,12 @@ Milestone `M6` for every row. `requires` is `cpu`.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `gated-delta-step` | One Step of the Gated Delta Rule | medium | numeric, property | t/j/m | - | M6 |
-| 20 | `gated-delta-layer` | A Gated DeltaNet Layer with Its State | hard | numeric, property | t/j/m | `gated-delta-step` | M6 |
-| 30 | `gated-delta-chunked` | The Delta Rule a Chunk at a Time | hard | numeric, property, cost | t/j/m | `gated-delta-step` | M6 |
-| 40 | `mamba2-ssd-step` | A State-Space Step and Its Attention Form | medium | numeric, property | t/j/m | - | M6 |
-| 50 | `gated-conv-block` | A Gated Convolution Block | easy | numeric, property | t/j/m | - | M6 |
-| 60 | `hybrid-decoder-forward` | A Hybrid Decoder: Three Recurrent Layers to One Attention Layer | hard | numeric, property | t/j/m | `gated-delta-layer`, `kv-cache-append`, `decoder-forward` | M6 |
+| 10 | `gated-delta-step` | One Step of the Gated Delta Rule | easy 2 | numeric, property | t/j/m | - | M6 |
+| 20 | `gated-delta-layer` | A Gated DeltaNet Layer with Its State | medium 3 | numeric, property | t/j/m | `gated-delta-step` | M6 |
+| 30 | `gated-delta-chunked` | The Delta Rule a Chunk at a Time | hard 1 | numeric, property, cost | t/j/m | `gated-delta-step` | M6 |
+| 40 | `mamba2-ssd-step` | A State-Space Step and Its Attention Form | easy 3 | numeric, property | t/j/m | - | M6 |
+| 50 | `gated-conv-block` | A Gated Convolution Block | easy 3 | numeric, property | t/j/m | - | M6 |
+| 60 | `hybrid-decoder-forward` | A Hybrid Decoder: Three Recurrent Layers to One Attention Layer | medium 3 | numeric, property | t/j/m | `gated-delta-layer`, `kv-cache-append`, `decoder-forward` | M6 |
 
 **`gated-delta-step`** — Implement `gdn_gates(a, b, A_log, dt_bias) -> (g, beta)` with `g = exp(-exp(A_log) * softplus(a + dt_bias))` and `beta = sigmoid(b)`, and `gdn_step(S, q, k, v, g, beta) -> (y, S)` for one token and `H` heads, `S` of shape `(H, Dv, Dk)`: decay `S = g * S`, write `S = S + beta * (v - S k) k^T`, read `y = S q` from the updated state (Gated DeltaNet, Yang et al., 2024, Eq. 10; the recurrent path of `transformers` 5.23 `qwen3_5` and of `mlx-lm` 0.32 `gated_delta.py`, which is the layout followed). Goal: a memory that overwrites what it stored under a key instead of adding to it. Numeric, plus the property that with `g = 1`, `beta = 1`, and a unit-norm key, `S k` equals `v` after the step whatever `S` was. Mutants: output read before the write; additive write `beta * v k^T` with no `S k` correction; decay applied after the write; the correction computed from the undecayed state; `softplus` missing from the gate (so `g` can exceed 1 for negative `a`). As built (2026-11-21): inputs, including `S`, are not modified, and a case checks it; both ends of the gate (`g = 0` and `g = 1`) are tested.
 
@@ -1204,11 +1204,11 @@ Milestone `M6` for every row. `requires` is `cpu`.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `indexer-topk-select` | Scoring the Past with an Indexer | medium | numeric, property | t/j/m | `causal-self-attention` | M6 |
-| 20 | `gathered-sparse-attention` | Attention over the Selected Tokens Only | medium | numeric, property, cost | t/j/m | `indexer-topk-select` | M6 |
-| 30 | `indexer-cache-decode` | Decoding with an Indexer Cache | hard | numeric, property, cost | t/j/m | `gathered-sparse-attention`, `kv-cache-append` | M6 |
-| 40 | `shared-index-layers` | Sharing One Selection Across Layers | medium | numeric, cost | t/j/m | `indexer-topk-select` | M6 |
-| 50 | `compressed-kv-stream` | Compressing Keys and Values by Windows | hard | numeric, property | t/j/m | `kv-cache-append`, `stable-softmax` | M6 |
+| 10 | `indexer-topk-select` | Scoring the Past with an Indexer | easy 3 | numeric, property | t/j/m | `causal-self-attention` | M6 |
+| 20 | `gathered-sparse-attention` | Attention over the Selected Tokens Only | easy 3 | numeric, property, cost | t/j/m | `indexer-topk-select` | M6 |
+| 30 | `indexer-cache-decode` | Decoding with an Indexer Cache | medium 2 | numeric, property, cost | t/j/m | `gathered-sparse-attention`, `kv-cache-append` | M6 |
+| 40 | `shared-index-layers` | Sharing One Selection Across Layers | easy 2 | numeric, cost | t/j/m | `indexer-topk-select` | M6 |
+| 50 | `compressed-kv-stream` | Compressing Keys and Values by Windows | easy 3 | numeric, property | t/j/m | `kv-cache-append`, `stable-softmax` | M6 |
 
 **`indexer-topk-select`** — Implement `index_scores(q_idx, k_idx, w) -> (T, S)` for `q_idx` `(T, H, D)`, one shared key per token `k_idx` `(S, D)`, and raw head weights `w` `(T, H)`: `I[t, s] = sum_h (w[t, h] * H^-0.5) * relu(q_idx[t, h] . k_idx[s] * D^-0.5)`; and `topk_mask(scores, visible, k)` returning the boolean `(T, S)` mask of each row's `min(k, S)` highest scores after setting invisible entries to `-inf`, intersected with `visible`, ties to the lowest index (the lightning indexer of DeepSeek Sparse Attention, DeepSeek-V3.2, 2025, Eq. 1 and 2; scales and masking as in `GlmMoeDsaIndexer`, `transformers` 5.23). Goal: selection is a second, cheaper attention whose scores are never normalized. Property: with `k` at least the number of visible tokens the mask equals `visible`. Mutants: ReLU after the sum over heads; head weights ignored; top-k taken before the future is masked (then intersected, so rows keep fewer than `k`); ReLU also applied to `w`; absolute value in place of ReLU. As built (2026-11-21): the tie rule (ties to the lowest index) is this problem's own, since the shipped `topk` promises no order, and it is tested with equal scores near 1000 and with distinct scores 1e-7 apart, which an index-offset trick gets wrong.
 
@@ -1224,13 +1224,13 @@ Milestone `M6` for every row. `requires` is `cpu`.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `partial-rope` | Rotating Part of a Head | medium | numeric, property | t/j/m | `rope` | M6 |
-| 20 | `yarn-frequencies` | YaRN: Rescaling Rotary Frequencies | medium | numeric, property | t/j/m | `rope` | M6 |
-| 30 | `shared-kv-rotation` | One Tensor as Key and Value | medium | numeric, property | t/j/m | `partial-rope`, `causal-self-attention` | M6 |
-| 40 | `sigmoid-router-shared-expert` | Sigmoid Routing with a Shared Expert | medium | numeric | t/j/m | `moe-router-forward` | M6 |
-| 50 | `latent-moe` | Experts in a Narrower Space | easy | numeric, cost | t/j/m | `sigmoid-router-shared-expert`, `moe-sparse-dispatch` | M6 |
-| 60 | `per-layer-embeddings` | Per-Layer Embeddings | medium | numeric, property | t/j/m | `pre-norm-block` | M6 |
-| 70 | `hyper-connections` | Hyper-Connections: Several Residual Streams | hard | numeric, property | t/j/m | `pre-norm-block` | M6 |
+| 10 | `partial-rope` | Rotating Part of a Head | easy 3 | numeric, property | t/j/m | `rope` | M6 |
+| 20 | `yarn-frequencies` | YaRN: Rescaling Rotary Frequencies | easy 2 | numeric, property | t/j/m | `rope` | M6 |
+| 30 | `shared-kv-rotation` | One Tensor as Key and Value | easy 3 | numeric, property | t/j/m | `partial-rope`, `causal-self-attention` | M6 |
+| 40 | `sigmoid-router-shared-expert` | Sigmoid Routing with a Shared Expert | easy 3 | numeric | t/j/m | `moe-router-forward` | M6 |
+| 50 | `latent-moe` | Experts in a Narrower Space | medium 2 | numeric, cost | t/j/m | `sigmoid-router-shared-expert`, `moe-sparse-dispatch` | M6 |
+| 60 | `per-layer-embeddings` | Per-Layer Embeddings | medium 1 | numeric, property | t/j/m | `pre-norm-block` | M6 |
+| 70 | `hyper-connections` | Hyper-Connections: Several Residual Streams | medium 1 | numeric, property | t/j/m | `pre-norm-block` | M6 |
 
 **`partial-rope`** — Implement `partial_rope(x, positions, base, factor)`: rotate the first `r = int(d * factor)` channels with frequencies `base^(-2i / r)` in the half-split layout inside those `r` channels and pass the rest (Qwen3.5 with factor 0.25; `transformers` 5.23 `qwen3_5`); and `proportional_rope(x, positions, base, factor)`: `a = int(factor * d // 2)` rotated pairs with frequencies `base^(-2i / d)` and the remaining pairs at frequency zero, half-split over the whole head, pair `i` with `i + d/2` (`rope_type: "proportional"` of Gemma 4, `_compute_proportional_rope_parameters`). Goal: two shipped meanings of `partial_rotary_factor` that give different numbers from the same config values. Property: unrotated channels are returned unchanged; scores depend only on position differences. Mutants: the exponent's denominator swapped between the two functions; the last `r` channels rotated; the proportional form pairing `i` with `i + a` among the first `2a` channels; all channels rotated; adjacent pairs `(0, 1), (2, 3)` rotated instead of the half-split pairs. As built (2026-11-21): the argument is `base`, as in `rope` (configs call it `rope_theta`); `factor` is a multiple of 1/8 so `int(D * factor)` is exact; LFM3 is not an example, because its config says `default` with 0.5 but the installed `Lfm3RotaryEmbedding` ignores the factor on that path.
 
@@ -1250,9 +1250,9 @@ Milestone `M6` for every row. `requires` is `cpu`.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `mtp-chain-draft` | Drafting with a Chained Multi-Token-Prediction Module | hard | numeric | t/j/m | `greedy-speculative-verify`, `pre-norm-block` | M6 |
-| 20 | `entropy-bound-denoise-step` | One Denoising Step with Entropy-Bounded Acceptance | medium | numeric, property | t/j/m | `categorical-sample` | M6 |
-| 30 | `block-diffusion-decode` | Block Text Diffusion over a Cached Prefix | hard | numeric, cost | t/j/m | `entropy-bound-denoise-step`, `kv-cache-append` | M6 |
+| 10 | `mtp-chain-draft` | Drafting with a Chained Multi-Token-Prediction Module | medium 3 | numeric | t/j/m | `greedy-speculative-verify`, `pre-norm-block` | M6 |
+| 20 | `entropy-bound-denoise-step` | One Denoising Step with Entropy-Bounded Acceptance | medium 1 | numeric, property | t/j/m | `categorical-sample` | M6 |
+| 30 | `block-diffusion-decode` | Block Text Diffusion over a Cached Prefix | medium 3 | numeric, cost | t/j/m | `entropy-bound-denoise-step`, `kv-cache-append` | M6 |
 
 **`mtp-chain-draft`** — Implement `mtp_chain_draft(params, cfg, tokens, next_token, hidden, n_draft) -> (draft_tokens, draft_logits)` for the `T` tokens the main model has processed, the token it then produced, and its final-normed hidden states `(T, D)`: stage `j` takes the token ids shifted by `j + 1` (ending with the latest drafted token) and the previous stage's output (the main hidden states for `j = 0`), computes `eh_proj(concat(enorm(E[ids]), hnorm(h_prev)))`, runs its own decoder block at positions `j + 1 .. j + T` composed from kit `ops`, applies its post norm, and takes the argmax of the shared head at the last row (the MTP module of DeepSeek-V3, 2024, Eq. 21 to 23, as implemented by `MtpLayer` and `MtpModel` in `transformers` 5.23; Qwen3.5 checkpoints ship one such layer as `mtp.*` tensors, and the GLM-5.3 and DeepSeek-V4.1 configs declare 1 and 3; the embedding is concatenated first as in `transformers`, where the paper writes the hidden state first). Goal: the draft model that ships inside the checkpoint, and how it differs from the independent heads of `mtp-head-draft`. Numeric against `mtp_draft_ref` for one, two, and three stages. Mutants: concatenation order swapped; the embedding of the current token instead of the next; every stage reads the main model's hidden states; the drafted token not appended for the next stage; post norm omitted; positions not shifted per stage. [kit: `mtp_params`] As built (2026-11-21): renamed `mtp_chain_draft`, so it does not share a name with the function of `mtp-head-draft`, with `params, cfg` first; `1 <= T <= 8`. The mutant "positions not shifted per stage" cannot fail, because rotary scores are shift-invariant when there is no cache (measured 2.5e-6), and is replaced by a missing causal mask. The block is the kit's decoder block, not a real Qwen or GLM block.
 
@@ -1264,9 +1264,9 @@ Milestone `M6` for every row. `requires` is `cpu`.
 
 | order | id | title | diff | judges | fw | prereq | ms |
 |---|---|---|---|---|---|---|---|
-| 10 | `layer-plan-from-config` | A Layer Plan from `config.json` | medium | numeric | python | - | M6 |
-| 20 | `real-gdn-block` | One Recurrent Block of a Real Model | hard | numeric | t/j/m | `gated-delta-layer`, `real-model-block` | M6 |
-| 30 | `real-hybrid-logits` | Matching a Hybrid Model's Logits | hard | numeric | t/j/m | `real-gdn-block`, `hybrid-decoder-forward`, `partial-rope`, `real-model-logits` | M6 |
+| 10 | `layer-plan-from-config` | A Layer Plan from `config.json` | medium 1 | numeric | python | - | M6 |
+| 20 | `real-gdn-block` | One Recurrent Block of a Real Model | medium 3 | numeric | t/j/m | `gated-delta-layer`, `real-model-block` | M6 |
+| 30 | `real-hybrid-logits` | Matching a Hybrid Model's Logits | hard 1 | numeric | t/j/m | `real-gdn-block`, `hybrid-decoder-forward`, `partial-rope`, `real-model-logits` | M6 |
 
 **`layer-plan-from-config`** — Implement `layer_plan(config) -> list[dict]` with one entry per layer holding `mixer`, `mlp`, `indexer`, `rope`, and `kv` for three families, from dicts with the keys of the real files: Qwen3.5 (`layer_types` if present, else `(i + 1) % full_attention_interval`; `rope` with `rotary_dim = int(head_dim * partial_rotary_factor)`); GLM-MoE-DSA (`mlp_layer_types` if present, else `min(first_k_dense_replace, L)` dense layers then sparse; `indexer_types` if present, else `index_topk_pattern` with `F` and `S`, else full when `max(i - index_skip_topk_offset + 1, 0) % max(index_topk_freq, 1) == 0`); Gemma 4 (`layer_types`, the per-type `rope_parameters` and head dimension, and `kv` as `"reuse"` for the last `num_kv_shared_layers` layers, `"store"` for the last earlier layer of each type, else `None`) (`Qwen3_5TextConfig`, `GlmMoeDsaConfig`, `Gemma4TextConfig.kv_sharing_modes` in `transformers` 5.23; the configs of `Qwen/Qwen3.5-0.8B`, `zai-org/GLM-5.3`, `google/gemma-4-E2B-it`). Goal: a modern model is a per-layer plan, and the defaults that expand a short config into it are where ports go wrong. Numeric on reduced copies of the three real configs and on hidden synthetic ones; no weights. Mutants: schedule `i % interval`; an explicit list ignored in favor of the rule; the index rule without the clamp at zero (layer 0 becomes shared); offset applied as `i - offset`; `"store"` given to the last unshared layer only, not to one per type; the sliding layers' RoPE parameters used for full layers. As built (2026-11-21): the `rope` value is `None` or `{type, theta, head_dim, rotary_dim}`, and `indexer` and `kv` are `None` where a family has none. The decoder's settings are read from `text_config` when the file has one; an unknown or missing `model_type` raises `ValueError`; Qwen's missing `partial_rotary_factor` is 0.25 and Gemma's is 1.0; `global_head_dim` defaults to 512. Expected plans come from the three configuration classes and the models' rotary embeddings through `fixtures/make.py`, not from the reference. `int(head_dim * f)` is constrained to be even, because the library's rotary embedding rounds an odd value up (found by the reviewer's fuzz of 1,400 configs). The spec's `min(first_k_dense_replace, L)` is unobservable and is not a mutant. 16 mutants; the three rules that only hidden cases distinguished (Gemma's missing factor, the default global head dimension, `store` for a type no shared layer reuses) now have public cases.
 

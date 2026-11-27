@@ -78,7 +78,14 @@ def cmd_list(args: argparse.Namespace) -> int:
         return 0
     rows = [("TRACK", "ID", "DIFFICULTY", "FRAMEWORKS", "JUDGES", "TITLE")]
     rows += [
-        (p.track, p.id, p.difficulty, ",".join(p.frameworks), ",".join(p.judges), p.title)
+        (
+            p.track,
+            p.id,
+            f"{p.difficulty} {p.level}",
+            ",".join(p.frameworks),
+            ",".join(p.judges),
+            p.title,
+        )
         for p in problems
     ]
     widths = [max(len(row[i]) for row in rows) for i in range(5)]
@@ -162,6 +169,7 @@ def cmd_new(args: argparse.Namespace) -> int:
             title=args.title,
             frameworks=[f.strip() for f in args.frameworks.split(",") if f.strip()],
             difficulty=args.difficulty,
+            level=args.level,
         )
     except scaffold.ScaffoldError as exc:
         print(f"learnai new: {exc}", file=sys.stderr)
@@ -396,6 +404,9 @@ def build_parser() -> argparse.ArgumentParser:
     cmd.add_argument("--title", default=None)
     cmd.add_argument("--frameworks", default="torch,jax,mlx", help='comma separated, or "python"')
     cmd.add_argument("--difficulty", default="easy", choices=["easy", "medium", "hard"])
+    cmd.add_argument(
+        "--level", type=int, default=1, choices=[1, 2, 3], help="level within the difficulty"
+    )
     return parser
 
 

@@ -156,6 +156,7 @@ const summary = (over: Partial<ProblemSummary>): ProblemSummary => ({
   track: "attention",
   order: 10,
   difficulty: "medium",
+  level: 2,
   frameworks: ["torch", "jax", "mlx"],
   judges: ["numeric"],
   tags: ["attention"],
@@ -1105,6 +1106,13 @@ function DevComponentsScreen() {
               <DifficultyMark key={d} difficulty={d} />
             ))}
             <DifficultyMark difficulty="hard" showLabel={false} />
+          </div>
+          <div className="mt-4 grid w-fit grid-cols-3 gap-x-8 gap-y-2 text-xs">
+            {DIFFICULTIES.flatMap((d) =>
+              ([1, 2, 3] as const).map((level) => (
+                <DifficultyMark key={`${d}-${level}`} difficulty={d} level={level} />
+              )),
+            )}
           </div>
         </Specimen>
         <Specimen name="StatusMark">

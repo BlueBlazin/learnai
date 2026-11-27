@@ -3,6 +3,7 @@ title = "Admission Control and Backpressure"
 track = "serving"
 order = 40
 difficulty = "easy"
+level = 3
 frameworks = ["python"]
 judges = ["simclock"]
 tags = ["admission-control", "backpressure", "queueing", "overload"]

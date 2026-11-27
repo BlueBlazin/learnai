@@ -5,6 +5,8 @@
 
 export type Framework = "torch" | "jax" | "mlx" | "python";
 export type Difficulty = "easy" | "medium" | "hard";
+/** Where a problem sits within its difficulty: 1 is the gentlest, 3 the most demanding. */
+export type DifficultyLevel = 1 | 2 | 3;
 export type JudgeKind = "numeric" | "property" | "statistical" | "cost" | "speed" | "simclock" | "service";
 export type Requires = "cpu" | "mlx-gpu" | "cuda";
 export type ProblemStatus = "todo" | "attempted" | "solved";
@@ -84,6 +86,7 @@ export interface ProblemSummary {
   track: string;
   order: number;
   difficulty: Difficulty;
+  level: DifficultyLevel;
   frameworks: Framework[];
   judges: JudgeKind[];
   tags: string[];

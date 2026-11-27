@@ -3,6 +3,7 @@ title = "Reusing a Cached Prefix"
 track = "kv-cache"
 order = 70
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "cost"]
 tags = ["kv-cache", "prefix-caching", "prompt-cache", "generation-loop"]

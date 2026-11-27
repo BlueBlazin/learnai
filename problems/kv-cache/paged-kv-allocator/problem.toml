@@ -3,6 +3,7 @@ title = "A Paged KV Block Allocator"
 track = "kv-cache"
 order = 90
 difficulty = "easy"
+level = 3
 frameworks = ["python"]
 judges = ["numeric", "property"]
 tags = ["kv-cache", "paged-attention", "memory-management", "allocator", "vllm"]

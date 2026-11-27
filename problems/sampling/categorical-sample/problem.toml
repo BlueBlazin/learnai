@@ -3,6 +3,7 @@ title = "Inverse-CDF Sampling"
 track = "sampling"
 order = 50
 difficulty = "easy"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "statistical"]
 tags = ["sampling", "inverse-cdf", "cumsum", "categorical", "batching"]

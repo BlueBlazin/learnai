@@ -3,6 +3,7 @@ title = "Ragged Acceptance in a Batch"
 track = "speculative"
 order = 90
 difficulty = "medium"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "statistical", "property"]
 tags = ["speculative-decoding", "batching", "rejection-sampling", "padding", "kv-cache", "rollback"]

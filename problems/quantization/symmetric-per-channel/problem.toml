@@ -3,6 +3,7 @@ title = "Symmetric Per-Channel Weights"
 track = "quantization"
 order = 20
 difficulty = "easy"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["quantization", "per-channel", "symmetric", "weights", "broadcasting"]

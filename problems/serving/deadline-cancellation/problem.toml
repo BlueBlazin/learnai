@@ -3,6 +3,7 @@ title = "Deadlines and Cancellation"
 track = "serving"
 order = 80
 difficulty = "medium"
+level = 2
 frameworks = ["python"]
 judges = ["simclock"]
 tags = ["scheduling", "cancellation", "deadlines", "asyncio", "continuous-batching"]

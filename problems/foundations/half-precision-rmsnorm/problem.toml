@@ -3,6 +3,7 @@ title = "RMSNorm That Survives float16"
 track = "foundations"
 order = 110
 difficulty = "medium"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["normalization", "float16", "half-precision", "numerics", "overflow"]

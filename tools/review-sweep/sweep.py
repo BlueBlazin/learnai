@@ -242,7 +242,8 @@ def sweep_problem(problem: dict) -> dict:
 
     return {
         "id": pid, "module": problem["module"], "core": problem["core"],
-        "difficulty": meta.get("difficulty"), "judges": meta.get("judges", []),
+        "difficulty": meta.get("difficulty"), "level": meta.get("level"),
+        "judges": meta.get("judges", []),
         "framework": (meta.get("frameworks") or ["?"])[0],
         "info": {k: v for k, v in info.items() if k != "bugs"},
         "bugs": info["bugs"], "flags": flags,

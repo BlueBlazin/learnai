@@ -3,6 +3,7 @@ title = "Parsing safetensors by Hand"
 track = "foundations"
 order = 120
 difficulty = "medium"
+level = 1
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["safetensors", "checkpoint", "file-format", "zero-copy", "bfloat16", "real-model"]

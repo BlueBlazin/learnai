@@ -3,6 +3,7 @@ title = "WordPiece Encoding"
 track = "tokenization"
 order = 70
 difficulty = "easy"
+level = 2
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["tokenizer", "wordpiece", "bert", "embeddings"]

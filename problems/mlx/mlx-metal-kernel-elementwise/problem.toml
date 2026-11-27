@@ -3,6 +3,7 @@ title = "A Custom Metal Kernel"
 track = "mlx"
 order = 140
 difficulty = "medium"
+level = 2
 frameworks = ["mlx"]
 judges = ["numeric"]
 tags = ["mlx", "metal", "custom-kernel", "gpu", "silu", "half-precision"]

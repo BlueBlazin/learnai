@@ -56,7 +56,11 @@ export function ProblemRowList({
               <PrerequisiteNote unmet={unmet?.get(problem.id) ?? []} />
             </span>
             {isNext ? <span className="shrink-0 text-xs font-medium whitespace-nowrap">Up next</span> : null}
-            <DifficultyMark difficulty={problem.difficulty} className="w-20 shrink-0 self-center text-xs" />
+            <DifficultyMark
+              difficulty={problem.difficulty}
+              level={problem.level}
+              className="w-20 shrink-0 self-center text-xs"
+            />
           </li>
         );
       })}

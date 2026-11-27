@@ -3,6 +3,7 @@ title = "Recovering from Out-of-Memory"
 track = "cuda"
 order = 90
 difficulty = "medium"
+level = 2
 frameworks = ["torch"]
 judges = ["numeric", "cost"]
 tags = ["cuda", "out-of-memory", "batching", "retry", "backoff", "empty-cache"]

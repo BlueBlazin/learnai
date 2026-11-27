@@ -3,6 +3,7 @@ title = "Binary Embeddings with Rescoring"
 track = "systems"
 order = 50
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "cost"]
 tags = ["vector-search", "binary-quantization", "hamming-distance", "rescoring", "embeddings", "retrieval"]

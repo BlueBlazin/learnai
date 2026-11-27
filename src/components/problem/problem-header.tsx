@@ -56,7 +56,7 @@ export function ProblemHeader({
       </h1>
       <MetaList ruled className="mt-5">
         <MetaItem label="Difficulty">
-          <DifficultyMark difficulty={problem.difficulty} />
+          <DifficultyMark difficulty={problem.difficulty} level={problem.level} />
         </MetaItem>
         <MetaItem label="Judged by">
           <JudgeList judges={problem.judges} explain />

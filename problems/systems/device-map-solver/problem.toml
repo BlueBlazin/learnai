@@ -3,6 +3,7 @@ title = "Solving a Device Map"
 track = "systems"
 order = 10
 difficulty = "medium"
+level = 3
 frameworks = ["python"]
 judges = ["numeric", "property"]
 tags = ["device-map", "multi-gpu", "offloading", "accelerate", "memory", "placement"]

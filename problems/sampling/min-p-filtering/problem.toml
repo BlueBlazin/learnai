@@ -3,6 +3,7 @@ title = "Min-p Filtering"
 track = "sampling"
 order = 60
 difficulty = "easy"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["sampling", "min-p", "truncation", "softmax", "logits"]

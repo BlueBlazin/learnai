@@ -53,6 +53,8 @@ pub struct ProblemMeta {
     pub order: i64,
     /// Difficulty.
     pub difficulty: Difficulty,
+    /// Level within the difficulty, 1 to 3.
+    pub level: u8,
     /// Frameworks a solution may be written in.
     pub frameworks: Vec<Framework>,
     /// Judges the problem uses.
@@ -223,6 +225,7 @@ struct ProblemToml {
     #[serde(default)]
     order: i64,
     difficulty: Difficulty,
+    level: u8,
     frameworks: Vec<Framework>,
     judges: Vec<JudgeKind>,
     #[serde(default)]
@@ -597,6 +600,9 @@ fn parse_problem(text: &str, dir: &Path) -> std::result::Result<ProblemMeta, Str
     if raw.title.trim().is_empty() {
         return Err("title is empty".to_owned());
     }
+    if !(1..=3).contains(&raw.level) {
+        return Err(format!("level is {}; it must be 1, 2, or 3", raw.level));
+    }
     if raw.frameworks.is_empty() {
         return Err("frameworks is empty".to_owned());
     }
@@ -615,6 +621,7 @@ fn parse_problem(text: &str, dir: &Path) -> std::result::Result<ProblemMeta, Str
         track: raw.track,
         order: raw.order,
         difficulty: raw.difficulty,
+        level: raw.level,
         frameworks: dedup(raw.frameworks),
         judges: dedup(raw.judges),
         tags: raw.tags,
@@ -705,10 +712,25 @@ id = "asset-vocab"
 title = "Read a Vocabulary Size"
 track = "real"
 difficulty = "easy"
+level = 1
 frameworks = ["python"]
 judges = ["numeric"]
 entry = ["vocab_size"]
 "#;
+
+    #[test]
+    fn level_must_be_one_two_or_three() {
+        let dir = Path::new("/r/problems/real/asset-vocab");
+        assert_eq!(parse_problem(BASE, dir).expect("problem").level, 1);
+        for bad in ["level = 0", "level = 4"] {
+            let text = BASE.replace("level = 1", bad);
+            let error = parse_problem(&text, dir).expect_err(bad);
+            assert!(error.contains("it must be 1, 2, or 3"), "{error}");
+        }
+        let missing = BASE.replace("level = 1\n", "");
+        let error = parse_problem(&missing, dir).expect_err("missing level");
+        assert!(error.contains("level"), "{error}");
+    }
 
     #[test]
     fn declared_assets_are_read_by_name() {

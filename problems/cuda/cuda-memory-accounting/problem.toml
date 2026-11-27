@@ -3,6 +3,7 @@ title = "Reading the CUDA Allocator"
 track = "cuda"
 order = 80
 difficulty = "easy"
+level = 3
 frameworks = ["torch"]
 judges = ["numeric"]
 tags = ["cuda", "memory", "allocator", "fragmentation", "kv-cache", "sizing"]

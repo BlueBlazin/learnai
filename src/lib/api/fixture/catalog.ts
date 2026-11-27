@@ -1,4 +1,12 @@
-import type { Difficulty, Framework, JudgeKind, ProblemStatus, ProblemSummary, Requires } from "../types";
+import type {
+  Difficulty,
+  DifficultyLevel,
+  Framework,
+  JudgeKind,
+  ProblemStatus,
+  ProblemSummary,
+  Requires,
+} from "../types";
 import { FIXTURE_TRACKS, type FixtureTrack } from "./tracks";
 
 /** How a simulated run of non-starter code ends for a problem. */
@@ -86,6 +94,8 @@ interface Authored {
   track: string;
   order: number;
   difficulty: Difficulty;
+  /** Level within the difficulty; derived from the id when left out. */
+  level?: DifficultyLevel;
   frameworks: Framework[];
   judges: JudgeKind[];
   tags: string[];
@@ -373,6 +383,11 @@ export function hash(text: string): number {
   return (h >>> 0) / 4294967296;
 }
 
+/** A level within the difficulty, fixed per problem id. */
+function levelOf(id: string): DifficultyLevel {
+  return (Math.floor(hash(`${id}:level`) * 3) + 1) as DifficultyLevel;
+}
+
 export function slug(title: string): string {
   return title
     .toLowerCase()
@@ -473,6 +488,7 @@ function fillerProblems(track: FixtureTrack, startOrder: number): FixtureProblem
         track: track.id,
         order: startOrder + (index + 1) * 10,
         difficulty,
+        level: levelOf(id),
         frameworks,
         judges,
         tags: [track.id],
@@ -516,6 +532,7 @@ function authoredProblem(spec: Authored): FixtureProblem {
       track: spec.track,
       order: spec.order,
       difficulty: spec.difficulty,
+      level: spec.level ?? levelOf(spec.id),
       frameworks: spec.frameworks,
       judges: spec.judges,
       tags: spec.tags,

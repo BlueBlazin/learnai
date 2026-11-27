@@ -3,6 +3,7 @@ title = "A Radix-Tree Prefix Cache"
 track = "kv-cache"
 order = 120
 difficulty = "hard"
+level = 2
 frameworks = ["python"]
 judges = ["numeric", "property"]
 tags = ["kv-cache", "prefix-caching", "radix-tree", "lru", "sglang"]

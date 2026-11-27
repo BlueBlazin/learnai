@@ -3,6 +3,7 @@ title = "Frequency and Presence Penalties"
 track = "sampling"
 order = 70
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["sampling", "frequency-penalty", "presence-penalty", "scatter-add", "logits"]

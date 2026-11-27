@@ -3,6 +3,7 @@ title = "Running a 3B Model at 8 Bits"
 track = "mlx"
 order = 180
 difficulty = "hard"
+level = 2
 frameworks = ["mlx"]
 judges = ["numeric", "cost"]
 tags = ["mlx", "real-model", "granite", "quantization", "quantized-matmul", "kv-cache", "async-eval", "memory"]

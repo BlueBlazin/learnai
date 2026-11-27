@@ -3,6 +3,7 @@ title = "An 8-bit KV Cache"
 track = "kv-cache"
 order = 130
 difficulty = "medium"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["kv-cache", "quantization", "affine", "group-wise", "memory"]

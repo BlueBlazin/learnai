@@ -3,6 +3,7 @@ title = "Unembedding Only What You Need"
 track = "transformer"
 order = 70
 difficulty = "easy"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "speed"]
 tags = ["logits", "unembedding", "prefill", "performance"]

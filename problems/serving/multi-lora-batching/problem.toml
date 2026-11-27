@@ -3,6 +3,7 @@ title = "Batching Requests Across Adapters"
 track = "serving"
 order = 180
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property", "cost", "speed"]
 tags = ["lora", "adapters", "batching", "multi-tenant", "gather", "low-rank"]

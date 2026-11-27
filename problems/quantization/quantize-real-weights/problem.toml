@@ -3,6 +3,7 @@ title = "Quantizing Real Weights"
 track = "quantization"
 order = 170
 difficulty = "medium"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["quantization", "affine", "groups", "sqnr", "bits-per-weight", "mlx", "granite", "real-model"]

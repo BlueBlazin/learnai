@@ -3,6 +3,7 @@ title = "Expert Parallelism for MoE"
 track = "frontier"
 order = 80
 difficulty = "hard"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "cost"]
 tags = ["mixture-of-experts", "expert-parallelism", "dispatch", "all-to-all", "multi-gpu", "deepep"]

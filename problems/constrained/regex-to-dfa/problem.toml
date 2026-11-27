@@ -3,6 +3,7 @@ title = "Compiling a Regex to a DFA"
 track = "constrained"
 order = 70
 difficulty = "hard"
+level = 3
 frameworks = ["python"]
 judges = ["numeric", "property"]
 tags = ["constrained-decoding", "regex", "dfa", "nfa", "minimization", "utf-8"]

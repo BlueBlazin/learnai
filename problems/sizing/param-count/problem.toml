@@ -3,6 +3,7 @@ title = "Counting Parameters"
 track = "sizing"
 order = 10
 difficulty = "easy"
+level = 3
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["sizing", "parameters", "gqa", "swiglu", "tied-embeddings"]

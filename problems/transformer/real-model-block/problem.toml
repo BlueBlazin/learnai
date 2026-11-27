@@ -3,6 +3,7 @@ title = "One Block of a Real Model"
 track = "transformer"
 order = 180
 difficulty = "medium"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["forward-pass", "granite", "rope", "gqa", "swiglu", "real-model", "checkpoint-porting"]

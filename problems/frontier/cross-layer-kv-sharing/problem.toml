@@ -3,6 +3,7 @@ title = "Sharing KV Across Layers"
 track = "frontier"
 order = 20
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "cost"]
 tags = ["kv-cache", "kv-sharing", "prefill", "yoco", "layers", "memory"]

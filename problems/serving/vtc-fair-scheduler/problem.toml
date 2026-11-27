@@ -3,6 +3,7 @@ title = "Fair Scheduling with Virtual Token Counters"
 track = "serving"
 order = 100
 difficulty = "medium"
+level = 1
 frameworks = ["python"]
 judges = ["simclock"]
 tags = ["scheduling", "fairness", "multi-tenant", "vtc", "continuous-batching"]

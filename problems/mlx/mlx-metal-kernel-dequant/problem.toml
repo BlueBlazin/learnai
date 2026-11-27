@@ -3,6 +3,7 @@ title = "A Metal Kernel That Unpacks and Dequantizes"
 track = "mlx"
 order = 150
 difficulty = "hard"
+level = 1
 frameworks = ["mlx"]
 judges = ["numeric", "speed"]
 tags = ["mlx", "metal", "custom-kernel", "quantization", "bit-packing", "dequantize"]

@@ -3,6 +3,7 @@ title = "How Many Sequences Fit"
 track = "sizing"
 order = 70
 difficulty = "easy"
+level = 3
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["sizing", "memory", "kv-cache", "capacity", "paged-attention"]

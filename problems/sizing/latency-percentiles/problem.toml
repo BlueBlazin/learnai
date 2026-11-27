@@ -3,6 +3,7 @@ title = "Percentiles Done Right"
 track = "sizing"
 order = 40
 difficulty = "easy"
+level = 3
 frameworks = ["python"]
 judges = ["numeric", "property"]
 tags = ["benchmarking", "latency", "percentiles", "p99", "aggregation"]

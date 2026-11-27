@@ -3,6 +3,7 @@ title = "One Denoising Step with Entropy-Bounded Acceptance"
 track = "drafts-and-diffusion"
 order = 20
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["text-diffusion", "sampling", "entropy", "denoising", "diffusiongemma"]

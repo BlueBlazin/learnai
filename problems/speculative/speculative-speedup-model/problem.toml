@@ -3,6 +3,7 @@ title = "Expected Speedup of Speculation"
 track = "speculative"
 order = 40
 difficulty = "easy"
+level = 1
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["speculative-decoding", "speedup", "acceptance-rate", "geometric-series", "sizing"]

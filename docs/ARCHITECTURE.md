@@ -134,6 +134,7 @@ title = "Numerically Stable Softmax"
 track = "foundations"            # equals the parent directory name
 order = 10                       # position within the track
 difficulty = "easy"              # easy | medium | hard
+level = 1                        # 1 | 2 | 3: where it sits within the difficulty
 frameworks = ["torch", "jax", "mlx"]     # or ["python"]
 judges = ["numeric"]             # numeric | property | statistical | cost | speed | simclock | service
 tags = ["softmax", "numerics"]
@@ -415,6 +416,7 @@ Types are shown in TypeScript; Rust mirrors them with serde (`camelCase` on the 
 ```ts
 type Framework = "torch" | "jax" | "mlx" | "python";
 type Difficulty = "easy" | "medium" | "hard";
+type DifficultyLevel = 1 | 2 | 3;   // within the difficulty: easy 3 sits just under medium 1
 type JudgeKind = "numeric" | "property" | "statistical" | "cost" | "speed" | "simclock" | "service";
 type Requires = "cpu" | "mlx-gpu" | "cuda";
 type ProblemStatus = "todo" | "attempted" | "solved";
@@ -441,7 +443,8 @@ interface Skill { id: string; title: string; name: string; summary: string;
                   earnedAt: string | null; }         // ISO 8601; null until earned
 
 interface ProblemSummary {
-  id: string; title: string; track: string; order: number; difficulty: Difficulty;
+  id: string; title: string; track: string; order: number;
+  difficulty: Difficulty; level: DifficultyLevel;
   frameworks: Framework[]; judges: JudgeKind[]; tags: string[]; prerequisites: string[];
   requires: Requires; status: ProblemStatus; solvedFrameworks: Framework[];
   assets: string[];             // names of the model assets the problem declares

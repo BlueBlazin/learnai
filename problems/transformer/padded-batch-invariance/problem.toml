@@ -3,6 +3,7 @@ title = "Batching Without Changing the Answer"
 track = "transformer"
 order = 100
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["batching", "padding", "attention-mask", "rope", "forward-pass"]

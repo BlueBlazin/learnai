@@ -3,6 +3,7 @@ title = "Drafting by Prompt Lookup"
 track = "speculative"
 order = 30
 difficulty = "easy"
+level = 3
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["speculative-decoding", "prompt-lookup", "n-gram", "draft"]

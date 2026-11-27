@@ -32,6 +32,7 @@ const problem = (
   track,
   order,
   difficulty: "easy",
+  level: 1,
   frameworks: ["torch"],
   judges: ["numeric"],
   tags: [],

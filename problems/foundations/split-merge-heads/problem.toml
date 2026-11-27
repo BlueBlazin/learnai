@@ -3,6 +3,7 @@ title = "Splitting and Merging Attention Heads"
 track = "foundations"
 order = 40
 difficulty = "easy"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["reshape", "transpose", "attention", "multi-head"]

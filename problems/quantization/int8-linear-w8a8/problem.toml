@@ -3,6 +3,7 @@ title = "An Integer-Only Linear Layer"
 track = "quantization"
 order = 100
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["quantization", "int8", "w8a8", "activations", "zero-point", "integer-arithmetic"]

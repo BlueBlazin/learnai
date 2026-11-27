@@ -3,6 +3,7 @@ title = "Using the Fused Attention Kernel"
 track = "mlx"
 order = 50
 difficulty = "easy"
+level = 3
 frameworks = ["mlx"]
 judges = ["numeric"]
 tags = ["mlx", "attention", "kv-cache", "masking", "metal"]

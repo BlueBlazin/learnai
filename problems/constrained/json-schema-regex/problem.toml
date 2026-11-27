@@ -3,6 +3,7 @@ title = "JSON Schema to Regex"
 track = "constrained"
 order = 80
 difficulty = "hard"
+level = 1
 frameworks = ["python"]
 judges = ["numeric", "property"]
 tags = ["constrained-decoding", "json-schema", "regex", "structured-output", "outlines"]

@@ -3,6 +3,7 @@ title = "LayerNorm"
 track = "foundations"
 order = 90
 difficulty = "easy"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["normalization", "numerics", "bert", "encoder"]

@@ -3,6 +3,7 @@ title = "Padding a Batch for Generation"
 track = "tokenization"
 order = 30
 difficulty = "easy"
+level = 2
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["padding", "batching", "attention-mask", "generation"]

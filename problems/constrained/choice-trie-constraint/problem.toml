@@ -3,6 +3,7 @@ title = "Constraining Output to a Set of Choices"
 track = "constrained"
 order = 20
 difficulty = "easy"
+level = 3
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["constrained-decoding", "trie", "choice", "eos"]

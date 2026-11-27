@@ -3,6 +3,7 @@ title = "KV Cache Bytes per Token"
 track = "sizing"
 order = 20
 difficulty = "easy"
+level = 2
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["sizing", "kv-cache", "memory", "gqa", "sliding-window"]

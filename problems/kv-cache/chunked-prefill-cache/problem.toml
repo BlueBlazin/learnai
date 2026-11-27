@@ -3,6 +3,7 @@ title = "Prefill in Chunks"
 track = "kv-cache"
 order = 30
 difficulty = "easy"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "cost"]
 tags = ["kv-cache", "prefill", "chunking", "memory"]

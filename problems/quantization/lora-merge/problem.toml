@@ -3,6 +3,7 @@ title = "Merging a LoRA Adapter"
 track = "quantization"
 order = 80
 difficulty = "easy"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["lora", "adapters", "low-rank", "linear"]

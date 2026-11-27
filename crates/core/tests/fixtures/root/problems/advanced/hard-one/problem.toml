@@ -3,6 +3,7 @@ title = "A Hard One"
 track = "advanced"
 order = 5
 difficulty = "hard"
+level = 3
 frameworks = ["torch"]
 judges = ["speed"]
 prerequisites = ["does-not-exist"]

@@ -3,6 +3,7 @@ title = "XTC: Exclude Top Choices"
 track = "sampling"
 order = 140
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "statistical"]
 tags = ["sampling", "xtc", "truncation", "creativity", "llama.cpp"]

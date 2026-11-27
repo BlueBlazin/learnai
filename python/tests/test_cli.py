@@ -384,6 +384,10 @@ def edit_toml(problem: Path, old: str, new: str) -> None:
          "prerequisite 'ghost' does not exist"),
         (lambda p: edit_toml(p, 'difficulty = "easy"', 'difficulty = "trivial"'),
          "difficulty must be one of"),
+        (lambda p: edit_toml(p, "level = 1", "level = 4"),
+         "level must be 1, 2, or 3"),
+        (lambda p: edit_toml(p, "level = 1\n", ""),
+         "missing key `level`"),
         (lambda p: edit_toml(p, 'judges = ["numeric"]', 'judges = ["vibes"]'),
          "unknown judge 'vibes'"),
         (lambda p: edit_toml(p, 'frameworks = ["python"]', 'frameworks = ["python", "torch"]'),
@@ -439,7 +443,7 @@ def test_validate_requires_globally_unique_ids(scratch_root):
 @pytest.mark.parametrize("frameworks", ["torch", "python"])
 def test_new_scaffolds_a_problem_that_validates_once_filled_in(capsys, scratch_root, frameworks):
     code, _, _ = learnai(capsys, "new", "decoding/top-k-filter", "--frameworks", frameworks,
-                      "--title", "Top-k Filtering", "--difficulty", "medium")  # fmt: skip
+                      "--title", "Top-k Filtering", "--difficulty", "medium", "--level", "3")  # fmt: skip
     assert code == 0
     problem = scratch_root / "problems" / "decoding" / "top-k-filter"
     for name in ("problem.toml", "statement.md", "hints.md", "editorial.md", "tests.py",
@@ -448,7 +452,8 @@ def test_new_scaffolds_a_problem_that_validates_once_filled_in(capsys, scratch_r
         assert (problem / name).is_file(), name
     assert (scratch_root / "problems" / "decoding" / "track.toml").is_file()
     toml = (problem / "problem.toml").read_text()
-    assert 'title = "Top-k Filtering"' in toml and 'difficulty = "medium"' in toml
+    assert 'title = "Top-k Filtering"' in toml
+    assert 'difficulty = "medium"\nlevel = 3\n' in toml
 
     # Unfinished scaffolds are refused...
     errors = errors_for(scratch_root, "top-k-filter")

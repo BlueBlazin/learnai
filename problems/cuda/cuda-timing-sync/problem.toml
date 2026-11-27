@@ -3,6 +3,7 @@ title = "Timing Asynchronous Work"
 track = "cuda"
 order = 30
 difficulty = "easy"
+level = 2
 frameworks = ["torch"]
 judges = ["numeric", "cost"]
 tags = ["cuda", "benchmarking", "latency", "synchronize", "warm-up"]

@@ -3,6 +3,7 @@ title = "Numerically Stable Softmax"
 track = "foundations"
 order = 10
 difficulty = "easy"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["softmax", "numerics", "logits"]

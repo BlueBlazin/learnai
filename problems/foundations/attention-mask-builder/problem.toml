@@ -3,6 +3,7 @@ title = "Causal and Padding Masks"
 track = "foundations"
 order = 50
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric"]
 tags = ["attention", "causal-mask", "padding", "batching"]

@@ -3,6 +3,7 @@ title = "Echo Server"
 track = "basics"
 order = 20
 difficulty = "medium"
+level = 2
 frameworks = ["python"]
 judges = ["service", "simclock"]
 prerequisites = ["add-two"]

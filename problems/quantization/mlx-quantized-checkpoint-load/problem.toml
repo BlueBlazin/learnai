@@ -3,6 +3,7 @@ title = "Reading an 8-bit Checkpoint"
 track = "quantization"
 order = 180
 difficulty = "medium"
+level = 2
 frameworks = ["python"]
 judges = ["numeric", "cost"]
 tags = ["quantization", "safetensors", "mlx", "bit-packing", "bfloat16", "mmap", "real-model"]

@@ -3,6 +3,7 @@ title = "Interleaved versus Half-Split RoPE"
 track = "transformer"
 order = 140
 difficulty = "medium"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["rope", "positional-encoding", "checkpoint", "conversion", "llama"]

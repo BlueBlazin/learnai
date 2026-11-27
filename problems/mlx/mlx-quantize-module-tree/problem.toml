@@ -3,6 +3,7 @@ title = "Quantizing a Model with a Mixed Recipe"
 track = "mlx"
 order = 110
 difficulty = "medium"
+level = 2
 frameworks = ["mlx"]
 judges = ["numeric", "cost"]
 tags = ["mlx", "quantization", "module-tree", "bits-per-weight", "memory"]

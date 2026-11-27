@@ -32,7 +32,12 @@ export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
   hard: "Hard",
 };
 
-export const DIFFICULTY_LEVEL: Record<Difficulty, 1 | 2 | 3> = { easy: 1, medium: 2, hard: 3 };
+/** Tailwind fill class for the bars of a difficulty mark: green, yellow, red. */
+export const DIFFICULTY_FILL: Record<Difficulty, string> = {
+  easy: "bg-difficulty-easy",
+  medium: "bg-difficulty-medium",
+  hard: "bg-difficulty-hard",
+};
 
 export const STATUS_LABEL: Record<ProblemStatus, string> = {
   todo: "Not started",

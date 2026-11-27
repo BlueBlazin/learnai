@@ -13,6 +13,8 @@ from learnai.assets import AssetSpec, parse_assets
 FRAMEWORKS = ("torch", "jax", "mlx", "python")
 TENSOR_FRAMEWORKS = ("torch", "jax", "mlx")
 DIFFICULTIES = ("easy", "medium", "hard")
+#: Levels within a difficulty: easy 1 is the gentlest problem, hard 3 the most demanding.
+LEVELS = (1, 2, 3)
 JUDGES = ("numeric", "property", "statistical", "cost", "speed", "simclock", "service")
 REQUIRES = ("cpu", "mlx-gpu", "cuda")
 
@@ -29,6 +31,7 @@ class Problem:
     track: str
     order: int
     difficulty: str
+    level: int
     frameworks: tuple[str, ...]
     judges: tuple[str, ...]
     tags: tuple[str, ...]
@@ -116,6 +119,7 @@ def load_problem(path: str | os.PathLike[str]) -> Problem:
         track=str(raw.get("track", directory.parent.name)),
         order=int(number("order", 0)),
         difficulty=str(raw.get("difficulty", "")),
+        level=int(number("level", 0)),
         frameworks=_strings(raw.get("frameworks")),
         judges=_strings(raw.get("judges")),
         tags=_strings(raw.get("tags")),

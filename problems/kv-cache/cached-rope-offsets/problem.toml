@@ -3,6 +3,7 @@ title = "RoPE Positions Under a Cache"
 track = "kv-cache"
 order = 40
 difficulty = "easy"
+level = 2
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["kv-cache", "rope", "positions", "batching"]

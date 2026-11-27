@@ -3,6 +3,7 @@ title = "Attention with an Appended Cache"
 track = "kv-cache"
 order = 20
 difficulty = "easy"
+level = 3
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["kv-cache", "attention", "causal-mask", "decode-step"]

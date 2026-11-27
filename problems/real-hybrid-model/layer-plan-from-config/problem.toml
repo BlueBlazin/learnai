@@ -3,6 +3,7 @@ title = "A Layer Plan from `config.json`"
 track = "real-hybrid-model"
 order = 10
 difficulty = "medium"
+level = 1
 frameworks = ["python"]
 judges = ["numeric"]
 tags = ["config", "layer-schedule", "hybrid-decoder", "sparse-attention", "kv-sharing", "rope", "checkpoint-porting"]

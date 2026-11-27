@@ -3,6 +3,7 @@ title = "Power-of-Two-Choices Load Balancing"
 track = "serving"
 order = 120
 difficulty = "easy"
+level = 2
 frameworks = ["python"]
 judges = ["simclock", "statistical"]
 tags = ["load-balancing", "power-of-two-choices", "routing", "stale-load", "replicas"]

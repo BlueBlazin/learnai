@@ -3,6 +3,7 @@ title = "Byte-Level BPE Encoding"
 track = "tokenization"
 order = 10
 difficulty = "medium"
+level = 1
 frameworks = ["python"]
 judges = ["numeric", "property"]
 tags = ["tokenizer", "bpe", "utf-8", "bytes"]

@@ -3,6 +3,7 @@ title = "An Open-Loop Load Generator"
 track = "serving"
 order = 160
 difficulty = "medium"
+level = 3
 frameworks = ["python"]
 judges = ["simclock", "statistical"]
 tags = ["benchmarking", "load-testing", "poisson", "coordinated-omission", "latency", "asyncio"]

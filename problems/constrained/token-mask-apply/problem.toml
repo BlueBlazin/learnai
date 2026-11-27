@@ -3,6 +3,7 @@ title = "Applying a Token Mask"
 track = "constrained"
 order = 10
 difficulty = "easy"
+level = 1
 frameworks = ["torch", "jax", "mlx"]
 judges = ["numeric", "property"]
 tags = ["constrained-decoding", "logits", "mask", "softmax"]

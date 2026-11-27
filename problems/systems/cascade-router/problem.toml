@@ -3,6 +3,7 @@ title = "Routing Through a Model Cascade"
 track = "systems"
 order = 90
 difficulty = "easy"
+level = 3
 frameworks = ["python"]
 judges = ["numeric", "cost"]
 tags = ["routing", "cascade", "cost", "confidence", "logprobs", "budget"]
