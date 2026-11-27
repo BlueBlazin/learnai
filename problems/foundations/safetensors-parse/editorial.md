@@ -1,32 +1,33 @@
 ## The idea
 
-The format is a length, a JSON table of contents, and raw arrays. All the information
-needed to find a tensor is in its header entry, and the only arithmetic is one
-addition: a tensor's bytes are at
+A safetensors file is a length prefix, a JSON table of contents, and raw binary arrays.
+Let $n$ be the unsigned 64-bit little-endian integer in the first 8 bytes, and let
+`[begin, end]` be a tensor's `data_offsets` entry. Because `data_offsets` counts from the
+start of the data section, the tensor's bytes occupy the file slice
 
 $$
-[\,8 + n + \text{begin},\; 8 + n + \text{end}\,)
+[\,8 + n + \text{begin},\; 8 + n + \text{end}\,) .
 $$
 
-in the file, where $n$ is the little-endian integer in the first 8 bytes. Offsets are
-relative to the data section so that a writer can lay out the data first and write the
-header afterwards without patching every entry.
+Offsets are relative to the data section so a writer can lay out tensor data first and
+write the header afterward without patching every offset.
 
-Reading is then a question of *not doing work*. `np.frombuffer(buf, dtype, count,
-offset)` creates an array object whose data pointer is `offset` bytes into the
-buffer's memory. Nothing is read. If the buffer is an `mmap`, the operating system
-loads a page of the file the first time an element on it is touched, and can drop it
-again under memory pressure, because the page is backed by the file. That is the
-whole trick behind "loading" a multi-gigabyte model instantly, and it is why the
-function must never slice a `bytes` object or call `bytes(...)` on the data: both
-allocate and copy.
+To avoid copying, let NumPy point directly into `buf`. Calling
+`np.frombuffer(buf, dtype, count, offset)` creates an array whose data pointer starts
+`offset` bytes into the buffer's memory without reading or allocating tensor bytes. When
+`buf` is an `mmap`, the operating system faults in pages only when elements are accessed
+and can evict them under memory pressure because they are file-backed. That is how a
+multi-gigabyte model loads almost instantly. Slicing a `bytes` object (`buf[a:b]`) or
+calling `bytes(...)` on tensor data defeats this by allocating a full copy.
 
-The header itself *is* copied (`bytes(view[8 : 8 + n])`), which is fine: it is 26 kB
-for the Granite checkpoint, and the JSON parser needs a contiguous string anyway.
+Copying the header itself with `bytes(view[8 : 8 + n])` is fine. In the Granite
+checkpoint, the header is only 26 kB, and `json.loads` needs a contiguous byte string
+anyway.
 
-`BF16` is returned as `uint16` because numpy has no bfloat16. The bit patterns are
-the top halves of float32 patterns, so `(bits.astype(np.uint32) << 16).view(np.float32)`
-decodes them, which is the previous problem.
+`BF16` tensors are returned as `uint16` because NumPy has no `bfloat16` dtype. Each
+16-bit value is the upper half of a `float32` bit pattern, so
+`(bits.astype(np.uint32) << 16).view(np.float32)` decodes them as in the previous
+problem.
 
 ## Reference solution (Python)
 
@@ -76,51 +77,56 @@ def read_tensor(buf, name):
     return flat.reshape(info["shape"])
 ```
 
-`math.prod([])` is 1, which is the right element count for a scalar, and a shape with
-a zero in it gives 0, for which `frombuffer` returns an empty array.
+`math.prod([])` returns 1, which is the element count of a scalar tensor. If any
+dimension in `shape` is 0, `prod` returns 0 and `np.frombuffer` returns an empty array.
 
 ## Common mistakes
 
-- **Offsets from the start of the file.** `buf[begin:end]` returns a tensor of the
-  right shape made of the header's own bytes. For the first tensor of the Granite
-  file that is the length, then `{"__metadata__":...`, read as bfloat16.
-- **A big-endian length.** `struct.unpack(">Q", ...)` turns a 152-byte header into
-  one of $152 \cdot 2^{56}$ bytes. Everything in the format is little-endian.
-- **Big-endian elements.** The same mistake in the data (`">f4"`, or `"!f"` out of
-  networking habit) gives finite garbage. On a little-endian machine `np.float32` is
-  already `"<f4"`, but saying so costs nothing and is correct everywhere.
-- **Treating `__metadata__` as a tensor.** The tensor count is off by one and any
-  loop over the table dies on `KeyError: 'dtype'`. The key can be anywhere in the
-  object, not only first.
-- **Copying.** `np.frombuffer(buf[a:b])` on `bytes`, `bytes(view[a:b])`, `np.array(...)`,
-  or `.copy()` all produce correct values and double the memory: 205 MB for the
-  embedding table alone. A related trap is `.astype(...)`, which always copies unless
-  told otherwise.
-- **Decoding BF16 as half precision.** `np.float16` is IEEE half (5 exponent bits);
-  bfloat16 has 8. `0x3F80` is $1.0$ as bfloat16 and $1.875$ as half precision.
-- **Assuming the data is stored in header order.** Writers order the data to suit
-  themselves (the Rust library sorts by dtype alignment and name; MLX files are in yet
-  another order) and JSON objects are unordered by definition. Accumulating sizes
-  works on the files you tested and fails on the next one. Use `data_offsets`.
-- **Trusting the shape and ignoring `end`.** The redundancy between shape, dtype, and
-  byte range is the format's integrity check. A truncated download or a header from
-  another file is caught here or not at all.
-- **Column-major reshape.** Tensors are row-major; `order="F"` scrambles every
-  non-square matrix and transposes the square ones.
+- **Counting offsets from byte 0.** Reading `buf[begin:end]` returns a tensor of the
+  right shape filled with header bytes. For the first tensor of the Granite checkpoint,
+  that reads the header length and `{"__metadata__":...` as `bfloat16`.
+- **Reading the header length as big-endian.** `struct.unpack(">Q", ...)` turns a
+  152-byte header into $152 \cdot 2^{56}$ bytes. Every integer and float in safetensors
+  is little-endian.
+- **Using big-endian element dtypes.** Passing `">f4"` or `"!f"` produces finite garbage.
+  On little-endian machines `np.float32` happens to equal `"<f4"`, but specifying `<`
+  explicitly is portable everywhere.
+- **Treating `"__metadata__"` as a tensor.** Leaving it in `tensors` inflates the tensor
+  count by one and crashes loops with `KeyError: 'dtype'`. Remember that `"__metadata__"`
+  can appear anywhere in the JSON object, not only first.
+- **Copying the tensor bytes.** Calling `np.frombuffer(buf[a:b])` on a `bytes` object,
+  `bytes(view[a:b])`, `np.array(...)`, or `.copy()` produces the right values but doubles
+  memory use (205 MB for the Granite embedding table alone). Calling `.astype(...)` also
+  copies by default.
+- **Decoding `BF16` as `np.float16`.** IEEE half precision has 5 exponent bits, while
+  `bfloat16` has 8. The bit pattern `0x3F80` is $1.0$ in `bfloat16` but $1.875$ in
+  `float16`.
+- **Assuming data is stored in header order.** Writers arrange tensors however they like
+  (the Rust library sorts by dtype alignment and name, while MLX uses another order), and
+  JSON objects are unordered. Always use `data_offsets` rather than accumulating sizes.
+- **Ignoring `end` and trusting `shape`.** Checking `end - begin` against
+  `count * dtype.itemsize` and verifying `data_start + end <= len(buf)` is the format's
+  integrity check against truncated downloads or mismatched headers.
+- **Reshaping in column-major order.** Tensors are stored in C (row-major) order. Passing
+  `order="F"` scrambles non-square matrices and transposes square ones.
 
 ## Complexity
 
-`read_header` is $O(n)$ in the header length. `read_tensor` adds $O(1)$ beyond that:
-no tensor byte is read. Memory is $O(n)$ for the parsed header.
+`read_header` takes $O(n)$ time and $O(n)$ memory in the header length $n$. `read_tensor`
+adds $O(1)$ time and memory on top of parsing the header because no tensor bytes are read
+or copied.
 
 ## In the wild
 
-The reference implementation is a Rust crate with Python bindings; its `safe_open`
-maps the file exactly like this, and `safetensors.torch.load_file` then builds tensors
-on the map. It validates more than this problem asks: the header may be at most 100 MB
-(so a corrupt length cannot make a loader allocate terabytes), and the byte ranges of
-all tensors must tile the data section with no gaps and no overlaps, which rules out
-files that alias or hide data. The absence of executable content is the format's other
-reason to exist: unlike a pickle-based `.bin` or `.pt` file, parsing it can only ever
-produce arrays. Tied weights are stored once, so the Granite file has no
-`lm_head.weight`; that fact returns in `real-model-sizing` and `real-model-logits`.
+The official `safetensors` library is a Rust crate with Python bindings. Its `safe_open`
+memory-maps the file in the same way, and `safetensors.torch.load_file` builds tensors on
+top of that map. Production loaders also enforce stricter checks than this problem
+requires. The header is capped at 100 MB so a corrupt length cannot trigger a massive
+allocation, and tensor byte ranges must tile the data section with no gaps or overlaps to
+prevent aliased or hidden data.
+
+Security is the format's other main motivation. Unlike pickle-based `.bin` or `.pt`
+checkpoints, parsing a safetensors file executes no code and can only produce arrays.
+Notice also that tied weights are stored only once, so the Granite checkpoint has no
+`lm_head.weight` entry—a detail that returns in `real-model-sizing` and
+`real-model-logits`.

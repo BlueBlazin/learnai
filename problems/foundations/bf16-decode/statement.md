@@ -1,8 +1,4 @@
-Convert between bfloat16 bit patterns and float32 values by hand: decode a uint16
-tensor into the float32 values it stands for, and encode float32 values as uint16 with
-round-to-nearest-even. Decoding is one shift. Encoding is where the work is, because
-dropping 16 bits correctly means handling ties, a carry that runs into the exponent,
-and NaN.
+Implement `bf16_to_f32` and `f32_to_bf16` to convert between bfloat16 bit patterns (`uint16`) and `float32` values using integer bit operations. `bf16_to_f32` decodes 16-bit patterns into exact `float32` values, and `f32_to_bf16` encodes `float32` values into `uint16` patterns with round-to-nearest-even.
 
 ## Specification
 
@@ -11,9 +7,7 @@ def bf16_to_f32(bits): ...  # uint16 -> float32
 def f32_to_bf16(x): ...  # float32 -> uint16
 ```
 
-A bfloat16 is the **top 16 bits of a float32**. Both formats start with the same sign
-bit and the same 8-bit exponent (bias 127). bfloat16 keeps the first 7 of the 23
-mantissa bits:
+A bfloat16 stores the **top 16 bits of a float32**. Both formats use the same sign bit and the same 8-bit exponent (bias 127), while bfloat16 keeps only the first 7 of the 23 mantissa bits.
 
 | bits of the uint16 | 15 | 14 to 7 | 6 to 0 |
 |---|---|---|---|
@@ -21,19 +15,11 @@ mantissa bits:
 
 ![The 32 bits of $0.1$ in float32: bfloat16 keeps the top 16 ($h$), and the 16 dropped bits ($r$) decide the rounding.](assets/bits.svg)
 
-Zeros, subnormals, infinities, and NaN are encoded as in float32: exponent field 0 is
-zero or a subnormal, exponent field 255 is infinity (mantissa 0) or NaN (mantissa not
-0).
+Zeros, subnormals, infinities, and NaN follow the same bit conventions as float32. An exponent field of 0 represents zero (mantissa 0) or a subnormal (nonzero mantissa), and an exponent field of 255 represents infinity (mantissa 0) or NaN (nonzero mantissa).
 
-**`bf16_to_f32(bits)`** returns, for each 16-bit pattern $b$, the float32 whose 32-bit
-pattern is $b \cdot 2^{16}$: the 16 stored bits followed by 16 zero bits. This is exact
-for every pattern. Subnormals stay subnormal, $-0.0$ stays $-0.0$, and a NaN keeps its
-sign and its 7 payload bits.
+**`bf16_to_f32(bits)`** maps each 16-bit pattern $b$ to the float32 with 32-bit pattern $b \cdot 2^{16}$, appending 16 zero bits after the stored bits. Every pattern decodes exactly. Subnormals remain subnormal, $-0.0$ remains $-0.0$, and each NaN keeps its sign and 7 payload bits.
 
-**`f32_to_bf16(x)`** returns the bfloat16 nearest to each element of `x`. Let $u$ be
-the 32-bit pattern of the element as an unsigned integer, $h = \lfloor u / 2^{16}
-\rfloor$ the 16 bits that are kept, and $r = u \bmod 2^{16}$ the 16 bits that are
-dropped. Then
+**`f32_to_bf16(x)`** maps each float32 element of `x` to its nearest bfloat16 pattern. Let $u$ be the element's 32-bit pattern as an unsigned integer, $\text{sign} \in \{0, 1\}$ be its top bit, $h = \lfloor u / 2^{16} \rfloor$ be the 16 kept bits, and $r = u \bmod 2^{16}$ be the 16 dropped bits. Then
 
 $$
 \operatorname{f32\_to\_bf16}(x) =
@@ -46,29 +32,15 @@ h + 1 & r = \texttt{0x8000} \text{ and } h \text{ is odd}.
 \end{cases}
 $$
 
-- $h + 1$ is ordinary integer addition on the whole 16-bit pattern. When the mantissa
-  field is all ones, the carry increments the exponent field, which is the correct
-  result: the next larger magnitude. For the largest finite magnitudes it produces the
-  pattern of infinity (`0x7F80` or `0xFF80`), which is also correct: a value at least
-  halfway past the largest bfloat16 rounds to infinity.
-- A tie ($r$ exactly `0x8000`, the value exactly halfway between two neighbors) goes
-  to the neighbor whose last mantissa bit is 0.
-- NaN (exponent field 255, mantissa field not 0, in the float32 pattern) is the one
-  case that is not rounded. Every NaN becomes the quiet NaN `0x7FC0`, or `0xFFC0` when
-  the sign bit of the input is set. The payload is discarded.
-- Infinities, zeros of either sign, and subnormals need no special treatment: the rule
-  above is already right for them.
+- $h + 1$ is ordinary integer addition on the full 16-bit pattern. When the 7-bit mantissa is all ones, the carry increments the exponent field to produce the next larger representable magnitude. For the largest finite magnitudes, the carry produces infinity (`0x7F80` or `0xFF80`), which is the correct result when a value sits at least halfway past the largest finite bfloat16.
+- A tie ($r = \texttt{0x8000}$, halfway between two neighboring bfloat16 values) rounds to the neighbor whose least significant mantissa bit is 0.
+- NaN (exponent field 255 and nonzero mantissa in the float32 pattern) is not rounded. Every NaN becomes the quiet NaN `0x7FC0`, or `0xFFC0` if the input's sign bit is set, discarding the payload.
+- Infinities, signed zeros, and subnormals need no special handling because the rule above already produces the right pattern for them.
 
-Work on the bit patterns with integer operations (shifts, masks, additions,
-comparisons). The only floating-point step in each function is reinterpreting 32 bits
-between float32 and a 32-bit integer type, which every framework can do without
-changing a bit. Do not use your framework's `bfloat16` dtype in any spelling
-(`torch.bfloat16`, `Tensor.bfloat16()`, `jnp.bfloat16`, `mx.bfloat16`, `"bfloat16"`).
+Operate on the bit patterns using integer operations (shifts, masks, additions, and comparisons). The only floating-point step in each function is reinterpreting 32 bits between `float32` and a 32-bit integer type without altering any bits. Do not use your framework's `bfloat16` dtype in any spelling (`torch.bfloat16`, `Tensor.bfloat16()`, `jnp.bfloat16`, `mx.bfloat16`, `"bfloat16"`).
 
 > [!NOTE]
-> PyTorch can store and convert uint16 tensors but implements almost no arithmetic
-> for them (no shifts, no addition). Convert to a wider integer type before computing,
-> and to uint16 only at the end.
+> PyTorch can store and convert `uint16` tensors but supports almost no arithmetic on them (no shifts or addition). Convert to a wider integer type before computing, and convert back to `uint16` at the end.
 
 ## Shapes
 
@@ -89,11 +61,9 @@ f32_to_bf16([1.0, -2.5, 3.14159265, 0.1, 1.00390625, 1.01171875])
 # [0x3F80, 0xC020, 0x4049, 0x3DCD, 0x3F80, 0x3F82]
 ```
 
-Decoding `0x4049`: the sign bit is 0, the exponent field is `0x80` $= 128$, and the
-mantissa field is `0x49` $= 73$, so the value is $2^{128 - 127} \cdot (1 + 73/128) =
-3.140625$. The float32 with pattern `0x40490000` is the same number.
+To decode `0x4049`, read its sign bit (0), exponent field (`0x80` $= 128$), and mantissa field (`0x49` $= 73$). The value is $2^{128 - 127} \cdot (1 + 73/128) = 3.140625$, which matches the float32 bit pattern `0x40490000`.
 
-Encoding, element by element:
+Encoding element by element:
 
 | $x$ | float32 pattern | kept $h$ | dropped $r$ | rule | result | decodes to |
 |---|---|---|---|---|---|---|
@@ -104,26 +74,17 @@ Encoding, element by element:
 | $1.00390625$ | `0x3F808000` | `0x3F80` | `0x8000` | tie, $h$ even: $h$ | `0x3F80` | $1.0$ |
 | $1.01171875$ | `0x3F818000` | `0x3F81` | `0x8000` | tie, $h$ odd: $h + 1$ | `0x3F82` | $1.015625$ |
 
-For $0.1$, truncation would keep `0x3DCC`, which decodes to $0.099609375$: an error of
-$3.9 \cdot 10^{-4}$ where rounding makes one of $9.8 \cdot 10^{-5}$.
+For $0.1$, simple truncation would keep `0x3DCC` ($0.099609375$), an error of $3.9 \cdot 10^{-4}$ instead of $9.8 \cdot 10^{-5}$ with rounding.
 
 ## Constraints
 
-- Every comparison is **exact**, bit for bit: the uint16 patterns from `f32_to_bf16`,
-  and the 32-bit patterns of the floats from `bf16_to_f32` (so the sign of zero and
-  the bits of a NaN count).
-- `bits` may hold any of the 65,536 patterns. `x` may hold any float32, including
-  subnormals, infinities, and NaN with any payload and either sign.
-- `f32_to_bf16` must return dtype uint16, and `bf16_to_f32` dtype float32.
+- Every comparison is **exact**, bit for bit, on both the `uint16` patterns from `f32_to_bf16` and the 32-bit patterns of the floats from `bf16_to_f32` (including the sign of zero and all bits of a NaN).
+- `bits` may contain any of the 65,536 possible 16-bit patterns. `x` may contain any float32 value, including subnormals, infinities, and NaN with any payload and either sign.
+- `f32_to_bf16` must return dtype `uint16`, and `bf16_to_f32` must return dtype `float32`.
 - Inputs have at most 100,000 elements. No Python loops over elements are needed.
 
 ## Why this matters
 
-Most open LLM checkpoints are stored in bfloat16: it halves the file, and because it
-keeps float32's exponent it covers the same range, where IEEE half precision overflows
-at 65,504. A loader that reads those two bytes as half precision produces weights that
-can be wrong by orders of magnitude, with no error raised. The reverse direction runs
-whenever weights or activations are cast down for inference. Truncating there biases
-every value toward zero by up to a full step, a NaN that is rounded like a number can
-turn into infinity or zero and hide the fault that produced it, and a hand-rolled
-rounding that mishandles the carry halves weights that sit just below a power of two.
+Most open LLM checkpoints are stored in bfloat16 because it halves file size while keeping float32's dynamic range, avoiding the 65,504 overflow limit of IEEE float16. A checkpoint loader that misinterprets those two bytes as float16 produces weights that are off by orders of magnitude without raising any error.
+
+The reverse conversion runs whenever weights or activations are cast down for inference or storage. Truncating instead of rounding biases every number toward zero by up to a full step. Rounding a NaN like an ordinary number can turn it into infinity or zero and mask the fault that created it. Mishandling the carry out of an all-ones mantissa can halve weights sitting just below a power of two.

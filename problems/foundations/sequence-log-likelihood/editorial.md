@@ -1,45 +1,25 @@
 ## The idea
 
-An autoregressive model factorizes the probability of a sequence into next-token
-predictions:
+An autoregressive language model factorizes the log-probability of a sequence into a sum of next-token log-probabilities:
 
 $$
 \log p(x_1, \dots, x_{n-1} \mid x_0) = \sum_{t=0}^{n-2} \log p(x_{t+1} \mid x_0, \dots, x_t) .
 $$
 
-The model's output at position $t$ is the distribution on the right-hand side: it was
-computed from $x_0, \dots, x_t$ and it is about $x_{t+1}$. So the tensor of logits and
-the tensor of tokens are offset by one, and lining them up is a pair of slices:
+At position $t$, the model has read $x_0, \dots, x_t$ and predicts $x_{t+1}$. The logits tensor and the token tensor are therefore offset by one position. Two slices align them into `(B, T - 1)` pairs:
 
 ```
 logits[:, :-1]   positions 0 .. T-2   the contexts
 tokens[:, 1:]    positions 1 .. T-1   the targets
 ```
 
-Everything after that is bookkeeping on `(B, T - 1)` tensors.
+**Log-probabilities.** Apply `log_softmax` over the vocabulary axis of the context logits, then gather the single entry indexed by each target token. Computing `log(softmax(x))` instead fails on unlikely targets whose probability underflows float32 to `0.0`, turning a finite log-probability such as $-20000$ into `-inf`.
 
-**Log-probabilities.** `log_softmax` of the context logits, then one entry per
-position: the one indexed by the target. This is a gather along the vocabulary axis.
-It must be `log_softmax`: a target that the model considers impossible has a
-probability far below the smallest float32, and `log(softmax(x))` returns `-inf` where
-the true log-probability is an ordinary number such as $-20000$.
+**Which pairs count.** A pair spans two adjacent positions, and both must be real tokens. With right padding, `mask[:, 1:]` drops the pair from the last real token to the first padding token. With left padding, `mask[:, :-1]` drops the pair from the last padding token to the first real token. Combining both with `mask[:, :-1] & mask[:, 1:]` handles either padding side in one expression.
 
-**Which pairs count.** A pair consists of two positions, and both must be real. With
-right padding the binding condition is the target (`mask[:, 1:]`): the pair made of
-the last real token and the first padding token must go. With left padding it is the
-context (`mask[:, :-1]`): the first real token would otherwise be scored as a
-prediction made from padding. Requiring both handles either side with one expression.
+**Dropping uncounted pairs.** Zero out uncounted positions with `where` rather than multiplying by the mask. Padding tokens are often masked with a `-inf` logit, which gives an uncounted pair a log-probability of `-inf`. Multiplying `-inf` by `0` produces `NaN`.
 
-**Dropping the rest.** Select with `where`. Multiplying by the mask is the obvious
-alternative and it fails on real data: padding tokens are often banned from
-generation by a `-inf` logit, the log-probability of "predicting" one is `-inf`, and
-$0 \cdot (-\infty)$ is NaN.
-
-**Perplexity** is the exponential of the average negative log-probability per scored
-token, $\exp(-\text{logprob} / n)$: the geometric mean of $1 / p$. A model that spreads
-its probability uniformly over $k$ tokens at every step has perplexity exactly $k$,
-which is the easiest way to remember that the division by $n$ happens inside the
-exponential.
+**Perplexity.** Perplexity is $\exp(-\text{logprob} / n)$, the geometric mean of $1 / p$ across the $n$ counted pairs. If a model assigns uniform probability $1 / k$ to $k$ tokens at every step, its perplexity is exactly $k$. That check confirms that the division by $n$ belongs inside the exponential.
 
 ## Reference solution (PyTorch)
 
@@ -62,52 +42,24 @@ def perplexity(logits, tokens, mask):
     return torch.exp(-picked.sum(dim=1) / counted.sum(dim=1))
 ```
 
-JAX uses `jax.nn.log_softmax` and `jnp.take_along_axis`; MLX subtracts `mx.logsumexp`
-and uses `mx.take_along_axis`. In PyTorch,
-`-F.cross_entropy(logits[:, :-1].transpose(1, 2), tokens[:, 1:], reduction="none")`
-is the same `picked` tensor in one call.
+JAX uses `jax.nn.log_softmax` and `jnp.take_along_axis`. MLX subtracts `mx.logsumexp` and uses `mx.take_along_axis`. In PyTorch, `-F.cross_entropy(logits[:, :-1].transpose(1, 2), tokens[:, 1:], reduction="none")` computes the same `picked` tensor in a single call.
 
 ## Common mistakes
 
-- **No shift.** Gathering `tokens[t]` from `logits[t]` scores each token under a
-  distribution that was computed after reading it. The numbers look like
-  log-probabilities and mean nothing.
-- **Shifting the wrong way.** `logits[:, 1:]` with `tokens[:, :-1]`: now every
-  prediction is two positions late.
-- **`log(softmax(...))`.** Correct until a target is unlikely enough, then `-inf`, and
-  the whole sequence scores `-inf`.
-- **Ignoring the mask**, or masking only one side of the pair. Using `mask[:, :-1]`
-  alone counts the prediction of the first padding token in a right-padded row;
-  `mask[:, 1:]` alone counts the prediction of the first real token from padding in a
-  left-padded row. Each variant passes every test on the other padding side.
-- **Multiplying by the mask.** NaN as soon as an uncounted pair has log-probability
-  `-inf`.
-- **Averaging over the wrong count.** `mean` over all `T - 1` positions divides short
-  rows by too much, so padding makes a row look better than it is. Dividing by the
-  number of real tokens is off by one: `n` tokens give `n - 1` predictions.
-- **`exp` of the sum.** That is $1 / p(\text{sequence})$, which grows exponentially
-  with length and overflows for any real text. Perplexity is per token.
+- **No shift.** Gathering `tokens[t]` from `logits[t]` scores each token under a distribution computed after reading it, producing invalid scores without raising an error.
+- **Shifting the wrong way.** Pairing `logits[:, 1:]` with `tokens[:, :-1]` shifts every prediction two positions off.
+- **Using `log(softmax(...))`.** Unlikely targets underflow to zero in `softmax`, turning their log-probability and the entire sequence sum into `-inf`.
+- **Ignoring the mask or checking only one side.** Using `mask[:, :-1]` alone includes the prediction of the first padding token in right-padded rows. Using `mask[:, 1:]` alone includes the prediction of the first real token from padding in left-padded rows. Each mistake passes tests padded on the opposite side.
+- **Multiplying by the mask.** Any uncounted pair with log-probability `-inf` turns into `0 * -inf = NaN`.
+- **Dividing by the wrong count.** Averaging over all `T - 1` positions divides short rows by too large a number, artificially lowering their perplexity. Dividing by the number of real tokens is also off by one because $n$ real tokens form $n - 1$ pairs.
+- **Taking `exp` of the unnormalized sum.** Computing $\exp(-\text{logprob})$ yields $1 / p(\text{sequence})$, which grows exponentially with sequence length and overflows on real text. Perplexity is always per token.
 
 ## Complexity
 
-$O(B\,T\,V)$ time and memory for the `log_softmax`; the gather and the sums are
-$O(B\,T)$.
+$O(B\,T\,V)$ time and memory for `log_softmax`, plus $O(B\,T)$ for the gather and reductions.
 
 ## In the wild
 
-Evaluation code spells the same shift as `shift_logits = logits[..., :-1, :]` and
-`shift_labels = labels[..., 1:]`, followed by a cross-entropy that ignores a sentinel
-label at padding positions. Reported perplexity is normally a **corpus-level** number:
-the negative log-probabilities of all scored tokens are summed over the whole dataset
-and divided by the total token count before the exponential. That is not the mean of
-the per-row perplexities this function returns, because long rows carry more tokens
-and because the exponential is not linear, so aggregate with `sequence_logprob` and
-the pair counts, not with `perplexity`.
+Training and evaluation code typically writes the shift as `shift_logits = logits[..., :-1, :]` and `shift_labels = labels[..., 1:]`, followed by cross-entropy with an ignore index for padding tokens. Published benchmarks usually report **corpus-level** perplexity, which sums negative log-probabilities across the entire dataset and divides by the total number of scored tokens before taking the exponential. Because rows have different lengths and `exp` is nonlinear, corpus-level perplexity does not equal the average of per-row perplexities. Aggregate with `sequence_logprob` and the per-row pair counts instead.
 
-The same gather appears in serving. An API that returns `logprobs` reports the
-log-probability of each sampled token from the logits one position earlier. Scoring a
-fixed continuation ("which of these four answers is most likely?") is
-`sequence_logprob` restricted to the continuation's positions. Speculative decoding
-runs the large model once over the drafted tokens and reads, at every drafted
-position, the probability it assigns to the token the draft model chose: the logits
-at position `t` judge the draft's token at `t + 1`.
+Serving engines use the same gather. APIs that return `logprobs` read each sampled token's log-probability from the logits one position earlier. Multiple-choice scoring applies `sequence_logprob` over only the continuation tokens. Speculative decoding runs the target model once over a drafted sequence and reads the target probability of each drafted token `t + 1` from the logits at position `t`.

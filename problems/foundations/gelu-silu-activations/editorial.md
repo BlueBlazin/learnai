@@ -1,35 +1,31 @@
 ## The idea
 
-Both activations have the form "the input times a smooth gate between 0 and 1". They
-differ in the gate.
+Both activations multiply their input by a smooth gate between 0 and 1. They differ in which gate they use.
 
-**GELU** gates with the standard normal CDF, $\Phi(x) = P(Z \le x)$. The error function
-is the same integral with a different scaling, $\operatorname{erf}(z) =
-\frac{2}{\sqrt{\pi}} \int_0^z e^{-t^2}\,dt$; substituting $t = u/\sqrt{2}$ gives
+**GELU** gates with the standard normal CDF, $\Phi(x) = P(Z \le x)$ for a standard normal random variable $Z$. The error function is the same integral with a different scaling:
+
+$$
+\operatorname{erf}(z) = \frac{2}{\sqrt{\pi}} \int_0^z e^{-t^2}\,dt .
+$$
+
+Substituting $t = u/\sqrt{2}$ converts that integral into the standard normal CDF:
 
 $$
 \Phi(x) = \frac{1}{2}\left(1 + \operatorname{erf}\!\left(\frac{x}{\sqrt{2}}\right)\right) .
 $$
 
-The $\sqrt{2}$ is the standard deviation hiding in the change of variables: `erf`
-integrates $e^{-t^2}$, a Gaussian with variance $1/2$.
+The $\sqrt{2}$ factor comes from that change of variables, because `erf` integrates $e^{-t^2}$, which corresponds to a Gaussian with variance $1/2$ rather than $1$.
 
-**The tanh form** replaces $\Phi$ with $\frac{1}{2}(1 + \tanh(\sqrt{2/\pi}\,(x +
-0.044715\,x^3)))$. It was attractive in 2016 because `erf` was slow or missing on some
-accelerators. Its maximum error is $4.7 \times 10^{-4}$, near $|x| = 2.7$. That is a
-good approximation and a different function: a model trained with one and served with
-the other is a slightly different model.
+**The `tanh` approximation** replaces $\Phi(x)$ with $\frac{1}{2}(1 + \tanh(\sqrt{2/\pi}\,(x + 0.044715\,x^3)))$. It became popular in 2016 because `erf` was slow or unavailable on some accelerators. Its maximum difference from exact GELU is $4.7 \times 10^{-4}$ near $|x| = 2.7$. That makes it a close approximation, but still a distinct function. A model trained with one form and served with the other produces slightly different activations.
 
-**SiLU** gates with the logistic sigmoid. Of the two ways to write the sigmoid, only
-one survives float32:
+**SiLU** gates with the logistic sigmoid. Only one of the two standard ways to write the sigmoid survives float32 for large inputs:
 
-| | $x = 100$ | $x = -100$ |
+| formula | $x = 100$ | $x = -100$ |
 |---|---|---|
 | $1 / (1 + e^{-x})$ | $1 / (1 + 0) = 1$ | $1 / (1 + \infty) = 0$ |
 | $e^{x} / (1 + e^{x})$ | $\infty / \infty$ = NaN | $0 / (1 + 0) = 0$ |
 
-Overflow to infinity is harmless in a denominator and fatal on both sides of a
-division. Folding the multiplication in gives the one-line form $x / (1 + e^{-x})$.
+Overflow to infinity is harmless when it appears only in the denominator, but fatal when it appears in both the numerator and denominator. Folding the multiplication by $x$ into the fraction gives the single-line expression $x / (1 + e^{-x})$.
 
 ## Reference solution (PyTorch)
 
@@ -47,52 +43,25 @@ def silu(x):
     return x / (1.0 + torch.exp(-x))
 ```
 
-The JAX version uses `jax.scipy.special.erf` and the MLX version `mx.erf`; nothing else
-changes.
+The JAX version replaces `torch.erf` with `jax.scipy.special.erf`, and the MLX version uses `mx.erf`. Everything else stays the same.
 
-The exact form computes $1 + \operatorname{erf}(\cdot)$, which cancels for negative
-$x$: below about $x = -5.5$ the `erf` rounds to exactly $-1$ and the result is $-0.0$
-where the true value is of order $-10^{-7}$. The absolute error is below $10^{-6}$,
-which is why the comparison has an absolute tolerance. If the tail matters, use the
-complementary error function, $\Phi(x) = \frac{1}{2}\operatorname{erfc}(-x/\sqrt{2})$,
-which has no cancellation (PyTorch and JAX have `erfc`; MLX does not).
+The exact GELU formula computes $1 + \operatorname{erf}(\cdot)$, which suffers from catastrophic cancellation for negative $x$. Below roughly $x = -5.5$, `erf` rounds to `-1.0` in float32 and the formula returns `-0.0`, even though the true value is on the order of $-10^{-7}$. The absolute error stays below $10^{-6}$, which is why the test harness includes an absolute tolerance. When tail accuracy matters, you can use the complementary error function, $\Phi(x) = \frac{1}{2}\operatorname{erfc}(-x/\sqrt{2})$, which avoids cancellation. PyTorch and JAX provide `erfc`, while MLX does not.
 
 ## Common mistakes
 
-- **Returning the tanh form for `approximate="none"`**, or the reverse. Typically the
-  argument is ignored because the first formula found online was the tanh one. The
-  outputs agree to three decimal places, so a loose test passes.
-- **A wrong constant.** `sqrt(2) / pi` or `2 / sqrt(pi)` in place of `sqrt(2 / pi)`;
-  `0.44715` in place of `0.044715`. The result is still a smooth gate with the right
-  limits, so plots look right.
-- **`erf(x)` without the $\sqrt{2}$.** This is $x$ times the CDF of a normal with
-  variance $1/2$: a sharper gate, and the right values at 0 and at both extremes.
-- **The other approximation.** The paper also offers $x\,\sigma(1.702\,x)$, with an
-  error of up to 0.02. It has its own name in config files (`quick_gelu`) and is not
-  what `approximate="tanh"` means.
-- **The overflowing sigmoid.** `x * exp(x) / (1 + exp(x))` is NaN from $x = 88.73$ on.
-  Activations that large are rare in float32, and common enough in the residual stream
-  of a real model to matter.
-- **Calling the built-in.** Correct numbers, and nothing learned about which function a
-  config name refers to.
+- **Ignoring the `approximate` flag.** Returning the `tanh` form for `approximate="none"` (or the reverse) is common when someone copies the first GELU formula they find online. Because the two outputs agree to three decimal places, a loose check will miss the bug.
+- **Getting a constant wrong.** Writing `sqrt(2) / pi` or `2 / sqrt(pi)` instead of `sqrt(2 / pi)`, or `0.44715` instead of `0.044715`, still yields a smooth gate with the right limits, so plots look normal even though the values are wrong.
+- **Omitting the $\sqrt{2}$ inside `erf`.** Calling `erf(x)` computes $x$ times the CDF of a normal distribution with variance $1/2$. The resulting gate is too sharp, even though it matches at $x = 0$ and at both extremes.
+- **Using `quick_gelu` for `approximate="tanh"`.** The original paper also mentions $x\,\sigma(1.702\,x)$, which has an error of up to $0.02$. Config files name that variant `quick_gelu`, not `approximate="tanh"`.
+- **Using the overflowing sigmoid.** Computing `x * exp(x) / (1 + exp(x))` returns NaN starting at $x = 88.73$. Activations that large are uncommon in float32, yet frequent enough in the residual stream of real models to break inference.
+- **Calling a built-in activation.** Built-in calls produce the right numbers, but bypass the implementation rules and hide which mathematical function a config name actually selects.
 
 ## Complexity
 
-One pass over the data, $O(n)$ time and $O(n)$ memory, with one transcendental function
-(`erf`, `tanh`, or `exp`) per element.
+For an input with $n$ elements, one pass takes $O(n)$ time and $O(n)$ memory, with one transcendental call (`erf`, `tanh`, or `exp`) per element.
 
 ## In the wild
 
-Hugging Face configuration files name the activation, and the names are a small
-history lesson. `"gelu"` is the exact erf form. `"gelu_new"` is the tanh form written
-out in Python, the default of GPT-2. `"gelu_pytorch_tanh"` is the same function through
-PyTorch's `gelu(approximate="tanh")`, the value in Gemma configs; Gemma's first
-release shipped with `"gelu"` although the weights were trained with the tanh form, and
-the loader now corrects that value with a warning. `"quick_gelu"` is $x\,\sigma(1.702\,
-x)$, used by the original CLIP. `"silu"` and `"swish"` are the same function; it is the
-gate inside the SwiGLU feed-forward block of Llama-family models.
+Hugging Face configuration files record the activation name, and those names reflect how the variants evolved. `"gelu"` selects the exact `erf` form. `"gelu_new"` is the `tanh` form written out in Python, which was the default for GPT-2. `"gelu_pytorch_tanh"` is the same `tanh` function routed through PyTorch's `gelu(approximate="tanh")`, as used in Gemma configs. Gemma's initial release accidentally specified `"gelu"` even though the weights were trained with the `tanh` form, so loaders now override that setting with a warning. `"quick_gelu"` is $x\,\sigma(1.702\,x)$, used in the original CLIP models. `"silu"` and `"swish"` refer to the same function, which serves as the gate inside the SwiGLU feed-forward block of Llama-family models.
 
-Engines implement each of these as a fused elementwise kernel, and in half precision
-the overflow argument changes numbers but not shape: in float16, $e^{x}$ overflows at
-$x = 11.1$ and $x^3$ at $x = 40.3$, so the stable spelling of the sigmoid is required
-for ordinary activations, and the cubic in the tanh form needs care as well.
+Production inference engines implement these activations as fused elementwise kernels. In half precision (float16), overflow thresholds drop sharply. Because $e^{x}$ overflows at $x = 11.1$ and $x^3$ overflows at $x = 40.3$, the stable form of the sigmoid is necessary even for ordinary activations, and the cubic term in the `tanh` GELU requires extra care as well.

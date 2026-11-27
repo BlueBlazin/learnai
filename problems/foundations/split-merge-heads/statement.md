@@ -1,7 +1,4 @@
-Implement the two shape changes that turn a single attention layer into a multi-head
-one: `split_heads`, which cuts the feature axis into heads and moves the head axis next
-to the batch axis, and `merge_heads`, its inverse. Each is two operations, a reshape
-and a transpose, and the whole exercise is that these two are not interchangeable.
+Implement `split_heads` and `merge_heads`, the two tensor transformations that reshape features for multi-head attention. `split_heads` divides the feature axis into separate heads and moves the head axis next to the batch axis, while `merge_heads` reverses that transformation.
 
 ![This problem is the reshape around attention: heads are split before it and merged after it.](assets/map.svg)
 
@@ -12,39 +9,27 @@ def split_heads(x, n_heads): ...
 def merge_heads(x): ...
 ```
 
-A model of width `D` with `H` heads gives every head a contiguous block of
-$d = D / H$ features: head 0 owns features $0, \dots, d - 1$, head 1 owns features
-$d, \dots, 2d - 1$, and so on.
+A batch of token sequences has shape `(B, T, D)`, where `B` is the batch size, `T` is the sequence length (number of tokens), and `D` is the feature width. With `H = n_heads` heads, each head receives a contiguous block of $d = D / H$ features. Head 0 owns features $0, \dots, d - 1$, head 1 owns features $d, \dots, 2d - 1$, and so on.
 
-**`split_heads(x, n_heads)`** takes `x` of shape `(B, T, D)` and returns `y` of shape
-`(B, H, T, d)` with
+**`split_heads(x, n_heads)`** takes a float32 tensor `x` of shape `(B, T, D)` and a positive Python int `n_heads` (`H`) that divides `D`. It returns a float32 tensor `y` of shape `(B, H, T, d)` satisfying
 
 $$
-y[b, h, t, i] = x[b, t, h \cdot d + i] .
+y[b, h, t, i] = x[b, t, h \cdot d + i]
 $$
 
-So `y[b, h]` is the sequence as head `h` sees it: `T` vectors of width `d`.
+for every batch index $b$, head index $h$, token index $t$, and within-head feature index $i \in \{0, \dots, d - 1\}$. Under this layout, `y[b, h]` is the sequence of `T` vectors of width `d` as head `h` sees it.
 
-**`merge_heads(x)`** takes `x` of shape `(B, H, T, d)` and returns `y` of shape
-`(B, T, H * d)` with
+**`merge_heads(x)`** takes a float32 tensor `x` of shape `(B, H, T, d)` and returns a float32 tensor `y` of shape `(B, T, H * d)` satisfying
 
 $$
 y[b, t, h \cdot d + i] = x[b, h, t, i] .
 $$
 
-It concatenates, for every token, the vectors of head 0, head 1, ..., head `H - 1`.
+For every token, this concatenates the vectors from head 0, head 1, ..., head `H - 1` back into a single vector of width $H \cdot d$.
 
-- `x`: a float32 tensor. Its values are arbitrary.
-- `n_heads`: `H`, a positive Python int that divides `D`.
-- Both functions return float32 tensors that hold the same values as the input, moved
-  and not changed. Whether the result shares memory with the input does not matter.
-
-The two functions are inverses of each other: `merge_heads(split_heads(x, H))` equals
-`x`, and `split_heads(merge_heads(y), H)` equals `y`.
-
-Both functions must work on any tensor of the right shape, however it was produced and
-however it is laid out in memory: a freshly created tensor, or the output of a
-transpose (as when `merge_heads` is applied to what `split_heads` returned).
+- Both functions move the existing values without modifying them. Whether the result shares memory with the input does not matter.
+- The two functions are exact inverses. `merge_heads(split_heads(x, H))` equals `x`, and `split_heads(merge_heads(y), H)` equals `y`.
+- Both functions must work on any tensor of the right shape regardless of its memory layout, including freshly created tensors and non-contiguous tensors produced by a transpose (such as passing the output of `split_heads` directly into `merge_heads`).
 
 ## Shapes
 
@@ -57,7 +42,7 @@ transpose (as when `merge_heads` is applied to what `split_heads` returned).
 
 ## Example
 
-One sequence of three tokens of width 4, split into two heads of width 2:
+Consider one sequence of three tokens of width 4, split into two heads of width 2:
 
 ```python
 x = [[[0.0, 1.0,  2.0,  3.0],    # token 0
@@ -70,37 +55,27 @@ split_heads(x, 2)
 #                                                 shape (1, 2, 3, 2)
 ```
 
-`merge_heads` of that result returns `x`.
+Passing that output into `merge_heads` recovers `x`.
 
 ![The example's feature axis is cut into two bands, and each band becomes one head's sequence of $T$ vectors.](assets/heads.svg)
 
-Compare with reshaping `x` straight to `(1, 2, 3, 2)`, which has the right shape:
+Contrast this with reshaping `x` directly to `(1, 2, 3, 2)`. That produces the right shape, but the wrong contents:
 
 ```python
 # [[[[0.0, 1.0], [2.0, 3.0], [ 4.0,  5.0]],
 #   [[6.0, 7.0], [8.0, 9.0], [10.0, 11.0]]]]
 ```
 
-Here "head 0" holds all of token 0 and half of token 1. A reshape never moves a value
-in memory order; it only redraws the boundaries. Putting the head axis in front of the
-sequence axis changes the order, and that takes a transpose.
+In this broken result, "head 0" holds all of token 0 and half of token 1. A reshape never changes element order in memory. It only redraws axis boundaries. Moving the head axis in front of the sequence axis reorders the elements, which requires a transpose.
 
 ## Constraints
 
-- Results are compared with the reference exactly: no arithmetic is involved.
-- $1 \le B, T \le 16$, $1 \le H \le 16$, and $1 \le D / H \le 16$. `D` is always a
-  multiple of `H`; `H = 1` and `H = D` both occur.
+- Results are compared with the reference exactly, because no arithmetic is performed.
+- $1 \le B, T \le 16$, $1 \le H \le 16$, and $1 \le D / H \le 16$. `D` is always a multiple of `H`, and both `H = 1` and `H = D` occur.
 - No Python loops over batch items, tokens, or heads are needed.
 
 ## Why this matters
 
-Multi-head attention is single-head attention run on `H` slices in parallel, and the
-slicing is done entirely by these two functions: split after the query, key, and value
-projections, merge before the output projection. A checkpoint's projection matrices
-assume the head-major layout above, so the feature order is part of the weights'
-contract. Every bug here produces a tensor of the right shape. With a reshape in place
-of the transpose, each "head" attends over a mixture of positions and features, nothing
-fails, and the model produces fluent-looking nonsense, or worse, slightly degraded text
-when the bug is confined to one path such as a cached decode step. Shape errors in this
-step are the most common reason a hand-written forward pass does not match the
-reference implementation.
+Multi-head attention runs single-head attention on `H` slices in parallel. Models apply `split_heads` right after the query, key, and value projections, and apply `merge_heads` right before the output projection.
+
+A checkpoint's projection matrices assume this exact head-major layout, so the feature order is part of the weights' contract. Every common bug here still produces a tensor of the expected shape. If a reshape replaces the transpose, each head attends over a scrambled mixture of positions and features without raising an error. The model then outputs fluent-looking nonsense, or subtly degraded text when the bug only hits one code path such as cached decoding.

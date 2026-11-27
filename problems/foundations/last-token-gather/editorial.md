@@ -1,16 +1,10 @@
 ## The idea
 
-There are two separate questions, and the bugs come from answering only one of them.
+This problem splits into two parts, and most bugs come from getting only one of them right.
 
-**Where is the last real token?** A row with `n` real tokens padded on the right keeps
-them at positions $0, \dots, n - 1$, so the last one is at $n - 1$. Padded on the left,
-the real tokens are pushed against the end, $T - n, \dots, T - 1$, and the last one is
-at $T - 1$ whatever `n` is.
+**Where is the last real token?** In a batch of `B` sequences padded to length `T`, a row with `n` real tokens padded on the right places them at positions $0, \dots, n - 1$, so the last real token is at $n - 1$. When padded on the left, those tokens sit at $T - n, \dots, T - 1$, so the last real token is always at $T - 1$ regardless of `n`.
 
-**How do you select a different position in every row?** Slicing cannot do it: a slice
-selects the same positions in every row. What is needed is paired (advanced) indexing:
-two integer tensors of shape `(B,)`, one for the row and one for the position, read
-together as a list of `(row, position)` pairs.
+**How do you select a different position in every row?** A standard slice selects the same positions in every row, so it cannot handle right padding. Instead, use paired (advanced) indexing with two integer tensors of shape `(B,)`, one for the row indices and one for the target positions. Together, they select a list of `(row, position)` pairs.
 
 ## Reference solution (PyTorch)
 
@@ -27,58 +21,30 @@ def last_token_logits(logits, lengths, padding_side):
     return logits[rows, last]
 ```
 
-JAX and MLX accept the same `logits[rows, last]`. The gather form says the same thing
-with an explicit axis:
+JAX and MLX support the same `logits[rows, last]` indexing. You can also express this with an explicit gather along axis 1:
 
 ```python
 index = last[:, None, None].expand(batch, 1, logits.shape[-1])    # (B, 1, V)
 torch.gather(logits, 1, index)[:, 0]                               # (B, V)
 ```
 
-`gather` along axis 1 computes `out[b, 0, v] = logits[b, index[b, 0, v], v]`. The index
-must have a full `V` axis in PyTorch; `take_along_dim`, `jnp.take_along_axis`, and
-`mx.take_along_axis` broadcast a `(B, 1, 1)` index for you.
+`torch.gather` along axis 1 computes `out[b, 0, v] = logits[b, index[b, 0, v], v]`, and PyTorch requires `index` to match the full `V` axis. By contrast, `torch.take_along_dim`, `jnp.take_along_axis`, and `mx.take_along_axis` broadcast a `(B, 1, 1)` index automatically.
 
 ## Common mistakes
 
-- **Always `logits[:, -1]`.** Correct for one prompt, for equal lengths, and for left
-  padding. For a right-padded batch it returns the logits at a padding position for
-  every short row.
-- **`lengths` as the index.** A length is a count; the last index is one less.
-  `logits[rows, lengths]` reads the first padding position, and for a full row it is
-  out of range: an error in PyTorch, and silently clamped to the last position in JAX,
-  where a full row then looks right.
-- **Ignoring the padding side.** `lengths - 1` on a left-padded batch points into the
-  padding, or at a token in the middle of the prompt. A variant returns $T - n$, the
-  *first* real token.
-- **One position for the whole batch.** `lengths.max() - 1` is the last column of the
-  longest row. Tests with equal lengths pass.
-- **Indexing the wrong axis.** `logits[last, rows]` pairs positions with the batch axis
-  and row numbers with the sequence axis; it runs without error whenever the numbers
-  happen to be in range, and returns other rows' logits. Gathering along the
-  vocabulary axis returns shape `(B, T)`, which is only caught by shape when
-  $T \ne V$.
-- **One-hot multiply and sum.** `(logits * onehot[:, :, None]).sum(1)` is a common way
-  to avoid thinking about gather. It is $O(T)$ times more work, and it breaks on the
-  first `-inf` logit: `0 * -inf` is NaN. Banned tokens are represented as `-inf`, so
-  this is not a corner case. If a mask is unavoidable, select with `where`.
+- **Always using `logits[:, -1]`.** This works for a single prompt, equal-length batches, and left padding, but on a right-padded batch it reads a padding position for every short row.
+- **Using `lengths` directly as the index.** A length is a count, so the last index is `lengths - 1`. Indexing with `logits[rows, lengths]` reads the first padding position and goes out of bounds on a full row. PyTorch raises an error, while JAX silently clamps the out-of-bounds index to `T - 1`, making full rows appear correct.
+- **Ignoring `padding_side`.** Using `lengths - 1` on a left-padded batch points into the padding or into the middle of the prompt. Another common mistake is returning $T - n$, which selects the *first* real token instead of the last.
+- **Using one position for the whole batch.** Indexing with `lengths.max() - 1` reads the last column of the longest row, so it only passes when all rows have the same length.
+- **Indexing the wrong axis.** Writing `logits[last, rows]` pairs sequence positions with the batch axis and row numbers with the sequence axis. Whenever those integers happen to be in range, it runs without error and returns logits from other rows. Gathering along the vocabulary axis returns shape `(B, T)`, which only fails a shape check when $T \ne V$.
+- **Multiplying by a one-hot mask and summing.** Computing `(logits * onehot[:, :, None]).sum(1)` does $O(T)$ times more work and fails whenever any unselected entry is `-inf`, because `0 * -inf` is `NaN`. Since banned tokens are represented as `-inf`, this happens in normal use. If you must use a mask, select with `where`.
 
 ## Complexity
 
-$O(B\,V)$ time and memory: one vector is copied per row. The one-hot variant reads all
-$B\,T\,V$ entries.
+$O(B\,V)$ time and memory, since one length-`V` vector is copied per row. The one-hot multiply-and-sum approach reads all $B\,T\,V$ entries instead.
 
 ## In the wild
 
-Generation code sidesteps the gather by padding on the left, as the Hugging Face
-generation guide instructs for decoder-only models: the model was never trained to
-continue from padding, and with left padding `logits[:, -1]` is the last real token at
-every step of the loop, including after new tokens are appended on the right. Left
-padding moves the difficulty elsewhere: position ids must be counted from the first
-real token and not from column 0, and the attention mask must hide the padded prefix.
+Decoder-only generation code usually avoids this gather by padding on the left, as recommended by the Hugging Face generation guide. Because the model was never trained to continue from padding, left padding keeps `logits[:, -1]` at the last real token on every decoding step as new tokens are appended on the right. However, left padding shifts the work elsewhere. Position IDs must start at the first real token rather than column 0, and the attention mask must hide the padded prefix.
 
-The gather is needed wherever right padding is the convention: computing sentence
-embeddings by last-token pooling, scoring a batch of right-padded continuations,
-reading out a classifier token, and training-style evaluation pipelines. Engines with
-continuous batching avoid the question, since each sequence in the batch tracks its own
-length and only the newest token of each is ever run through the model.
+The gather is still required wherever right padding is standard, such as last-token pooling for sentence embeddings, scoring right-padded continuations, reading out a classifier token, and training-style evaluation pipelines. Engines with continuous batching avoid padding altogether by tracking each sequence's length separately and running only the newest token of each active sequence.

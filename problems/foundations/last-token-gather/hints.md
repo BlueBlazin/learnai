@@ -1,25 +1,16 @@
-First find the position, then worry about the indexing. For each padding side, write
-down where the real tokens of a row with `lengths[b] = 2` and `T = 5` sit, and the
-index of the last one. One of the two answers does not depend on the length at all.
+Find the target position for each row first, then solve the indexing. For both padding sides, write down where the real tokens sit when `lengths[b] = 2` and `T = 5`, and note the index of the last real token. One of the two cases does not depend on `lengths[b]` at all.
 
 ---
 
-You now have one position per row: an integer tensor `last` of shape `(B,)`. You need
-`logits[b, last[b]]` for every `b`, which pairs each row with **its own** position.
-`logits[:, last]` does not do that: a slice on the first axis combined with an index on
-the second selects every listed position for every row, shape `(B, B, V)`.
+Once you have an integer tensor `last` of shape `(B,)` holding one target position per row, you need `logits[b, last[b]]` for every `b`. Writing `logits[:, last]` does not pair rows with their own positions. Combining a slice on axis 0 with a 1D index tensor on axis 1 selects every listed position for every row, producing shape `(B, B, V)`.
 
 ---
 
-Index both axes with tensors of the same shape, so that they are paired elementwise:
+Index both axes with 1D tensors of the same shape `(B,)` so they pair elementwise:
 
 ```
 rows = arange(B)
 out  = logits[rows, last]        # (B, V): out[b] = logits[rows[b], last[b]]
 ```
 
-with `last = lengths - 1` for right padding and `last = T - 1` for left padding. An
-equivalent form is `take_along_axis` / `gather` along axis 1 with an index of shape
-`(B, 1, V)` (or `(B, 1, 1)` where broadcasting is supported), followed by dropping
-axis 1. Avoid selecting by multiplying with a one-hot mask and summing: `0 * -inf` is
-NaN.
+Set `last = lengths - 1` for right padding and `last = T - 1` for left padding. An equivalent approach uses `take_along_axis` or `gather` along axis 1 with an index of shape `(B, 1, V)` (or `(B, 1, 1)` where broadcasting is supported), then drops axis 1. Do not select by multiplying with a one-hot mask and summing, because `0 * -inf` produces `NaN`.

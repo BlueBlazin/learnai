@@ -1,8 +1,8 @@
-Read a safetensors checkpoint without the `safetensors` package: parse the header of a
-file held in memory, and hand out any tensor as a numpy array that points into the
-file's bytes. The format is small enough to implement in twenty lines. The work is in
-getting three offsets right and in never copying, because the file you are about to
-open is 705 MB.
+Read a safetensors checkpoint without using the `safetensors` package. Given a file held
+in memory, parse its header and return any requested tensor as a NumPy array that views
+the buffer directly without copying. Because real checkpoints can be hundreds of
+megabytes (705 MB in the test suite), zero-copy reads and exact byte offsets are
+essential.
 
 ## Specification
 
@@ -11,44 +11,45 @@ def read_header(buf) -> tuple[dict[str, dict], dict[str, str], int]: ...
 def read_tensor(buf, name: str) -> np.ndarray: ...
 ```
 
-`buf` is the whole file: a `bytes`, a `bytearray`, a `memoryview` of bytes, or an
-`mmap.mmap`. A safetensors file has three parts.
+`buf` holds the entire file as a `bytes`, `bytearray`, `memoryview` of bytes, or
+`mmap.mmap`. Every safetensors file has three contiguous sections: an 8-byte header
+length $n$, an $n$-byte JSON header, and the raw tensor data starting at byte $8 + n$.
 
 ![The three parts of a safetensors file. Every `data_offsets` pair counts from the start of the tensor data, byte $8 + n$.](assets/file-layout.svg)
 
-1. **Bytes 0 to 7: the header length** $n$, an unsigned 64-bit **little-endian**
-   integer.
-2. **Bytes 8 to $8 + n - 1$: the header**, UTF-8 JSON. It is one object. Each key is
-   a tensor name, and its value is an object with three fields:
+1. **Bytes 0 to 7 (header length).** An unsigned 64-bit **little-endian** integer $n$.
+2. **Bytes 8 to $8 + n - 1$ (header).** A single UTF-8 JSON object. Each key is a tensor
+   name, and its value is an object with three fields:
 
    | field | meaning |
    |---|---|
-   | `dtype` | one of the names in the table below |
-   | `shape` | a list of non-negative integers; `[]` is a scalar |
-   | `data_offsets` | `[begin, end]`: the tensor occupies bytes `begin` to `end - 1` **of the data section**, not of the file |
+   | `dtype` | one of the dtype names in the table below |
+   | `shape` | a list of non-negative integers (`[]` for a scalar) |
+   | `data_offsets` | `[begin, end]`, meaning the tensor occupies bytes `begin` to `end - 1` **of the data section**, not of the file |
 
-   One key is special: `"__metadata__"`, if present, is not a tensor. Its value is an
-   object of free-form strings (`{"format": "pt"}`). It may appear anywhere in the
-   header. The header may end in spaces (writers pad it so that the data starts at a
-   multiple of 8); the spaces are part of the $n$ bytes.
-3. **Bytes $8 + n$ to the end: the data section.** Tensors are stored as raw
-   little-endian elements in row-major (C) order. They need not be stored in the
-   order in which the header lists them.
+   One key is special. If `"__metadata__"` is present, it is not a tensor, and its value
+   is an object of free-form strings such as `{"format": "pt"}`. It may appear anywhere
+   in the header. The header may also end with trailing spaces (writers pad it so the
+   data section starts on an 8-byte boundary), and those spaces are included in the $n$
+   bytes.
+3. **Bytes $8 + n$ to the end (data section).** Raw little-endian elements stored in
+   row-major (C) order. Tensors do not have to appear in the same order as in the header.
 
-**`read_header(buf)`** returns a tuple `(tensors, metadata, data_start)`:
+**`read_header(buf)`** returns `(tensors, metadata, data_start)`:
 
-- `tensors`: a dict from tensor name to its header entry, exactly as parsed (a dict
-  with the keys `dtype`, `shape`, `data_offsets`), in the order of the header, without
+- `tensors`: a dict mapping each tensor name to its parsed header entry (a dict with keys
+  `dtype`, `shape`, and `data_offsets`), preserving header order and excluding
   `"__metadata__"`.
-- `metadata`: the `"__metadata__"` object, or `{}` if the file has none.
-- `data_start`: the int $8 + n$.
+- `metadata`: the `"__metadata__"` dict, or `{}` if absent.
+- `data_start`: the integer $8 + n$.
 
-It raises `ValueError` if `buf` has fewer than 8 bytes or fewer than $8 + n$ bytes.
+Raise `ValueError` if `buf` has fewer than 8 bytes or fewer than $8 + n$ bytes.
 
-**`read_tensor(buf, name)`** returns the tensor `name` as a numpy array:
+**`read_tensor(buf, name)`** returns tensor `name` as a NumPy array with the following
+properties:
 
-- with the shape given in the header;
-- with the numpy dtype below, little-endian whatever the machine;
+- Its shape matches the header's `shape`.
+- Its NumPy dtype matches the little-endian table below, regardless of host endianness.
 
   | `dtype` | numpy | | `dtype` | numpy | | `dtype` | numpy |
   |---|---|---|---|---|---|---|---|
@@ -58,26 +59,26 @@ It raises `ValueError` if `buf` has fewer than 8 bytes or fewer than $8 + n$ byt
   | `U16` | `<u2` | | `I64` | `<i8` | | `BF16` | `<u2` |
   | `I16` | `<i2` | | | | | | |
 
-  numpy has no bfloat16, so a `BF16` tensor comes back as its 16-bit patterns,
-  undecoded (decoding them is the `bf16-decode` problem);
-- **as a view of `buf`, not a copy**: the array's memory is the buffer's memory
-  (`np.shares_memory` is true). A tensor with zero elements is exempt, since it has no
-  memory to share.
+  NumPy has no native `bfloat16`, so return `BF16` tensors as their raw 16-bit bit
+  patterns (`<u2`), undecoded. Decoding them is covered in the `bf16-decode` problem.
+- It must be a **view of `buf`, not a copy**, so `np.shares_memory(arr, buf)` is `True`.
+  Tensors with zero elements are exempt because they have no backing bytes to share.
 
-It raises
+`read_tensor` must raise:
 
-- `KeyError` if `name` is not a tensor of the file (`"__metadata__"` is not one);
-- `ValueError` if the entry's `dtype` is not in the table, if `end - begin` is not
-  the number of elements times the element size, or if the tensor's bytes end after
-  the end of `buf`. A file with one bad entry still yields its other tensors.
+- `KeyError` if `name` is not a tensor in the file (`"__metadata__"` is not a tensor).
+- `ValueError` if `dtype` is not in the table, if `end - begin` does not equal the
+  element count times the element byte size, or if the tensor's byte range extends past
+  the end of `buf`. A file with one malformed entry must still allow reading its other
+  valid tensors.
 
-Neither function modifies `buf`. Parse the bytes yourself: the `safetensors` package
-and the kit's `SafetensorsFile` are not allowed. The standard library (`json`,
-`struct`) and numpy are.
+Neither function may modify `buf`. Parse the bytes yourself without importing the
+`safetensors` package or the kit's `SafetensorsFile`. The Python standard library
+(`json`, `struct`, `math`, and so on) and NumPy are allowed.
 
 ## Example
 
-A complete file of 170 bytes, with a BF16 vector and a U8 matrix:
+Consider a complete 170-byte file containing a `BF16` vector and a `U8` matrix:
 
 ```
 offset  bytes
@@ -101,32 +102,32 @@ read_tensor(buf, "bias")  # array([0x3F80, 0xC020], dtype=uint16)
 read_tensor(buf, "ids")  # array([[1, 2, 3], [4, 5, 6]], dtype=uint8)
 ```
 
-`bias` is at bytes `160 + 0` to `160 + 3` of the file. The pairs `80 3f` and `20 c0`
-are the little-endian 16-bit integers `0x3F80` and `0xC020`, the bfloat16 patterns of
-$1.0$ and $-2.5$. Read from the start of the file instead, offsets 0 to 3 would give
-`98 00 00 00`: the header length.
+`bias` occupies bytes `160 + 0` through `160 + 3` of the file. The byte pairs `80 3f` and
+`20 c0` decode as the little-endian 16-bit integers `0x3F80` and `0xC020`, which are the
+`bfloat16` bit patterns for $1.0$ and $-2.5$. Reading from offset 0 of the file instead
+would return `98 00 00 00`, which are the first four bytes of the header length.
 
 ## Constraints
 
-- Everything is compared exactly: the header entries, the dtype, the shape, and the
-  bytes of every array.
-- The header is valid JSON whenever all $n$ bytes are present, and every entry has the
-  three fields. Shapes have at most 4 dimensions.
-- Synthetic files are a few kilobytes. The real one is `model.safetensors` of
-  `ibm-granite/granite-4.0-350m`: 704,786,224 bytes, 226 tensors, all `BF16`, passed
-  as a read-only `mmap`. Every one of its tensors is checked against what the
-  `safetensors` package reads, and every array must be a view of the map.
-- Calling `read_tensor` 226 times must stay well inside the time limit; parsing the
-  header once per call is fine.
+- Header entries, dtypes, shapes, and array bytes are all compared for exact equality.
+- Whenever all $n$ header bytes are present, the header is valid JSON and every tensor
+  entry contains `dtype`, `shape`, and `data_offsets`. Shapes have at most 4 dimensions.
+- Synthetic test files are a few kilobytes. The real test checkpoint is
+  `model.safetensors` from `ibm-granite/granite-4.0-350m`, which is 704,786,224 bytes
+  with 226 `BF16` tensors passed as a read-only `mmap`. Every tensor is checked against
+  the `safetensors` package, and every returned array must be a view of the memory map.
+- Calling `read_tensor` 226 times must finish well within the time limit. Parsing the
+  header once per call is fast enough.
 
 ## Why this matters
 
-safetensors is the format nearly every open model ships in, and its design goal is the
-one this problem enforces: a loader should be able to map the file and use the tensors
-where they lie, so that a 4 GB model "loads" in milliseconds and the operating system
-pages weights in as they are touched. A loader that copies doubles peak memory at the
-worst moment. One that gets the offset base wrong does not crash; it returns tensors
-of the right shape filled with pieces of JSON and neighboring weights, and the model
-produces fluent nonsense. Knowing the layout also lets you do what the libraries do
-not offer: count parameters, or read one layer of a 100 GB checkpoint, without loading
-anything.
+Nearly every open-weights model ships in safetensors format. Its main goal is zero-copy
+loading. A loader memory-maps the file and points tensors directly into the mapped pages,
+so a 4 GB model opens in milliseconds and the operating system pages weights in only as
+they are touched. Copying the buffer doubles peak memory at startup.
+
+Getting the offset base wrong is a silent failure. The loader does not crash. Instead, it
+returns tensors of the expected shape filled with JSON text and neighboring weights,
+causing the model to generate garbage. Understanding the binary layout also lets you
+inspect parameter counts or read a single layer from a 100 GB checkpoint without loading
+the rest of the file.

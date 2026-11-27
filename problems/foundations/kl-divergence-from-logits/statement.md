@@ -1,8 +1,4 @@
-Implement the Kullback-Leibler divergence between two next-token distributions, each
-given as a row of logits. This is the number that says how far a quantized, pruned, or
-draft model's predictions have moved from the original model's. It has to stay finite
-and exact when probabilities underflow, and it has to give the right answer, not NaN,
-when tokens are masked out.
+Implement the Kullback-Leibler (KL) divergence between two next-token probability distributions, each given as a row of unnormalized logits. This metric measures how far a quantized, pruned, or draft model's predictions have drifted from the original model's. Your implementation must stay finite and accurate when probabilities underflow, and it must handle masked tokens without producing NaN.
 
 ## Specification
 
@@ -10,47 +6,27 @@ when tokens are masked out.
 def kl_from_logits(p_logits, q_logits): ...
 ```
 
-Let $P = \operatorname{softmax}(\texttt{p\_logits})$ and
-$Q = \operatorname{softmax}(\texttt{q\_logits})$ along the last axis. For one row with
-$V$ tokens the result is
+Let $P = \operatorname{softmax}(\texttt{p\_logits})$ and $Q = \operatorname{softmax}(\texttt{q\_logits})$ along the last axis. For one row over a vocabulary of $V$ tokens, the KL divergence in nats (using the natural logarithm) is
 
 $$
 \operatorname{KL}(P \,\|\, Q) = \sum_{i=1}^{V} t_i ,
 \qquad
-t_i = P_i \,(\log P_i - \log Q_i),
+t_i = P_i \,(\log P_i - \log Q_i).
 $$
 
-in nats (natural logarithm). $P$, the first argument, is the reference distribution:
-the divergence is not symmetric.
+Here $P$ (from the first argument) is the reference distribution, and $Q$ is the approximating distribution. The divergence is not symmetric, so the argument order matters.
 
-A logit of `-inf` marks a masked token, whose probability is exactly $0$. A token with
-a finite logit has a positive probability, however small. The terms $t_i$ involving a
-zero probability are **defined** as follows, in this order:
+A logit of `-inf` marks a masked token whose probability is exactly $0$. Any token with a finite logit has a strictly positive probability, however small. Define each term $t_i$ in the following priority order:
 
-1. If $P_i = 0$ (`p_logits[i]` is `-inf`): $t_i = 0$, whatever $Q_i$ is, including
-   $Q_i = 0$.
-2. Otherwise, if $Q_i = 0$ (`q_logits[i]` is `-inf` and `p_logits[i]` is finite):
-   $t_i = +\infty$, and so the row's result is `+inf`. This holds however small $P_i$
-   is, also when $e^{\log P_i}$ underflows to `0.0` in float32.
-3. Otherwise both logits are finite and $t_i = P_i(\log P_i - \log Q_i)$. Here
-   $\log P_i$ and $\log Q_i$ must be the exact log-probabilities (a token whose
-   probability underflows in float32 still has a finite log-probability), while the
-   factor $P_i$ may underflow to $0$.
+1. If $P_i = 0$ (`p_logits[i]` is `-inf`), then $t_i = 0$ regardless of $Q_i$, including when $Q_i = 0$.
+2. Otherwise, if $Q_i = 0$ (`q_logits[i]` is `-inf` while `p_logits[i]` is finite), then $t_i = +\infty$, so the row's divergence is `+inf`. This holds no matter how small $P_i$ is, even when $e^{\log P_i}$ underflows to `0.0` in float32.
+3. Otherwise, both logits are finite and $t_i = P_i(\log P_i - \log Q_i)$. Here $\log P_i$ and $\log Q_i$ must be exact log-probabilities (a token whose probability underflows in float32 still has a finite log-probability), while the leading factor $P_i$ may underflow to `0.0`.
 
-The exact divergence is never negative. Float32 rounding can leave a sum such as
-`-1e-9` for two nearly identical distributions: return `0.0` instead, so that every
-returned value is $\ge 0$.
+The exact KL divergence is never negative. Because float32 rounding can leave a tiny negative sum such as `-1e-9` for two nearly identical distributions, clamp negative sums to `0.0` so every returned value is $\ge 0$.
 
-- `p_logits`, `q_logits`: float32 tensors of the same shape `(..., V)`, with one to
-  three dimensions. Entries are finite or `-inf`; every row of each has at least one
-  finite entry. `+inf` and NaN never appear.
-- Returns a float32 tensor of shape `(...)`: one value per row, and a 0-dimensional
-  tensor for 1-D inputs. Each value is a non-negative number or `+inf`, never NaN.
+Entries of `p_logits` and `q_logits` are either finite or `-inf`, and every row of each tensor contains at least one finite entry (`+inf` and NaN never appear). For 1-D inputs, return a 0-dimensional float32 tensor. Every returned value must be a non-negative float or `+inf`, never NaN.
 
-Write the divergence yourself: do not call a built-in KL divergence or relative entropy
-(`torch.nn.functional.kl_div`, `torch.nn.KLDivLoss`, `jax.scipy.special.rel_entr`,
-`mlx.nn.losses.kl_div_loss`, and the like). Your framework's `log_softmax` and
-`logsumexp` are allowed.
+Write the divergence yourself. Do not call a built-in KL divergence or relative entropy function (`torch.nn.functional.kl_div`, `torch.nn.KLDivLoss`, `jax.scipy.special.rel_entr`, `mlx.nn.losses.kl_div_loss`, and similar). Your framework's `log_softmax` and `logsumexp` are allowed.
 
 ## Shapes
 
@@ -71,10 +47,9 @@ kl_from_logits(q, p)  # 0.056633   not symmetric
 kl_from_logits(p, p)  # 0.0
 ```
 
-The first line is $0.5 \ln\frac{0.5}{1/3} + 2 \cdot 0.25 \ln\frac{0.25}{1/3} =
-0.202733 - 0.143841$.
+The first line evaluates $0.5 \ln\frac{0.5}{1/3} + 2 \cdot 0.25 \ln\frac{0.25}{1/3} = 0.202733 - 0.143841$.
 
-Masked tokens, with `ninf = float("-inf")`:
+With masked tokens (`ninf = float("-inf")`):
 
 ```python
 kl_from_logits([0.0, 0.0, ninf], [0.0, 0.0, 0.0])  # 0.405465   rule 1: ln(3/2)
@@ -82,39 +57,24 @@ kl_from_logits([0.0, 0.0, ninf], [0.0, ninf, ninf])  # inf        rule 2 at inde
 kl_from_logits([0.0, ninf, ninf], [0.0, 0.0, ninf])  # 0.693147   rule 1 twice: ln 2
 ```
 
-In the last line index 2 is masked in both, which is rule 1: it contributes 0. Computed
-naively it is $0 \cdot (-\infty - (-\infty))$, a NaN.
+In the last line, index 2 is masked in both distributions. By rule 1 it contributes `0`, whereas evaluating $0 \cdot (-\infty - (-\infty))$ directly would produce NaN.
 
-Probabilities that underflow:
+With probabilities that underflow in float32:
 
 ```python
 kl_from_logits([0.0, 0.0], [0.0, -200.0])  # 99.306854
 kl_from_logits([0.0, -200.0], [0.0, ninf])  # inf
 ```
 
-In the first line $Q_2 = e^{-200}$ is not representable in float32, but
-$\log Q_2 = -200$ is, and the exact answer is $0.5 \ln 0.5 + 0.5(\ln 0.5 + 200)$. In
-the second, $P_2 = e^{-200}$ is positive although it rounds to `0.0`, and $Q_2 = 0$:
-rule 2.
+In the first line, $Q_2 = e^{-200}$ underflows in float32, but $\log Q_2 = -200$ is representable, giving the exact answer $0.5 \ln 0.5 + 0.5(\ln 0.5 + 200) = 99.306854$. In the second line, $P_2 = e^{-200}$ is strictly positive even though it rounds to `0.0`, while $Q_2 = 0$, so rule 2 gives `+inf`.
 
 ## Constraints
 
-- Results are compared with the reference to a relative tolerance of `1e-4` and an
-  absolute tolerance of `1e-5`. Infinities must match exactly, a NaN is always wrong,
-  and so is any value below `0`.
-- Finite logits lie in $[-10^4, 10^4]$, and $1 \le V \le 4096$. The tolerance applies at
-  every magnitude, also for rows whose logits all sit near $10^4$, where float32
-  resolves steps of about $10^{-3}$.
+- Results are compared against the reference with relative tolerance `1e-4` and absolute tolerance `1e-5`. Infinities must match exactly, and any NaN or value below `0` is always wrong.
+- Finite logits lie in $[-10^4, 10^4]$, and $1 \le V \le 4096$. The tolerance applies at every magnitude, including rows whose logits all sit near $10^4$ (where float32 spacing is about $10^{-3}$).
 - The inputs have at most 100,000 elements. No Python loops over elements are needed.
 - Stay in float32.
 
 ## Why this matters
 
-When you quantize weights to 4 bits, switch a model to half precision, or pick a draft
-model for speculative decoding, the question is always how much the output distribution
-changed, and the standard answer is the mean KL divergence between the original
-model's logits and the new model's, token position by token position. The same number
-predicts the acceptance rate of a speculative draft. Evaluation harnesses run it over
-logits that contain masked tokens (constrained decoding, banned tokens) and very
-confident predictions, which is exactly where a version built on probabilities returns
-NaN or infinity for one position and turns the mean over a whole dataset into NaN.
+When you quantize weights to 4 bits, cast a model to half precision, or choose a draft model for speculative decoding, you need to know how much the output distribution changed. The standard metric is the mean KL divergence between the original model's logits and the new model's logits across token positions, and the same quantity bounds the acceptance rate of a speculative draft. Evaluation harnesses run this metric over logits with masked tokens (from constrained decoding or banned tokens) and sharp, high-confidence predictions. A naive implementation built on probabilities returns NaN or `+inf` on a single position and corrupts the mean over the entire dataset.

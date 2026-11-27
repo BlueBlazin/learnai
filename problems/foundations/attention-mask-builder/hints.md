@@ -1,21 +1,14 @@
-Separate the two rules and decide what shape each one has before combining them. The
-causal rule compares a query index with a key index and is the same for every row of
-the batch. The padding rule depends on the row and on one position only. Is that
-position the query or the key? Ask what must not be read: a real token must never read
-from a padding position.
+Separate the causal and padding rules and decide the shape of each before combining them. The causal rule compares a query index with a key index and is the same for every row in the batch. The padding rule depends on the batch row and a single position. Decide whether that position is the query or the key by remembering that a real token must never read from a padding position.
 
 ---
 
-Build three boolean tensors from one `arange(T)` and let broadcasting combine them:
+Build three boolean tensors from a single `arange(T)` and combine them with broadcasting:
 
-- `real`, shape `(B, T)`: compare the positions with `lengths[:, None]`. For right
-  padding the real positions are the first `lengths[b]`; for left padding, the last.
-- `causal`, shape `(T, T)`: entry `[i, j]` is true when `j <= i`.
-- the diagonal, shape `(T, T)`: entry `[i, j]` is true when `j == i`.
+- `real` of shape `(B, T)`, by comparing positions with `lengths[:, None]`. For right padding, the real positions are the first `lengths[b]`. For left padding, they are the last `lengths[b]`.
+- `causal` of shape `(T, T)`, where entry `[i, j]` is true when `j <= i`.
+- `diagonal` of shape `(T, T)`, where entry `[i, j]` is true when `j == i`.
 
-`real` describes keys, and keys are the **last** axis of the mask, so it enters as
-`real[:, None, :]`, shape `(B, 1, T)`. Then count the allowed entries in each row of
-the result for a left-padded example: none of them may be zero.
+Because `real` describes keys and keys are the **last** axis of the mask, reshape it to `real[:, None, :]` of shape `(B, 1, T)`. Check a left-padded example and verify that every query row has at least one allowed entry.
 
 ---
 
@@ -25,6 +18,4 @@ mask    = where(allowed, 0.0, -inf)                               # float32
 result  = mask[:, None, :, :]                                     # (B, 1, T, T)
 ```
 
-The diagonal is OR-ed in after the AND, so that it survives for padding positions.
-Fill with a true `-inf`, and convert from boolean to float last: multiplying a boolean
-by `-inf` gives `0 * -inf = NaN` in the allowed entries.
+OR the diagonal in after the AND so that it survives for padding positions. Fill disallowed entries with true `-inf` using `where` or `masked_fill` instead of multiplying a boolean by `-inf`, because `0 * -inf` produces `NaN` in the allowed entries.

@@ -1,23 +1,26 @@
 ## The idea
 
-Both functions are invariant to shifting the logits along the axis by a constant $c$:
+For a 1-D slice $x \in \mathbb{R}^n$, both `softmax` and `log_softmax` are invariant to
+subtracting any constant $c$ from every logit along the axis:
 
 $$
-\frac{e^{x_i - c}}{\sum_j e^{x_j - c}}
-= \frac{e^{-c}\, e^{x_i}}{e^{-c} \sum_j e^{x_j}}
-= \frac{e^{x_i}}{\sum_j e^{x_j}} .
+\frac{e^{x_i - c}}{\sum_{j=1}^{n} e^{x_j - c}}
+= \frac{e^{-c}\, e^{x_i}}{e^{-c} \sum_{j=1}^{n} e^{x_j}}
+= \frac{e^{x_i}}{\sum_{j=1}^{n} e^{x_j}} .
 $$
 
-The textbook formula is the special case $c = 0$, and it is the worst possible choice
-when the logits are far from zero. Choosing $c = m = \max_j x_j$ fixes both failure
-modes at once:
+The textbook formula sets $c = 0$, which overflows on large positive logits and
+underflows to `0 / 0` on large negative logits. Choosing $c = m = \max_j x_j$ fixes both
+problems at once:
 
-- **No overflow.** Every shifted logit is $\le 0$, so every exponential is in $[0, 1]$.
-- **No `0 / 0`.** The maximal entry becomes $e^0 = 1$, so the denominator is in $[1, n]$.
+- **No overflow.** Every shifted logit $x_i - m$ is at most `0`, so every exponential
+  lies in $[0, 1]$.
+- **No `0 / 0`.** The largest entry becomes $e^0 = 1$, so the denominator lies in
+  $[1, n]$.
 
-Small terms may still underflow to zero, and that is fine. A term that underflows is
-smaller than about $10^{-45}$ relative to the largest one, far below float32 resolution,
-so dropping it does not change the rounded result.
+Very small terms may still underflow to `0`, and that is harmless. A term that underflows
+is smaller than about $10^{-45}$ relative to the largest entry, which is far below
+float32 precision and does not affect the rounded result.
 
 ## Reference solution (PyTorch)
 
@@ -37,43 +40,45 @@ The JAX and MLX versions are the same three lines with `keepdims=True`.
 
 ## Why `log_softmax` is its own function
 
-`log(softmax(x))` is mathematically identical and numerically wrong. A probability
-below about $10^{-45}$ is not representable in float32 and rounds to `0`, whose log is
-`-inf`, while the log-probability itself (say `-200`) is a perfectly ordinary float.
-The fix is to never leave log space:
+Computing `log(softmax(x))` is mathematically equivalent to `log_softmax(x)`, but
+numerically wrong. A probability below about $10^{-45}$ underflows to `0` in float32, and
+taking its logarithm gives `-inf` even though the true log-probability (such as `-200`)
+is an ordinary float32 value.
+
+The fix is to stay in log space:
 
 $$
-\operatorname{log\_softmax}(x)_i = (x_i - m) - \log \sum_j e^{x_j - m}.
+\operatorname{log\_softmax}(x)_i = (x_i - m) - \log \sum_{j=1}^{n} e^{x_j - m}.
 $$
 
-The second term is the log of a number in $[1, n]$, hence in $[0, \log n]$. Nothing can
-overflow, and the only way to get `-inf` out is to put `-inf` in.
+The sum lies in $[1, n]$, so its logarithm lies in $[0, \log n]$. Nothing can overflow,
+and `-inf` appears in the output only when `-inf` appears in the input.
 
-That last case is intended. A masked logit of `-inf` gives a shifted logit of `-inf`,
-an exponential of exactly `0`, a probability of `0`, and a log-probability of `-inf`.
-No special handling is needed, as long as the slice has one finite entry to serve as
-the maximum.
+That `-inf` behavior is exact for masked tokens. A logit of `-inf` gives a shifted logit
+of `-inf`, an exponential of `0`, a probability of `0`, and a log-probability of `-inf`.
+No special-case code is needed as long as each slice has at least one finite entry to
+serve as the maximum.
 
 ## Common mistakes
 
-- **Reducing without keeping the dimension.** `x.max(dim=axis)` drops the axis, and
-  the subtraction then either fails to broadcast or, for square inputs, silently
-  broadcasts along the wrong axis.
-- **Subtracting the global maximum.** The shift must be per slice. With a global
-  maximum, a row whose logits all sit far below it underflows to `0 / 0`.
-- **Adding an epsilon** (`log(p + 1e-8)`). This hides the `-inf` but returns a wrong
-  number: every log-probability below about `-18.4` is clamped to it.
-- **Clamping the logits** before exponentiating. It avoids the overflow by changing
-  the answer.
+- **Reducing without keeping the dimension.** Calling `x.max(dim=axis)` drops the axis,
+  so the subtraction either fails to broadcast or silently broadcasts along the wrong
+  axis on square inputs.
+- **Subtracting the global maximum.** The shift must be computed per slice. With a global
+  maximum, a slice whose logits all sit far below that maximum underflows to `0 / 0`.
+- **Adding an epsilon (`log(p + 1e-8)`).** This hides `-inf`, but clamps every
+  log-probability below about `-18.4` to a wrong value.
+- **Clamping the logits before exponentiating.** Clamping avoids overflow by changing the
+  mathematical answer.
 
 ## Complexity
 
-Two passes over the data along the axis (a max and a sum), $O(n)$ time, and $O(n)$
-extra memory for the shifted copy.
+Two passes over the data along `axis` (a max and a sum), taking $O(n)$ time per slice and
+$O(n)$ extra memory for the shifted tensor.
 
 ## In the wild
 
-This is exactly the "log-sum-exp trick": $\log \sum_j e^{x_j} = m + \log \sum_j
-e^{x_j - m}$. You will use it again for sampling with temperature, for nucleus (top-p)
-filtering, for beam search scores, and for cross-entropy, all of which are best computed
-from `log_softmax` and not from probabilities.
+This identity, $\log \sum_j e^{x_j} = m + \log \sum_j e^{x_j - m}$, is known as the
+log-sum-exp trick. It shows up throughout LLM inference and training, including
+temperature scaling, nucleus (top-p) filtering, beam search scoring, and cross-entropy
+loss, all of which are safer to compute from `log_softmax` than from raw probabilities.

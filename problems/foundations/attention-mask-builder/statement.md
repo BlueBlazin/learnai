@@ -1,20 +1,12 @@
-Sequences in a batch have different lengths, but a tensor is rectangular, so the short
-ones are filled out with padding tokens to a common length `T`. Training usually pads
-on the right.
-
-Batched generation pads on the left. A model predicts the next token from its output
-at the last real token, and each generated token is appended to the batch as a new
-column at the end. With right padding, a short row's new token would land after its
-padding, leaving a gap in the middle of its text. With left padding every row ends in
-real tokens, so each new token directly follows the text, and the prediction for every
-row is read from the last column.
-
-Build the attention mask for a batch of padded sequences: one tensor, added to the
-attention scores, that hides the future from every token and hides padding from
-everything. The difficulty is in the corners: which axis the padding mask belongs on,
-where the padding is, and what happens to a row in which everything is hidden.
+Implement `build_mask` to construct an additive attention mask for a batch of padded sequences. The mask prevents every token from attending to future positions and prevents real tokens from attending to padding positions.
 
 ![This problem is the mask that attention adds to its scores before the softmax.](assets/map.svg)
+
+## Background
+
+Sequences in a batch often have different lengths, so shorter sequences are filled with padding tokens to reach a common length `T`. Training usually pads on the right, placing real tokens at the start of each row and padding at the end.
+
+Batched generation usually pads on the left. During generation, the model predicts the next token from the output at the last real token and appends that new token as a new column at the end of the batch. With right padding, a short row's new token would land after its padding and leave a gap in the middle of its text. With left padding, every row ends in real tokens, so each new token directly follows the text and every row's next-token prediction sits in the last column.
 
 ## Specification
 
@@ -22,26 +14,19 @@ where the padding is, and what happens to a row in which everything is hidden.
 def build_mask(lengths, T, padding_side): ...
 ```
 
-A batch holds `B` sequences padded to a common length `T`. Row `b` has `lengths[b]`
-real tokens; the remaining positions are padding. Position `j` of row `b` is **real**
-when
+A batch contains `B` sequences padded to a common length `T`, where `T` is a positive Python `int`. Row `b` has `lengths[b]` real tokens, and the remaining positions are padding. The `padding_side` argument is either `"left"` or `"right"` (no other value is passed). Position `j` of row `b` is **real** when:
 
-- `padding_side == "right"`: $j < \text{lengths}[b]$ (real tokens first, padding after);
-- `padding_side == "left"`: $j \ge T - \text{lengths}[b]$ (padding first, real tokens
-  last).
+- `padding_side == "right"`: $j < \text{lengths}[b]$ (real tokens first, padding after).
+- `padding_side == "left"`: $j \ge T - \text{lengths}[b]$ (padding first, real tokens last).
 
-In attention, position `i` (the **query**) looks at position `j` (the **key**). Query
-`i` of row `b` may attend to key `j` when either of these holds:
+In attention, position `i` (the **query**) attends to position `j` (the **key**). Query `i` of row `b` may attend to key `j` when either of the following holds:
 
-1. $j \le i$ and key `j` of row `b` is real: the key is not in the future, and it is
-   not padding.
-2. $j = i$: every position may attend to itself, even a padding position.
+1. Key `j` is not in the future ($j \le i$) and key `j` of row `b` is a real token.
+2. Query `i` attends to itself ($j = i$), even when position `i` is padding.
 
-Rule 2 exists for padding queries. With left padding, every key at or before a padding
-query is padding, so rule 1 alone would hide the entire row, and a softmax over a row
-that is entirely $-\infty$ is `0 / 0`. For real queries rule 2 adds nothing.
+Rule 2 prevents empty rows for padding queries. With left padding, every key at or before a padding query is also padding, so rule 1 alone would hide the entire row. Taking a softmax over a row of all $-\infty$ entries produces `0 / 0` (`NaN`). For real queries, rule 2 adds nothing because $j = i$ is already allowed by rule 1.
 
-The function returns the **additive** mask `M` of shape `(B, 1, T, T)`:
+Return the **additive** mask `M` of shape `(B, 1, T, T)`:
 
 $$
 M[b, 0, i, j] = \begin{cases}
@@ -50,14 +35,9 @@ M[b, 0, i, j] = \begin{cases}
 \end{cases}
 $$
 
-It is meant to be added to scores of shape `(B, H, T, T)` before the softmax over the
-last axis; the axis of length 1 broadcasts over the `H` heads.
+In attention, this mask is added to a score tensor of shape `(B, H, T, T)` before the softmax over the last axis, where `H` is the number of attention heads. The size-1 axis broadcasts across all `H` heads.
 
-- `lengths`: an integer tensor of shape `(B,)`.
-- `T`: a positive Python int.
-- `padding_side`: the string `"left"` or `"right"`. No other value is passed.
-- Returns a float32 tensor of shape `(B, 1, T, T)` whose entries are exactly `0.0` or
-  `-inf`. A large finite number such as `-1e9` is not accepted in place of `-inf`.
+Every entry of the returned tensor must be exactly `0.0` or `-inf`. A large finite number such as `-1e9` is not accepted in place of `-inf`.
 
 ## Shapes
 
@@ -68,8 +48,7 @@ last axis; the axis of length 1 broadcasts over the `H` heads.
 
 ## Example
 
-Two rows padded to `T = 4`: the first is full, the second has two real tokens.
-Writing `-` for `-inf`, with queries as rows and keys as columns:
+Consider two rows padded to `T = 4`, where row 0 is full and row 1 has two real tokens. Writing `-` for `-inf`, with queries as rows and keys as columns:
 
 ```python
 build_mask(lengths=[4, 2], T=4, padding_side="right")
@@ -93,27 +72,16 @@ build_mask(lengths=[4, 2], T=4, padding_side="left")
 
 ![Row 1 of the left-padded example: the padding keys are hidden from the real queries, and each padding query keeps only itself.](assets/padded-mask.svg)
 
-Row 0 is the plain causal mask in both cases. In row 1 with left padding, the columns
-of the padding keys 0 and 1 are hidden from the real queries 2 and 3. Without rule 2,
-the rows of queries 0 and 1 would contain no `0` at all.
-
-The results have shape `(2, 1, 4, 4)`.
+Row 0 is the standard causal mask in both cases. In row 1 with left padding, the columns for padding keys 0 and 1 are hidden from real queries 2 and 3. Without rule 2, queries 0 and 1 would have no `0` entries at all. Both outputs have shape `(2, 1, 4, 4)`.
 
 ## Constraints
 
-- The result is compared with the reference exactly: every entry is `0.0` or `-inf`.
+- The result is compared with the reference exactly, so every entry must be `0.0` or `-inf`.
 - $1 \le B \le 16$, $1 \le T \le 16$, and $1 \le \text{lengths}[b] \le T$.
 - No Python loops over batch items or positions are needed.
 
 ## Why this matters
 
-Serving systems batch requests of different lengths into one tensor, and this mask is
-the only thing that keeps the padding from changing the answers. Each mistake here has
-a recognizable signature in production. Padding applied to queries instead of keys, or
-on the wrong side, lets real tokens read padding embeddings, so the same prompt gives
-different text depending on what it was batched with. A row that is entirely `-inf`
-turns into NaN in the softmax; the NaN sits in a padding position at first, and then
-spreads to real tokens through the next layer's attention. A finite stand-in for
-`-inf` looks safe until two masks are added together or the model runs in half
-precision. Left padding, which batched generation depends on, is exactly the case
-where whole rows of the mask are hidden.
+Serving systems batch requests of different lengths into one tensor, and this mask is what stops padding tokens from changing the outputs. Each mistake here has a clear failure mode in production. Applying the padding mask to queries instead of keys, or padding on the wrong side, lets real tokens read padding embeddings. As a result, the same prompt produces different text depending on what else is in its batch.
+
+A row of all `-inf` entries turns into `NaN` in the softmax. That `NaN` starts in a padding position and spreads to real tokens in the next layer's attention. A finite stand-in for `-inf` looks safe until two masks are added together or the model runs in half precision. Left padding, which batched generation relies on, is the exact case where entire rows would be hidden without the diagonal rule.

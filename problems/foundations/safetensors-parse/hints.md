@@ -1,21 +1,19 @@
-There are three different origins in play: the start of the file, the start of the
-header (byte 8), and the start of the data section. Which of them do the numbers in
-`data_offsets` count from, and how do you compute where that is before you have parsed
-anything?
+Three byte positions matter in a safetensors file: the start of the file (byte 0), the
+start of the JSON header (byte 8), and the start of the data section. Which of those do
+`data_offsets` count from, and how can you find that position before parsing the JSON?
 
 ---
 
-`read_header`: read the first 8 bytes as a little-endian unsigned integer $n$
-(`int.from_bytes(..., "little")` or `struct.unpack("<Q", ...)`), check that the buffer
-really has $8 + n$ bytes, and give bytes 8 to $8 + n$ to `json.loads` (trailing spaces
-are fine for JSON). Pop `"__metadata__"` out of the resulting dict; what remains is the
-tensor table, and `data_start` is $8 + n$.
+In `read_header`, read the first 8 bytes as a little-endian unsigned 64-bit integer $n$
+with `int.from_bytes(..., "little")` or `struct.unpack("<Q", ...)`. Verify that the
+buffer has at least $8 + n$ bytes, then pass bytes `8` through `8 + n` to `json.loads`
+(trailing spaces are valid JSON). Pop `"__metadata__"` from the dict so only tensor
+entries remain, and return `8 + n` as `data_start`.
 
-`read_tensor`: look the name up, translate the dtype with a table of little-endian
-numpy dtype strings (`"BF16": "<u2"`), and check `end - begin` against the element
-count times the item size. Then build the array **on top of** the buffer. Slicing a
-`bytes` object (`buf[a:b]`) makes a copy, so do not slice; ask numpy to start reading
-at an offset instead.
+In `read_tensor`, look up `name`, map `dtype` using a table of little-endian NumPy dtype
+strings (`"BF16": "<u2"`), and verify that `end - begin` equals the element count times
+`dtype.itemsize`. To build the array without copying, avoid slicing a `bytes` object
+(`buf[a:b]`) and instead tell NumPy to start at a byte offset inside `buf`.
 
 ---
 
@@ -25,8 +23,7 @@ flat = np.frombuffer(buf, dtype=dtype, count=count, offset=data_start + begin)
 return flat.reshape(info["shape"])
 ```
 
-`np.frombuffer` wraps the memory of anything that supports the buffer protocol
-(`bytes`, `bytearray`, `memoryview`, `mmap`) without copying it, and `reshape` of a
-contiguous array is a view too. Use `len(memoryview(buf))` for the size of the buffer,
-and remember that the `ValueError` for an unknown dtype must come before you index
-your dtype table.
+`np.frombuffer` wraps any object supporting the buffer protocol (`bytes`, `bytearray`,
+`memoryview`, `mmap`) without copying, and `reshape` on a contiguous array returns a view
+as well. Use `len(memoryview(buf))` to check the buffer size, and raise `ValueError` for
+an unknown `dtype` before indexing your dtype table.

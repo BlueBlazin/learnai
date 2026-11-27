@@ -1,43 +1,23 @@
 ## The idea
 
-bfloat16 was designed so that conversion is trivial: it is float32 with the last 16
-mantissa bits cut off. Sign, exponent, and bias are identical, so there are no fields
-to re-encode, unlike IEEE half precision, which has a 5-bit exponent with bias 15.
+bfloat16 is designed for fast conversion to and from float32 by dropping the low 16 mantissa bits. Because sign, exponent width, and exponent bias match float32, no fields need to be re-encoded. By contrast, IEEE float16 uses a 5-bit exponent with bias 15 and requires shifting and re-biasing every exponent.
 
-**Decoding** appends 16 zero bits. Every bfloat16 value is therefore a float32 value,
-and the conversion is exact for every pattern, including subnormals and NaN payloads.
+**Decoding** appends 16 zero bits. Every bfloat16 value is already an exact float32 value, including subnormals and NaN payloads.
 
-**Encoding** removes 16 bits, and the question is which of the two neighboring
-bfloat16 values to return. Because float patterns of one sign are ordered like the
-magnitudes they represent, the two neighbors of the pattern $u$ are simply $h = u \gg
-16$ and $h + 1$, and the dropped bits $r$ say how far $u$ is from $h$ in units of
-$2^{-16}$ of a step. Round-to-nearest-even is then a comparison of $r$ with one half,
-`0x8000`, and the usual integer trick does it in one addition:
+**Encoding** drops 16 bits and chooses between the two neighboring bfloat16 patterns. Within a fixed sign, IEEE floating-point bit patterns increase monotonically with magnitude. The two bfloat16 neighbors of a 32-bit pattern $u$ are therefore $h = u \gg 16$ and $h + 1$, and the dropped bits $r = u \mathbin{\&} \texttt{0xFFFF}$ measure the fractional position between them in units of $2^{-16}$. Comparing $r$ against half a step (`0x8000`) with round-to-nearest-even reduces to a single integer addition before the shift:
 
 $$
 \text{rounded} = \big(u + \texttt{0x7FFF} + \text{lsb}\big) \gg 16,
 \qquad \text{lsb} = (u \gg 16) \mathbin{\&} 1 .
 $$
 
-- If $r <$ `0x8000`, then $r + \texttt{0x7FFF} + \text{lsb} < 2^{16}$: no carry, the
-  result is $h$.
-- If $r >$ `0x8000`, then $r + \texttt{0x7FFF} \ge 2^{16}$: a carry, the result is
-  $h + 1$.
-- If $r =$ `0x8000`, the sum is $\texttt{0xFFFF} + \text{lsb}$, which carries exactly
-  when $h$ is odd, and $h + 1$ is then even.
+- When $r < \texttt{0x8000}$, $r + \texttt{0x7FFF} + \text{lsb} < 2^{16}$, so there is no carry and the result is $h$.
+- When $r > \texttt{0x8000}$, $r + \texttt{0x7FFF} \ge 2^{16}$, so the sum carries and the result is $h + 1$.
+- When $r = \texttt{0x8000}$, the sum is $\texttt{0xFFFF} + \text{lsb}$, which carries if and only if $h$ is odd, making $h + 1$ even.
 
-The carry is the elegant part. When the 7-bit mantissa is all ones and rounds up, the
-addition overflows it to zero and increments the exponent: `0x3FFF` (just below 2)
-becomes `0x4000` (2.0). At the top, `0x7F7F` becomes `0x7F80`, infinity. And the
-largest subnormal becomes the smallest normal number. In every case that is the next
-representable value, because that is how IEEE formats are laid out. No field ever has
-to be handled separately.
+Adding directly to the full 32-bit pattern handles carries automatically. When the 7-bit mantissa is all ones and rounds up, the carry zeros the mantissa and increments the exponent. For example, `0x3FFF` (just below 2) becomes `0x4000` (2.0), `0x7F7F` becomes `0x7F80` (infinity), and the largest subnormal becomes the smallest normal number. Because IEEE layouts place representable magnitudes in contiguous integer order, no field needs separate logic.
 
-NaN is the exception, because it is not an ordered value. Its payload can sit entirely
-in the dropped bits (`0x7F800001` would truncate to `0x7F80`, infinity), and an
-all-ones payload would carry through the exponent and the sign (`0x7FFFFFFF` would
-round to `0x8000`, which is $-0.0$). So NaN is detected first and replaced by a quiet
-NaN.
+NaN is the only exception because it is not an ordered value. A NaN whose payload sits in the dropped bits (`0x7F800001`) would truncate to `0x7F80` (infinity), and an all-ones payload (`0x7FFFFFFF`) would carry through the exponent and sign into `0x8000` ($-0.0$). Detecting NaN first and replacing it with a quiet NaN avoids both failures.
 
 ## Reference solution (PyTorch)
 
@@ -55,68 +35,35 @@ def f32_to_bf16(x):
     return torch.where(is_nan, quiet_nan, rounded).to(torch.uint16)
 ```
 
-PyTorch has no unsigned 32-bit arithmetic, so the pattern is held in int64, masked to
-its low 32 bits: additions cannot overflow and `>>` shifts in zeros. In int32 the same
-code needs care, because `>>` is an arithmetic shift there and copies the sign bit. The
-JAX and MLX versions use `uint32` directly (`x.view(jnp.uint32)`, `x.view(mx.uint32)`),
-where the addition can wrap only for NaN patterns, which `where` replaces anyway.
+PyTorch lacks unsigned 32-bit arithmetic, so the solution holds the bit pattern in `int64` masked to its low 32 bits. Additions cannot overflow and `>>` shifts in zeros. Doing the same in `int32` requires care because `>>` is an arithmetic right shift that copies the sign bit. JAX and MLX can use `uint32` directly (`x.view(jnp.uint32)`, `x.view(mx.uint32)`), where the addition can wrap only for NaN patterns that `where` replaces anyway.
 
-`view` reinterprets the bytes; `to` and `astype` convert the value. `bits.to(float32)`
-would turn the pattern `0x3F80` into the number 16256.0.
+Note the distinction between `view` and `to`/`astype`. `view` reinterprets the raw bytes without changing bits, whereas `to` and `astype` convert numeric values (`bits.to(float32)` would turn `0x3F80` into `16256.0`).
 
 ## What rounding buys
 
-Truncation is rounding toward zero. Its error is anywhere from 0 to a full bfloat16
-step and always has the same sign, so a truncated tensor is systematically smaller in
-magnitude than the original, by half a step on average. Round-to-nearest halves the
-worst case to half a step and removes the bias. Sending ties to the even neighbor
-removes the last bit of it: ties rounded always up would drift upward.
+Truncation rounds toward zero. Its error ranges from 0 to a full bfloat16 step and always points toward zero, shrinking magnitudes by half a step on average. Round-to-nearest cuts the worst-case error to half a step and removes that bias, and rounding ties to even removes the remaining upward drift on exact half-steps.
 
-With 7 mantissa bits plus the implicit leading one, a step is $2^{-7}$ of the leading
-power of two, so the relative rounding error is at most $2^{-8} \approx 0.4\%$. That is
-coarse, about 2.4 decimal digits, and it is why bfloat16 suits weights and activations
-but accumulations (sums, norms, logits before a softmax) are still done in float32.
+With 7 mantissa bits plus the implicit leading 1, one step is $2^{-7}$ of the current power of two, giving a maximum relative rounding error of $2^{-8} \approx 0.4\%$ (about 2.4 decimal digits). That precision is enough for storing weights and activations, while accumulations such as sums, norms, and pre-softmax logits stay in float32.
 
 ## Common mistakes
 
-- **Truncating** (`u >> 16`). It passes every exactly representable value and is
-  wrong, by one in the last place, for about half of all others.
-- **Rounding half up** (`(u + 0x8000) >> 16`). It differs from the specification only
-  on exact ties, where it always picks the larger magnitude.
-- **Taking the fields apart.** Rounding the 7-bit mantissa by itself and reassembling
-  sign, exponent, and mantissa loses the carry: `0x3FFFFFFF`, just below 2, comes out
-  as `0x3F80`, which is 1.0. Add to the whole pattern.
-- **Forgetting NaN.** Without the special case, some NaNs become infinity, some become
-  zero, and some stay NaN, depending on the payload.
-- **Dropping the sign of a NaN.** This problem keeps it (see below for who else does).
-- **Decoding as IEEE half precision.** Reading the two bytes as `float16` gives
-  numbers, not errors: `0x3F80` is 1.0 in bfloat16 and 1.875 in half precision.
-- **Shifting before widening.** A uint16 shifted left by 16 is 0 (JAX, MLX) or an
-  error (PyTorch). In C the operand is promoted to `int` first, which hides this.
-- **Converting where you mean to reinterpret**, in either direction.
+- **Truncating (`u >> 16`).** Passes every exactly representable value but is off by one in the last place for roughly half of all other inputs.
+- **Rounding half up (`(u + 0x8000) >> 16`).** Disagrees with round-to-nearest-even on exact ties by always picking the larger magnitude.
+- **Splitting and reassembling fields.** Rounding the 7-bit mantissa in isolation drops the carry into the exponent, turning `0x3FFFFFFF` (just below 2) into `0x3F80` (1.0). Add to the full bit pattern instead.
+- **Forgetting NaN.** Depending on the payload, unguarded rounding turns some NaNs into infinity, some into zero, and leaves others as NaN.
+- **Dropping the sign of a NaN.** This specification preserves the input sign bit on NaN.
+- **Decoding as IEEE float16.** Interpreting bfloat16 bytes as `float16` silently produces wrong values (`0x3F80` is `1.0` in bfloat16 and `1.875` in float16).
+- **Shifting before widening.** Left-shifting a `uint16` by 16 yields `0` in JAX and MLX and raises an error in PyTorch. C hides this by promoting operands to `int` first.
+- **Converting instead of reinterpreting.** Using `to` or `astype` where a bit-level `view` is required breaks either direction.
 
 ## Complexity
 
-$O(n)$ time and memory: a handful of elementwise integer operations.
+$O(n)$ time and memory for $n$ elements, consisting of a small fixed number of elementwise integer operations.
 
 ## In the wild
 
-The rounding expression is the one production libraries use. PyTorch's
-`round_to_nearest_even` (in `torch/headeronly/util/BFloat16.h`) computes
-`rounding_bias = ((U32 >> 16) & 1) + 0x7FFF` and returns `(U32 + rounding_bias) >> 16`;
-Eigen's `float_to_bfloat16_rtne`, which TensorFlow and `ml_dtypes` (the NumPy
-extension type that JAX uses for `bfloat16`) inherit, is the same two lines. Decoding is
-`uint32(bits) << 16` followed by a bit cast in both.
+Production libraries use this exact rounding formula. PyTorch's `round_to_nearest_even` (in `torch/headeronly/util/BFloat16.h`) computes `rounding_bias = ((U32 >> 16) & 1) + 0x7FFF` and returns `(U32 + rounding_bias) >> 16`. Eigen's `float_to_bfloat16_rtne`, which TensorFlow and `ml_dtypes` (the NumPy extension type backing JAX's `bfloat16`) inherit, uses the same two lines. Both decode with `uint32(bits) << 16` followed by a bit cast.
 
-They disagree about NaN, which is why this problem states a rule. Eigen returns
-`0xFFC0` or `0x7FC0` according to the sign bit, the rule used here. PyTorch returns
-`0x7FC0` for every NaN. MLX 0.32.4 returns `0x7FFF` or `0xFFFF`. All three are NaN, so
-no arithmetic can tell them apart; a bit-for-bit comparison of two converted
-checkpoints can.
+Libraries differ on NaN encoding, which is why this problem fixes a rule. Eigen returns `0xFFC0` or `0x7FC0` based on the sign bit (the rule used here), PyTorch returns `0x7FC0` for every NaN, and MLX 0.32.4 returns `0x7FFF` or `0xFFFF`. Arithmetic cannot distinguish these NaN patterns, though a bit-for-bit checkpoint comparison can.
 
-In files, safetensors stores bfloat16 tensors under the dtype name `BF16` as two bytes
-per element, little-endian, in row-major order, so reading a tensor is
-`np.frombuffer(buffer, dtype="<u2")` followed by the shift you just wrote. NumPy has no
-native bfloat16, which is why loaders without the `ml_dtypes` extension do exactly
-this. On the hardware side, AVX-512 BF16 and Arm's BF16 extension provide dot products
-on bfloat16 inputs that accumulate in float32.
+In checkpoint files, `safetensors` stores bfloat16 tensors under the `BF16` dtype as little-endian two-byte values in row-major order. Loaders without `ml_dtypes` read them via `np.frombuffer(buffer, dtype="<u2")` and apply this exact shift. In hardware, AVX-512 BF16 and Arm's BF16 extension provide instructions that compute dot products on bfloat16 inputs and accumulate into float32.
