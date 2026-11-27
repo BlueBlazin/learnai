@@ -48,7 +48,7 @@ Rules that apply to every spec, so they are not repeated:
 
 | # | track | title | total | M1 | M2 | M3 | M4 | M5 | easy | medium | hard |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | `foundations` | Tensor Foundations | 13 | 2 | 6 | 2 | 0 | 3 | 8 | 5 | 0 |
+| 1 | `foundations` | Foundations | 13 | 2 | 6 | 2 | 0 | 3 | 8 | 5 | 0 |
 | 2 | `tokenization` | Tokenization | 13 | 1 | 5 | 2 | 0 | 5 | 4 | 6 | 3 |
 | 3 | `transformer` | Transformer Forward Pass | 19 | 2 | 9 | 2 | 0 | 6 | 12 | 7 | 0 |
 | 4 | `sampling` | Sampling and Decoding | 16 | 2 | 8 | 0 | 0 | 6 | 10 | 4 | 2 |
@@ -200,7 +200,7 @@ Python inside, the solution's framework at the boundary, functional, `counters`,
 
 ## 4. The catalog
 
-### Track 1: `foundations` Tensor Foundations (order 10)
+### Track 1: `foundations` Foundations (order 10)
 
 The numerics and tensor mechanics every later track leans on.
 
@@ -1360,6 +1360,84 @@ document's spec, not in the problem. Item 8: `M6` stands.
    reuses the last unshared layer of the same type; `hybrid-state-checkpoints` names
    Qwen3-Next where Qwen3.5 now ships the same layers.
 8. **Milestone label.** `M6` is a placeholder.
+
+## 10. Tensor Foundations (2026-11-27)
+
+A module added in front of the catalog after the owner's first five solves: the tensor
+mechanics that the other modules assume. It is the first module of the "Inference and
+serving" area (track `tensors`, order 5, before `foundations`). The list comes from a
+count of the operations in every reference solution (`reshape` 423, `None` indexing 373,
+`where` about 340, `arange` about 270, `transpose` 138, `argsort` about 110, `einsum`
+86, `gather` and `take_along_axis` about 80, `repeat` and `repeat_interleave` about 75,
+`cumsum` about 60) and from the owner's own wrong submissions (a bare `squeeze()` that
+dropped a batch axis of size 1; `amax` before `abs`).
+
+Rules for this module, in addition to section 1:
+
+- **Drills.** Each problem is two to four small functions around one mechanic, all
+  listed in `entry` and graded together. Each function has at least one public case.
+- **No built-in is forbidden** unless the spec says so: the goal is knowing the
+  framework's tools, so the statement names them. Any correct solution passes.
+- **Shapes that expose the mistake.** Every function has cases where an axis has size 1
+  and cases where two axes have equal size (the shapes on which a wrong axis or a wrong
+  pairing still returns the right shape), next to cases where all sizes differ.
+- **Three frameworks.** The editorial ends with a table of the operation in PyTorch,
+  JAX, and MLX, checked by running each, and says where they differ.
+- **Integer results** are compared exactly; float results are float32.
+- No kit additions are needed.
+
+### Track `tensors` Tensor Foundations (order 5)
+
+| order | id | title | diff | judges | fw | prereq | ms |
+|---|---|---|---|---|---|---|---|
+| 10 | `broadcast-align` | Broadcasting on Purpose | easy 1 | numeric | t/j/m | - | M7 |
+| 20 | `size-one-axes` | Axes of Size One | easy 1 | numeric | t/j/m | `broadcast-align` | M7 |
+| 30 | `reshape-and-memory-order` | Reshape, Transpose, and Memory Order | easy 2 | numeric, property | t/j/m | - | M7 |
+| 40 | `paired-and-outer-indexing` | Paired and Outer Indexing | easy 2 | numeric | t/j/m | - | M7 |
+| 50 | `gather-along-axis` | Gathering Along an Axis | easy 2 | numeric | t/j/m | `paired-and-outer-indexing` | M7 |
+| 60 | `scatter-writes` | Scatter and Indexed Writes | easy 3 | numeric | t/j/m | `gather-along-axis` | M7 |
+| 70 | `masks-and-where` | Masks and `where` | easy 2 | numeric | t/j/m | `broadcast-align` | M7 |
+| 80 | `arange-comparisons` | Masks from `arange` | easy 2 | numeric | t/j/m | `broadcast-align` | M7 |
+| 90 | `sort-and-unsort` | Sorting and Unsorting | easy 3 | numeric, property | t/j/m | `gather-along-axis`, `scatter-writes` | M7 |
+| 100 | `cumsum-tricks` | Cumulative Sums as Control Flow | easy 3 | numeric | t/j/m | `masks-and-where` | M7 |
+| 110 | `einsum-contractions` | Contractions with `einsum` | easy 2 | numeric | t/j/m | - | M7 |
+| 120 | `expand-and-repeat` | Expand, Repeat, and Interleave | easy 2 | numeric | t/j/m | `broadcast-align` | M7 |
+| 130 | `join-pad-split` | Joining, Padding, and Shifting | easy 3 | numeric | t/j/m | - | M7 |
+| 140 | `dtypes-and-promotion` | Dtypes and Promotion | easy 3 | numeric | t/j/m | - | M7 |
+| 150 | `loops-to-tensors` | From Loops to Tensors | medium 1 | numeric, speed | t/j/m | `scatter-writes`, `cumsum-tricks` | M7 |
+
+**`broadcast-align`** — Implement `relative_positions(T)` returning the integer `(T, T)` table `out[i, j] = i - j`; `scale_rows(x, s)` multiplying each row `b` of `x` of shape `(B, T, D)` by `s[b]` with `s` of shape `(B,)`; and `pairwise_sq_dist(a, b)` mapping `(N, D)` and `(M, D)` to the `(N, M)` table of squared distances. Goal: shapes align from the right, and `None` puts an axis where you need it. Numeric. Mutants: `j - i`; `x * s` with no added axes (right only by accident when `B == D`); the scale on the `T` axis; elementwise `a - b` that returns `(N,)` distances when `N == M`.
+
+**`size-one-axes`** — Implement `normalize_over(x, dim)` dividing `x` (any rank from 1 to 4, `dim` possibly negative) by its sum over `dim`; `last_step(x)` mapping `(B, T, D)` to `(B, D)`; and `column(x, j)` mapping `(B, V)` to `(B, 1)`. Goal: `keepdim`, and an index or `squeeze(dim)` in place of a bare `squeeze()`, which also drops a batch or feature axis of size 1. Numeric, with `B = 1`, `T = 1`, `D = 1`, and all three at once. Mutants: no `keepdim` (wrong values on a square input); bare `squeeze()`; `x[:, j]` returning `(B,)`; a positive-only `dim`.
+
+**`reshape-and-memory-order`** — Implement `group_columns(w, g)` mapping `(R, C)` to `(R, C // g, g)`; `interleave(a, b)` mapping two `(..., n)` tensors to `(..., 2n)` with `out[..., 2i] = a[..., i]` and `out[..., 2i + 1] = b[..., i]`; and `patchify(x, p)` mapping `(B, H, W)` to `(B, (H // p) * (W // p), p * p)`, patches in row-major order and each patch flattened row-major. Goal: reshape reads elements in row-major order and never moves them, so a regrouping across axes needs a transpose between two reshapes. Numeric, plus the property that every function is a permutation of its input. Mutants: `interleave` by concatenation; `patchify` by reshape alone; patches in column-major order; groups taken along `R`.
+
+**`paired-and-outer-indexing`** — Implement `pick_pairs(x, rows, cols)` returning the `(N,)` values `x[rows[n], cols[n]]`; `pick_block(x, rows, cols)` returning the `(R, C)` block `x[rows[r], cols[c]]`; and `pick_per_row(x, cols)` mapping `x` of shape `(B, T, D)` and `cols` of shape `(B, K)` to `(B, K, D)` with `out[b, k] = x[b, cols[b, k]]`. Goal: index arrays are broadcast against each other and paired, so a cross product needs `rows[:, None]`. Numeric. Mutants: the block by paired indexing (the diagonal when `R == C`); pairs by chained indexing `x[rows][:, cols]`; `x[:, cols]` for the per-row pick; `rows` and `cols` swapped.
+
+**`gather-along-axis`** — Implement `token_scores(logits, ids)` mapping `(B, T, V)` and `(B, T)` to the `(B, T)` scores `logits[b, t, ids[b, t]]`; `take_columns(values, idx)` mapping `(B, V)` and `(B, K)` to `(B, K)`; and `reorder_steps(x, perm)` mapping `(B, T, D)` and `(B, T)` to `out[b, t] = x[b, perm[b, t]]`. Goal: `gather` and `take_along_axis` need an index of the same rank as the source, so the index gains an axis and is expanded. Numeric. Mutants: the gather on the `T` axis; an index used as `logits[:, :, ids]`; `reorder_steps` with an unexpanded index (only feature 0 is right); `perm` applied to the batch axis.
+
+**`scatter-writes`** — Implement `one_hot_rows(ids, V)` mapping `(B,)` to float32 `(B, V)`; `token_counts(ids, V)` mapping `(B, T)` to the integer `(B, V)` count of each token in each row; and `write_at(x, idx, values)` returning a copy of `x` of shape `(B, V)` with `out[b, idx[b, k]] = values[b, k]` (`idx` of shape `(B, K)`, no repeats within a row). Goal: the write that mirrors gather, its three spellings (`scatter`, `.at[]`, `put_along_axis` or indexed assignment), and that repeated indices need the adding form. Numeric, with repeated tokens. Forbid the frameworks' `one_hot`. Mutants: counts by a setting scatter (a repeat counts once); counts over the flattened batch; the scatter along the batch axis; `idx` and `values` swapped in meaning (a write of `idx` values).
+
+**`masks-and-where`** — Implement `fill_masked(scores, keep)` returning `scores` with `-inf` where `keep` is false; `masked_mean(x, mask)` mapping `(B, T, D)` and a boolean `(B, T)` to the `(B, D)` mean over kept steps, zero for a row that keeps none; and `masked_max(x, mask)`, `-inf` for such a row. `x` may hold `inf`, `-inf`, or NaN at dropped steps. Goal: select with `where` instead of multiplying by the mask (`0 * inf` is NaN), and read through a mask without boolean indexing, which MLX does not have. Numeric. Mutants: multiplication by the mask; the mean divided by `T`; the max over `x * mask` (zero beats a negative row); `-1e9` for `-inf`; NaN for an empty row.
+
+**`arange-comparisons`** — Implement `length_mask(lengths, T, side)` returning the boolean `(B, T)` mask of real tokens for right or left padding; `band_mask(T, w)` returning the `(T, T)` mask `0 <= i - j < w`; and `same_segment(seg)` mapping `(T,)` segment ids to the `(T, T)` mask `seg[i] == seg[j]`. Goal: a mask is a comparison between broadcast index vectors. Numeric. Mutants: `<=` for `<` in the length mask; the sides swapped; the band without its lower bound; the band transposed; the window one too wide.
+
+**`sort-and-unsort`** — Implement `rank_descending(x)` mapping `(B, V)` to the indices that sort each row from largest to smallest, equal values by lowest index first; `inverse_permutation(perm)` mapping `(B, V)` to the permutation that undoes each row; and `keep_to_original_order(keep_sorted, order)` mapping a boolean `(B, V)` decision made in sorted order back to token order. Goal: the sort, decide, unsort pattern of every sorted sampling filter, with a stable tie rule in each framework (guide section 6, "Sorting and ties"). Numeric with ties; the property that sorting then unsorting is the identity. Mutants: ties by highest index (an ascending sort reversed); the inverse taken as `argsort` of the values; unsorting by indexing with `order` again (right only for an involution); an unstable sort on a tie-heavy row.
+
+**`cumsum-tricks`** — Implement `exclusive_cumsum(x)` over the last axis (`out[..., i]` is the sum of the entries before `i`); `first_true(mask)` mapping a boolean `(B, T)` to the index of the first true entry of each row, `T` for a row with none; and `through_first_eos(ids, eos)` returning the boolean `(B, T)` mask that is true up to and including the first `eos` of each row, all true for a row with none. Goal: a running sum turns "has it happened yet" into a tensor operation. Numeric. Mutants: the inclusive sum; `argmax` alone (0 for a row with none); the mask that drops the `eos` itself; `ids != eos` (true again after a second `eos`); the sum over the batch axis.
+
+**`einsum-contractions`** — Implement `attention_scores(q, k)` mapping `(B, H, T, D)` and `(B, H, S, D)` to `(B, H, T, S)`; `bilinear(x, w, y)` mapping `(B, D)`, `(D, E)`, and `(B, E)` to the `(B,)` values `x[b] @ w @ y[b]`; and `per_head_project(x, w)` mapping `(B, H, T, D)` and `(H, D, E)` to `(B, H, T, E)`, head `h` using `w[h]`. Goal: write the index equation, then the code; the editorial gives the `matmul` form of each. Numeric, tolerance for float32 sums in a different order. Mutants: scores transposed to `(B, H, S, T)` (hidden when `T == S`); `bilinear` returning the `(B, B)` table's row sums; `w` transposed (hidden when `D == E`); one head's weight used for all.
+
+**`expand-and-repeat`** — Implement `repeat_kv_heads(k, n_rep)` mapping `(B, G, T, D)` to `(B, G * n_rep, T, D)` with head `g * n_rep + r` equal to group `g`; `expand_for_beams(x, K)` mapping `(B, T)` to `(B * K, T)` with row `b * K + j` equal to row `b`; and `tile_positions(pos, B)` mapping `(T,)` to `(B, T)`. Goal: repeating each element (interleave) against repeating the whole (tile), and `expand` as the copy-free form. Numeric. Mutants: heads tiled (`0, 1, 0, 1` for `0, 0, 1, 1`); beams tiled; the repeat along `T`; positions repeated into `(T, B)` and reshaped.
+
+**`join-pad-split`** — Implement `pad_rows(rows, pad, side)` mapping a list of 1-D integer tensors to `(ids, mask)`, an integer `(B, T_max)` batch padded on the given side and its boolean mask of real tokens; `shift_right(ids, bos)` mapping `(B, T)` to `(B, T)` with `bos` first and the last column dropped; and `stack_steps(steps)` mapping a list of `T` tensors of shape `(B, V)` to `(B, T, V)`. Goal: `cat` joins along an axis that exists, `stack` makes a new one, and where padding goes. Numeric, with rows of equal length and a batch of one row. Mutants: padding on the other side; the mask inverted; the shift by `roll` (the last token wraps to the front); the stack on axis 0; `cat` for `stack`.
+
+**`dtypes-and-promotion`** — Implement `dequantize(q, scale, zero_point)` mapping int8 `q` to float32 `(q - zero_point) * scale` for `zero_point` in `[-128, 127]`; `saturating_add_u8(a, b)` adding two uint8 tensors with results above 255 clamped, returned as uint8; and `block_and_offset(pos, size)` mapping integer positions that may be negative to `(pos // size, pos % size)` with floor rounding. Goal: integer arithmetic wraps in the narrow type, so widen before the operation that can overflow, and know which division a framework performs. Numeric, exact. Mutants: the subtraction in int8; the uint8 addition that wraps; the clamp after the wrap; truncating division; a remainder with the sign of the dividend.
+
+**`loops-to-tensors`** — Implement, without a Python loop over rows or elements, `segment_means(x, seg, S)` mapping `(N, D)` and segment ids `(N,)` in `[0, S)` to the `(S, D)` mean of each segment (zero for an empty one); `common_prefix_len(a, b)` mapping two `(B, T)` id tensors to the `(B,)` length of each row pair's common prefix; and `repeated_bigram_ban(ids, V)` mapping `(B, T)` to the boolean `(B, V)` mask of tokens `v` such that the pair (last token of the row, `v`) already occurs in the row. Goal: put the earlier drills together (adding scatter, running product, comparison and scatter). Numeric; speed relative to the reference at a size where the row loop is at least 5x slower in every framework, measured by the author (if it is not, the problem keeps the numeric judge alone and says so). Mutants: the mean over all `N`; NaN for an empty segment; a prefix length that counts matches after the first mismatch; the ban that includes the final position's own successor slot (reads past the row) or bans the last token itself; the row loop (correct, too slow).
+
+**Batches.** A: orders 10 to 50. B: orders 60 to 100. C: orders 110 to 150. Each batch is
+authored, then reviewed (process step 6), then committed.
 
 ## Sources
 

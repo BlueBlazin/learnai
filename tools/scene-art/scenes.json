@@ -1,5 +1,19 @@
 [
   {
+    "order": 0,
+    "slug": "camp",
+    "place": "The camp",
+    "description": "a canvas tent with a lit lantern in a wide meadow before dawn, far mountains under the first light",
+    "accent": {
+      "name": "salmon",
+      "hex": "#f47c6c"
+    },
+    "scene": "a single plain canvas ridge tent with its door flap open stands at the center of a wide flat meadow just before dawn. One small lantern hangs lit at the tent's entrance. A simple pack leans against the tent and a walking stick stands planted in the ground beside it. Far behind, a low range of mountains under the first light of the day. Two small pine trees to one side. A large calm sky with a thin crescent moon.",
+    "inks": "The sky is the light salmon tint, with one long flat band of full salmon low above the mountains. The meadow is full salmon. The mountains are steel blue. The tent is off-white paper with a blue-black opening; the lantern is full salmon. The pack, the walking stick, the pines, and the nearest strip of ground are blue-black. The moon is off-white.",
+    "prompt": "The attached image is a style reference only. Match its flat screenprint treatment, its handling of ink, its crisp cut-paper edges, and its level of simplification exactly, so this picture looks like another print from the same series. Do not copy its scene, its composition, its colors other than the shared inks, or its off-white margin.\n\nA flat screenprint travel poster illustration, in the manner of mid-century national park posters.\n\nScene: a single plain canvas ridge tent with its door flap open stands at the center of a wide flat meadow just before dawn. One small lantern hangs lit at the tent's entrance. A simple pack leans against the tent and a walking stick stands planted in the ground beside it. Far behind, a low range of mountains under the first light of the day. Two small pine trees to one side. A large calm sky with a thin crescent moon.\n\nInks: five flat ink colors only. Three are shared by the whole series: off-white paper (#f1ede0), deep blue-black ink (#0e1a26), and a muted grayish steel blue (#5f84a2). The fourth is the accent of this print: salmon (#f47c6c), printed rich, pure, and fully saturated, never dulled, never shifted toward a neighboring hue. The fifth is a lighter tint of that same accent. The accent is the dominant color of the picture and covers more area than any other ink. The sky is the light salmon tint, with one long flat band of full salmon low above the mountains. The meadow is full salmon. The mountains are steel blue. The tent is off-white paper with a blue-black opening; the lantern is full salmon. The pack, the walking stick, the pines, and the nearest strip of ground are blue-black. The moon is off-white.\n\nStyle: no gradients, no airbrushing, no glow, no soft shading, no texture, no paper grain, no halftone, no outlines, no line work. Bold simplified shapes with crisp edges, layered silhouettes for depth, large calm flat areas. About five to eight big shapes in total; minimal detail; calm and confident.\n\nComposition: wide panoramic 21:9 picture. The main landmark sits at the horizontal center of the picture and the horizon runs through the middle third, so that a 4:3 crop of the center still shows the whole landmark. The left and right thirds are quiet continuations of the landscape.\n\nThe artwork fills the whole image, full bleed to all four edges: no border, no margin, no frame, no vignette, no rounded corners. No people, no animals, no birds, no text, no lettering, no numbers, no signature, no signs with writing.\n",
+    "printed": "#f16c57"
+  },
+  {
     "order": 1,
     "slug": "trailhead",
     "place": "The trailhead",

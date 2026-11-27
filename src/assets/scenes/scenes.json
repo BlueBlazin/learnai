@@ -1,5 +1,9 @@
 [
   {
+    "slug": "camp",
+    "accent": "#f16c57"
+  },
+  {
     "slug": "trailhead",
     "accent": "#ed9b11"
   },

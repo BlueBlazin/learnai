@@ -1,10 +1,10 @@
 # Scene art
 
-Twenty illustrations, one per module, drawn as flat screenprints in one style.
+Twenty-one illustrations, one per module, drawn as flat screenprints in one style.
 Each area has its own series, a journey through one kind of landscape:
 
-- "Inference and serving" (scenes 1 to 15): the mountains, from a trailhead at
-  dawn to a summit observatory at night.
+- "Inference and serving" (scenes 0 to 15): the mountains, from a camp before
+  dawn and a trailhead at dawn to a summit observatory at night.
 - "Model architectures" (scenes 16 to 20): the sea, from a harbor at dawn to a
   tall ship under the moon.
 
