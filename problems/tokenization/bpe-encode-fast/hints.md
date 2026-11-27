@@ -1,30 +1,14 @@
-A merge changes the sequence in one place: two tokens become one, and the only pairs
-that change are the ones that touched those two tokens. Everything else in the
-sequence is as it was. What do you need to store so that (a) the lowest-rank pair
-present is found without looking at every pair, and (b) removing a token from the
-middle of the sequence does not cost a copy of the sequence?
+Each merge changes the sequence at only one spot. Two adjacent tokens become one, so only the pairs touching those two tokens change while the rest of the sequence stays intact. What data structures let you (a) find the lowest-rank pair without scanning every pair, and (b) remove a token from the middle of the sequence without copying the whole list?
 
 ---
 
-Keep the tokens in a doubly linked list (two integer arrays `prev` and `next` over the
-byte positions are enough; a merged token lives in the slot of its left half and the
-right half's slot is unlinked). Keep a min-heap of `(rank, slot)` entries, one per
-adjacent pair that is a merge, where `slot` is the position of the pair's left token.
-The heap's order, rank first and slot second, is exactly the order of the definition:
-lowest rank, and within a rank from left to right.
+Store the tokens in a doubly linked list using two integer arrays `prev` and `next` indexed by byte position. Keep the merged token in its left half's slot and unlink the right half's slot. Maintain a min-heap of `(rank, slot)` entries for every adjacent pair that appears in `merges`, where `slot` is the position of the pair's left token. Ordering by rank first and slot second matches the specification's order (lowest rank, then left to right).
 
-You cannot delete from the middle of a heap, so entries go stale: the pair they were
-pushed for may be gone by the time they are popped. Do not try to remove them. When an
-entry comes out, look at the list: is the slot still alive, and are the token there
-and its right neighbor still the two tokens of that rank's pair? If not, drop the
-entry.
+Because you cannot delete from the middle of a heap, entries become stale when one of their tokens is merged away. Leave stale entries in the heap instead of trying to remove them. When you pop `(rank, slot)`, check the linked list to confirm that `slot` is still alive and that the token at `slot` and its right neighbor still match `merges[rank]`. If not, discard the entry.
 
 ---
 
-One pass of the definition is: pop every entry whose rank equals the rank on top of
-the heap, in order, and merge at each one that is still valid. Collect the slots of
-the new tokens, and push the pairs around them, `(left neighbor, new)` and `(new,
-right neighbor)`, only **after** the last entry of that rank has been popped:
+Process one rank per pass. Pop every heap entry matching the top rank, apply each valid merge, and record the slots of the newly formed tokens. Only **after** all entries of that rank have been popped, push the new neighbor pairs `(left_neighbor, new_id)` and `(new_id, right_neighbor)` if they exist in `merges`:
 
 ```python
 while heap:
@@ -38,6 +22,4 @@ while heap:
         ...  # push the pairs around slot i that are in the table
 ```
 
-Pushing inside the inner loop is the natural thing to write and is wrong when a merge
-refers to a token of a later merge: the new pair can have a lower rank than `r`, and
-it would be merged before the remaining occurrences of the current pair.
+Pushing inside the inner loop fails when a merge references a token created by a later merge. In that case, a newly created pair can have a lower rank than `r` and would be merged before the remaining occurrences of rank `r` finish.

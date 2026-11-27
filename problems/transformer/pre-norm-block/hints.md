@@ -4,20 +4,22 @@ What does that tell you about which variable the norms may be assigned to?
 
 ---
 
-Keep two kinds of variable apart: the **stream** (`x`, then `h`, then `y`), which only
-ever changes by `stream = stream + something`, and the **sublayer input** (`u`), a
-normalized copy that is thrown away once the sublayer has run.
+Keep two kinds of variables separate. The **stream** (`x`, then `h`, then `y`) only
+changes through additions of the form `stream = stream + something`. The **sublayer
+input** (`u`) is a normalized copy that you discard once the sublayer finishes.
 
-1. `u = rms_norm(x, gain 1)`; project `u` to `q`, `k`, `v`; attend with the mask;
-   project with `o_proj`; add the result to `x`. Call the sum `h`.
-2. `u = rms_norm(h, gain 2)`, where `h` is the stream you just updated and gain 2 is
-   the *other* gain; run the MLP on `u`; add the result to `h`.
+1. Compute `u = rms_norm(x, gain 1)` and project `u` to `q`, `k`, and `v`. Run
+   attention with `mask`, project the output with `o_proj`, and add the result to `x`.
+   Call that sum `h`.
+2. Compute `u = rms_norm(h, gain 2)` using the updated stream `h` and the *other* gain.
+   Run the MLP on `u` and add the result to `h`.
 
-The weights are `(out, in)`, so projecting a batch of row vectors is `u @ W.T`.
+All linear weights have shape `(out, in)`, so projecting a batch of row vectors is
+`u @ W.T`.
 
 ---
 
-The attention sublayer in full:
+Here is the attention sublayer in full:
 
 ```python
 u = ops.rms_norm(x, params["input_layernorm.weight"])
@@ -27,6 +29,6 @@ v = u @ params["self_attn.v_proj.weight"].T
 h = x + ops.attention(q, k, v, mask) @ params["self_attn.o_proj.weight"].T
 ```
 
-The MLP sublayer has the same three steps: normalize `h` with
+The MLP sublayer follows the same three steps. Normalize `h` with
 `post_attention_layernorm.weight`, call `ops.swiglu` with the gate, up, and down
 weights in that order, and return `h` plus the result.

@@ -1,6 +1,7 @@
-Implement the two partial rotary embeddings that current open-weight models ship. Both
-read the same head width, base, and `partial_rotary_factor` from a configuration, and
-they disagree on which channels rotate, how they are paired, and at what frequencies.
+Implement the two partial rotary position embedding (RoPE) variants used by open-weight
+models. Both take the same head width, frequency base, and rotary factor, yet they
+differ in which channels rotate, how those channels are paired, and which frequencies
+they use.
 
 ![This problem is RoPE, applied here to only some channels of each head.](assets/map.svg)
 
@@ -11,9 +12,14 @@ def partial_rope(x, positions, base, factor): ...
 def proportional_rope(x, positions, base, factor): ...
 ```
 
-`x` has shape `(B, H, T, D)` with `D` even, and `positions[t]` is the absolute position
-$p$ of the token at sequence index `t`. Both functions rotate pairs of channels
-$(a, b)$ counterclockwise by the angle $p\,\theta_i$, as in the `rope` problem,
+The input tensor `x` has shape `(B, H, T, D)`, where `B` is the batch size, `H` is the
+number of heads, `T` is the sequence length, and `D` is the even head width. The
+1D tensor `positions` has length `T`, and `positions[t]` gives the absolute position
+$p$ of the token at sequence index `t`.
+
+Both functions rotate selected pairs of channels $(a, b)$ counterclockwise by the angle
+$p\,\theta_i$, where $\theta_i$ is the frequency of pair $i$, following the same 2D
+rotation as the `rope` problem:
 
 $$
 \begin{bmatrix} a' \\ b' \end{bmatrix}
@@ -22,11 +28,12 @@ $$
 \cos p\theta_i & -\sin p\theta_i \\
 \sin p\theta_i & \phantom{-}\cos p\theta_i
 \end{bmatrix}
-\begin{bmatrix} a \\ b \end{bmatrix},
+\begin{bmatrix} a \\ b \end{bmatrix}.
 $$
 
-write the rotated members back to the channels they came from, and return every other
-channel unchanged. They differ in the rest:
+Each rotated value is written back to its original channel, and all remaining channels
+are returned unchanged. The two variants differ in how they select pairs and assign
+frequencies:
 
 | | `partial_rope` | `proportional_rope` |
 |---|---|---|
@@ -36,25 +43,26 @@ channel unchanged. They differ in the rest:
 | frequency of pair $i$ | $\theta_i = \texttt{base}^{-2i/r}$ | $\theta_i = \texttt{base}^{-2i/D}$ |
 | unchanged channels | $r, \dots, D - 1$ | $n, \dots, D/2 - 1$ and $D/2 + n, \dots, D - 1$ |
 
-`partial_rope` is a complete half-split RoPE of width $r$ on the first $r$ channels.
-`proportional_rope` is the half-split RoPE of the whole head in which only the first
-$n$ pairs turn; the other $D/2 - n$ pairs have frequency zero.
+`partial_rope` applies a complete half-split RoPE of width $r$ to the first $r$
+channels. `proportional_rope` applies a half-split RoPE across the full head of width
+$D$, but only the first $n$ pairs rotate. The remaining $D/2 - n$ pairs have frequency
+zero and stay unchanged.
 
-Both counts are the Python expressions shown, evaluated on floats:
-`int(D * factor)`, and `int(factor * D // 2)` with the product first and the floor
-division by 2 second.
+Evaluate both counts using the exact Python float expressions in the table. For
+`partial_rope`, use `int(D * factor)`. For `proportional_rope`, multiply `factor * D`
+first and then apply floor division by 2 inside `int(factor * D // 2)`.
 
 ![A head of width 16 with `factor = 0.5`. `partial_rope` rotates the first eight channels, and `proportional_rope` rotates two blocks of four.](assets/channel-map.svg)
 
-- `x`: float32, shape `(B, H, T, D)`, `D` even.
-- `positions`: integer tensor, shape `(T,)`, values $\ge 0$; not necessarily starting
-  at 0, contiguous, sorted, or distinct.
-- `base`: a Python float greater than 1 (`rope_theta` in configurations).
-- `factor`: a Python float, a multiple of $1/8$ with $0 < \texttt{factor} \le 1$, so
-  $D \cdot \texttt{factor}$ is computed without rounding. For `partial_rope` it is an
-  even integer. For `proportional_rope`, $\texttt{factor} \cdot D / 2$ need not be an
-  integer and is floored.
-- Both return float32, shape `(B, H, T, D)`.
+Parameter rules:
+
+- `positions` contains non-negative integers that need not start at 0 or be
+  contiguous, sorted, or distinct.
+- `base` is a Python float greater than 1 (called `rope_theta` in model configs).
+- `factor` is a Python float that is a multiple of $1/8$ with $0 < \texttt{factor} \le
+  1$, so $D \cdot \texttt{factor}$ is exact. For `partial_rope`, $D \cdot
+  \texttt{factor}$ is guaranteed to be an even integer. For `proportional_rope`,
+  $\texttt{factor} \cdot D / 2$ need not be an integer and is floored.
 
 ## Shapes
 
@@ -66,7 +74,7 @@ division by 2 second.
 
 ## Example
 
-One vector of eight ones at position 1, with `base = 100` and `factor = 0.5`:
+Consider one vector of eight ones at position 1, with `base = 100` and `factor = 0.5`:
 
 ```python
 x = [[[[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]]]]  # shape (1, 1, 1, 8)
@@ -78,34 +86,36 @@ proportional_rope(x, [1], 100.0, 0.5)
 # [[[[-0.301169, 0.639432, 1.0, 1.0, 1.381773, 1.261399, 1.0, 1.0]]]]
 ```
 
-`partial_rope`: $r = 4$ and $\theta = [100^{0}, 100^{-2/4}] = [1, 0.1]$. Pair 0 is
-channels $(0, 2) = (1, 1)$, turned by 1 radian to
+For `partial_rope`, $r = 4$ and $\theta = [100^{0}, 100^{-2/4}] = [1, 0.1]$. Pair 0 is
+channels $(0, 2) = (1, 1)$, rotated by 1 radian to
 $(\cos 1 - \sin 1,\ \sin 1 + \cos 1) = (-0.3012, 1.3818)$. Pair 1 is channels $(1, 3)$,
-turned by 0.1 radian to $(0.8952, 1.0948)$.
+rotated by 0.1 radian to $(0.8952, 1.0948)$. Channels 4 through 7 stay at 1.0.
 
-`proportional_rope`: $n = \texttt{int}(0.5 \cdot 8 \mathbin{//} 2) = 2$ and
-$\theta = [100^{0}, 100^{-2/8}] = [1, 0.3162]$. Pair 0 is channels $(0, 4)$, turned by
-1 radian. Pair 1 is channels $(1, 5)$, turned by 0.3162 radian to $(0.6394, 1.2614)$.
+For `proportional_rope`, $n = \texttt{int}(0.5 \cdot 8 \mathbin{//} 2) = 2$ and
+$\theta = [100^{0}, 100^{-2/8}] = [1, 0.3162]$. Pair 0 is channels $(0, 4)$, rotated by
+1 radian to $(-0.3012, 1.3818)$. Pair 1 is channels $(1, 5)$, rotated by 0.3162 radian
+to $(0.6394, 1.2614)$. Channels 2, 3, 6, and 7 stay at 1.0.
 
 ## Constraints
 
-- $1 \le B, H, T \le 8$; $D$ is even, $4 \le D \le 512$; $10 \le \texttt{base} \le
-  10^7$; $0 \le$ `positions[t]` $< 2048$.
-- Results are compared with the reference and, for the parameters of Qwen3.5 and
-  Gemma 4, with arrays computed by the rotary code of Hugging Face Transformers. When
-  every position is below 64: relative tolerance `1e-4`, absolute tolerance `1e-4`.
-  With larger positions: relative tolerance `1e-3`, absolute tolerance `5e-3`, because
-  equally reasonable ways of computing the angle $p\,\theta_i$ in float32 differ by
-  $p \cdot 10^{-7}$ radians.
-- Dot products of two rotated vectors must depend on their positions only through the
-  difference (tolerance `1e-3`).
-- No Python loops over positions or pairs are needed.
+- $1 \le B, H, T \le 8$ and $4 \le D \le 512$ with $D$ even.
+- $10 \le \texttt{base} \le 10^7$ and $0 \le \texttt{positions}[t] < 2048$.
+- Outputs are checked against the reference solution and, for Qwen3.5 and Gemma 4
+  parameters, against Hugging Face Transformers. When all positions are below 64, the
+  tolerances are `1e-4` relative and `1e-4` absolute. For larger positions, the
+  tolerances relax to `1e-3` relative and `5e-3` absolute, because valid ways of
+  forming $p\,\theta_i$ in float32 can differ by $p \cdot 10^{-7}$ radians.
+- The dot product of two rotated vectors must depend on their positions only through
+  the difference (tolerance `1e-3`).
+- Avoid Python loops over positions or pairs.
 
 ## Why this matters
 
 Qwen3.5 (`rope_type: "default"`, factor 0.25, head width 256) rotates its first 64
-channels with the frequencies of a 64-wide head. Gemma 4's full-attention layers
+channels using the frequency ladder of a 64-wide head. Gemma 4's full-attention layers
 (`rope_type: "proportional"`, factor 0.25, head width 512) rotate the first 64 of 256
-pairs with the frequencies of the 512-wide head. An engine that implements one
-convention and loads the other model raises no error: the shapes agree, the first pair
-gets the right angle, and attention runs with the wrong notion of distance.
+pairs using the frequency ladder of a 512-wide head.
+
+If an inference engine implements one convention and loads the other model, nothing
+crashes. The tensor shapes match and the first pair even gets the right angle, yet
+attention runs with the wrong notion of distance across every other pair.

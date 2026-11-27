@@ -1,38 +1,21 @@
 ## The idea
 
-Ordinary attention normalizes each row of scores to a probability distribution over
-the visible keys. Attention with sinks normalizes over one more outcome, "none of
-them", whose logit is a learned constant per head:
+Standard attention normalizes each row of key scores into a probability distribution over the visible keys. Attention with sinks adds one extra outcome, "none of the keys", whose logit is a learned constant $\sigma$ per head:
 
 $$
 a_{t,s} = \frac{e^{\text{score}_{t,s}}}{e^{\sigma} + \sum_{s'} e^{\text{score}_{t,s'}}} .
 $$
 
-The denominator is larger than the sum over the keys, so the weights on the keys sum
-to $1 - p_{\text{sink}}$ with $p_{\text{sink}} = e^{\sigma} / Z$. Since the sink has
-no value vector, that share simply disappears from the output: the head contributes
-a shorter vector when nothing scores much higher than $\sigma$.
+Because the denominator $Z = e^{\sigma} + \sum_{s'} e^{\text{score}_{t,s'}}$ includes the sink term, the weights on the real keys sum to $1 - p_{\text{sink}}$, where $p_{\text{sink}} = e^{\sigma} / Z$. The sink has no value vector, so its probability share drops out of the output. When no key scores much higher than $\sigma$, the head simply outputs a shorter vector.
 
-There are two equivalent ways to see it, and each explains one rule of the
-specification.
+Two equivalent interpretations explain every rule in the specification:
 
-**An extra column.** Append $\sigma$ to every row of the score matrix, take the usual
-softmax over $S + 1$ entries, and delete the column. The column is appended to the
-finished scores, which is why $\sigma$ is not divided by $\sqrt{d}$ and is not
-subject to the mask.
+- **An extra column.** Append $\sigma$ to the end of each row in the score matrix, run the usual softmax over all $S + 1$ entries, and slice off the last column. Because the column is appended to the finished scores, $\sigma$ is neither divided by $\sqrt{d}$ nor affected by the mask.
+- **A virtual key with a zero value.** Picture a key that always scores $\sigma$ against every query and carries the zero value vector. Attending to this virtual key contributes zero to the sum. That is why the remaining key weights must not be renormalized, since the missing probability was spent on a zero value.
 
-**A virtual key with a zero value.** Imagine a key that scores exactly $\sigma$
-against every query, with the value vector $0$. Attending to it adds nothing to the
-output. This is why the weights must not be renormalized: the weight on the virtual
-key is real attention, spent on a value of zero.
+A fully masked row is the limiting case. Standard attention produces `0/0` (NaN) on a row of all `-inf`. With a finite sink, the softmax over $[-\infty, \dots, -\infty, \sigma]$ is $[0, \dots, 0, 1]$, and slicing off the sink leaves a zero output vector.
 
-A row with no visible key is the limiting case. Ordinary attention has no answer for
-it (the softmax of all `-inf` is `0/0`); with a sink the row is $[0, \dots, 0, 1]$
-and the output is the zero vector.
-
-Why a relative comparison and not an offset: adding $\sigma$ to every score would do
-nothing, because a softmax is invariant to shifting all of its inputs. The sink
-matters only as one logit among the others.
+Note that adding $\sigma$ to every score would have no effect, because softmax is invariant to constant shifts across a row. The sink only works because it competes as a separate logit against the key scores.
 
 ## Reference solution (PyTorch)
 
@@ -46,49 +29,23 @@ def attention_with_sinks(q, k, v, mask, sinks):
     return weights[..., :-1] @ v
 ```
 
-The JAX and MLX versions use `where` for the mask and `broadcast_to` for the column.
-The framework's softmax handles `-inf` entries and large logits, so no extra care is
-needed for sharp rows or for a sink of `-inf`.
+The JAX and MLX versions use `where` for masking and `broadcast_to` to expand the sink column. Built-in `softmax` implementations already handle `-inf` entries and large logits safely, so sharp distributions and `sinks[h] = -inf` require no special casing.
 
 ## Common mistakes
 
-- **Renormalizing.** Dividing the kept weights by their sum makes the rows sum to 1
-  again and cancels the sink exactly: the result is ordinary attention. On a fully
-  masked row it also divides by zero.
-- **Scaling the sink.** Concatenating before the division by $\sqrt{d}$ shrinks
-  $\sigma$ by that factor. With $d = 64$ a sink of 4 becomes 0.5, and the head leaks
-  far less attention than it was trained to.
-- **One sink for all heads**, or the sink vector broadcast along the wrong axis.
-  `sinks` has shape `(H,)`. Reshaped to `(1, 1, H, 1)` it lines up with the query
-  positions and runs without an error whenever `H == T`, giving query $t$ the sink of
-  head $t$. Reshape to `(1, H, 1, 1)`.
-- **Masking the sink.** Padding the mask with `False` for the new column, or applying
-  a causal mask to the concatenated matrix, sets the sink to `-inf`.
-- **Adding instead of appending.** `scores + sink` is a shift of the whole row, which
-  the softmax ignores.
-- **Dropping the wrong column.** If the sink is put first, `weights[..., :-1]`
-  removes the last real key and multiplies the first value by the sink's share.
+- **Renormalizing the kept weights.** Dividing the key weights by their sum forces each row back to 1 and cancels the sink completely, reverting to standard attention. On a fully masked row, it also divides by zero.
+- **Scaling the sink by $1/\sqrt{d}$.** Concatenating the sink before scaling shrinks $\sigma$ by $\sqrt{d}$. For $d = 64$, a sink of 4 becomes 0.5, causing the head to absorb far less attention than trained.
+- **Broadcasting `sinks` along the wrong axis.** `sinks` has shape `(H,)`. Reshaping it to `(1, 1, H, 1)` aligns it with the query axis `T` instead of the head axis `H`. Whenever `H == T`, this runs without a shape error and silently gives query $t$ the sink of head $t$. Always reshape to `(1, H, 1, 1)`.
+- **Masking the sink.** Padding `mask` with `False` for the extra column, or applying the mask after concatenation, sets the sink logit to `-inf` and disables it.
+- **Adding instead of concatenating.** Computing `scores + sink` shifts the entire row by a constant, which softmax ignores.
+- **Dropping the wrong column.** If you prepend the sink at index 0, slicing `weights[..., :-1]` drops the last real key and multiplies the first value vector by the sink weight.
 
 ## Complexity
 
-The same as ordinary attention: $O(B\,H\,T\,S\,d)$ time and $O(B\,H\,T\,S)$ memory
-for the scores, plus one column.
+Attention with sinks has the same asymptotic cost as standard attention: $O(B\,H\,T\,S\,d)$ time and $O(B\,H\,T\,S)$ memory for the score matrix, plus a single extra column.
 
 ## In the wild
 
-The definition follows OpenAI's reference implementation of gpt-oss
-(`gpt_oss/torch/model.py`, function `sdpa`): each attention block has a parameter
-`sinks` with one entry per query head; the scores are multiplied by
-`1 / sqrt(head_dim)` and masked (causal, plus a sliding window in every other
-layer), then `QK = torch.cat([QK, S], dim=-1)`, a softmax, and `W = W[..., :-1]`
-before the values are mixed. gpt-oss combines the sinks with grouped-query attention
-and with sliding windows; the sink is what lets a windowed layer attend to nothing
-when the window holds nothing useful. MLX exposes the same operation as the `sinks`
-argument of `mx.fast.scaled_dot_product_attention`, which takes one sink per query
-head and agrees with this problem's reference to float32 rounding (checked on MLX
-0.32.4). The idea of giving attention somewhere harmless to go has older relatives:
-the observation that streaming language models depend on the first tokens as
-"attention sinks" (Xiao et al., *Efficient Streaming Language Models with Attention
-Sinks*, 2023), and register tokens in vision transformers. Those keep ordinary
-softmax and dedicate real tokens to the role; the learned sink logit builds the role
-into the softmax itself.
+This specification matches OpenAI's reference implementation of gpt-oss (`gpt_oss/torch/model.py`, function `sdpa`). Each attention block holds a `sinks` parameter with one logit per query head. After scaling scores by `1 / sqrt(head_dim)` and applying causal and sliding-window masks, the code runs `QK = torch.cat([QK, S], dim=-1)`, applies softmax, and slices `W = W[..., :-1]` before multiplying by `V`. In gpt-oss, learned sinks pair with grouped-query attention and sliding windows, allowing a windowed layer to attend to nothing when the local window holds no useful context.
+
+MLX exposes the same operation natively through the `sinks` argument of `mx.fast.scaled_dot_product_attention`, which accepts one sink per query head and agrees with this reference to float32 precision (verified on MLX 0.32.4). Earlier work achieved a similar effect using real tokens rather than modifying softmax, including streaming "attention sinks" on initial tokens (Xiao et al., *Efficient Streaming Language Models with Attention Sinks*, 2023) and register tokens in vision transformers. Learned sink logits build that escape hatch directly into the softmax.

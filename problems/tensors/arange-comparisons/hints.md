@@ -1,24 +1,14 @@
-Each mask is a table of true and false indexed by two things. Name them for each
-function (a row and a position, a row index and a column index, two positions) and
-write the condition for one entry as a comparison of two integers. Then make each of
-the two integers a vector, and give the vectors different axes so that the comparison
-broadcasts to the table.
+Each mask is a 2D table of booleans indexed by two quantities: a row and a position, a row index and a column index, or two positions. Write the condition for one cell as a comparison of two integers, then turn each integer into a 1D vector on a different axis so the comparison broadcasts across the table.
 
 ---
 
-- `length_mask`: the table is `(B, T)`. The position `j` varies along axis 1, so it
-  is `arange(T)` as a `(1, T)` row; the length varies along axis 0, so it is a `(B, 1)`
-  column. For left padding, the first real position of a row is `T - lengths[b]`.
-- `band_mask`: with `i` a `(T, 1)` column and `j` a `(1, T)` row, `i - j` is the whole
-  `(T, T)` table of "how far back". The condition has two parts, joined with `&`,
-  and each part needs its own parentheses.
-- `same_segment`: the two vectors are the same vector, once as a column and once as a
-  row.
+- `length_mask`: the output has shape `(B, T)`. Position `j` varies along axis 1, so put `arange(T)` in a `(1, T)` row. Length varies along axis 0, so put `lengths` in a `(B, 1)` column. For left padding, the first real token in row `b` is at `T - lengths[b]`.
+- `band_mask`: with `i` as a `(T, 1)` column and `j` as a `(1, T)` row, `i - j` gives the `(T, T)` table of distances behind `i`. Join the two bounds with `&`, wrapping each comparison in parentheses.
+- `same_segment`: broadcast the same `seg` vector as a `(T, 1)` column and a `(1, T)` row.
 
 ---
 
-The key lines, in PyTorch (JAX and MLX are the same with `jnp.arange` and
-`mx.arange`):
+The key lines in PyTorch (JAX and MLX are identical with `jnp.arange` and `mx.arange`):
 
 ```
 pos = torch.arange(T)[None, :]          # (1, T)

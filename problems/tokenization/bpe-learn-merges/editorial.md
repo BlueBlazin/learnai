@@ -1,34 +1,16 @@
 ## The idea
 
-Byte pair encoding as a tokenizer (Sennrich, Haddow, and Birch, 2016) starts from
-characters and grows a vocabulary greedily: whichever two adjacent symbols occur
-together most often become one symbol. After $n$ merges the vocabulary holds the
-characters plus $n$ new symbols, frequent words have collapsed into single symbols,
-and rare words remain sequences of shorter pieces.
+Byte Pair Encoding for tokenization (Sennrich, Haddow, and Birch, 2016) starts from individual characters and grows a vocabulary greedily. At each step, the two adjacent symbols that appear together most often are merged into one symbol. After $n$ merges, the vocabulary contains the base characters plus $n$ new symbols. Frequent words collapse into single symbols, while rare words stay split into shorter subwords.
 
-Working on a dictionary of word frequencies instead of the running text is the first
-optimization of the paper, and it is why frequencies must weight the counts: a word
-that occurs 6 times contributes each of its pairs 6 times. The end-of-word marker
-`</w>` makes word boundaries part of the symbols, so that `est</w>` (a suffix) and
-`est` (inside a word) can be learned as different tokens, and so that the original
-text can be restored from the tokens.
+Operating on a dictionary of word frequencies instead of raw running text is the first optimization from the paper. Because each distinct word is stored once, its frequency must weight its pair counts. A word with frequency 6 adds 6 to each of its adjacent pairs. Appending `</w>` makes word boundaries explicit so that a suffix like `est</w>` and an internal substring like `est` remain distinct tokens, and so the original text can be reconstructed cleanly.
 
-The procedure is deterministic only if three things are fixed:
+Three conventions make the algorithm deterministic:
 
-- **How pairs are counted.** Every adjacent position counts, as in the paper's
-  `get_stats` (it loops over `range(len(symbols) - 1)`) and in subword-nmt. In a run
-  `a a a` the pair `(a, a)` therefore counts twice, although a merge can only be
-  applied once there. The count is "how often is this pair adjacent", not "how many
-  merges would this produce".
-- **Ties.** The paper's code takes `max(pairs, key=pairs.get)`, which returns
-  whichever maximal pair was inserted into the dict first, so its result depends on
-  the order of the corpus. Real implementations pick a rule; this problem uses the
-  smallest pair.
-- **How a merge is applied.** Left to right, without overlap, on whole symbols.
+- **Counting pairs.** Every adjacent position counts, matching `get_stats` in the original paper (which iterates over `range(len(symbols) - 1)`) and `subword-nmt`. In `a a a`, the pair `(a, a)` counts twice even though only one merge can apply there. The count measures how often the pair is adjacent, not how many replacements it will perform.
+- **Breaking ties.** The paper's code uses `max(pairs, key=pairs.get)`, which returns whichever tied pair was inserted into the dictionary first and therefore depends on corpus order. Production implementations fix a deterministic tie-breaker. This problem picks the smallest pair in tuple order.
+- **Applying merges.** Scan left to right without overlap, matching whole symbols only.
 
-Counts must be taken again after every merge. Merging `(e, s)` removes the pairs
-`(w, e)` and `(s, t)` at those positions and creates `(w, es)` and `(es, t)`; the next
-most frequent pair is usually one that did not exist before.
+Pair counts must be recomputed after every merge. Merging `(e, s)` destroys `(w, e)` and `(s, t)` at those positions while creating `(w, es)` and `(es, t)`. The next most frequent pair is often one that did not exist in the previous step.
 
 ## Reference solution (Python)
 
@@ -65,47 +47,25 @@ def _merge(symbols, pair):
     return out
 ```
 
-`_merge` is the function of the same name in `bpe-encode`, on strings instead of ids.
+`_merge` is the same helper used in `bpe-encode`, operating on strings instead of integer ids.
 
 ## Common mistakes
 
-- **Ties by first occurrence** (`max(counts, key=counts.get)`): the table changes when
-  the corpus dict is built in a different order. **Ties toward the largest pair** is
-  the rule of subword-nmt (`max(stats, key=lambda x: (stats[x], x))`), correct there
-  and wrong here: always check which rule a table was built with.
-- **Unweighted counts.** Counting each distinct word once learns the pairs of the
-  *vocabulary*, not of the text.
-- **Counting only non-overlapping occurrences.** Plausible reasoning ("`aaa` can only
-  be merged once") and a different table from every reference implementation.
-- **Stale counts.** Taking the top $n$ pairs of the initial character counts returns
-  only pairs of single characters.
-- **String replacement to apply a merge.** `" ".join(symbols).replace("a b", "ab")`
-  also matches the end of the symbol `xa` followed by `b`. subword-nmt guards its
-  regular expression with `(?<!\S)` and `(?!\S)` for exactly this reason.
-- **Merging only the first occurrence in a word**, which leaves `ba ba` half merged.
-- **No end-of-word symbol, or the marker glued to the last character.** The second is
-  a legitimate representation (subword-nmt uses it) that yields different merges:
-  `(s, t</w>)` instead of `(s, t)` then `(st, </w>)`.
-- **Stopping at count 1.** subword-nmt stops when the best pair occurs fewer than
-  `--min-frequency` times (2 by default). The statement here stops only when no pair
-  is left.
+- **Breaking ties by first occurrence or largest pair.** Using `max(counts, key=counts.get)` makes the output depend on dictionary insertion order. Breaking ties toward the largest pair (`max(stats, key=lambda x: (stats[x], x))`) is the rule used by `subword-nmt`, which differs from the smallest-pair rule specified here.
+- **Unweighted counts.** Counting each distinct word once learns the most frequent pairs in the unique word list rather than in the corpus.
+- **Counting only non-overlapping pairs.** Skipping overlapping occurrences in runs like `aaa` seems reasonable because only one merge can apply, but it diverges from the standard BPE counting rule and produces a different merge table.
+- **Using stale counts.** Taking the top $n$ pairs from the initial character counts without recounting only ever merges single characters.
+- **Using string replacement to apply a merge.** `" ".join(symbols).replace("a b", "ab")` mistakenly matches the end of `xa` followed by `b`. `subword-nmt` wraps its regex with `(?<!\S)` and `(?!\S)` to avoid this bug.
+- **Merging only the first occurrence in a word.** Stopping after one replacement per word leaves inputs like `ba ba` half merged.
+- **Omitting `</w>` or attaching it to the last character.** Gluing `</w>` onto the final character is a valid alternative (used by `subword-nmt`), but it changes the merge sequence—for example, producing `(s, t</w>)` instead of `(s, t)` followed by `(st, </w>)`.
+- **Stopping at count 1.** `subword-nmt` stops when the best pair appears fewer than `--min-frequency` times (default 2). This specification stops only when no pairs remain.
 
 ## Complexity
 
-With $W$ distinct words of total length $L$ symbols, each step recounts in $O(L)$ and
-rewrites in $O(L)$: $O(n \cdot L)$ for $n$ merges. At 500 words of up to 30 characters
-and 300 merges that is a few million operations. Real trainers, with millions of
-distinct words and tens of thousands of merges, update the counts incrementally: only
-the words that contain the merged pair change, an index from pair to words finds them,
-and a priority queue yields the next best pair. The output is identical; that is the
-point of pinning down the tie rule.
+Let $L$ be the total number of symbols across all distinct words and $n$ be the number of merges. Each step recounts pairs in $O(L)$ time and rewrites the symbol lists in $O(L)$ time, giving $O(n \cdot L)$ total time. At 500 words of up to 30 characters and 300 merges, that is only a few million operations.
+
+Production trainers handle millions of distinct words and tens of thousands of merges by updating counts incrementally. They maintain an index from each pair to the words containing it and a priority queue of pair counts, updating only the affected words on each merge. Because the tie-breaking rule is fixed, incremental training produces the exact same merge table.
 
 ## In the wild
 
-GPT-2-style byte-level BPE runs this loop over bytes instead of characters and marks
-word starts (a leading space) instead of word ends, and the resulting `merges.txt` or
-the `merges` array in `tokenizer.json` is exactly the list returned here, one pair per
-line in learned order. SentencePiece's BPE mode and the Hugging Face `tokenizers`
-trainer are other implementations of the same loop with their own conventions for
-ties and limits. This is tokenizer construction, done once, before any model exists;
-at inference time only the finished table is used.
+GPT-2-style byte-level BPE runs this same loop over bytes instead of characters and marks word starts with a leading space rather than marking word ends. The resulting `merges.txt` file or `merges` array in `tokenizer.json` stores the exact list returned here, one pair per line in learned order. SentencePiece's BPE mode and the Hugging Face `tokenizers` trainer implement the same loop with their own tie-breaking and frequency-threshold conventions. Training runs once before a model is trained, and inference only replays the saved merge table.

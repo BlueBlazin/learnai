@@ -1,19 +1,10 @@
-For each function, write the input's elements in row-major order (the order you would
-read them in), then write the elements of the wanted output in row-major order. If the
-two lists are the same, a reshape is all you need. If they differ, a reshape cannot be
-the whole answer, whatever shape you give it.
+For each function, write out the input's elements in row-major order (the order you read them in), and then write out the desired output's elements in row-major order. If the two lists match, a single reshape is all you need. If they differ, no reshape alone can produce the answer.
 
 ---
 
-- `group_columns`: the output read in order is `w[0, 0], w[0, 1], ...`: the same list.
-  One reshape.
-- `interleave`: the output read in order is `a0, b0, a1, b1, ...`. No reshape of `a`
-  followed by `b` gives that. But if you first build a tensor in which `a[..., i]` and
-  `b[..., i]` are neighbors along a new **last** axis of size 2, the list is already in
-  the right order, and merging the last two axes finishes it.
-- `patchify`: split `H` into `(H / p, p)` and `W` into `(W / p, p)` with one reshape.
-  You now have five axes `(b, i, u, j, v)`. A patch is `(u, v)` and a patch number is
-  `(i, j)`, and reshape can only merge axes that are neighbors.
+- `group_columns`: Reading the output in row-major order gives `w[0, 0], w[0, 1], ...`, which is the same order as the input. One reshape is enough.
+- `interleave`: Reading the output in order gives `a0, b0, a1, b1, ...`, which no reshape of `a` followed by `b` can produce. Instead, first stack `a` and `b` along a new **last** axis of size 2 so `a[..., i]` and `b[..., i]` sit side by side, then merge the last two axes with a reshape.
+- `patchify`: Split `H` into `(H / p, p)` and `W` into `(W / p, p)` with one reshape, giving five axes `(b, i, u, j, v)`. A patch index is `(i, j)` and an in-patch pixel is `(u, v)`. Remember that `reshape` can only merge neighboring axes.
 
 ---
 

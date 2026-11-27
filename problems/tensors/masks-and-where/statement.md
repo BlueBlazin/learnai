@@ -1,6 +1,4 @@
-Write three functions that use a boolean mask to decide which entries of a tensor
-count. The entries that do not count can hold anything, including `inf`, `-inf`, and
-NaN, and none of it may reach the result.
+Implement three functions that use a boolean mask to select which entries of a tensor count. Masked-out entries can hold any float32 value, including `inf`, `-inf`, and `NaN`, and none of those values may affect the result.
 
 ## Specification
 
@@ -10,42 +8,31 @@ def masked_mean(x, mask): ...
 def masked_max(x, mask): ...
 ```
 
-**`fill_masked(scores, keep)`** takes `scores` of shape `(B, V)` and a boolean `keep`
-of the same shape, and returns `scores` with $-\infty$ at every entry that is not
-kept:
+**`fill_masked(scores, keep)`** takes a 2D tensor `scores` with `B` rows and `V` columns, along with a boolean mask `keep` of the same shape. It returns a tensor of shape `(B, V)` that keeps `scores[b, v]` where `keep[b, v]` is true and replaces every other entry with $-\infty$:
 
 $$
 \text{out}[b, v] = \begin{cases} \text{scores}[b, v] & \text{if keep}[b, v], \\ -\infty & \text{otherwise.} \end{cases}
 $$
 
-The fill is exactly `-inf`. A large finite number such as `-1e9` is not accepted.
+The fill value must be exact `-inf`. A large finite number such as `-1e9` is not accepted.
 
-**`masked_mean(x, mask)`** takes `x` of shape `(B, T, D)` and a boolean `mask` of
-shape `(B, T)`, where `mask[b, t]` says whether step `t` of row `b` is kept. It
-returns the mean of the kept steps of every row, shape `(B, D)`. With
-$n_b$ the number of kept steps of row `b`:
+**`masked_mean(x, mask)`** takes a 3D tensor `x` of shape `(B, T, D)` representing `B` rows of `T` steps with `D` features each. Its boolean `mask` has shape `(B, T)`, where `mask[b, t]` is true when step `t` of row `b` is kept. Let $n_b$ be the number of kept steps in row `b`. The function returns the mean over the kept steps for each row and feature, with shape `(B, D)`:
 
 $$
 \text{out}[b, d] = \frac{1}{n_b} \sum_{t\,:\,\text{mask}[b, t]} x[b, t, d] .
 $$
 
-A row that keeps no step ($n_b = 0$) returns zeros.
+If a row keeps no steps ($n_b = 0$), its output is all zeros.
 
-**`masked_max(x, mask)`** takes the same arguments and returns the largest kept value
-of every feature, shape `(B, D)`:
+**`masked_max(x, mask)`** takes the same `x` and `mask` arguments and returns the largest kept value for each row and feature, with shape `(B, D)`:
 
 $$
 \text{out}[b, d] = \max_{t\,:\,\text{mask}[b, t]} x[b, t, d] .
 $$
 
-A row that keeps no step returns $-\infty$ in every feature.
+If a row keeps no steps, its output is $-\infty$ in every feature.
 
-- `scores`, `x`: float32 tensors. An entry that is kept is finite. An entry that is
-  not kept may be any float32 value, including `inf`, `-inf`, and NaN, and must not
-  affect the result.
-- `keep`, `mask`: boolean tensors.
-- Every function returns a float32 tensor. The result shapes are `(B, V)` and
-  `(B, D)` for every input, also when `B`, `T`, `V`, or `D` is 1.
+Kept entries in `scores` and `x` are always finite, while masked-out entries may be any float32 value (including `inf`, `-inf`, and `NaN`). Output shapes must remain `(B, V)` and `(B, D)` even when `B`, `T`, `V`, or `D` is 1.
 
 ## Shapes
 
@@ -60,26 +47,15 @@ A row that keeps no step returns $-\infty$ in every feature.
 
 ## Tools
 
-- `where(condition, a, b)` (`torch.where`, `jnp.where`, `mx.where`) picks `a` where
-  the condition is true and `b` elsewhere, entry by entry. The three arguments are
-  broadcast against each other, and `a` or `b` can be a Python number. No arithmetic
-  is done on the entry that is not picked.
-- A mask with fewer axes than the data lines up from the right, like any other
-  operand. As in Broadcasting on Purpose, `None` puts the missing axis where it
-  belongs.
-- To reduce over the kept entries only, first replace the others with a value that
-  cannot change the reduction. Which value that is depends on the reduction.
-- `mask.sum(...)` counts true entries and returns integers.
+- `where(condition, a, b)` (`torch.where`, `jnp.where`, `mx.where`) selects `a` where `condition` is true and `b` elsewhere, element by element. The three arguments broadcast against each other, and `a` or `b` can be a Python scalar. No arithmetic runs on the unchosen entry.
+- A mask with fewer axes than the data aligns from the right, just like any other broadcast operand. As in Broadcasting on Purpose, indexing with `None` inserts a size-1 axis where needed.
+- To reduce over kept entries only, first replace masked-out entries with an identity value that cannot change the reduction. That value depends on the reduction.
+- `mask.sum(...)` counts true entries and returns an integer tensor.
 
 > [!WARNING]
-> Multiplying by a mask is not selecting. `0 * inf` and `0 * nan` are NaN. In
-> PyTorch and MLX, `x * mask` puts a NaN wherever a dropped entry was not finite, and
-> a sum or a max over it is NaN too. JAX does the same when the mask is broadcast
-> against `x`, and returns 0 there when a boolean mask has the shape of `x`.
+> Multiplying by a mask is not selection because `0 * inf` and `0 * nan` produce `NaN`. In PyTorch and MLX, `x * mask` produces `NaN` wherever a masked-out entry is non-finite, which then poisons a sum or max. JAX does the same when the mask broadcasts against `x`, and returns `0` only when a boolean mask has the exact shape of `x`.
 
-Reading with a boolean index, `x[mask]`, returns the kept entries as one flat list
-whose length depends on the data, so the rows are no longer apart. MLX does not
-support it at all. None of these functions needs it.
+Boolean indexing such as `x[mask]` returns the kept entries as a flat 1D tensor whose length depends on the data, losing the row structure. MLX does not support it at all. None of these functions needs boolean indexing.
 
 ## Example
 
@@ -94,7 +70,7 @@ x = [
     [[0.0, 1.0], [inf, nan], [20.0, 21.0], [30.0, -inf]],
     [[100.0, 101.0], [110.0, 111.0], [120.0, 121.0], [130.0, 131.0]],
     [[200.0, 201.0], [nan, 211.0], [220.0, -inf], [230.0, 231.0]],
-]  # shape (3, 4, 2); the finite entries are 100 b + 10 t + d
+]  # shape (3, 4, 2); finite entries are 100*b + 10*t + d
 mask = [
     [True, False, True, False],  # steps 0 and 2
     [False, False, False, True],  # step 3
@@ -110,26 +86,17 @@ masked_max(x, mask)
 #  [ -inf,  -inf]]                   # no step kept
 ```
 
-Row 0 drops the step `[inf, nan]`. Multiplied by a float mask it becomes
-`[nan, nan]`, and the row's mean and max are NaN.
+Row 0 drops the step `[inf, nan]`. Multiplying by a float mask turns that step into `[nan, nan]`, which makes the row's mean and max `NaN`.
 
 ## Constraints
 
-- `fill_masked` and `masked_max` copy values and are compared with the reference
-  exactly. `masked_mean` is compared to a relative tolerance of `1e-4` and an absolute
-  tolerance of `1e-6`.
-- Every size is between 1 and 16. Any of them can be 1, and any two can be equal.
+- `fill_masked` and `masked_max` copy values directly and are checked for exact equality. `masked_mean` is checked with a relative tolerance of `1e-4` and an absolute tolerance of `1e-6`.
+- Each dimension size (`B`, `T`, `V`, `D`) is between 1 and 16. Any size can be 1, and any two sizes can be equal.
 - Kept entries lie in $[-1000, 1000]$.
 - No Python loops are needed.
 
 ## Why this matters
 
-Causal and Padding Masks is `fill_masked` on attention scores, and it also refuses a
-finite stand-in for `-inf`. Sequence Log-Likelihood and Perplexity sums
-log-probabilities over the real positions of each row, where an uncounted entry can be
-`-inf`, so it has to select with `where`. Pooling and Normalizing Embeddings takes
-the mean over the real tokens of each sequence, divided by their number and not by
-the padded length; its hidden states are finite, which is the one situation where a
-multiplication by the mask is safe. In a server the entries behind a mask are padding, or logits
-that an earlier filter set to `-inf`: a masked reduction that multiplies gives the
-right answer until a batch holds one of them.
+Causal and Padding Masks applies `fill_masked` to attention scores, where a finite stand-in for `-inf` leaks probability mass into masked positions. Sequence Log-Likelihood and Perplexity sums log-probabilities over real tokens where masked positions can hold `-inf`, so it must select with `where`.
+
+Pooling and Normalizing Embeddings averages hidden states over real tokens, dividing by each sequence's real length rather than the padded length. In serving systems, masked positions often hold uninitialized padding or logits already set to `-inf` by an earlier filter. A reduction that multiplies by a mask appears to work during testing and silently returns `NaN` once a batch contains one of those values.

@@ -1,8 +1,4 @@
-A model emits tokens, tokens are byte strings, and a character of text can take up to
-four bytes that need not arrive together. Implement the function that says how many of
-the bytes received so far can be turned into text now, and how many must wait for the
-next token. The difficulty is telling a character that is merely unfinished from bytes
-that are broken for good: the first must wait, the second must not.
+In a byte-level tokenizer, a single Unicode character can take up to four UTF-8 bytes and arrive split across multiple tokens. Implement `complete_prefix_len`, which returns how many leading bytes of a buffer can be decoded into text now while holding back any incomplete character at the end. Invalid bytes that can never form a valid character must not be held back.
 
 ![This problem is the Detokenize step, deciding how many of the received bytes can become text.](assets/map.svg)
 
@@ -12,9 +8,7 @@ that are broken for good: the first must wait, the second must not.
 def complete_prefix_len(data: bytes) -> int: ...
 ```
 
-**UTF-8.** A character is encoded as one to four bytes. The first byte, the *lead
-byte*, fixes the length; the others are *continuation bytes*, in the range `80..BF`
-(hexadecimal throughout). For some lead bytes the second byte is restricted further:
+**UTF-8.** A Unicode character is encoded as one to four bytes. The first byte, called the *lead byte*, determines the sequence length. The remaining bytes are *continuation bytes* in the hexadecimal range `80..BF`. For some lead bytes, the second byte has a narrower valid range:
 
 | lead byte | length | second byte | third and fourth byte |
 |---|---|---|---|
@@ -27,38 +21,21 @@ byte*, fixes the length; the others are *continuation bytes*, in the range `80..
 | `F1..F3` | 4 | `80..BF` | `80..BF` |
 | `F4` | 4 | `80..8F` | `80..BF` |
 
-The bytes `C0`, `C1`, and `F5..FF` never appear in UTF-8, and a continuation byte
-`80..BF` cannot start a character. This is the table of the Unicode standard and of
-RFC 3629; the narrower second-byte ranges exclude overlong encodings, UTF-16
-surrogates, and code points above U+10FFFF.
+The bytes `C0`, `C1`, and `F5..FF` never appear in valid UTF-8, and a continuation byte (`80..BF`) cannot start a character. This table matches the Unicode standard and RFC 3629. Its narrower second-byte ranges exclude overlong encodings, UTF-16 surrogates, and code points above U+10FFFF.
 
-**Pending sequence.** A non-empty suffix of `data` is *pending* if it is a row of the
-table cut short: a lead byte from the table, followed by zero or more of the bytes its
-row allows in those positions, and strictly fewer bytes in total than the row's length.
-Equivalently: the suffix is not a whole character yet, but some bytes exist that would
-complete it to exactly one valid character. At most one suffix of `data` is pending, and
-it is at most three bytes long.
+**Pending sequence.** A non-empty suffix of `data` is *pending* if it is a valid row of the table cut short. It starts with a lead byte from the table, continues with zero or more bytes allowed in those positions by that row, and contains strictly fewer bytes than the row's length. Equivalently, the suffix is not a complete character yet, but appending one or more bytes can complete it into a single valid character. At most one suffix of `data` is pending, and its length is at most three bytes.
 
-**`complete_prefix_len(data)`** returns `len(data)` minus the length of the pending
-suffix, or `len(data)` if no suffix is pending. The bytes before that point are final:
-no later byte can change how they decode.
+**`complete_prefix_len(data)`** returns `len(data)` minus the length of the pending suffix, or `len(data)` if no suffix is pending. The bytes before that cutoff are final because no later bytes can change how they decode.
 
-Consequences that the function must get right:
+Edge cases and rules:
 
-- A complete character at the end is not pending, whatever its length.
-- **Invalid bytes are not pending.** A byte that can never start a character (`FF`, a
-  stray continuation byte), and a lead byte whose next byte is outside its row (`E0 80`,
-  `C3 41`), will decode to U+FFFD replacement characters whatever comes next, so they
-  count as complete.
-- Only the end of `data` matters. Invalid or unfinished sequences earlier in `data` do
-  not change the result, and a pending sequence may directly follow one of them: in
-  `E2 E2 82` the last two bytes are pending.
-- `data` may be empty; the result is `0`.
-- The result is a Python `int`.
+- A complete character at the end of `data` is not pending, regardless of its length.
+- **Invalid bytes are not pending.** A byte that can never start a character (such as `FF` or a stray continuation byte) and a lead byte followed by a byte outside its row (such as `E0 80` or `C3 41`) will decode to U+FFFD replacement characters no matter what follows. They count as complete.
+- Only the end of `data` affects the result. Invalid or truncated sequences earlier in `data` do not change the answer, and a pending sequence may directly follow one. For example, in `E2 E2 82`, the last two bytes are pending.
+- If `data` is empty, return `0`.
+- Return a Python `int`.
 
-Work with the byte values yourself. Do not use the incremental decoders of the
-`codecs` module (`codecs.getincrementaldecoder`, `codecs.iterdecode`, and the classes
-behind them), which do this bookkeeping internally.
+Work with the byte values directly. Do not use the incremental decoders from the `codecs` module (`codecs.getincrementaldecoder`, `codecs.iterdecode`, `codecs.IncrementalDecoder`, or `codecs.getreader`).
 
 ## Example
 
@@ -85,28 +62,17 @@ complete_prefix_len(b"\xed\xa0")              # 2   a surrogate: not valid UTF-8
 complete_prefix_len(b"\xf4\x90")              # 2   beyond U+10FFFF
 ```
 
-The typical use is a streaming loop: append each token's bytes to a buffer, decode
-`buffer[:n]` with `n = complete_prefix_len(buffer)`, and keep `buffer[n:]` for the next
-round. With `errors="replace"` the pieces concatenate to exactly the text that decoding
-all the bytes at once would give.
+In a typical streaming loop, you append each token's bytes to a buffer, compute `n = complete_prefix_len(buffer)`, decode `buffer[:n]`, and keep `buffer[n:]` for the next step. With `errors="replace"`, the decoded chunks concatenate to the exact string produced by decoding all bytes at once.
 
 ## Constraints
 
-- `len(data)` is at most 100,000. `data` is a `bytes` object and may contain any byte
-  values in any order.
-- The result is compared exactly.
-- There is no speed requirement beyond the time limit, but note that only the last
-  three bytes can influence the answer.
-- `codecs` incremental decoders are not allowed; the judge rejects a solution that
-  calls them.
+- `len(data)` is at most 100,000. `data` is a `bytes` object and may contain any byte values in any order.
+- The result is compared for exact equality.
+- There is no speed requirement beyond the time limit, though only the last three bytes can influence the answer.
+- `codecs` incremental decoders are forbidden and rejected by the judge.
 
 ## Why this matters
 
-Byte-level tokenizers split characters freely: an emoji is often two or three tokens,
-and a CJK character can be split after its first byte. A streaming server that decodes
-each token's bytes as they arrive sends `�` to the client in the middle of a word, and
-the correct character never appears, because the stream cannot be taken back. A server
-that instead waits whenever the buffer "looks odd" has the opposite bug: when the model
-really does emit an invalid byte, output stalls until something else flushes it. This
-function is the exact rule between the two, and every streaming detokenizer contains a
-version of it.
+Byte-level tokenizers split multi-byte characters freely. An emoji often spans two or three tokens, and a CJK character can split right after its first byte. A streaming server that decodes each token's bytes as they arrive sends `�` to the client in the middle of a word, and the real character never appears because streamed output cannot be taken back.
+
+A server that holds back bytes whenever the buffer looks invalid has the opposite bug. When the model emits a genuinely invalid byte, output stalls until later bytes flush it. This function defines the exact boundary between waiting for an unfinished character and flushing broken bytes.

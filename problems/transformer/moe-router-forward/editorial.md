@@ -1,32 +1,20 @@
 ## The idea
 
-An MoE layer replaces the block's single MLP with $E$ of them and a gate. For each
-token the gate (the router) produces a sparse weight vector $w \in \mathbb{R}^E$ with
-exactly $k$ nonzero entries that sum to 1, and the layer's output is $\sum_e w_e f_e(x)$.
-Because $w$ is sparse, only $k$ of the $E$ experts need to run for that token. That is
-the whole point: the model owns $E$ MLPs' worth of parameters and pays for $k$.
+An MoE layer replaces a Transformer block's single MLP with $E$ experts and a router. For each token, the router builds a sparse weight vector $w \in \mathbb{R}^E$ with $k$ nonzero entries that sum to 1, and the layer outputs $\sum_e w_e f_e(x)$. Because $w$ is sparse, only $k$ of the $E$ experts need to run for that token. This lets a model store $E$ MLPs' worth of parameters while paying the compute cost of only $k$.
 
-The weight vector is built in three steps, per token: softmax over all $E$ logits,
-keep the top $k$, divide by their sum. There is a useful identity hiding in it. For a
-selected expert $e \in S$,
+For each token, the weight vector is built in three steps. First, take the softmax over all $E$ router logits $r_e$ to get probabilities $p_e$. Next, keep the top $k$ experts (the set $S$). Finally, divide the kept probabilities by their sum.
+
+These steps simplify through an algebraic identity. For any selected expert $e \in S$, the full softmax's partition function $Z = \sum_{j=1}^E e^{r_j}$ cancels out:
 
 $$
 w_e = \frac{p_e}{\sum_{j \in S} p_j}
     = \frac{e^{r_e} / Z}{\sum_{j \in S} e^{r_j} / Z}
-    = \frac{e^{r_e}}{\sum_{j \in S} e^{r_j}} ,
+    = \frac{e^{r_e}}{\sum_{j \in S} e^{r_j}} .
 $$
 
-since the partition function $Z$ of the full softmax cancels. So "softmax over all
-experts, top-k, renormalize" is exactly "top-k of the logits, then softmax over the
-selected logits". The two orders are the same function, and either is a correct
-solution. They stop being the same only if a step is done wrong: skipping the
-renormalization in the first form, or filling the unselected logits with something
-other than $-\infty$ in the second.
+Because $Z$ cancels, "softmax over all experts, top-k, then renormalize" computes the exact same function as "top-k of the logits, then softmax over the selected logits." Either order is a valid solution. The two diverge only when implemented incorrectly, such as skipping renormalization in the first form or masking unselected logits with something other than $-\infty$ in the second.
 
-Selection is the one discontinuous step. A token whose $k$-th and $(k+1)$-th logits
-are equal must still get a definite answer, hence the tie rule. `topk` in the three
-frameworks does not document which of several equal values it returns, so the
-reference ranks with a stable sort.
+Selection is the one discontinuous step. When a token's $k$-th and $(k+1)$-th logits are equal, the output still needs a deterministic answer, which is why the specification defines a tie-breaking rule. Because `topk` in PyTorch, JAX, and MLX does not guarantee how ties are ordered, the reference solution ranks experts with a stable sort.
 
 ## Reference solution (PyTorch)
 
@@ -45,69 +33,33 @@ def moe(x, w_router, experts_w, k):
     return y
 ```
 
-`argsort` of the negated logits lists each token's experts from best to worst, and a
-stable sort lists equal logits in index order. The second `argsort` inverts that
-permutation, giving each expert's rank, so `rank < k` is the selection as a dense
-mask. The top expert always has probability at least $1/E$, so the sum in the
-renormalization is never zero.
+Sorting `-logits` with `stable=True` lists each token's experts from highest to lowest logit while placing tied experts in ascending index order. A second `argsort` inverts that permutation to produce each expert's rank, so `rank < k` yields a dense selection mask. The top expert always has probability at least $1/E$, so the renormalization denominator is never zero.
 
-With the kit, the equivalent second form is one line, because `ops.top_k_filter` uses
-the same tie rule and marks removed entries with $-\infty$:
+Using the kit, the equivalent "top-k then softmax" form is a single line because `ops.top_k_filter` applies the same tie-breaking rule and replaces unselected entries with $-\infty$:
 
 ```python
 weights = ops.softmax(ops.top_k_filter(logits, k))
 ```
 
-The loop over experts could be a single `einsum` over the stacked weights; a loop is
-clearer and is what the sparse version will need anyway.
+You could replace the loop over experts with a single `einsum` over the stacked weights. The loop is clearer and matches the structure needed for a sparse implementation.
 
 ## Common mistakes
 
-- **No renormalization.** Using the top-k probabilities as they come out of the
-  softmax gives weights that sum to less than 1, by a different amount for every
-  token: a token whose router is unsure gets a smaller MLP update than one whose
-  router is confident. With identical experts the output should equal that one
-  expert's output; without renormalization it is scaled down.
-- **Masking with 0 instead of $-\infty$.** In the "top-k, then softmax" form, an
-  unselected logit set to 0 still gets weight $e^0 / \dots$, which is not small at
-  all when the selected logits are negative. Only $-\infty$ removes an entry from a
-  softmax.
-- **Routing per sequence.** Pooling the sequence (or taking its first token) and
-  routing once gives weights of shape `(B, 1, E)` that broadcast without complaint.
-  Routing is per token: neighboring tokens routinely use different experts.
-- **The softmax on the wrong axis.** Logits have shape `(B, T, E)`. A softmax over
-  axis 1 normalizes each expert across the tokens of a sequence. When $T = E$ nothing
-  about the shapes gives it away.
-- **Uniform weights.** Averaging the $k$ selected experts ignores how strongly the
-  router preferred each one. For $k = 1$ it happens to be right.
-- **Ties broken the other way.** An ascending sort followed by "take the last $k$"
-  prefers the highest index among equals. Exact ties are rare with trained float
-  weights, but a zero or duplicated router row is enough to produce them, and an
-  engine whose outputs depend on an unspecified sort order is not reproducible.
+- **No renormalization.** Using raw top-k softmax probabilities produces weights that sum to less than 1 by a different amount for each token. A token with an uncertain router gets a smaller MLP update than a confident one. If all experts are identical, the layer should match that single expert's output, but without renormalization it is scaled down.
+- **Masking with 0 instead of $-\infty$.** In the "top-k then softmax" form, setting an unselected logit to 0 still gives it weight $e^0 = 1$ in the softmax numerator. When selected logits are negative, unselected experts end up dominating the sum. Only $-\infty$ zeroes out an entry in softmax.
+- **Routing per sequence.** Pooling across the sequence (or using only the first token) gives weights of shape `(B, 1, E)` that silently broadcast across `T`. Routing must happen per token because neighboring tokens routinely pick different experts.
+- **Softmax on the wrong axis.** Logits have shape `(B, T, E)`. Applying softmax over axis 1 normalizes each expert across tokens instead of normalizing across experts for each token. When $T = E$, tensor shapes will not catch this bug.
+- **Uniform weights.** Averaging the $k$ selected experts ignores how strongly the router preferred each one. This happens to pass when $k = 1$ and fails for $k > 1$.
+- **Breaking ties toward the highest index.** Sorting in ascending order and taking the last $k$ entries picks the highest index on ties. Exact ties are rare with trained weights, but zeroed or duplicated router rows trigger them, and relying on an unspecified sort order breaks reproducibility.
 
 ## Complexity
 
-Dense evaluation costs $O(B\,T\,E\,D\,H)$ for the experts, plus $O(B\,T\,E\,D)$ for
-the router and $O(B\,T\,E \log E)$ for the sort: $E / k$ times more expert arithmetic
-than necessary. The sparse version runs each expert on its own tokens only, for
-$O(B\,T\,k\,D\,H)$, the same cost as $k$ ordinary MLPs.
+Dense evaluation costs $O(B\,T\,E\,D\,H)$ for the experts, $O(B\,T\,E\,D)$ for the router, and $O(B\,T\,E \log E)$ for sorting. That performs $E / k$ times more expert arithmetic than necessary. A sparse implementation runs each expert only on the tokens that selected it, reducing the expert cost to $O(B\,T\,k\,D\,H)$, the same as running $k$ standard MLPs.
 
 ## In the wild
 
-Hugging Face's `MixtralSparseMoeBlock` is this specification in the same order: a
-bias-free linear `gate`, `F.softmax` over the experts, `torch.topk` with
-`top_k = 2`, division of the kept weights by their sum, and then a loop over the
-experts in which each one runs on the tokens that selected it and the result is
-scattered back with `index_add_`. Mixtral's experts are SwiGLU MLPs like the ones here
-(its `w1`, `w3`, `w2` are gate, up, and down).
+Hugging Face's `MixtralSparseMoeBlock` follows this exact sequence. It applies a bias-free linear `gate`, runs `F.softmax` over the experts, calls `torch.topk` with `top_k = 2`, divides the kept weights by their sum, and loops over experts to run each on its assigned tokens before scattering results back with `index_add_`. Mixtral's experts are also SwiGLU MLPs, where `w1`, `w3`, and `w2` correspond to gate, up, and down.
 
-The routing rule is a property of the model family, and not all families use this
-one. DeepSeek's MoE models add shared experts that every token uses, and score routed
-experts differently; some models skip the renormalization by design. As with norm
-placement and RoPE layout, the only safe source is the reference implementation of
-the model you are loading.
+Routing rules vary across model families. DeepSeek's MoE models add shared experts that run on every token and score routed experts differently, and some architectures skip renormalization altogether. As with norm placement and RoPE layout, always verify against the reference implementation of the model you are porting.
 
-MoE changes the serving economics more than the math. All $E$ experts must be in
-memory although each token reads $k$ of them, so memory, not compute, is the binding
-constraint, and within a batch each expert sees a different, unpredictable number of
-tokens, which makes the per-expert batches ragged.
+In production serving, MoE changes system bottlenecks more than math. All $E$ experts must stay resident in memory even though each token touches only $k$ of them, making memory capacity and bandwidth the binding constraints. Within a batch, each expert also receives a different, unpredictable number of tokens, creating ragged per-expert batches.

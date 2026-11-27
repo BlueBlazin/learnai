@@ -1,23 +1,14 @@
-For each function, write down what a dropped entry should be replaced with so that
-the rest of the computation can ignore the mask. Then ask which operation performs
-that replacement without ever computing with the dropped value.
+For each function, decide what value should replace a masked-out entry so the rest of the computation can ignore the mask. Then choose an operation that performs that replacement without doing arithmetic on the dropped value.
 
 ---
 
-- `fill_masked` is a single `where`: the condition, the value where it is true, the
-  value where it is false.
-- `masked_mean`: a sum does not change when you add 0, so the dropped steps become 0.
-  The mask is `(B, T)` and `x` is `(B, T, D)`; aligned from the right they do not
-  match, so the mask needs a third axis. Divide by the number of kept steps of each
-  row, which is a sum over the mask, and decide what a count of 0 should be divided
-  by.
-- `masked_max`: a max does not change when you add a candidate that loses to
-  everything. A row that keeps nothing then needs no special case.
+- `fill_masked` is a single `where` call taking the condition, the value when true, and the value when false.
+- `masked_mean`: adding `0` leaves a sum unchanged, so replace dropped steps with `0`. Because `mask` has shape `(B, T)` and `x` has shape `(B, T, D)`, right-aligned broadcasting will not match them until you add a third axis to `mask`. Divide by the per-row count of kept steps (`mask.sum(...)`) and guard against dividing by `0`.
+- `masked_max`: a maximum is unchanged by any value that loses to all finite numbers. Using that fill value also handles rows with no kept steps without a special case.
 
 ---
 
-The key lines, in PyTorch (`jnp.where` and `mx.where` take the same arguments; use
-`axis=` and `jnp.maximum(count, 1)` or `mx.maximum(count, 1)` there):
+The key lines in PyTorch (`jnp.where` and `mx.where` take the same arguments; use `axis=` and `jnp.maximum(count, 1)` or `mx.maximum(count, 1)` there):
 
 ```
 torch.where(keep, scores, float("-inf"))                         # fill_masked

@@ -1,10 +1,6 @@
 ## The idea
 
-An expert's cost and size are proportional to the width it reads and writes: its
-three matrices are $(\texttt{inter}, w)$, $(\texttt{inter}, w)$, and
-$(w, \texttt{inter})$. Nothing forces $w$ to be the model width. Put one projection
-$D \to L$ in front of all experts and one projection $L \to D$ behind them, and
-every expert shrinks by the factor $L / D$, while the two projections are paid once:
+An expert's parameter count and compute scale linearly with the width $w$ that it reads and writes, because its three SwiGLU matrices have shapes $(\texttt{inter}, w)$, $(\texttt{inter}, w)$, and $(w, \texttt{inter})$. Nothing requires $w$ to equal the model width $D$. Placing one shared down-projection $D \to L$ before the experts and one shared up-projection $L \to D$ after them shrinks every expert by the factor $L / D$, while paying for the two projections only once:
 
 $$
 E \cdot 3\,D\,\texttt{inter}
@@ -12,21 +8,13 @@ E \cdot 3\,D\,\texttt{inter}
 E \cdot 3\,L\,\texttt{inter} + 2\,D\,L .
 $$
 
-What stays at full width is as important as what moves:
+What stays at full width is just as important as what moves into the latent space:
 
-- **The router** reads the full-width token. Routing is cheap (one $E \times D$
-  matrix), and it should see everything the token has.
-- **The shared expert** reads the full-width token and writes at full width. It is
-  the path that does not go through the bottleneck.
-- **The norm** sits on the mixture, at latent width, before the up-projection. The
-  mixture is a weighted sum of $k$ expert outputs with weights that sum to 1; the
-  norm fixes its size before one linear map spreads it over $D$ channels.
+- **The router** reads the full-width token. Routing is cheap (a single $E \times D$ matrix) and benefits from seeing the complete representation.
+- **The shared expert** reads and writes at full width, providing a residual path that bypasses the latent bottleneck.
+- **The RMS norm** sits on the weighted mixture at latent width, right before the up-projection. The mixture is a weighted sum of $k$ expert outputs whose weights sum to 1. Normalizing it controls its scale before a single linear projection expands it back to $D$ channels.
 
-The norm has a consequence worth noticing. An RMS norm is invariant to the scale of
-its input (up to $\epsilon$), so only the *ratios* of a token's routing weights
-survive it: multiply all of a token's weights by 2.5 and $n$ barely changes. A
-routing scale in front of this norm would be nearly a no-op, which fits the shipped
-configuration below having a scale of 1.
+This placement of the norm has a useful side effect. Because RMS normalization is invariant to positive rescaling of its input (up to $\epsilon$), only the *ratios* among a token's selected routing weights matter. Multiplying all of a token's weights by 2.5 barely changes $n$. A routing scale factor before this norm would be almost a no-op, which matches the shipped configuration below using a routing scale of 1.
 
 ## Reference solution (PyTorch)
 
@@ -57,72 +45,29 @@ def expert_params(hidden, latent, inter, n_experts):
     return with_latent, full
 ```
 
-`np.nonzero(chosen == e)` returns, for expert `e`, the tokens that chose it and the
-slot each of them chose it in; a token appears at most once, so `index_add` never
-meets a repeated index within one call.
+For each expert `e`, `np.nonzero(chosen_np == e)` returns the indices of the tokens that selected it and the slot each token placed it in. Because a token selects $k$ distinct experts, each token index appears at most once per expert, so `index_add` never accumulates duplicate indices within a single call.
 
 ## Common mistakes
 
-- **The norm on each expert's output.** Normalizing inside the loop gives every
-  expert's contribution the same size before the weighted sum, which is a different
-  function: the mixture of normalized vectors is shorter than a normalized mixture
-  whenever the experts disagree.
-- **The norm left out.** One shipped model with latent experts has it and one does
-  not (see below), so copying the wrong forward pass is easy.
-- **The epsilon.** This layer's norm uses $10^{-5}$, the model's `rms_norm_eps`.
-  Many other models' norms use $10^{-6}$, and the two differ visibly as soon as the
-  mixture is small.
-- **Calling experts nobody chose.** A loop over all experts that calls each one, with
-  zero rows if need be, returns the right output and makes wasted calls. It can only
-  be told apart from the correct dispatch when some expert is idle, which with 16 of
-  896 experts per token is the normal case for a short batch.
-- **Dense evaluation,** or one call per token. The first does $E / k$ times the
-  expert rows; the second makes $k \cdot N$ single-row calls.
-- **Weights dropped,** or taken from a softmax over the chosen logits. The size of
-  the mixture is repaired by the norm; its direction is not.
-- **The shared expert forgotten,** which removes the only full-width path.
-- **Ties** resolved to the highest index.
-- **Counting the projections per expert.** They are shared: for the sizes of the
-  example that mistake reports 75.6 billion parameters, more than the full-width
-  layer it is supposed to shrink. Forgetting the gate matrix (two matrices per
-  expert instead of three) and returning the two counts in the other order are the
-  other two ways to get `expert_params` wrong.
+- **Normalizing each expert's output instead of the mixture.** Applying RMS norm inside the expert loop equalizes every expert's magnitude before summing. That computes a different function, because a weighted sum of unit-norm vectors has smaller norm than a normalized sum whenever the experts disagree.
+- **Omitting the norm.** One shipped latent-MoE model includes this norm and another omits it (see below), so copying the wrong forward pass is an easy mistake.
+- **Using the wrong epsilon.** This layer uses $\epsilon = 10^{-5}$ (matching the model's `rms_norm_eps`). Many other models use $10^{-6}$, and the difference becomes visible whenever the mixture has small magnitude.
+- **Calling unselected experts.** Looping over all experts and calling each one even with zero rows produces the right numbers but wastes calls. This bug only surfaces when at least one expert is idle, which is the common case for short batches (such as 16 active out of 896 experts per token).
+- **Dense evaluation or per-token calls.** Evaluating every expert on every token processes $E / k$ times too many rows. Calling an expert once per token makes $k \cdot N$ single-row calls instead of batching by expert.
+- **Dropping routing weights or using softmax.** If weights are dropped or computed with softmax over the chosen logits, the norm hides the magnitude error, but the direction of the mixture is still wrong.
+- **Forgetting the shared expert.** Dropping `ops.swiglu(x, *shared_w)` removes the only full-width path through the layer.
+- **Breaking ties toward the highest index.** Use a stable descending sort so equal scores pick lower expert indices first.
+- **Parameter counting errors in `expert_params`.** Counting $W_{\text{down}}$ and $W_{\text{up}}$ per expert instead of once for the layer yields 75.6 billion parameters on the Kimi K3.1 example, larger than the full-width layer it is meant to shrink. Other common bugs are forgetting the gate matrix (counting 2 matrices per expert instead of 3) or swapping the return order of the two counts.
 
 ## Complexity
 
-Expert work is $O(k\,N\,L\,\texttt{inter})$ instead of $O(k\,N\,D\,\texttt{inter})$,
-plus $O(N\,D\,L)$ for the two projections and $O(N\,E\,D)$ for the router.
+Routed expert compute is $O(k\,N\,L\,\texttt{inter})$ instead of $O(k\,N\,D\,\texttt{inter})$, plus $O(N\,D\,L)$ for the two shared projections and $O(N\,E\,D)$ for the router.
 
 ## In the wild
 
 Checked on 2026-11-21.
 
-- **Kimi K3.1.** The `config.json` of `moonshotai/Kimi-K3.1-Pro` has, in its text
-  configuration, `hidden_size` 7168, `routed_expert_hidden_size` 3584,
-  `moe_intermediate_size` 3072, 896 experts with 16 per token, 2 shared experts,
-  `latent_moe_use_norm` true, `rms_norm_eps` 1e-5, a sigmoid router with
-  `moe_renormalize` true, one expert group, and `routed_scaling_factor` 1.0. The
-  parameter counts of the worked example are computed from these numbers; they
-  describe the layer of this problem (SwiGLU experts), not a measured checkpoint.
-- **The code read** is `KimiK3SparseMoE` in `mlx_lm/models/kimi_k3.py` of `mlx-lm`
-  0.32.2: router on `x`, `routed_expert_down_proj`, the experts, the weighted sum
-  over the chosen experts, `routed_expert_norm` (an RMS norm at latent width, when
-  `latent_moe_use_norm`), `routed_expert_up_proj`, and then the shared expert of
-  `x` added. That file declares the model type `kimi_k3`; the configuration above
-  says `kimi_k31`, and Moonshot's own modeling code was not read, so treat the
-  correspondence as what `mlx-lm` implements, not as a statement by the model's
-  authors. `fixtures/check_mlx_lm.py` runs that module at a small size, with the
-  settings of the configuration above, against the formulas of this problem and
-  agrees to 1e-6.
-- **Differences from that code,** all deliberate simplifications. Its experts use an
-  activation of its own in place of SiLU, a `tanh`-limited gate times a
-  `tanh`-limited up branch with the configuration's `activation_situ_beta` 4.0 and
-  `activation_situ_linear_beta` 25.0. Its router adds a selection bias, as in
-  `sigmoid-router-shared-expert`. Its shared expert is one MLP whose inner width is
-  `moe_intermediate_size` times the number of shared experts. And for `k = 1` it
-  skips the normalization of the weights, where the routers of `transformers`
-  normalize always; this problem requires $k \ge 2$, where the two agree.
-- **Nemotron-H.** `NemotronHMoE` in `transformers` 5.23.0
-  (`models/nemotron_h/modeling_nemotron_h.py`) has the same structure with
-  `fc1_latent_proj` and `fc2_latent_proj` around the experts and **no norm** between
-  the mixture and the up-projection, when `moe_latent_size` is set.
+- **Kimi K3.1.** The text configuration in `config.json` for `moonshotai/Kimi-K3.1-Pro` specifies `hidden_size` 7168, `routed_expert_hidden_size` 3584, `moe_intermediate_size` 3072, 896 experts with 16 active per token, 2 shared experts, `latent_moe_use_norm: true`, `rms_norm_eps: 1e-5`, a sigmoid router with `moe_renormalize: true`, one expert group, and `routed_scaling_factor: 1.0`. The worked example's parameter counts are calculated from these numbers for the SwiGLU layer specified here, not measured directly from a checkpoint.
+- **Reference implementation read.** `KimiK3SparseMoE` in `mlx_lm/models/kimi_k3.py` (`mlx-lm` 0.32.2) runs the router on `x`, applies `routed_expert_down_proj`, runs the experts, takes the weighted sum over chosen experts, applies `routed_expert_norm` (an RMS norm at latent width when `latent_moe_use_norm` is enabled), applies `routed_expert_up_proj`, and adds the shared expert on `x`. That file registers model type `kimi_k3` while the config above uses `kimi_k31`, and Moonshot's own modeling code was not read, so treat this correspondence as what `mlx-lm` implements rather than an official statement by the authors. `fixtures/check_mlx_lm.py` runs that module at a small size with the settings above and agrees with this problem's formulas to `1e-6`.
+- **Deliberate simplifications.** In `mlx-lm`, the experts use a custom activation instead of SiLU (a `tanh`-limited gate times a `tanh`-limited up branch with `activation_situ_beta: 4.0` and `activation_situ_linear_beta: 25.0`), and the router adds a selection bias as in `sigmoid-router-shared-expert`. Its shared expert is a single MLP whose inner width is `moe_intermediate_size` times the number of shared experts. For `k = 1`, it skips weight renormalization, whereas `transformers` routers always renormalize. This problem requires $k \ge 2$, where both conventions agree.
+- **Nemotron-H.** `NemotronHMoE` in `transformers` 5.23.0 (`models/nemotron_h/modeling_nemotron_h.py`) uses the same latent structure with `fc1_latent_proj` and `fc2_latent_proj` around the experts when `moe_latent_size` is set, but applies **no norm** between the mixture and the up-projection.

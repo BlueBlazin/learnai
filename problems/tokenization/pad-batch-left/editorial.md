@@ -1,30 +1,12 @@
 ## The idea
 
-A decoder-only model predicts token $t + 1$ from the hidden state at position $t$. In
-a generation loop that means: run the batch, take the logits of the last column, pick a
-token per row, append it as a new column. That only works if the last column of every
-row is that row's last real token. Left padding guarantees it for every row at once;
-right padding guarantees it only for the longest row.
+A decoder-only model predicts token $t + 1$ from the hidden state at position $t$. During batched generation, each step runs the batch through the model, takes the logits from the last column, samples one token per row, and appends that token as a new column. For this to work, the last column of every row must hold that row's final real token. Left padding guarantees this for every row, while right padding guarantees it only for the longest row.
 
-The attention mask completes the picture. Pad positions are real inputs as far as the
-network is concerned: they have embeddings and would be attended to. The mask is what
-removes them, and with left padding and a causal model it is all that is needed, since
-the real tokens then see exactly their own prefix. (Position handling is the other half
-of making padded rows match unpadded ones; with relative schemes such as RoPE the
-offset introduced by left padding cancels, with learned absolute positions it must be
-corrected. That is the subject of `padded-batch-invariance`.)
+The attention mask completes the setup. To the network, pad tokens still have embeddings and would be attended to if left unmasked. Masking them out lets every real token in a left-padded causal batch attend only to its own prefix. (Position indices are the other half of making padded rows match unpadded ones. Relative schemes like RoPE cancel the offset introduced by left padding, while learned absolute positions must be shifted explicitly. That is covered in `padded-batch-invariance`.)
 
-The mask must be derived from the lengths. The ids alone cannot say which positions are
-padding when `pad_id` is also a legitimate token, and that is the normal situation, not
-an exotic one: many open models ship without a pad token and are configured with
-`pad_token = eos_token`.
+The mask must come from the sequence lengths rather than from comparing token values against `pad_id`. Many open models ship without a dedicated pad token and set `pad_token = eos_token`, so `pad_id` regularly appears as a real token inside a prompt.
 
-The empty sequence is rejected rather than padded because nothing downstream can use
-it: its mask is all zeros, so every attention row is fully masked (a softmax over
-nothing, typically NaN), and it has no last token to continue from. Failing at the
-boundary gives a clear error instead of NaN logits several layers later. A server
-normally cannot receive an empty prompt anyway, because the chat template or the BOS
-token contributes at least one token.
+Empty sequences are rejected up front instead of padded. A row of all padding has an all-zero attention mask, which forces softmax over zero valid keys and typically produces NaN logits several layers later. Rejecting empty sequences at the boundary gives a clear error immediately. In practice, a server rarely receives an empty prompt anyway because the chat template or BOS token adds at least one token.
 
 ## Reference solution (Python)
 
@@ -53,36 +35,20 @@ def pad_batch(seqs, pad_id, side="left"):
 
 ## Common mistakes
 
-- **Padding on the wrong side.** Swapping the two branches, or defaulting to
-  `"right"` because that is what tokenizer libraries default to. The longest row is
-  unaffected, so a test with one prompt passes.
-- **An inverted mask.** PyTorch's `key_padding_mask` uses `True` for positions to
-  ignore; the attention mask of tokenizers and generation APIs uses `1` for positions
-  to keep. Mixing the two conventions masks out the prompt and attends to the padding.
-- **Mask from `ids != pad_id`.** Correct until a real token equals `pad_id`, which
-  happens in every conversation that contains an end-of-turn token when pad is EOS.
-- **`lengths` filled with the padded width.** After padding, every row has length `T`;
-  the caller wants the number of real tokens, for example to find where each row's
-  prompt starts or to compute per-row token counts.
-- **Accepting an empty sequence.** `max()` and list multiplication handle it without
-  complaint and produce a row of padding.
-- **Not validating `side`.** An `if side == "left": ... else: ...` treats `"Left"`,
-  `"centre"`, and every typo as right padding.
-- **Padding in place.** `seq[:0] = pads` or `seq.extend(pads)` modifies the caller's
-  token lists; the next call with the same prompts sees sequences that already contain
-  padding, and a retry pads them again.
+- **Padding on the wrong side.** Swapping the `"left"` and `"right"` branches, or defaulting to `"right"` like many tokenizer libraries, breaks shorter rows. The longest row is unaffected, so single-prompt tests still pass.
+- **Inverting the mask.** PyTorch's `key_padding_mask` uses `True` for positions to ignore, whereas tokenizer and generation APIs use `1` for positions to keep. Mixing the two masks out the prompt and attends to the padding.
+- **Deriving the mask from `ids != pad_id`.** This works until a real token equals `pad_id`, which happens in any conversation containing an end-of-turn token when pad is EOS.
+- **Filling `lengths` with the padded width.** Every padded row has the same padded width, but callers need the original unpadded lengths to locate where each prompt starts or to track per-row token counts.
+- **Accepting an empty sequence.** `max()` and list repetition silently turn an empty list into a row of pure padding.
+- **Skipping validation on `side`.** Writing `if side == "left": ... else: ...` silently treats `"Left"`, `"center"`, and any other typo as right padding.
+- **Padding in place.** Mutating the caller's lists with `seq[:0] = pads` or `seq.extend(pads)` corrupts the input sequences, so any reuse or retry sees already-padded data.
 
 ## Complexity
 
-$O(B \cdot T)$ time and memory, the size of the output.
+$O(B \cdot T)$ time and memory, where $B$ is the number of sequences and $T$ is the maximum sequence length. This matches the size of the output.
 
 ## In the wild
 
-Hugging Face tokenizers have a `padding_side` attribute that defaults to `"right"`, and
-`generate()` on a decoder-only model logs a warning when it detects right-padded input,
-telling the user to set `padding_side='left'`. Engines with a paged KV cache, such as
-vLLM, avoid padding in the decode loop by tracking each sequence's own cache blocks,
-but any code that runs several prompts through the model as one tensor, including
-reranking and batched scoring, goes through exactly this function. The cost of padding is real
-too: a batch is as wide as its longest row, which is why batchers group prompts of
-similar length.
+Hugging Face tokenizers expose a `padding_side` attribute that defaults to `"right"`. Calling `generate()` on a decoder-only model logs a warning if it detects right-padded input and tells you to set `padding_side='left'`.
+
+Serving engines with a paged KV cache, such as vLLM, avoid padding during decoding by tracking each sequence's cache blocks independently. Still, any code that runs multiple prompts through a model as one dense tensor—including batched scoring and reranking—uses this exact padding logic. Because a batch is always as wide as its longest row, batching layers typically group prompts of similar length to minimize wasted compute.

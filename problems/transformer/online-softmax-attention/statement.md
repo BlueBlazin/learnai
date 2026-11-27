@@ -1,9 +1,4 @@
-Compute scaled dot-product attention when the keys and values do not fit in memory at
-once: they arrive in blocks, each block is seen once, and the result must equal
-attention over all of them. A softmax needs its normalizer, which is only known at the
-end, so the function carries a running maximum, a running normalizer, and a running
-output, and rescales the last two whenever the maximum grows. This is the online
-softmax at the core of FlashAttention.
+Compute scaled dot-product attention when keys and values arrive one block at a time from a single-pass iterator. The output must match standard attention over all keys combined, while keeping memory usage independent of the total number of keys.
 
 ![This problem is attention, computed one block of keys at a time with a running softmax.](assets/map.svg)
 
@@ -13,48 +8,29 @@ softmax at the core of FlashAttention.
 def blockwise_attention(q, kv_blocks): ...
 ```
 
-- `q`: float32 tensor of shape `(T, D)`, the queries.
-- `kv_blocks`: an iterator that yields tuples `(k, v, mask)`:
-  - `k`: float32 tensor of shape `(n, D)`, the keys of the block;
-  - `v`: float32 tensor of shape `(n, D_v)`, their values;
-  - `mask`: bool tensor of shape `(T, n)`; `mask[t, j]` is `True` when query `t` may
-    attend to key `j` of the block.
+- `q`: query matrix containing $T$ queries of dimension $D$.
+- `kv_blocks`: a single-pass iterator yielding `(k, v, mask)` tuples. Each block contains $n \ge 1$ keys `k` of dimension $D$, values `v` of dimension $D_v$, and a boolean visibility `mask` where `mask[t, j]` is `True` if query `t` may attend to key `j` of that block. The block size $n$ may vary from block to block, while $D_v$ is constant across all blocks. There is at least one block, and the total number of blocks is unknown in advance.
+- Returns the attention output for all $T$ queries, with dimension $D_v$.
 
-  The block size $n \ge 1$ varies from block to block; $D_v$ is the same for all.
-  There is at least one block, and the number of blocks is not known in advance.
-- Returns a float32 tensor of shape `(T, D_v)`.
-
-Let $k_1, \ldots, k_N$ and $v_1, \ldots, v_N$ be the keys and values of all blocks in
-order, and $M_{t,j}$ the corresponding mask entries. The score of query $t$ for key
-$j$ is
+Let $N$ be the total number of keys across all blocks, with keys $k_1, \ldots, k_N$, values $v_1, \ldots, v_N$, and mask entries $M_{t,j}$ concatenated in block order. The scaled dot-product score between query $t$ and key $j$ is
 
 $$
-s_{t,j} = \frac{q_t \cdot k_j}{\sqrt{D}},
+s_{t,j} = \frac{q_t \cdot k_j}{\sqrt{D}}.
 $$
 
-and the result is ordinary attention over the visible keys:
+The required output for query $t$ is standard attention over its visible keys:
 
 $$
-\text{out}_t = \sum_{j \,:\, M_{t,j}} \frac{e^{s_{t,j}}}{\sum_{i \,:\, M_{t,i}} e^{s_{t,i}}}\; v_j .
+\text{out}_t = \sum_{j \,:\, M_{t,j}} \frac{e^{s_{t,j}}}{\sum_{i \,:\, M_{t,i}} e^{s_{t,i}}}\; v_j.
 $$
 
-Every query has at least one visible key among all blocks. Nothing else is promised:
+Every query has at least one visible key across all blocks, but no other guarantees hold:
 
-- **A block may be entirely masked** for some queries, or for all of them.
-- **A query may see nothing at first.** Its first visible key can be in any block,
-  so the blocks before it contribute nothing to that query, and must not turn its
-  running state into NaN.
-- **Scores are large.** $|s_{t,j}|$ reaches several hundred, far beyond the range in
-  which $e^{s}$ is a float32, and different queries live on different scales.
+- **Fully masked blocks:** A block may be completely masked for some queries, or for all queries.
+- **Delayed first visible key:** A query's first visible key may appear in any block. Earlier blocks contribute nothing to that query and must not produce `NaN` in its running state.
+- **Large scores:** $|s_{t,j}|$ can reach several hundred, well outside the range where $e^s$ is representable in `float32`. Different queries can also have very different score scales.
 
-**One pass, one block at a time.** `kv_blocks` can be iterated once. The memory the
-function may use is $O(T \cdot D_v)$ of running state plus one block; it must not
-collect the blocks, or anything of their size, to process them at the end. The
-iterator enforces the first half of that: it tracks which of the blocks it has
-handed out are still referenced, and **when the next block is requested, at most
-one earlier block may still be alive** (the one just processed, which a `for` loop
-still holds in its loop variables). The same holds for the request that ends the
-iteration. The measured number is reported as `peak_blocks_held`, with a limit of 1.
+**Single-pass streaming.** `kv_blocks` can be iterated only once. Your function may use $O(T \cdot D_v)$ running state plus one block of working memory. Do not collect the blocks, or concatenate data proportional to all blocks, to compute attention at the end. The test iterator tracks how many yielded blocks are still referenced. Whenever the next block is requested (and when iteration ends), at most one earlier block may still be alive—the block just processed, which a `for` loop holds in its loop variables until rebound. The judge reports this count as `peak_blocks_held`, with a limit of 1.
 
 ## Shapes
 
@@ -68,7 +44,7 @@ iteration. The measured number is reported as `peak_blocks_held`, with a limit o
 
 ## Example
 
-Two queries with $D = 1$ (so the scale is 1), three keys in two blocks:
+Consider two queries with $D = 1$ (so $1/\sqrt{D} = 1$) and three keys split across two blocks:
 
 ```python
 q = [[1.0], [100.0]]
@@ -78,44 +54,29 @@ block_2 = (k=[[3.0]],        v=[[4.0]],        mask=[[True], [False]])
 blockwise_attention(q, iter([block_1, block_2]))  # [[3.645579], [2.0]]
 ```
 
-Query 0 has scores $[0, 1]$ in the first block and $[3]$ in the second. In full,
-$\operatorname{softmax}([0, 1, 3]) = [0.0420, 0.1142, 0.8438]$ and the output is
-$0.0420 \cdot 1 + 0.1142 \cdot 2 + 0.8438 \cdot 4 = 3.6456$. Processed block by
-block, with sums kept relative to the largest score so far:
+Query 0 has scores $[0, 1]$ in block 1 and $[3]$ in block 2. Over all keys at once, $\operatorname{softmax}([0, 1, 3]) = [0.0420, 0.1142, 0.8438]$, giving $0.0420 \cdot 1 + 0.1142 \cdot 2 + 0.8438 \cdot 4 = 3.6456$. Processed block by block with running sums shifted by the largest score seen so far:
 
 | after | largest score $m$ | $\sum e^{s - m}$ | $\sum e^{s - m}\, v$ |
 |---|---|---|---|
 | block 1 | 1 | $e^{-1} + 1 = 1.3679$ | $e^{-1} \cdot 1 + 1 \cdot 2 = 2.3679$ |
 | block 2 | 3 | $1.3679\, e^{-2} + 1 = 1.1851$ | $2.3679\, e^{-2} + 4 = 4.3205$ |
 
-and $4.3205 / 1.1851 = 3.6456$. When the maximum moved from 1 to 3, both sums from
-block 1 were multiplied by $e^{1 - 3}$.
+Dividing the final sums gives $4.3205 / 1.1851 = 3.6456$. When the running maximum increases from 1 to 3, both sums from block 1 are multiplied by $e^{1 - 3}$.
 
 ![The two queries of the example, after each step: the maximum, the normalizer, and the output.](assets/online-steps.svg)
 
-Query 1 has scores $[0, 100]$ in the first block: $e^{100}$ is not a float32, and
-relative to the maximum the weights are $[e^{-100}, 1]$. The second block is masked
-for this query and changes nothing. The output is $2.0$.
+Query 1 has scores $[0, 100]$ in block 1. Computing $e^{100}$ directly overflows `float32`, so shifting by the maximum 100 gives weights $[e^{-100}, 1]$. Block 2 is masked for query 1 and leaves its state unchanged, yielding $2.0$.
 
 ## Constraints
 
-- $1 \le T \le 64$, $1 \le D \le 64$, $1 \le D_v \le 64$; at most 64 blocks of 1 to
-  64 keys each. $|s_{t,j}| \le 1000$.
-- The result is compared with attention over all keys at once to a relative
-  tolerance of `1e-4` and an absolute tolerance of `1e-5`. A NaN is always wrong.
-- `peak_blocks_held` must be at most 1, in every case.
-- The function must read every block: it returns only after the iterator has ended.
-- A Python loop over the blocks is expected; no loop over queries or keys is needed.
+- $1 \le T \le 64$, $1 \le D \le 64$, $1 \le D_v \le 64$, at most 64 blocks of 1 to 64 keys each, and $|s_{t,j}| \le 1000$.
+- Results are compared with full attention over all keys to a relative tolerance of `1e-4` and an absolute tolerance of `1e-5`. Any `NaN` fails.
+- `peak_blocks_held` must be at most 1 in every test case.
+- The function must consume every block and return only after the iterator ends.
+- A Python loop over the blocks is expected. No loop over individual queries or keys is needed.
 
 ## Why this matters
 
-Attention over a long context is a $T \times N$ table of scores that nobody can
-afford to store: at 100,000 tokens it is 40 GB in float32 for one head. FlashAttention
-(Dao et al., 2022) never builds it. It walks over the keys in blocks that fit in the
-GPU's fast memory and keeps, per query, exactly the three running quantities of this
-problem; the same recurrence lets attention run over a KV cache that is paged,
-chunked across devices, or streamed from disk. The rescaling step is where
-implementations go wrong, and the errors are data dependent: a missing rescale is
-invisible until a later block contains a larger score, and the `-inf - (-inf)` of a
-fully masked block appears only with causal masks or padding, where it turns one
-query's output into NaN and, one layer later, the whole sequence.
+Standard attention builds a $T \times N$ score matrix. At 100,000 tokens, that matrix takes 40 GB in `float32` for a single head. FlashAttention (Dao et al., 2022) avoids materializing it by streaming key-value blocks through fast on-chip GPU memory and maintaining these three running quantities per query. The same recurrence also powers attention over KV caches that are paged, sharded across devices, or streamed from disk.
+
+Bugs in online softmax are data-dependent and easy to miss. A missing rescale stays hidden until a later block contains a larger score. A `-inf - (-inf)` error from a fully masked block appears only with causal masks or padding, turning one query into `NaN` and corrupting the entire sequence by the next layer.

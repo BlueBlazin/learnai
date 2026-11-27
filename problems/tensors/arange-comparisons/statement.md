@@ -1,6 +1,4 @@
-Write three functions that build a boolean mask from positions. None of them reads
-any data: each mask is a comparison between index vectors that broadcast against each
-other, and the exercise is choosing the two vectors, their axes, and `<` or `<=`.
+Implement three functions that build boolean masks from position indices without reading any data. Each function broadcasts two index vectors against each other and compares them element by element.
 
 ## Specification
 
@@ -10,45 +8,30 @@ def band_mask(T, w): ...
 def same_segment(seg): ...
 ```
 
-**`length_mask(lengths, T, side)`** describes a batch of `B` sequences padded to a
-common length `T`. Row `b` holds `lengths[b]` real tokens and `T - lengths[b]`
-padding tokens, and `side` says where the padding is. The function returns the
-boolean mask of real tokens, shape `(B, T)`:
+**`length_mask(lengths, T, side)`** builds a padding mask for a batch of `B` sequences padded to a common length `T`, where `lengths` is a 1D integer tensor of length `B`. Row `b` contains `lengths[b]` real tokens and `T - lengths[b]` padding tokens, and `side` specifies which end holds the padding. The function returns a `(B, T)` boolean mask that is true at real tokens and false at padding:
 
-- `side == "right"` (real tokens first, padding after): `out[b, j]` is true when
-  $j < \text{lengths}[b]$;
-- `side == "left"` (padding first, real tokens last): `out[b, j]` is true when
-  $j \ge T - \text{lengths}[b]$.
+- `side == "right"` (real tokens first, padding at the end): `out[b, j]` is true when $j < \text{lengths}[b]$.
+- `side == "left"` (padding first, real tokens at the end): `out[b, j]` is true when $j \ge T - \text{lengths}[b]$.
 
-Row `b` of the result has exactly `lengths[b]` true entries. A row of length 0 is all
-false, and a row of length `T` is all true. No other value of `side` is passed.
+Row `b` has exactly `lengths[b]` true entries. A row of length `0` is all false, and a row of length `T` is all true. No other value of `side` is passed.
 
-**`band_mask(T, w)`** returns the boolean `(T, T)` mask of a causal window of width
-`w`: row `i` may see column `j` when `j` is not after `i` and is fewer than `w`
-positions back,
+**`band_mask(T, w)`** builds a `(T, T)` boolean causal sliding-window mask of width `w`. Row `i` can attend to column `j` when `j` is at or before `i` and fewer than `w` positions behind `i`:
 
 $$
 \text{out}[i, j] = \big(0 \le i - j < w\big) .
 $$
 
-Row `i` therefore has $\min(i + 1,\ w)$ true entries, ending at the diagonal. `w`
-may be larger than `T`.
+Row `i` has $\min(i + 1, w)$ true entries, ending on the main diagonal `j = i`. The window width `w` may be larger than `T`.
 
-**`same_segment(seg)`** takes segment ids of shape `(T,)` and returns the boolean
-`(T, T)` mask of pairs of positions in the same segment:
+**`same_segment(seg)`** takes a 1D tensor of `T` segment IDs and returns a `(T, T)` boolean mask that is true where positions `i` and `j` share the same segment ID:
 
 $$
 \text{out}[i, j] = \big(\text{seg}[i] = \text{seg}[j]\big) .
 $$
 
-Segment ids are arbitrary non-negative integers. Equal ids need not be adjacent, and
-ids need not start at 0.
+Segment IDs are arbitrary non-negative integers. Equal IDs do not need to be adjacent, and IDs do not need to start at `0`.
 
-- `lengths`, `seg`: integer tensors of your framework's default integer type (int64 in
-  PyTorch, int32 in JAX and MLX).
-- `T`, `w`: positive Python ints. `side`: the string `"left"` or `"right"`.
-- Every function returns a **boolean** tensor. A float or integer tensor of zeros and
-  ones is not accepted.
+`lengths` and `seg` use your framework's default integer dtype (`int64` in PyTorch, `int32` in JAX and MLX). `T` and `w` are positive Python ints, and `side` is `"left"` or `"right"`. Every function must return a **boolean** tensor, not an integer or float tensor of zeros and ones.
 
 ## Shapes
 
@@ -62,20 +45,12 @@ ids need not start at 0.
 
 ## Tools
 
-- `arange(n)` (`torch.arange`, `jnp.arange`, `mx.arange`) is the vector of positions
-  $0, 1, \dots, n - 1$, in the default integer type.
-- A comparison (`<`, `<=`, `>=`, `==`) between two tensors broadcasts them exactly as
-  arithmetic does, and returns a boolean tensor of the broadcast shape. A table
-  indexed by `(row, column)` is a comparison between a `(n, 1)` column and a `(1, m)`
-  row, with `None` placing the axes as in Broadcasting on Purpose.
-- Boolean tensors combine entry by entry with `&` (and), `|` (or), and `~` (not).
+- `arange(n)` (`torch.arange`, `jnp.arange`, `mx.arange`) builds the 1D tensor $0, 1, \dots, n - 1$ in the default integer dtype.
+- Elementwise comparisons (`<`, `<=`, `>=`, `==`) broadcast two tensors just like arithmetic and return a boolean tensor. Comparing a `(n, 1)` column against a `(1, m)` row produces an `(n, m)` table indexed by `(row, column)`, using `None` to place the size-1 axes as in Broadcasting on Purpose.
+- Combine boolean tensors element by element with `&` (and), `|` (or), and `~` (not).
 
 > [!WARNING]
-> In Python, `&` and `|` bind more tightly than comparisons: `a >= 0 & a < w` means
-> `a >= (0 & a) < w`. Put each comparison in parentheses. The chained form
-> `0 <= a < w` and the keywords `and`, `or`, and `not` do not work on tensors either:
-> they ask the tensor for a single truth value, and that raises for a tensor of more
-> than one element.
+> In Python, `&` and `|` bind more tightly than comparison operators, so `a >= 0 & a < w` parses as `a >= (0 & a) < w`. Always wrap each comparison in parentheses. Chained comparisons (`0 <= a < w`) and the keywords `and`, `or`, and `not` also fail on multi-element tensors because they ask the tensor for a single truth value.
 
 ## Example
 
@@ -105,19 +80,13 @@ same_segment([7, 7, 2, 7])
 
 ## Constraints
 
-- Results are compared with the reference exactly, and must be boolean.
-- $1 \le B \le 16$, $1 \le T \le 16$, $0 \le \text{lengths}[b] \le T$, and
-  $1 \le w \le 32$.
-- Segment ids lie in $[0, 1000]$.
+- Results must be boolean tensors and are checked for exact equality against the reference.
+- $1 \le B \le 16$, $1 \le T \le 16$, $0 \le \text{lengths}[b] \le T$, and $1 \le w \le 32$.
+- Segment IDs lie in $[0, 1000]$.
 - No Python loops are needed.
 
 ## Why this matters
 
-Causal and Padding Masks combines a mask of real tokens with a causal mask, with the
-same two meanings of `side`, and Gathering the Last Real Token finds its position
-from the same lengths. Sliding-Window Attention hides everything outside
-`band_mask`. Frequency and Presence Penalties separates the prompt from the generated
-tokens of each row with one comparison of `arange(T)` against a `(B, 1)` column of
-lengths. Each of these is off by one position if `<` and `<=` are confused, and a mask
-that is off by one lets a model read one padding token or one token too far back,
-which changes the output without raising anything.
+Causal and Padding Masks combines a real-token mask with a causal mask using the same two meanings of `side`, and Gathering the Last Real Token locates the final token from those same lengths. Sliding-Window Attention hides every position outside `band_mask`. Frequency and Presence Penalties separates prompt tokens from generated tokens by comparing `arange(T)` against a `(B, 1)` column of lengths.
+
+Confusing `<` with `<=` shifts any of these masks by one position. An off-by-one mask lets a model attend to a padding token or one extra past token, changing outputs silently without raising an error.

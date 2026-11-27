@@ -1,29 +1,15 @@
-The merge list is not a to-do list to walk through once, and it is not a dictionary of
-substrings to search for. At every step the question is the same: of the adjacent
-pairs that are in the sequence *right now*, which one has the lowest rank? What data
-structure answers "what is the rank of this pair?" in constant time?
+The merge list is not a checklist to walk through once, and it is not a dictionary of substrings to search for. At every step, ask which adjacent pair in the current sequence has the lowest rank. What data structure lets you look up the rank of a pair in constant time?
 
 ---
 
-Build a dictionary from pair to rank. Start with `list(text.encode("utf-8"))`. Loop:
-look at every adjacent pair of the current sequence, pick the one with the smallest
-rank (pairs that are not in the dictionary lose to all that are), and stop if not even
-the best pair is in the dictionary. Otherwise rebuild the sequence with a `while` loop
-over an index `i`: if positions `i` and `i + 1` form the chosen pair, append the merged
-id and advance by **two**; otherwise append `ids[i]` and advance by one. Advancing by
-two is what makes `a a a` come out as `[aa] a`.
+Build a dictionary mapping each `(left, right)` pair to its rank. Start with `ids = list(text.encode("utf-8"))`. In a loop, inspect every adjacent pair in `ids` and pick the one with the smallest rank, treating pairs outside the dictionary as worse than any valid merge. Stop when no adjacent pair is in the dictionary. Otherwise, rebuild `ids` with a `while` loop over an index `i`. When `ids[i]` and `ids[i + 1]` match the chosen pair, append the merged id and advance `i` by **two**. Otherwise, append `ids[i]` and advance `i` by one. Advancing by two ensures `a a a` becomes `[aa] a`.
 
 ---
 
-The selection is one line:
+The pair selection is one line:
 
 ```python
 pair = min(pairwise(ids), key=lambda p: rank.get(p, float("inf")))
 ```
 
-(`pairwise` is in `itertools`; it yields each adjacent pair) and the merged id is
-`256 + rank[pair]`. For `decode`, expand each id into bytes: an id
-below 256 is one byte, and any other id expands to the bytes of `left` followed by the
-bytes of `right` from `merges[id - 256]` (recursively, or with a stack, since `left`
-and `right` can be merged tokens themselves). Collect all bytes of all tokens into one
-`bytearray` first and call `.decode("utf-8", errors="replace")` once at the end.
+Here `pairwise` from `itertools` yields each adjacent pair, and the merged id is `256 + rank[pair]`. For `decode`, expand each id into bytes. An id below 256 is a single byte, while any higher id expands to the bytes of `left` followed by the bytes of `right` from `merges[id - 256]`. Use recursion or an explicit stack since `left` and `right` can be merged tokens themselves. Collect all bytes into one `bytearray`, then call `.decode("utf-8", errors="replace")` once at the end.

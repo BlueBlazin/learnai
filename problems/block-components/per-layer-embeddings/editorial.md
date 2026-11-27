@@ -1,32 +1,12 @@
 ## The idea
 
-A decoder normally sees a token's identity once, at the bottom: the embedding is the
-input of layer 0, and every later layer has to carry what it needs of it in the
-residual stream. Per-layer embeddings give each layer a fresh, layer-specific view of
-the token. There are three pieces.
+A standard decoder reads a token's embedding once at layer 0, forcing every later layer to recover token identity from the residual stream. Per-layer embeddings instead give every layer its own fresh, layer-specific view of the token. The mechanism has three parts.
 
-1. **A packed table.** Row `tokens[t]` of `table` is $L$ vectors of width
-   $d_\text{ple}$ laid end to end. One gather returns all of them, and a
-   `reshape(T, L, d_ple)` separates them, because consecutive slices of a row are
-   exactly what a row-major reshape produces.
-2. **A projected part.** The same shape is produced a second way, from the layer-0
-   input: one linear map to $L\,d_\text{ple}$ channels, cut the same way, each slice
-   RMS-normalized. The two parts are added and multiplied by $2^{-1/2}$, the factor
-   that keeps the variance of a sum of two unit-variance terms at 1.
-3. **A gated injection** at the end of every layer: project the stream down to
-   $d_\text{ple}$, apply GELU, multiply by the layer's slice, project back up,
-   normalize, add. The stream decides, channel by channel, how much of the slice to
-   let in; the slice never enters unmodulated.
+1. **A packed embedding table.** Row `tokens[t]` of `table` stores $L$ vectors of width $d_{\text{ple}}$ laid end to end. One gather fetches all layers' vectors at once, and `reshape(T, L, d_ple)` separates them because consecutive slices of a row match row-major order.
+2. **A projected context term.** The same `(T, L, d_ple)` shape is also computed from the layer-0 input `h0` by one linear projection to $L\,d_{\text{ple}}$ channels, reshaped the same way and RMS-normalized per slice. Adding the two terms and multiplying by $2^{-1/2}$ keeps the variance of a sum of two unit-variance terms at 1.
+3. **A gated injection at the end of each layer.** The layer projects the residual stream down to $d_{\text{ple}}$, applies tanh-GELU, multiplies elementwise by the layer's slice, projects back up to $D$, normalizes the branch, and adds it to the stream. This lets the stream decide channel by channel how much of the token's per-layer signal to admit.
 
-The three scales each do a separate job. $\sqrt{d_\text{ple}}$ is the usual embedding
-scale for a table of that width. $2^{-1/2}$ rescales the sum. $D^{-1/2}$ undoes the
-$\sqrt D$ that the main embedding was multiplied by, and it sits in front of a norm,
-which divides any constant factor out again: it changes the result only through the
-epsilon, by a relative $\epsilon\,(D - 1) / (2 \cdot \text{mean square of } h_0 W^\top)$.
-For inputs of order 1 and $D = 16$ that is below $10^{-5}$ unless a slice happens to be
-small. The case written for it uses inputs of order $10^{-3}$, where the mean square is
-comparable to $10^{-6}$; the same case is the one that tells $\epsilon = 10^{-6}$ from
-the kit's default $10^{-5}$ on every norm.
+Each of the three scale factors has a distinct role. $\sqrt{d_{\text{ple}}}$ is the standard embedding scale for a table of width $d_{\text{ple}}$, and $2^{-1/2}$ rescales the sum of the two terms. $D^{-1/2}$ undoes the $\sqrt{D}$ scaling already present in `h0`. Because it sits immediately before an RMS norm, which divides out any constant scale factor, $D^{-1/2}$ affects the output only through $\epsilon$, by a relative amount of roughly $\epsilon\,(D - 1) / (2 \cdot \text{mean square of } h_0 W_{\text{model}}^\top)$. For order-1 inputs and $D = 16$, that shift is smaller than $10^{-5}$ unless a slice is small. When inputs have magnitude around $10^{-3}$, the mean square is comparable to $10^{-6}$, which exposes both a missing $D^{-1/2}$ and using $\epsilon = 10^{-5}$ instead of $10^{-6}$.
 
 ## Reference solution (PyTorch)
 
@@ -77,81 +57,37 @@ def ple_layer(params, x, ple, i, mask):
 
 ## Common mistakes
 
-- **Cutting the row the other way.** `reshape(T, d_ple, L)` followed by a transpose has
-  the right shape and hands layer $i$ every $L$-th column. With $L = d_\text{ple}$ even
-  the transpose is not needed to get a legal shape.
-- **The wrong scale on the table.** $\sqrt D$ is the scale of the main embedding; this
-  table is $d_\text{ple}$ wide per layer and is scaled by $\sqrt{d_\text{ple}}$.
-- **Leaving out the projected part,** or the $2^{-1/2}$ on the sum.
-- **Dropping $D^{-1/2}$,** or using $\epsilon = 10^{-5}$. Both are invisible until the
-  numbers are small (see above).
-- **Layer 0's slice in every layer.** `ple[:, 0]` instead of `ple[:, i]`: correct for
-  the first layer, and the reason a one-layer test proves nothing.
-- **No activation on the gate,** or the exact (erf) GELU. The two GELUs differ by up
-  to $5 \cdot 10^{-4}$, which a comparison at $10^{-4}$ sees.
-- **Injecting in the wrong place:** between attention and the MLP, so the MLP reads a
-  stream that already contains the slice; or normalizing the stream plus the branch
-  instead of the branch.
-- **`layer_scalar` before the injection,** which leaves the injected branch unscaled.
-- **A plain pre-norm layer.** Gemma's layer normalizes each sublayer's output as well
-  as its input, and its MLP gate is GELU, not SiLU.
-- **`h += ...`** in the injection: it overwrites the caller's stream.
+- **Reshaping in the wrong axis order.** Calling `reshape(T, d_ple, L)` followed by a transpose produces the right output shape `(T, L, d_ple)` but hands layer $i$ every $L$-th column instead of a contiguous slice. When $L = d_{\text{ple}}$, even without a transpose the shape looks valid.
+- **Scaling the table by $\sqrt{D}$ instead of $\sqrt{d_{\text{ple}}}$.** $\sqrt{D}$ belongs to the main embedding table. Each per-layer slice has width $d_{\text{ple}}$ and must be scaled by $\sqrt{d_{\text{ple}}}$.
+- **Omitting the projected context term or the $2^{-1/2}$ factor.** Both are required when combining the two branches in `ple_inputs`.
+- **Dropping $D^{-1/2}$ or using $\epsilon = 10^{-5}$.** Both mistakes are masked on order-1 inputs and only show up when activations are small (around $10^{-3}$).
+- **Hard-coding `ple[:, 0]` instead of `ple[:, i]`.** This passes any single-layer test and silently feeds layer 0's embeddings to every deeper layer.
+- **Missing gate activation or using exact (erf) GELU.** Omitting GELU breaks the gating entirely. Using exact `erf` GELU instead of the tanh approximation differs by up to $5 \cdot 10^{-4}$, exceeding the `1e-4` relative tolerance.
+- **Injecting in the wrong place or normalizing the residual sum.** Placing `ple_inject` between attention and the MLP changes the MLP's input. Applying `post_gain` RMS norm to `h + branch` instead of `branch` alone corrupts the residual stream.
+- **Applying `layer_scalar` before `ple_inject`.** Scaling `m` instead of `y` leaves the injected branch unscaled.
+- **Using a standard pre-norm block.** Gemma 4 normalizes both the input and the output of each sublayer, and uses GELU (not SiLU) for the MLP gate.
+- **Mutating `h` in place.** Writing `h += ...` in `ple_inject` overwrites the caller's tensor.
 
 ## Complexity
 
-`ple_inputs` is one gather of $T$ rows of width $L\,d_\text{ple}$ and one matrix
-product $T \times D \times L\,d_\text{ple}$, both once per token, not once per layer.
-Each injection is two small products, $O(T\,D\,d_\text{ple})$. The table's size is
-$V\,L\,d_\text{ple}$ numbers, of which a forward pass touches $T$ rows.
+`ple_inputs` performs one gather of $T$ rows of width $L\,d_{\text{ple}}$ and one matrix multiply of cost $O(T\,D\,L\,d_{\text{ple}})$, both paid once per forward pass rather than once per layer. Each layer's `ple_inject` adds two small matrix multiplies totaling $O(T\,D\,d_{\text{ple}})$. The table stores $V\,L\,d_{\text{ple}}$ parameters, of which each forward pass reads only $T$ rows.
 
 ## In the wild
 
-Checked on 2026-11-21 against the code installed with `transformers` 5.23.0
-(`models/gemma4/modeling_gemma4.py`) and the `config.json` files on the Hugging Face
-Hub. The Gemma 4 report was not read.
+Checked on 2026-11-21 against `transformers` 5.23.0 (`models/gemma4/modeling_gemma4.py`) and the `config.json` files on the Hugging Face Hub. The Gemma 4 technical report was not read.
 
-- **Configurations.** `google/gemma-4-E2B-it`: `hidden_size` 1536, 35 layers,
-  `hidden_size_per_layer_input` 256, `vocab_size_per_layer_input` 262144,
-  `hidden_activation` `gelu_pytorch_tanh`, `rms_norm_eps` 1e-6. `google/gemma-4-E4B-it`:
-  `hidden_size` 2560, 42 layers, the same per-layer width and vocabulary. The tables
-  are therefore 8960 and 10752 wide, 2.35 and 2.82 billion numbers.
-- **`ple_inputs`** is `Gemma4TextModel.get_per_layer_inputs` (the table, an embedding
-  with `embed_scale = hidden_size_per_layer_input ** 0.5`, reshaped to
-  `(batch, seq, num_hidden_layers, hidden_size_per_layer_input)`) followed by
-  `project_per_layer_inputs` (`per_layer_model_projection`, times
-  `hidden_size ** -0.5`, the same reshape, `per_layer_projection_norm`, the sum times
-  `2.0 ** -0.5`). The model's loop passes `per_layer_inputs[:, :, i, :]` to layer `i`.
-- **`ple_inject` and `ple_layer`** are the end and the whole of
-  `Gemma4TextDecoderLayer.forward`: `per_layer_input_gate`, the activation, the
-  product with the slice, `per_layer_projection`, `post_per_layer_input_norm`, the
-  add, and last `hidden_states *= self.layer_scalar`.
+- **Configurations.** `google/gemma-4-E2B-it` uses `hidden_size` 1536, 35 layers, `hidden_size_per_layer_input` 256, `vocab_size_per_layer_input` 262144, `hidden_activation: "gelu_pytorch_tanh"`, and `rms_norm_eps: 1e-6`. `google/gemma-4-E4B-it` uses `hidden_size` 2560 and 42 layers with the same per-layer width and vocabulary. Their packed tables therefore have widths 8960 and 10752, holding 2.35 and 2.82 billion parameters.
+- **Mapping to `transformers`.** `ple_inputs` corresponds to `Gemma4TextModel.get_per_layer_inputs` (table lookup scaled by `hidden_size_per_layer_input ** 0.5` and reshaped to `(batch, seq, num_hidden_layers, hidden_size_per_layer_input)`) followed by `project_per_layer_inputs` (`per_layer_model_projection`, scaled by `hidden_size ** -0.5`, reshaped, normalized with `per_layer_projection_norm`, and added to the table term with a `2.0 ** -0.5` factor). The decoder loop passes `per_layer_inputs[:, :, i, :]` to layer `i`. `ple_inject` and `ple_layer` correspond to the end and full body of `Gemma4TextDecoderLayer.forward`, ending with `hidden_states *= self.layer_scalar`.
 
-The public tests compare with those functions run on a tiny configuration
-(`fixtures/make.py`). For `ple_inject` the layer's attention and MLP are replaced by
-modules that return zeros; the script also asserts, with a constant in place of the
-MLP, that the injection reads the stream after the MLP's add.
+The public tests compare against those exact Hugging Face modules on a tiny configuration (`fixtures/make.py`). For `ple_inject`, the fixture replaces attention and the MLP with zero-returning modules, and also verifies with a constant MLP output that the injection reads the stream after the MLP's residual add.
 
-What this problem leaves out or simplifies:
+Deliberate simplifications relative to the full `transformers` model:
 
-- **Attention.** `Attn` here is single-head softmax attention from the kit. Gemma 4's
-  attention has several heads with grouped keys and values, RMS norms on queries,
-  keys, and values, rotary positions (see `partial-rope`), sliding windows on most
-  layers, and layers that reuse another layer's keys and values. None of that touches
-  the per-layer embedding. The fixture replaces `self_attn` by the same stand-in.
-- **The expert branch.** With `enable_moe_block` the layer adds a routed expert branch
-  to the MLP output before `post_feedforward_layernorm`. The E2B and E4B
-  configurations both have `enable_moe_block: false`, so this problem's layer is
-  theirs in that respect.
-- **MLP width.** E2B has `use_double_wide_mlp: true`: the MLP of its KV-shared layers
-  is twice as wide (E4B: `false`). Here the width is whatever `params` holds.
-- **Batching.** The library's tensors have a leading batch axis.
-- **`layer_scalar`** is a buffer that a new module fills with ones; the values in the
-  shipped checkpoints were not read. The tests use values other than 1.
-- **Inputs without token ids.** When the model is called with embeddings only, it
-  recovers the ids by comparing against the embedding matrix; and
-  `project_per_layer_inputs` called without the table part returns the normalized
-  projection alone, without the $2^{-1/2}$. This problem always has ids.
-- **`h0`** is passed in. In the model it is `embed_tokens(input_ids)`, already
-  multiplied by $\sqrt D$.
-- **KV-shared layers.** For the last `num_kv_shared_layers` layers the model may keep
-  only the positions whose logits are needed, slicing the per-layer inputs with them.
+- **Attention.** `Attn` here uses single-head softmax attention from `learnai.kit`. Gemma 4 uses multi-head grouped-query attention, RMS norms on queries, keys, and values, rotary positions (see `partial-rope`), sliding windows on most layers, and KV-sharing across layers. None of those interact with the per-layer embedding, and the fixture swaps in the same stand-in attention.
+- **MoE branch.** When `enable_moe_block` is true, the layer adds a routed expert branch to the MLP output before `post_feedforward_layernorm`. Both E2B and E4B set `enable_moe_block: false`, so this problem matches their layer structure.
+- **MLP width.** E2B sets `use_double_wide_mlp: true` (doubling the MLP width on KV-shared layers), whereas E4B sets it to `false`. Here `ple_layer` uses whatever width `params` provides.
+- **Batching.** The library tensors include a leading batch axis.
+- **`layer_scalar`.** In `transformers`, this is a buffer initialized to ones. Shipped checkpoint values were not inspected, and the tests use non-unit values.
+- **Inputs without token IDs.** When called with embeddings only, `Gemma4TextModel` recovers token IDs by matching against the embedding matrix. Calling `project_per_layer_inputs` without the table term returns only the normalized projection without the $2^{-1/2}$ factor. This problem always provides `tokens`.
+- **Pre-scaled `h0`.** In the model, `h0` comes from `embed_tokens(input_ids)` already multiplied by $\sqrt{D}$. Here `h0` is passed in directly.
+- **KV-shared layers.** In the last `num_kv_shared_layers` layers, the model may keep only the token positions whose logits are needed and slice `per_layer_inputs` accordingly.

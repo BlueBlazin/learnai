@@ -1,34 +1,22 @@
-Write the three norms' worth of helper first: every norm in this problem is
-`ops.rms_norm(x, gain, eps=1e-6)`. Then do `ple_inputs` in two passes of the same
-shape, `(T, L * d_ple)`, before you think about layers: the scaled table rows and the
-scaled projection of `h0`. What does one `reshape` have to do so that `[:, i]` is
-columns `i * d_ple` to `(i + 1) * d_ple - 1`?
+Start with a small helper for the norm because every RMS norm in this problem uses `ops.rms_norm(x, gain, eps=1e-6)`. Next, build `ple_inputs` as two `(T, L * d_ple)` tensors before splitting by layer: the scaled table rows and the scaled projection of `h0`. What single `reshape` makes `[:, i]` equal to columns `i * d_ple` through `(i + 1) * d_ple - 1`?
 
 ---
 
-`reshape(T, L, d_ple)` cuts a row into consecutive slices, which is the layout of the
-packed row. `reshape(T, d_ple, L)` would deal the columns out like cards.
+`reshape(T, L, d_ple)` splits each row into consecutive slices of length `d_ple`, matching the packed layout. By contrast, `reshape(T, d_ple, L)` deals columns across layers like cards.
 
-The order of operations on the projected part matters once the numbers are small:
-multiply by `D ** -0.5` first, reshape, then normalize each slice over its `d_ple`
-channels with `norm_gain`. Only the projected part is normalized. The table part is
-only scaled, by `sqrt(d_ple)` (not by `sqrt(D)`, the scale of the main embedding). The
-sum is multiplied by `2 ** -0.5`.
+For the projected part, order matters when inputs are small. Multiply `h0 @ w_model.T` by `D ** -0.5` first, reshape to `(T, L, d_ple)`, and then normalize each slice over its `d_ple` channels with `norm_gain`. Normalize only the projected part. Scale the table part by `sqrt(d_ple)` (not `sqrt(D)`), add the two parts, and multiply the sum by `2 ** -0.5`.
 
 ---
 
-`ple_inject` is one line once GELU is written from the formula:
+Once tanh-GELU is implemented from the formula, `ple_inject` takes two lines:
 
 ```python
 gated = gelu(h @ w_gate.T) * ple_i  # (T, d_ple)
 return h + ops.rms_norm(gated @ w_proj.T, post_gain, eps=1e-6)
 ```
 
-Do not use `+=` on `h`: the caller's tensor must stay as it was.
+Avoid `h += ...` so you do not mutate the caller's tensor in place.
 
 ---
 
-`ple_layer` is the three equations in order. Both sublayers are "norm, sublayer, norm,
-add"; the four gains are four different vectors. The injection reads `m`, the stream
-after the MLP's add, and takes `ple[:, i]`. Multiply by `params["layer_scalar"]` last,
-so that it scales the stream and the injected branch alike.
+`ple_layer` applies the three equations in sequence. Both attention and the MLP follow the pattern norm, sublayer, norm, residual add, using four separate gain vectors. Pass `m` (the stream after the MLP's residual add) and `ple[:, i]` into `ple_inject`. Multiply by `params["layer_scalar"]` at the very end so it scales both the residual stream and the injected branch.

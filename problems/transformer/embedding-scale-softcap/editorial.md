@@ -1,35 +1,14 @@
 ## The idea
 
-A decoder-only model is almost entirely described by its tensors, and what is left
-over lives in a few scalars of `config.json`. Three of them sit at the two ends of
-the forward pass.
+Most of a decoder-only model is defined by its weight tensors, while a few remaining details live as scalar constants in `config.json`. Three of those scalars sit at the input and output boundaries of the forward pass.
 
-**The embedding multiplier.** Embedding rows are small vectors, while the residual
-stream they start is added to by every block. Some families scale the embeddings up so that
-the token identity is not drowned out: the original Transformer and Gemma multiply by
-$\sqrt{d}$, Granite by a tuned constant (12 for Granite 4.0 350M). Llama-style models
-use 1. The factor belongs to the *use* of the matrix as an embedding, not to the
-matrix: with tied weights the same $E$ is the output head, and there it is used as
-stored.
+**The embedding multiplier.** Raw embedding rows have small norms, while every Transformer block adds to the residual stream. Several model families scale embeddings up so the initial token signal is not drowned out. The original Transformer and Gemma multiply by $\sqrt{d}$, Granite multiplies by a tuned constant (12 for Granite 4.0 350M), and Llama-style models use 1. This multiplier belongs to the embedding lookup rather than the weight matrix itself. When embeddings and the output head are tied, the output head uses the stored matrix $E$ without scaling.
 
-**The logit divisor.** Granite divides its logits by `logits_scaling` (4 for the
-350M model). Dividing logits by a constant is a temperature: it does not change the
-argmax, and it changes every probability. A port that omits it samples from the model
-at temperature 0.25.
+**The logit divisor.** Granite divides its output logits by `logits_scaling` (4 for the 350M model). Dividing logits by a constant acts like temperature scaling. It leaves the argmax unchanged while altering every token probability, so a port that omits it effectively samples at temperature 0.25.
 
-**The soft cap.** Gemma 2 passes its final logits through
-$c \tanh(z / c)$ with $c = 30$ (and its attention scores through the same function
-with $c = 50$). The function is the identity to first order,
-$c\tanh(z/c) = z - z^3 / (3c^2) + \dots$, and saturates at $\pm c$. Unlike a clip it
-is strictly increasing, so it never creates ties between large logits and keeps a
-gradient everywhere, which is why it is used in training and therefore has to be
-reproduced at inference.
+**The soft cap.** Gemma 2 passes its final logits through $c \tanh(z / c)$ with $c = 30$ (and applies the same function to attention scores with $c = 50$). Near zero, the function behaves like the identity, $c\tanh(z/c) = z - z^3 / (3c^2) + \dots$, and for large inputs it saturates at $\pm c$. Unlike a hard clip, it is strictly increasing, so it never creates ties among large logits and keeps a nonzero gradient everywhere. Because the model is trained with this cap, inference must apply it as well.
 
-**The order.** No current model has both a divisor and a cap, so the order is this
-problem's convention: divide, then cap. It is the natural one (the cap bounds what
-the sampler will see), and the two orders differ:
-$c\tanh\!\big(\tfrac{z}{sc}\big) \ne \tfrac{c}{s}\tanh\!\big(\tfrac{z}{c}\big)$; the
-second can never exceed $c / s$.
+**The order of operations.** No current model uses both a logit divisor and a soft cap, so dividing before capping is this problem's convention. It is the natural order because the cap bounds the logits that reach the sampler. With $s = \texttt{logit\_scale}$, the two orders are not equivalent: $c\tanh\!\big(\tfrac{z}{sc}\big) \ne \tfrac{c}{s}\tanh\!\big(\tfrac{z}{c}\big)$, and capping first would restrict outputs to $\pm c / s$.
 
 ## Reference solution (PyTorch)
 
@@ -45,41 +24,21 @@ def finalize_logits(h, w_out, logit_scale, softcap=None):
     return logits
 ```
 
-The JAX and MLX versions differ only in the name of `tanh`. `tanh` saturates without
-overflowing, so nothing special is needed for logits far beyond the cap.
+The JAX and MLX solutions differ only in the `tanh` function name. Because `tanh` saturates cleanly to $\pm 1$ without overflowing, no extra clamping is needed for logits far larger than `softcap`.
 
 ## Common mistakes
 
-- **Scaling the table.** `table *= scale` (or folding the multiplier into the
-  weights when loading) gives the right embeddings and a head that is `scale` times
-  too large in every tied model. The bug is invisible to a test of `embed` alone; it
-  shows when the same tensor is used for both.
-- **Capping before dividing.** With a divisor of 4 and a cap of 8, raw logits of 40
-  should become $8\tanh(10/8) = 6.8$; capping first gives $8\tanh(5)/4 = 2.0$.
-- **A hard clip.** `clamp(z, -c, c)` agrees with the soft cap for small logits and
-  at the extremes, and is off by up to 24 percent of the cap in between (at $z = c$,
-  $c\tanh 1 = 0.76c$).
-- **Forgetting the inner division.** `c * tanh(z)` saturates at $|z|$ of about 3
-  instead of about $3c$: almost every logit comes out as $\pm c$.
-- **Multiplying by the logit scale.** The config name `logits_scaling` does not say
-  which way it goes. In Granite it is a divisor.
-- **Hard-coding a family's constant.** `x * d ** 0.5` is Gemma's embedding scale and
-  is wrong for every model whose config says otherwise. Take the number from the
-  config.
+- **Mutating the embedding table.** Running `table *= scale` or folding the multiplier into the weights at load time produces correct embeddings, but makes the output head `scale` times too large in any tied-weight model. Testing `embed` alone misses this bug until the same tensor is passed to `finalize_logits`.
+- **Capping before dividing.** With a divisor of 4 and a cap of 8, a raw logit of 40 should become $8\tanh(10/8) = 6.8$. Capping first gives $8\tanh(5)/4 = 2.0$.
+- **Using a hard clip.** `clamp(z, -c, c)` matches the soft cap near zero and at infinity, but is off by up to 24% of `c` in between. At $z = c$, $c\tanh(1) \approx 0.76c$.
+- **Forgetting the inner division.** Writing `c * tanh(z)` saturates around $|z| \approx 3$ instead of $|z| \approx 3c$, pushing almost every logit to $\pm c$.
+- **Multiplying by `logit_scale`.** The config key `logits_scaling` does not specify direction. In Granite, it is a divisor.
+- **Hard-coding a model family's constant.** Using `x * d ** 0.5` works for Gemma but fails for any model whose config specifies a different scale. Always read the constant from the argument.
 
 ## Complexity
 
-The lookup is $O(Td)$ for $T$ tokens. The head is one matrix product, $O(T d V)$ for
-$T$ positions, which is why engines compute it for the last position only during
-generation (see `last-position-head`); the division and the cap are $O(TV)$.
+The embedding lookup costs $O(Td)$ for $T$ tokens. The output projection is one matrix multiplication costing $O(T d V)$, which is why inference engines run it only on the last position during generation (see `last-position-head`). The division and soft cap are elementwise and cost $O(TV)$.
 
 ## In the wild
 
-Hugging Face Transformers: `GraniteMoeHybridModel.forward` computes
-`inputs_embeds * self.embedding_multiplier` and the causal-LM head computes
-`logits / self.config.logits_scaling`; Gemma 2 scales its embeddings by
-`hidden_size ** 0.5` (the constant is cast to the dtype of the embedding weights
-first, so in bfloat16 the factor is the nearest bfloat16 value to $\sqrt{d}$) and
-applies `final_logit_softcapping` as divide, `tanh`, multiply, exactly the formula
-above. `real-model-logits` in this track verifies the two Granite constants against
-the real checkpoint.
+In Hugging Face Transformers, `GraniteMoeHybridModel.forward` computes `inputs_embeds * self.embedding_multiplier`, and the causal-LM head computes `logits / self.config.logits_scaling`. Gemma 2 scales embeddings by `hidden_size ** 0.5`, casting that constant to the embedding weight dtype first so that in bfloat16 it uses the nearest bfloat16 value to $\sqrt{d}$. It then applies `final_logit_softcapping` by dividing, taking `tanh`, and multiplying, matching the formula here. `real-model-logits` in this track checks Granite's constants against the real checkpoint.

@@ -1,8 +1,4 @@
-Implement the mixture-of-experts layer the way an inference engine runs it: group the
-tokens by the experts they were routed to, run each expert **once** on **only its own
-tokens**, and scatter the results back into token order. The routing rule is the one
-of `moe-router-forward`; this time the work is counted, and a dense evaluation that
-runs every expert on every token is rejected.
+Implement a sparse mixture-of-experts (MoE) layer the way an inference engine runs it. Group tokens by their assigned experts, run each active expert **once** on **only its own tokens**, and scatter the weighted results back into token order. The routing rule matches `moe-router-forward`, except expert work is counted, so a dense implementation that runs every expert on every token is rejected.
 
 ![This problem is the MLP slot of a block, run so that each expert sees only its own tokens.](assets/map.svg)
 
@@ -12,49 +8,32 @@ runs every expert on every token is rejected.
 def moe_sparse(x, w_router, experts, k): ...
 ```
 
-- `x`: float32 tensor of shape `(N, D)`, one row per token (batch and positions are
-  already flattened).
-- `w_router`: float32 tensor of shape `(E, D)`, in `(out, in)` layout.
-- `experts`: a [`CountingExperts`](../../../python/src/learnai/kit/moe.py) object holding $E$ SwiGLU experts.
-  `experts(e, rows)` runs expert `e` (a Python int) on a float32 tensor `rows` of
-  shape `(n, D)` and returns a tensor of shape `(n, D)`, row for row.
-  `experts.n_experts` is $E$. This call is the only way to evaluate an expert, and
-  it counts: one `expert_calls` per call and `n` `expert_rows`. A call with `n = 0`
-  is allowed and still counts as a call.
-- `k`: a Python int with $1 \le k \le E$.
-- Returns `y`: float32 tensor of shape `(N, D)`.
+The input `x` holds `N` token vectors of dimension `D`, with batch and sequence axes already flattened. The router weight matrix `w_router` maps each token to `E` expert logits in `(out, in)` layout. The integer `k` ($1 \le k \le E$) is the number of experts selected per token.
 
-**Routing**, for each token $x_t$ independently, exactly as in `moe-router-forward`:
+The `experts` argument is a [`CountingExperts`](../../../python/src/learnai/kit/moe.py) object holding `E` SwiGLU experts, with `experts.n_experts == E`. Calling `experts(e, rows)` runs expert `e` (a Python `int`) independently on each row of `rows` and returns a tensor of the same shape. This call is the only way to evaluate an expert, and every call updates two counters: `expert_calls` increases by 1 and `expert_rows` increases by `rows.shape[0]`. Calling an expert with `0` rows is valid and still increments `expert_calls`.
 
-1. Router logits $r = W_{\text{router}}\, x_t \in \mathbb{R}^E$ and probabilities
-   $p = \operatorname{softmax}(r)$.
-2. $S_t$ is the set of the $k$ experts with the largest logits. Experts with equal
-   logits are ranked by index, lowest first.
-3. Weights $w_{t,e} = p_e / \sum_{j \in S_t} p_j$ for $e \in S_t$.
+**Routing.** For each token $x_t$ independently, follow the routing rule from `moe-router-forward`:
 
-**Output**, with $f_e$ the function computed by `experts(e, ·)` on one row:
+1. Compute router logits $r = W_{\text{router}}\, x_t \in \mathbb{R}^E$ and probabilities $p = \operatorname{softmax}(r)$.
+2. Let $S_t$ be the set of $k$ experts with the largest logits. Break ties by expert index, lowest first.
+3. Compute normalized routing weights $w_{t,e} = p_e / \sum_{j \in S_t} p_j$ for each $e \in S_t$.
+
+**Output.** Let $f_e$ denote the function computed by `experts(e, ·)` on a single token row. The output row for token $t$ is:
 
 $$
 y_t = \sum_{e \in S_t} w_{t,e}\, f_e(x_t).
 $$
 
-**Dispatch.** Let $T_e = \{\, t : e \in S_t \,\}$ be the tokens routed to expert $e$,
-and call an expert *active* if $T_e$ is not empty. The solution must
+**Dispatch.** Let $T_e = \{\, t : e \in S_t \,\}$ be the set of tokens routed to expert $e$, and call expert $e$ *active* if $T_e$ is non-empty. Your implementation must satisfy two rules:
 
-- call each active expert **exactly once**, with the rows $x_t$, $t \in T_e$, and
-  nothing else (in any row order), and
-- **not call** an expert that no token selected, not even with zero rows.
+- Call each active expert **exactly once**, passing only the rows $x_t$ for $t \in T_e$ (in any row order).
+- **Never call** an inactive expert, not even with zero rows.
 
-In counters: `expert_rows` equals $k \cdot N$ exactly, and `expert_calls` equals the
-number of active experts.
+In terms of the counters, `expert_rows` must equal $k \cdot N$ exactly, and `expert_calls` must equal the number of active experts.
 
-The tokens of $T_e$ are in general scattered over `x`, not adjacent. Row $j$ of an
-expert's output belongs to the token whose row was $j$-th in the input of that call,
-and has to be added, with that token's weight for this expert, to that token's row of
-`y`.
+Because the tokens in $T_e$ are generally scattered across `x`, row $j$ of an expert's output corresponds to the $j$-th token passed into that call. Multiply it by that token's weight for expert $e$ and accumulate it into that token's row of `y`.
 
-You may use your framework's `softmax` and sorting functions, and plain Python or
-NumPy for the bookkeeping of indices and group sizes.
+You may use your framework's `softmax` and sorting functions, as well as plain Python or NumPy for index and group-size bookkeeping.
 
 ## Shapes
 
@@ -69,8 +48,7 @@ NumPy for the bookkeeping of indices and group sizes.
 
 ## Example
 
-Five tokens with $D = 2$, five experts, $k = 2$. The router is chosen so that the
-logits of a token $[a, b]$ are $[a,\ b,\ -a,\ -b,\ 0]$:
+Consider five tokens with $D = 2$, five experts, and $k = 2$. The router matrix is chosen so that a token $[a, b]$ produces logits $[a,\ b,\ -a,\ -b,\ 0]$:
 
 ```python
 x = [[3.0, 1.0], [-1.0, 2.0], [2.0, -3.0], [1.0, 3.0], [-3.0, 1.0]]
@@ -89,7 +67,7 @@ sorted(experts.calls)  # [(0, 3), (1, 4), (2, 2), (3, 1)]   (expert, rows)
 | 3: $[1, 3]$ | $[1, 3, -1, -3, 0]$ | 1, 0 | 0.8808, 0.1192 |
 | 4: $[-3, 1]$ | $[-3, 1, 3, -1, 0]$ | 2, 1 | 0.8808, 0.1192 |
 
-Grouped by expert:
+Grouping the assignments by expert gives four active experts:
 
 | expert | tokens $T_e$ | call |
 |---|---|---|
@@ -101,36 +79,18 @@ Grouped by expert:
 
 ![A filled cell is a token routed to an expert, with its weight; each row is one call.](assets/dispatch.svg)
 
-Four calls and $3 + 4 + 2 + 1 = 10 = k \cdot N$ rows. The dense evaluation makes five
-calls with 25 rows. Expert 0's tokens are 0, 2, and 3: the three rows of its output go
-to rows 0, 2, and 3 of `y`, with weights 0.8808, 0.2689, and 0.1192. Then
-$y_0 = 0.8808\, f_0(x_0) + 0.1192\, f_1(x_0)$, and so on.
+This uses 4 calls and $3 + 4 + 2 + 1 = 10 = k \cdot N$ rows, compared to 5 calls and 25 rows for a dense evaluation. Expert 0 processes tokens 0, 2, and 3, so the three rows of its output are added to rows 0, 2, and 3 of `y` with weights 0.8808, 0.2689, and 0.1192. Combining all experts gives $y_0 = 0.8808\, f_0(x_0) + 0.1192\, f_1(x_0)$, and similarly for the other tokens.
 
 ## Constraints
 
-- $1 \le N \le 256$, $2 \le D \le 32$, $1 \le E \le 8$, $1 \le k \le E$.
-- The result is compared with the dense evaluation of the same layer to a relative
-  tolerance of `1e-4` and an absolute tolerance of `1e-5`. An expert's output for a
-  row does not depend on which other rows are in the call, except in the last bits.
-- **Cost, checked in every case:** `expert_rows` is exactly $k \cdot N$ and
-  `expert_calls` is at most the number of active experts (so, with the right output,
-  exactly that number).
-- In every test, the $k$-th and $(k+1)$-th largest router logits of a token are
-  either exactly equal (inputs made of small integers, for which float32 arithmetic
-  is exact) or differ by more than $10^{-3}$, so rounding cannot change the routing.
+- $1 \le N \le 256$, $2 \le D \le 32$, $1 \le E \le 8$, and $1 \le k \le E$.
+- The output is compared against the dense evaluation of the same layer with a relative tolerance of `1e-4` and an absolute tolerance of `1e-5`. An expert's output for a given row is independent of the other rows in the same call, up to floating-point rounding.
+- **Cost (checked in every test):** `expert_rows` must equal $k \cdot N$ exactly, and `expert_calls` must be at most the number of active experts (which, for a correct output, equals that number).
+- In every test, the $k$-th and $(k+1)$-th largest router logits for a token are either exactly equal (small-integer inputs where float32 is exact) or separated by more than $10^{-3}$, so floating-point rounding cannot alter the routing.
 - A Python loop over experts is expected. No loop over tokens is needed.
 
 ## Why this matters
 
-Sparsity is the point of a mixture of experts: Mixtral 8x7B runs 2 of its 8 expert
-MLPs per token and Qwen3-30B-A3B 8 of 128, so the dense evaluation costs 4 and 16
-times the MLP compute the model was designed around. Engines get the sparse cost with
-this gather, run, and scatter pattern, and its failure modes are the ones tested
-here. One call per token gives the right arithmetic and destroys throughput, because
-a GPU wants a few large matrix products, not thousands of single-row ones. Calling
-idle experts with empty batches costs a kernel launch each, which adds up at 128
-experts and small batches. And a scatter that assumes an expert's tokens are adjacent
-passes every test with one sequence of similar tokens, then mixes hidden states
-between unrelated tokens under real batching. It is also the layout that expert
-parallelism builds on: once tokens are grouped by expert, each group can be sent to
-the device that holds that expert.
+Sparsity is the entire reason mixture-of-experts models exist. Mixtral 8x7B activates 2 of its 8 expert MLPs per token, and Qwen3-30B-A3B activates 8 of 128, so a dense evaluation wastes 4x and 16x the intended MLP compute.
+
+Inference engines realize those savings through this gather-run-scatter pattern, and real bugs mirror the failure modes tested here. Calling an expert one token at a time gives the right numbers but ruins GPU throughput, because hardware needs large matrix products rather than thousands of single-row calls. Calling idle experts with empty batches pays kernel launch overhead on every unused expert, which adds up quickly with 128 experts and small batches. Scattering into a contiguous slice assumes an expert's tokens are adjacent, which passes toy tests on uniform inputs and silently corrupts hidden states across unrelated tokens in real batches. Grouping tokens by expert is also the foundation of expert parallelism, where each group is dispatched to the device hosting that expert.

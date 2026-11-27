@@ -1,35 +1,36 @@
 ## The idea
 
-A rotary pair with frequency $\theta_i$ turns through $L_0\,\theta_i$ radians over the
-$L_0$ positions of training. That number splits the head into two populations.
+A rotary pair with frequency $\theta_i$ sweeps through $L_0\,\theta_i$ radians over
+the $L_0$ positions of training. That total rotation splits the head into two groups.
 
-- **Fast pairs** wrap around many times. During training the model saw every angle
-  of such a pair, at every offset, so positions beyond $L_0$ produce nothing new.
-  These pairs carry fine relative distances ("three tokens back"), and slowing them
-  down would blur exactly that. Leave them alone.
-- **Slow pairs** complete less than one turn in $L_0$ positions. The model saw only
-  an arc of their circle, and a position beyond $L_0$ puts them at angles it has never
-  seen. Dividing their frequency by `factor` maps the new context $L_0 \cdot
-  \texttt{factor}$ back onto the arc that was trained.
+- **Fast pairs** wrap around many times. During training, the model saw every angle of
+  these pairs at every offset, so positions beyond $L_0$ introduce nothing unfamiliar.
+  These pairs encode fine local distances (such as "three tokens back"), and slowing
+  them down blurs that resolution. YaRN leaves them untouched.
+- **Slow pairs** complete less than one full turn over $L_0$ positions. The model only
+  ever saw a partial arc of their circle, so positions beyond $L_0$ push them into
+  unseen angles. Dividing their frequency by `factor` maps the extended context
+  $L_0 \cdot \texttt{factor}$ back onto the trained arc.
 
-YaRN draws the line by the number of full turns, $L_0\,\theta_i / 2\pi$: at least
-`beta_fast` (32) turns means fast, at most `beta_slow` (1) means slow. Because
-$\theta_i = \texttt{base}^{-2i/\texttt{dim}}$ is monotone in $i$, each threshold is a
-pair index, found by solving $L_0\,\texttt{base}^{-2i/\texttt{dim}} = 2\pi\beta$:
+YaRN separates these groups by the number of full turns, $L_0\,\theta_i / 2\pi$. Pairs
+making at least `beta_fast` (32) turns are treated as fast, and pairs making at most
+`beta_slow` (1) turn are treated as slow. Because
+$\theta_i = \texttt{base}^{-2i/\texttt{dim}}$ decreases monotonically with $i$, each
+threshold corresponds to a single pair index found by solving
+$L_0\,\texttt{base}^{-2i/\texttt{dim}} = 2\pi\beta$:
 
 $$
 i = \frac{\texttt{dim} \cdot \ln\!\big(L_0 / (2\pi\beta)\big)}{2 \ln \texttt{base}} .
 $$
 
-Between the two indices the implementation blends linearly in the pair index. The
-second ingredient is unrelated to frequencies: with a longer context the attention
-distribution flattens, and YaRN compensates by scaling the logits. It does so without
-touching the attention code, by multiplying the cosine and sine tables by
-$m = 0.1 \ln(\texttt{factor}) + 1$, which lengthens every rotated query and key by $m$
-and every logit between rotated parts by $m^2$.
+Between those two indices, the implementation blends linearly in the pair index.
 
-`base` is the argument name of the `rope` problem; configurations call it
-`rope_theta`.
+The second piece addresses attention entropy rather than frequencies. At longer context
+lengths, the attention distribution tends to flatten, so YaRN sharpens the logits. To
+do this without changing the attention kernel, it multiplies both the cosine and sine
+tables by $m = 0.1 \ln(\texttt{factor}) + 1$. That scales every rotated query and key
+by $m$, which scales their dot product by $m^2$. (In model configs, `base` is called
+`rope_theta`.)
 
 ## Reference solution (PyTorch)
 
@@ -57,87 +58,90 @@ def yarn_tables(positions, inv_freq, factor):
     return torch.cos(angles) * scale, torch.sin(angles) * scale
 ```
 
-Written as `(1 - ramp) * original + ramp * (original / factor)`, the two ends are
-exact in floating point: a ramp of 0 returns `original` and a ramp of 1 returns
-`original / factor`, with no rounding from the blend. The bounds are ordinary Python
-floats; only the ramp and the frequencies are tensors.
+Writing the blend as `(1 - ramp) * original + ramp * (original / factor)` keeps both
+endpoints exact in floating point. A ramp value of 0 returns `original` directly, and
+a ramp value of 1 returns `original / factor` with no blend rounding. The bounds stay
+plain Python floats, while only the ramp and frequencies are tensors.
 
 ## Common mistakes
 
-- **The ramp reversed,** or the two betas exchanged. Both slow down the fast pairs
-  and leave the slow ones, the opposite of the method. Check the ends: pair 0 must
-  have frequency exactly 1.
-- **`truncate` ignored.** Always rounding, or never rounding, is right for one of
-  the two shipped models and wrong for the other. The default is true.
-- **The $2\pi$ dropped.** `beta` counts full turns. Without the $2\pi$ both bounds
-  move toward slower pairs by $\texttt{dim} \ln(2\pi) / (2 \ln \texttt{base})$, about
-  5 pairs for `dim = 64` and `base = 150000`.
-- **The ramp over channel indices.** The exponent uses `arange(0, dim, 2)`; the ramp
-  uses `arange(dim // 2)`. Reusing the first for the second doubles the slope.
-- **Clamps.** The lower bound must be clamped at 0, or a short original context
-  rescales pair 0. The upper bound is clamped at `dim - 1`. Clamping it at
-  `dim / 2 - 1` looks more sensible and gives different frequencies whenever the
-  ramp would end beyond the last pair. Leaving it unclamped is harder to notice. It
-  changes a frequency only when the ramp starts before the last pair
-  ($\text{low} < \texttt{dim}/2 - 1$) and would end beyond $\texttt{dim} - 1$, so
-  the two unclamped bounds must be more than $\texttt{dim}/2$ apart. Their distance
-  is $\texttt{dim} \ln(\texttt{beta\_fast} / \texttt{beta\_slow}) / (2 \ln
-  \texttt{base})$, so that needs $\texttt{beta\_fast} / \texttt{beta\_slow} >
-  \texttt{base}$: with the default 32 and 1, a base below 32. No shipped
-  configuration read for this problem is near that, and the test that exercises the
-  clamp uses `beta_fast = 20000` with `base = 100`.
-- **Blending wavelengths.** Interpolating $1/\theta$ linearly gives the harmonic
-  blend of the frequencies. It agrees at both ends and differs on the ramp.
-- **Multiplying by the factor.** A longer context needs longer wavelengths: divide.
-- **The table factor.** `log10` instead of `ln` (for a factor of 32, 1.15 instead of
-  1.35), or the factor on the cosine table only, which makes the length of a rotated
-  vector depend on its position.
+- **Reversing the ramp or swapping the betas.** Both mistakes slow down the fast pairs
+  and leave the slow ones unchanged, which is the opposite of YaRN. Always verify that
+  pair 0 has frequency 1.
+- **Ignoring `truncate`.** Always rounding or never rounding matches one shipped model
+  and breaks the other. The default is `True`.
+- **Dropping the $2\pi$ factor.** `beta` counts full turns, not radians. Omitting
+  $2\pi$ shifts both boundaries toward slower pairs by
+  $\texttt{dim} \ln(2\pi) / (2 \ln \texttt{base})$, or about 5 pairs for `dim = 64` and
+  `base = 150000`.
+- **Evaluating the ramp over channel indices.** The frequency exponent uses
+  `arange(0, dim, 2)`, whereas the ramp uses `arange(dim // 2)`. Reusing the channel
+  indices doubles the ramp slope.
+- **Wrong boundary clamps.** The lower bound must be clamped at 0, or a short original
+  context rescales pair 0. The upper bound is clamped at `dim - 1`. Clamping at
+  `dim / 2 - 1` looks more natural, yet it changes the frequencies whenever the ramp
+  extends past the last pair. Leaving the upper bound unclamped is harder to spot
+  because it only changes a frequency when $\text{low} < \texttt{dim}/2 - 1$ and the
+  unclamped upper bound exceeds $\texttt{dim} - 1$. That requires the two unclamped
+  bounds to be more than $\texttt{dim}/2$ apart, which happens when
+  $\texttt{beta\_fast} / \texttt{beta\_slow} > \texttt{base}$ (for default 32 and 1, a
+  base below 32). No shipped config read here hits that regime, so the test suite
+  exercises the clamp using `beta_fast = 20000` and `base = 100`.
+- **Blending wavelengths instead of frequencies.** Linearly interpolating $1/\theta$
+  produces the harmonic blend of the frequencies. It matches at both ends and differs
+  across the ramp.
+- **Multiplying by `factor` instead of dividing.** Extending context requires longer
+  wavelengths, which means smaller frequencies.
+- **Wrong table scaling.** Using `log10` instead of `ln` gives 1.15 instead of 1.35 at
+  `factor = 32`. Scaling only the cosine table makes the norm of a rotated vector
+  depend on its position.
 
 ## Complexity
 
-$O(\texttt{dim})$ for the frequencies, computed once per model. $O(T \cdot
-\texttt{dim})$ for the tables, usually precomputed for all positions.
+`yarn_inv_freq` takes $O(\texttt{dim})$ time and memory and runs once per model.
+`yarn_tables` takes $O(T \cdot \texttt{dim})$ time and memory for `T` positions, and
+engines usually precompute the tables.
 
 ## In the wild
 
 Checked on 2026-11-21.
 
 - **The paper.** "YaRN: Efficient Context Window Extension of Large Language Models"
-  (arXiv 2309.00071), sections 3.2 and 3.3. It defines the ratio $r = L / \lambda$ of
-  context length to wavelength, a ramp that is 0 below $\alpha$, 1 above $\beta$, and
-  linear in $r$ between, the blend $(1 - \gamma)\,\theta / s + \gamma\,\theta$, the
-  values $\alpha = 1$ and $\beta = 32$ for the Llama family, and
-  $\sqrt{1/t} = 0.1 \ln(s) + 1$ for the scaling of the embeddings. Its footnote says
-  that interpolating wavelengths instead "would work" too; the code does not do that.
-- **The code.** `_compute_yarn_parameters` in `transformers/modeling_rope_utils.py`
-  (`transformers` 5.23.0) is what this problem follows, including where it differs
-  from the paper: its ramp is linear in the *pair index* between the two indices
-  where $r$ equals `beta_fast` and `beta_slow`, not linear in $r$; it has the
-  `truncate` option (default true), and the clamp of the upper bound to `dim - 1`. It
-  also adds 0.001 to the upper bound when the two bounds coincide, a case this
-  problem excludes.
-- **gpt-oss-20b** (`config.json`): `rope_type: "yarn"`, factor 32, original length
-  4096, `rope_theta` 150000, `truncate: false`, head width 64. The bounds are 8.09
-  and 17.40, so pairs 0 to 8 are untouched, pairs 18 to 31 are divided by 32, and the
-  tables carry $m = 1.3466$.
-- **DeepSeek-V4** (`config.json`, `rope_scaling`): factor 16 from 65536, with
-  `compress_rope_theta` 160000 on a rotary slice of 64 channels and no `truncate`
-  key, so the bounds 15.45 and 24.71 become 15 and 25. Its configuration class in
-  `transformers` sets `attention_factor` to 1 for these layers, with a comment that
-  the model's reference code does not scale the tables: the frequencies are YaRN's,
-  the table factor is not applied. A caller of `yarn_tables` would pass `factor = 1`
-  there.
+  (arXiv 2309.00071), sections 3.2 and 3.3, defines the ratio $r = L / \lambda$ of
+  context length to wavelength. Its ramp $\gamma$ is 0 below $\alpha$, 1 above $\beta$,
+  and linear in $r$ between them, using defaults $\alpha = 1$ and $\beta = 32$ for
+  Llama. For scale factor $s$, it blends frequencies as
+  $(1 - \gamma)\,\theta / s + \gamma\,\theta$ and scales the embeddings by
+  $\sqrt{1/t} = 0.1 \ln(s) + 1$. A footnote mentions that interpolating wavelengths
+  "would work" too, though the code does not do that.
+- **The code.** This problem follows `_compute_yarn_parameters` in
+  `transformers/modeling_rope_utils.py` (`transformers` 5.23.0), including its
+  differences from the paper. Its ramp is linear in the *pair index* between the
+  indices where $r$ equals `beta_fast` and `beta_slow` rather than linear in $r$. It
+  also adds the `truncate` option (default `True`), clamps the upper bound to
+  `dim - 1`, and adds 0.001 to the upper bound when the two bounds coincide (a case
+  excluded here).
+- **gpt-oss-20b.** Its `config.json` sets `rope_type: "yarn"`, factor 32, original
+  length 4096, `rope_theta` 150000, `truncate: false`, and head width 64. The bounds
+  are 8.09 and 17.40, so pairs 0 to 8 stay untouched, pairs 18 to 31 are divided by
+  32, and the tables use $m = 1.3466$.
+- **DeepSeek-V4.** Its `config.json` (`rope_scaling`) uses factor 16 from 65536 with
+  `compress_rope_theta` 160000 on a 64-channel rotary slice and no `truncate` key, so
+  the bounds 15.45 and 24.71 round to 15 and 25. Its config class in `transformers`
+  sets `attention_factor` to 1 for these layers, noting that the reference code does
+  not scale the tables. The frequencies follow YaRN while the table scale is omitted,
+  which corresponds to passing `factor = 1` to `yarn_tables`.
 
-Both frequency vectors are in this problem's fixture, computed by the library through
-each model's own rotary module (`fixtures/make.py`), together with the library's
-result for the clamped parameters above.
+Both frequency vectors are stored in this problem's fixture, computed by `transformers`
+through each model's rotary module (`fixtures/make.py`), along with the clamped test
+case.
 
-The library forms the angle `position * inv_freq` in float32, where the spacing of
-representable numbers near $10^5$ is about 0.008. A table built in float64 and cast
-down is the more accurate one, and differs from the library's by up to that much at
-the far end of the context. Both are accepted here; an engine that must reproduce a
-reference bit for bit has to copy its precision as well as its formula.
+The library forms `position * inv_freq` in float32, where the spacing between adjacent
+floats near $10^5$ is about 0.008. Computing the angle in float64 and casting down is
+more accurate, yet it differs from the library by up to that amount at the far end of
+the context. Both are accepted here. Any engine aiming for bit-for-bit parity with a
+reference must match its precision as well as its formula.
 
-The library also accepts an explicit `attention_factor`, and a pair `mscale`,
-`mscale_all_dim` from which it derives one. Read all of them before assuming the
-default.
+The library also accepts an explicit `attention_factor`, as well as `mscale` and
+`mscale_all_dim` parameters that can derive one. Check all of them before assuming the
+default formula.

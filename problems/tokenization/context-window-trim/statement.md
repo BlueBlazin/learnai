@@ -1,9 +1,4 @@
-A chat grows by two messages per exchange, and the context window does not. Before
-every request, a chat server decides which part of the history still goes into the
-prompt. Implement the standard policy: always keep the system message and the latest
-turn, drop the oldest turns whole until the prompt fits, and leave room for the
-answer. The work is in the bookkeeping: what a turn is, what "fits" means, and what
-must never be dropped.
+A chat conversation grows by multiple messages on every exchange, while a model's context window stays fixed. Before sending a request, a chat server trims older history so both the prompt and the model's reply fit in the window. Implement this policy by always keeping the system message and the latest turn, and dropping the oldest turns whole until the prompt fits.
 
 ![This problem is the Trim to context step, dropping the oldest turns until the prompt fits.](assets/map.svg)
 
@@ -18,51 +13,30 @@ def trim_messages(
 ) -> list[dict[str, str]]: ...
 ```
 
-- `messages`: the conversation, oldest first. Each message is a dict with the keys
-  `"role"` (`"system"`, `"user"`, `"assistant"`, or `"tool"`) and `"content"`.
-- `count_tokens(msgs)`: the number of tokens of the prompt that the model's chat
-  template renders from the list `msgs`, including everything the template adds
-  (special tokens, role headers, the generation prompt). It accepts any list of
-  messages taken from `messages`. Treat it as a black box: the count of a list is
-  **not** the sum of the counts of its messages.
-- `max_context`: the model's context window, in tokens.
-- `max_new_tokens`: the number of tokens reserved for the model's answer.
+- `messages`: the conversation in chronological order (oldest first). Each message is a `dict` with keys `"role"` (`"system"`, `"user"`, `"assistant"`, or `"tool"`) and `"content"`.
+- `count_tokens(msgs)`: returns the token count of the prompt rendered by the model's chat template for `msgs`, including special tokens, role headers, and the generation prompt. It accepts any list of messages taken from `messages`. Treat it as a black box, because the token count of a list is **not** the sum of the counts of its individual messages.
+- `max_context`: the model's total context window, in tokens.
+- `max_new_tokens`: the number of tokens reserved for the model's reply.
 
-**Structure of a conversation.** If there is a system message, it is `messages[0]`,
-and there is only one. The rest of the conversation is a sequence of **turns**. A turn
-starts at a `user` message and contains every message up to, but not including, the
-next `user` message: the user's message, the assistant's reply, and any tool calls and
-tool results in between. The first message after the system message is always a
-`user` message, so every message belongs to exactly one turn. The **last turn** starts
-at the latest `user` message; it may consist of that message alone, or continue with
-assistant and tool messages when the model is called again in the middle of a tool
-loop.
+**Conversation structure.** If a system message is present, it is `messages[0]`, and there is only one. The remaining messages form a sequence of **turns**. A turn starts at a `"user"` message and contains every message up to, but not including, the next `"user"` message (such as the assistant's reply, tool calls, and tool results). The first message after an optional system message is always a `"user"` message, so every non-system message belongs to exactly one turn. The **last turn** starts at the latest `"user"` message. It may consist of that message alone, or it may also include assistant and tool messages when the model is called again in the middle of a tool loop.
 
-**Fitting.** A list of messages `kept` fits when
+**Fitting condition.** A list of messages `kept` fits when
 
 $$
 \texttt{count\_tokens(kept)} + \texttt{max\_new\_tokens} \le \texttt{max\_context} .
 $$
 
-**The result.** For $k = 0, 1, \dots, T - 1$, where $T$ is the number of turns, let
-candidate $k$ be the system message (if there is one) followed by all turns except the
-$k$ oldest, in their original order. Return candidate $k$ for the **smallest** $k$
-that fits. So:
+**Trimming policy.** Let $T$ be the number of turns in `messages`. For $k = 0, 1, \dots, T - 1$, let candidate $k$ be the system message (if present) followed by all turns except the $k$ oldest, in their original order. Return candidate $k$ for the **smallest** $k$ that fits:
 
-- If the whole conversation fits, it is returned unchanged ($k = 0$).
-- Turns are dropped whole and oldest first. A dropped turn takes all its messages
-  with it; the result never starts, after the system message, with an assistant or
-  tool message.
-- The system message and the last turn are never dropped. If even they do not fit
-  (candidate $T - 1$), raise `ValueError`.
+- If the whole conversation fits, return it unchanged ($k = 0$).
+- Drop turns whole and oldest first. Dropping a turn removes all of its messages, so the result never starts with an `"assistant"` or `"tool"` message after the system message.
+- Never drop the system message or the last turn. If even candidate $T - 1$ does not fit, raise `ValueError`.
 
-The function returns a new list holding the kept messages in order (the same dicts, or
-equal ones). It does not modify `messages` or any message, also when it raises.
+Return a new list holding the kept messages in order (the same dicts or equal copies). Do not modify `messages` or any message dict, even when raising `ValueError`.
 
 ## Example
 
-In this example a prompt costs 3 tokens plus, per message, 4 tokens and one token per
-word of its content:
+In this example, a prompt costs 3 fixed tokens plus, for each message, 4 overhead tokens and 1 token per word in its content:
 
 ```python
 def count_tokens(msgs):
@@ -79,8 +53,7 @@ messages = [
 ]
 ```
 
-There are three turns: messages 1-2, messages 3-4, and message 5. The candidates cost
-$3 + 48 = 51$ tokens ($k = 0$), $51 - 17 = 34$ ($k = 1$), and $34 - 16 = 18$ ($k = 2$).
+There are three turns: messages 1–2, messages 3–4, and message 5. The three candidates cost $3 + 48 = 51$ tokens ($k = 0$), $51 - 17 = 34$ tokens ($k = 1$), and $34 - 16 = 18$ tokens ($k = 2$).
 
 ```python
 trim_messages(messages, count_tokens, 67, 16)  # all six: 51 + 16 <= 67, exactly
@@ -89,27 +62,17 @@ trim_messages(messages, count_tokens, 40, 16)  # messages 0, 5:       18 + 16 <=
 trim_messages(messages, count_tokens, 33, 16)  # ValueError:          18 + 16 > 33
 ```
 
-In the second call the whole conversation, 51 tokens, is below `max_context = 64`. It
-is still trimmed, because 16 tokens of the window are reserved for the answer.
+In the second call, the full conversation (51 tokens) is below `max_context = 64`. It is still trimmed because 16 tokens must be reserved for the answer.
 
 ## Constraints
 
-- `messages` has between 1 and 200 messages and at least one `user` message, with the
-  structure described above.
-- `0 <= max_new_tokens` and `1 <= max_context`; both are ints. `max_new_tokens` may
-  exceed `max_context`, in which case nothing fits.
-- `count_tokens` is deterministic and has no side effects. You may call it as often as
-  you like, on lists built from the given messages only.
-- Results are compared exactly: the same messages, in the same order.
+- `messages` has between 1 and 200 messages, contains at least one `"user"` message, and follows the structure described above.
+- `max_context` and `max_new_tokens` are integers with `1 <= max_context` and `0 <= max_new_tokens`. `max_new_tokens` may exceed `max_context`, in which case nothing fits.
+- `count_tokens` is deterministic and has no side effects. You may call it as often as needed on lists built from the given messages.
+- Results are compared for exact equality (the same messages in the same order).
 
 ## Why this matters
 
-When the prompt and the requested output do not fit, a server has three options:
-reject the request, let generation run into the end of the window and stop early with
-an answer cut off in the middle, or trim. Trimming is what chat front ends do, and its
-mistakes are quiet. Forget to reserve the output and long conversations end
-mid-sentence. Drop the system message and the assistant loses its instructions twenty
-turns in. Cut through a turn and the prompt starts with an answer to a question the
-model cannot see, or with a tool result whose call is gone, which many chat templates
-reject outright. Counting per message and adding misses what the template inserts
-around and between messages, so the "fitting" prompt is a few tokens too long.
+When a prompt and its requested output exceed the context window, a server has three choices. It can reject the request, let generation hit the limit and cut off mid-sentence, or trim the history. Chat front ends usually trim, and bugs in trimming fail quietly.
+
+Forgetting to reserve `max_new_tokens` causes long conversations to end mid-sentence. Dropping the system message makes the assistant lose its instructions twenty turns in. Cutting inside a turn leaves an assistant reply without its question or a tool result without its tool call, which many chat templates reject outright. Summing per-message token counts misses template-level tokens around and between messages, so a prompt that appears to fit still overflows the window by a few tokens.

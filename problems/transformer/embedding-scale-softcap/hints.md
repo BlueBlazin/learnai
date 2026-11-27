@@ -1,18 +1,10 @@
-There are five operations in total: a lookup, a multiplication, a matrix product, a
-division, and a `tanh`. The problem is entirely in where each constant goes and in
-what order. For each constant, ask: which tensor does it act on, and is it a factor or
-a divisor?
+There are five operations in total: a lookup, a multiplication, a matrix product, a division, and a `tanh`. The task comes down to placing each constant on the right tensor in the right order. For each constant, check which tensor it applies to and whether it multiplies or divides.
 
 ---
 
-`embed`: index the table with the token tensor (`table[tokens]` works in all three
-frameworks and keeps the shape of `tokens` in front), then multiply the looked-up rows
-by `scale`. Multiply the rows, not the table: `table *= scale` changes the matrix for
-whoever else holds it, and with tied embeddings that is the output head.
+For `embed`, index the table with `tokens` (`table[tokens]` works across PyTorch, JAX, and MLX and preserves the shape of `tokens`), then multiply the looked-up rows by `scale`. Multiply the returned rows rather than modifying `table` in place (`table *= scale` would also scale the output head when embeddings are tied).
 
-`finalize_logits`: `w_out` is `(V, d)`, so the product is `h @ w_out.T`. Divide by
-`logit_scale`. Then, only if `softcap` is not `None`, apply the cap to what you have
-at that point.
+For `finalize_logits`, since `w_out` has shape `(V, d)`, compute the projection as `h @ w_out.T`. Divide by `logit_scale`. Then, if `softcap` is not `None`, apply the soft cap to the divided logits.
 
 ---
 
@@ -22,6 +14,4 @@ if softcap is not None:
     logits = softcap * tanh(logits / softcap)
 ```
 
-The cap divides by `softcap` inside the `tanh` and multiplies by it outside, so that
-small logits come out unchanged ($\tanh u \approx u$) and large ones approach
-$\pm$`softcap`. Test for `None` explicitly; do not write `if softcap:`.
+Dividing by `softcap` inside `tanh` and multiplying outside keeps small logits nearly unchanged ($\tanh u \approx u$) while bounding large ones near $\pm$`softcap`. Check explicitly for `None` instead of writing `if softcap:`.

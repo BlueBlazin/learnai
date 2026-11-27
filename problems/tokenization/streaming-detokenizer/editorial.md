@@ -1,31 +1,34 @@
 ## The idea
 
-Decoding is a left-to-right process that returns to its initial state after every
-character and after every error. So at any moment the byte stream splits into a part
-whose decoding is settled, and at most one unfinished character at the end. Only that
-tail, at most three bytes, can still change. This gives the whole design:
+UTF-8 decoding runs left to right and returns to its initial state after every valid
+character and every error. At any point, the byte stream splits into a settled prefix
+and at most one unfinished character at the end. Only that trailing tail, at most three
+bytes long, can still change when more bytes arrive.
 
-- **State** = the pending tail. Nothing else is needed: not the earlier tokens, not
-  the text already sent.
-- **Step** = append the token's bytes to the tail, cut off the new tail, decode and
-  return the rest.
-- **Flush** = decode the tail. It was never completed, so it is one U+FFFD.
+This gives the whole design:
 
-Correctness follows from where the cut is placed. The new tail starts at a lead byte,
-and a lead byte always begins a new character or a new error, whatever precedes it. So
-decoding the part before the cut now gives exactly the characters that a decode of the
-entire stream produces for those bytes, including the replacement characters for
-invalid sequences. Summing over the steps, the returned pieces concatenate to the full
-decode.
+- **State** holds only the pending tail. You do not need earlier tokens or previously
+  emitted text.
+- **Step** appends the new token's bytes to the pending tail, splits off the new tail,
+  and decodes and returns everything before it.
+- **Flush** decodes the pending tail. Because it was never completed, it decodes to one
+  `�` (U+FFFD), or `""` if empty.
 
-Timeliness follows from holding back *only* what can still become valid. `E2 82` can
-become `€`, so it waits. `E0 80` cannot become anything, `FF` cannot start anything,
-and `E2 82` followed by `a` has been abandoned: all of these are as final as ASCII,
-and are returned in the same step. In a stream, "later" may mean never: if generation
-stops, the client is left with whatever was sent.
+Correctness follows from where the cut is placed. The new tail begins at a valid lead
+byte, and a lead byte always starts a new character or a new error regardless of what
+came before it. Decoding the bytes before the cut therefore produces the exact same
+characters as decoding the entire stream up to that point, including replacement
+characters for any invalid sequences. Concatenating all step outputs and the flush
+matches the full decode.
 
-Special tokens need no special case. Their bytes are empty, so the step appends
-nothing, the tail is unchanged, and the returned text is `""`.
+Timeliness follows from holding back *only* bytes that can still become a valid
+character. `E2 82` can still become `€`, so it waits. By contrast, `E0 80` is overlong,
+`FF` cannot start any character, and `E2 82` followed by `a` is already abandoned. All
+of these are settled immediately and returned in the same step. In a live stream,
+holding back settled bytes can stall output indefinitely if generation stops.
+
+Special tokens need no special branch. Their bytes are `b""`, so appending them leaves
+the tail unchanged and returns `""`.
 
 ## Reference solution (Python)
 
@@ -66,58 +69,63 @@ def _complete_prefix_len(data):
     return n
 ```
 
-The state is an immutable `bytes` object, so "do not modify the state" costs nothing:
-every step builds a new one, and a caller that kept an old state can continue from it.
+Because `state` is an immutable `bytes` object, leaving old states unmodified is free.
+Every step returns a new `bytes` object, so callers can safely branch or retry from any
+earlier state.
 
-In Python the standard library can carry the state for you:
-`codecs.getincrementaldecoder("utf-8")("replace")` with `getstate()` and `setstate()`
-gives the same texts (up to the surrogate corner noted in the statement). The decoder
-object itself is mutable, so it must not *be* the state; its `getstate()` value can.
+Python's standard library can also track the state for you via
+`codecs.getincrementaldecoder("utf-8")("replace")` with `getstate()` and `setstate()`.
+It produces the same outputs except for the surrogate corner noted in the statement. The
+decoder instance itself is mutable, so do not return the decoder as `state`—store and
+return its `getstate()` tuple instead.
 
 ## Common mistakes
 
-- **Decoding each token separately.** `vocab.bytes(t).decode(errors="replace")` turns
-  every split character into two or more U+FFFD. It passes every test with ASCII text.
-- **Decoding everything again at each step.** Keeping all token ids and calling
-  `vocab.decode(ids)` each time, then returning the new suffix, can be made correct,
-  but step $k$ costs $O(k)$: quadratic over the stream. The counter
-  `bytes_decoded` makes this visible: 130,000 bytes for a 400-token stream whose
-  tokens have 634.
-- **Never flushing.** If the stream ends inside a character, the tail is still text:
-  one U+FFFD. Returning `""` from `detok_flush` makes the streamed text shorter than
-  what a non-streaming request would return for the same tokens.
-- **Holding back whenever the text ends in U+FFFD.** Decode the buffer, and wait if
-  the result ends in `�`. This confuses three different things: an unfinished
-  character (wait), an invalid byte (do not wait: it will never get better), and a
-  genuine U+FFFD character, validly encoded as `EF BF BD` (certainly do not wait).
-- **`errors="ignore"`.** It hides the split-character problem by deleting it, and
-  deletes every genuinely invalid byte as well, so the stream no longer matches the
-  full decode.
-- **A mutable state.** A `bytearray` or list that is extended in place works for one
-  linear stream. As soon as the caller branches (beam search, speculative decoding
-  that rolls back, a retry from a checkpoint), both branches write into the same
-  buffer.
-- **Resetting on special tokens.** A special token in the middle of a character is
-  unusual but legal; treating it as a boundary throws away the held-back bytes.
+- **Decoding each token separately.** Calling `vocab.bytes(t).decode(errors="replace")`
+  turns every split character into two or more `�` characters. This bug passes every
+  ASCII-only test.
+- **Re-decoding the full sequence at every step.** Storing all token ids, calling
+  `vocab.decode(ids)` each step, and returning the new suffix can be made functionally
+  correct, but step $k$ costs $O(k)$ work and makes the stream quadratic. The
+  `bytes_decoded` counter catches this immediately, reaching 130,000 bytes on a
+  400-token stream whose tokens contain only 634 bytes.
+- **Never flushing.** If the stream ends inside an unfinished character, the trailing
+  bytes still correspond to one `�`. Returning `""` from `detok_flush` makes the
+  streamed output shorter than a full non-streaming decode.
+- **Holding back whenever the decoded text ends in `�`.** Decoding the buffer and
+  waiting whenever the result ends in `�` conflates three distinct cases: an unfinished
+  character (should wait), an invalid byte (should not wait, since more bytes cannot
+  fix it), and a literal `�` validly encoded as `EF BF BD` (should not wait).
+- **Using `errors="ignore"`.** This hides split characters by dropping them, and also
+  drops genuinely invalid bytes, so the stream no longer matches `errors="replace"`.
+- **Using a mutable state.** Extending a `bytearray` or `list` in place works for a
+  single linear stream, but breaks as soon as the caller branches (for beam search,
+  speculative decoding rollbacks, or retries from a checkpoint) because both branches
+  mutate the same buffer.
+- **Resetting state on special tokens.** A special token in the middle of a character is
+  rare but legal. Treating it as a boundary discards the held-back bytes.
 
 ## Complexity
 
-Each step is $O(\text{bytes of the token})$ time, and the state is at most three bytes.
-Over a stream, every token is looked up once and every byte is decoded once: linear in
-the output, with `bytes_decoded` equal to the total bytes of the tokens.
+Each step takes $O(\text{bytes of the token})$ time and stores at most 3 bytes of state.
+Over a full stream, every token is looked up once and every byte is decoded once. Total
+time is linear in the output length, and `bytes_decoded` equals the exact total bytes of
+the tokens.
 
 ## In the wild
 
-Production detokenizers have more to deal with than bytes: SentencePiece-style
-vocabularies encode spaces as a prefix marker, and "cleanup" rules change the text of
-a token depending on its neighbors. The common answer, used by Hugging Face TGI and
-vLLM, is to keep two offsets into the token list (`prefix_offset` and `read_offset`),
-decode a window of a few recent tokens with and without the newest ones, and emit the
-difference; the window keeps the cost per step bounded. For unfinished characters
-both apply the heuristic from the mistakes above: if the new text ends in U+FFFD,
-emit nothing and wait. mlx-lm's streaming detokenizers do the same on their unflushed
-bytes. That is simple and nearly always right, but it does delay genuinely invalid
-output until the next token. `llama.cpp`'s server instead inspects the trailing bytes
-of the generated piece for an incomplete UTF-8 sequence, which is the approach of this
-problem. The tail-of-bytes state also composes with the other things a streaming loop
-holds back, such as a partial match of a stop string (`stop-sequences`).
+Production detokenizers handle more than raw UTF-8 bytes. SentencePiece-style
+vocabularies encode spaces as a prefix marker, and cleanup rules can alter a token's
+text depending on its neighbors. Hugging Face TGI and vLLM solve this by maintaining two
+offsets into the token list (`prefix_offset` and `read_offset`), decoding a small
+sliding window of recent tokens with and without the newest token, and emitting the
+difference. Keeping the window bounded keeps per-step cost constant.
+
+For unfinished characters, both TGI and vLLM use the `�` heuristic described above,
+holding back output if the newly decoded text ends in `�`. `mlx-lm`'s streaming
+detokenizers do the same on their unflushed bytes. That heuristic is simple and usually
+works, but it delays genuinely invalid bytes until the next token arrives. `llama.cpp`'s
+server instead inspects the trailing bytes for an incomplete UTF-8 sequence, matching
+the approach in this problem. Keeping the pending bytes as explicit state also composes
+cleanly with other streaming buffers, such as holding back partial matches of a stop
+string (`stop-sequences`).

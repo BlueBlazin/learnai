@@ -1,26 +1,19 @@
 ## The idea
 
-Each function is a loop whose lines map onto operations from earlier in the module.
+Each function starts as a simple loop whose lines map directly to vectorized tensor operations.
 
-**`segment_means`.** The loop is `sums[seg[n]] += x[n]; counts[seg[n]] += 1`. Row `n`
-goes to an output row chosen by data, and several rows go to the same one: an adding
-scatter along axis 0, once with the rows and once with ones. Then
-`sums / counts`. An empty segment has sum 0 and count 0, so replacing its count by 1
-gives the zeros that the specification asks for, with no `where` afterwards.
+**`segment_means`.** The row loop accumulates `sums[seg[n]] += x[n]` and `counts[seg[n]] += 1`. Because multiple rows can map to the same output segment `seg[n]`, both updates are adding scatters along axis 0. Scatter the rows of `x` to get `sums`, and scatter a vector of ones to get `counts`. Then divide `sums / counts`. An empty segment has sum `0` and count `0`, so clamping `counts` to a minimum of `1` yields `0 / 1 = 0` without needing a separate `where`.
 
-**`common_prefix_len`.** The loop keeps one flag, "everything so far has matched",
-and stops when it turns false. The flag at every position is the running product of
-the 0/1 matches:
+**`common_prefix_len`.** A loop tracks a single boolean flag ("all positions so far have matched") and stops on the first mismatch. That flag at every position is the cumulative product (`cumprod`) of the 0/1 match indicator `a == b`:
 
 | position | 0 | 1 | 2 | 3 |
 |---|---|---|---|---|
 | `a == b` | 1 | 1 | 0 | 1 |
 | `cumprod` | 1 | 1 | 0 | 0 |
 
-A product cannot recover from a 0, which is the whole rule about matches after a
-mismatch. The sum of the running product is the prefix length, `T` for equal rows.
+Once a `0` appears, the running product stays `0` for all later positions, which ignores matches after the first mismatch. Summing the running product along the sequence axis gives the prefix length, returning `T` when all entries match.
 
-**`repeated_bigram_ban`.** The loop is
+**`repeated_bigram_ban`.** For a single row, the loop is:
 
 ```python
 for t in range(T - 1):
@@ -28,17 +21,9 @@ for t in range(T - 1):
         banned[row[t + 1]] = True
 ```
 
-`range(T - 1)` is the slice `ids[:, :-1]`, and `row[t + 1]` over that range is
-`ids[:, 1:]`: two views of the same tensor, one position apart, so that entry `t` of
-one sits over its successor in the other. The comparison with the last token is a
-mask of shape `(B, T - 1)`, and the write is a scatter into `(B, V)` at the columns
-`ids[:, 1:]`. Using the adding form and counting, a token is banned when its count is
-positive, and positions that do not match add 0.
+The range `0` to `T - 2` corresponds to the slice `ids[:, :-1]`, and the successor `row[t + 1]` corresponds to `ids[:, 1:]`. Both slices have shape `(B, T - 1)`, aligning every token with the token that follows it. Comparing `ids[:, :-1]` against the last token `ids[:, -1:]` gives a 0/1 match mask of shape `(B, T - 1)`. Scatter-add that mask into a `(B, V)` count buffer at column indices `ids[:, 1:]`. Non-matching positions add `0`, and any token with a positive final count is banned.
 
-The two slices also settle the edge rules. The final position is never a start,
-because `ids[:, :-1]` does not contain it. The pair ending at the final position is
-included, because `ids[:, 1:]` does contain it. With `T = 1` both slices are empty
-and the counts stay 0.
+These two slices also handle all edge cases automatically. The final position never starts a bigram because `ids[:, :-1]` excludes it. The bigram ending at the final position is included because `ids[:, 1:]` contains it. When `T = 1`, both slices are empty and all counts remain `0`.
 
 ## Reference solution (PyTorch)
 
@@ -63,21 +48,19 @@ def repeated_bigram_ban(ids, V):
     return counts > 0
 ```
 
-In JAX and MLX the scatters are `zeros.at[seg].add(x)` and
-`zeros.at[rows, second].add(starts_with_last)` with `rows = arange(B)[:, None]`.
+In JAX and MLX, the scatters are `zeros.at[seg].add(x)` and `zeros.at[rows, second].add(starts_with_last)`, where `rows = arange(B)[:, None]`.
 
-Other correct forms, all of which passed the speed cases: a one-hot matrix
-`(seg[:, None] == arange(S))` multiplied into `x`, which costs $O(N\,S\,D)$ and is
-fine for a few segments; `torch.bincount(seg, minlength=S)` for the counts; the prefix
-length as `first_true(a != b)` from Cumulative Sums as Control Flow; the ban as a
-setting scatter of `True` at `where(match, second, V)` into `V + 1` columns, with the
-spare column dropped, or as `((second[:, :, None] == arange(V)) & match[:, :, None])
-.any(dim=1)`, which builds a `(B, T, V)` tensor and is the slowest of them.
+Several other vectorized formulations also pass the speed tests:
+
+- Multiplying a one-hot matrix `(seg[:, None] == arange(S))` with `x` for `segment_means`. This costs $O(N S D)$ and works well when `S` is small.
+- Using `torch.bincount(seg, minlength=S)` for the segment counts.
+- Computing `common_prefix_len` with `first_true(a != b)` from Cumulative Sums as Control Flow.
+- Implementing `repeated_bigram_ban` with a setting scatter of `True` into `V + 1` columns using `where(match, second, V)`, where `match = (first == ids[:, -1:])`, and dropping the extra column.
+- Computing `((second[:, :, None] == arange(V)) & match[:, :, None]).any(dim=1)` for `repeated_bigram_ban`. This allocates a `(B, T, V)` tensor and is the slowest of these alternatives.
 
 ## What the loop costs
 
-Measured against the references above, at the sizes of the speed cases (in JAX,
-1024 rows for `segment_means` and 512 for the ban):
+Measured against the reference solutions above at the speed-test sizes (in JAX, `N = 1024` for `segment_means` and `B = 512` for `repeated_bigram_ban`):
 
 | | PyTorch | JAX | MLX |
 |---|---|---|---|
@@ -85,57 +68,29 @@ Measured against the references above, at the sizes of the speed cases (in JAX,
 | `common_prefix_len`, loop over the rows | more than 100x | more than 1000x | more than 100x |
 | `repeated_bigram_ban`, loop over the rows | more than 150x | more than 250x | more than 140x |
 
-A tensor operation has a fixed cost that does not depend on how small its input is.
-A loop pays it per row. The vectorized form pays it once, and the rest of its time
-grows with the number of entries. JAX without `jit` is the extreme case: its cost per operation is the
-highest of the three, and an `.at[...].add` inside a loop also copies the array it
-updates.
+Every tensor operation has a fixed dispatch cost regardless of input size. A row loop pays that overhead on every row, whereas a vectorized call pays it once. Un-jitted JAX has the highest per-op dispatch cost of the three frameworks, and calling `.at[...].add` inside a loop also copies the array on every iteration.
 
-The MLX entry for `segment_means` is the exception, and the reason is the reference:
-MLX's adding scatter with an index of 2048 or 4096 rows took 5 to 17 times as long
-as a one-hot matrix product with 4 or 8 segments, so a lazy row loop came within a
-factor of 3 to 10 of it (measured at 2048 and 4096 rows). That speed case therefore
-runs in PyTorch and JAX only.
+The MLX result for `segment_means` is an exception because MLX's adding scatter is slow at 2048 to 4096 rows. It took 5x to 17x longer than a one-hot matrix product with 4 to 8 segments, bringing a lazy row loop within 3x to 10x of the reference. For that reason, the `segment_means` speed test runs only in PyTorch and JAX.
 
-A loop over a short axis is a different thing. Sixteen iterations over the positions,
-each working on all 2048 rows, passed the speed cases in PyTorch and MLX.
+Looping over a short axis behaves differently. Iterating 16 times over `T` while operating on all 2048 rows at once still passed the speed tests in PyTorch and MLX.
 
 ## Common mistakes
 
-- **The mean over all rows.** `sums / N` divides every segment by the total number
-  of rows.
-- **NaN for an empty segment.** `sums / counts` is `0 / 0` there. Clamp the count to
-  at least 1 before dividing.
-- **An assignment where an adding scatter is needed.** `sums[seg] = x` keeps one row
-  per segment, and `sums[seg] += x` does the same in PyTorch and MLX: for the
-  example it returned `[9, 90]` for segment 2, the last of its three rows, where the
-  sum is `[15, 150]`.
-- **Counting every match.** `(a == b).sum(dim=1)` includes the matches after the
-  first mismatch.
-- **`argmax` of the mismatch mask.** It is the prefix length when there is a
-  mismatch, and 0 for equal rows, where `T` is right.
-- **A bare `squeeze()`.** A sum with `keepdim=True` followed by `squeeze()` returns a
-  tensor with no axes for a batch of one.
-- **The successor by `roll`.** `torch.roll(ids, -1, dims=1)` gives the final position
-  a successor: the first token of the row. The final position always matches the
-  last token, so the first token of every row is banned.
-- **Banning the matched token.** Scattering at `ids` where `ids == last`, instead of
-  at the successors, bans the last token of every row and nothing else.
-- **Dropping the last pair.** `ids[:, :-2]` against `ids[:, 1:-1]` stops one pair
-  early, so a row that ends `..., 4, 4` does not ban 4.
-- **A setting scatter of booleans.** `banned.scatter_(1, second, match)` writes a
-  `False` for every pair that does not start with the last token. When a token
-  follows the last token in one place and another token elsewhere, both writes land
-  on its column and one is lost. Which one is not specified for repeated indices; on
-  this machine all three frameworks kept the later write.
-- **The row loop.** Correct, and rejected by the speed cases.
+- **Dividing by the total row count.** Computing `sums / N` divides every segment by the total number of rows instead of its own segment count.
+- **NaNs on empty segments.** Dividing `sums / counts` produces `0 / 0 = NaN` when a segment has no rows. Clamp `counts` to at least `1` before dividing.
+- **Using assignment or `+=` instead of an adding scatter.** `sums[seg] = x` keeps only one row per segment, and `sums[seg] += x` does the same in PyTorch and MLX. In the worked example, `sums[seg] += x` returns `[9, 90]` for segment 2 (the last of its three rows) instead of `[15, 150]`.
+- **Counting all matches.** `(a == b).sum(dim=1)` counts matches that occur after the first mismatch.
+- **Using `argmax` on the mismatch mask.** `argmax(a != b)` returns the prefix length when a mismatch exists, but returns `0` instead of `T` when the two rows are identical.
+- **Calling bare `squeeze()`.** Summing with `keepdim=True` and then calling `squeeze()` drops the batch axis when `B = 1`, returning a 0D scalar instead of shape `(1,)`.
+- **Using `roll` to get successors.** `torch.roll(ids, -1, dims=1)` wraps the first token around as the successor to the final token. Because the final token always matches itself, this wrongly bans the first token of every row.
+- **Banning the matched token instead of its successor.** Scattering at `ids` where `ids == last` bans the last token of every row rather than the tokens that followed it.
+- **Dropping the last bigram.** Comparing `ids[:, :-2]` against `ids[:, 1:-1]` stops one pair too early, so a row ending in `..., 4, 4` fails to ban `4`.
+- **Using a setting scatter of booleans.** `banned.scatter_(1, second, match)` writes `False` for every non-matching pair. If a token follows the last token at one position and a different token elsewhere, both writes target the same column and one overwrites the other. Duplicate-index write order is unspecified, and all three frameworks kept the later write in testing.
+- **Looping over rows in Python.** Correct numerically, but rejected by the speed tests.
 
 ## Complexity
 
-`segment_means` is $O(N\,D + S\,D)$, `common_prefix_len` $O(B\,T)$, and
-`repeated_bigram_ban` $O(B\,T + B\,V)$. The one-hot forms cost $O(N\,S\,D)$ and
-$O(B\,T\,V)$, which is the difference between a ban over 16 tokens and one over a
-real vocabulary.
+`segment_means` runs in $O(N D + S D)$ time, `common_prefix_len` in $O(B T)$ time, and `repeated_bigram_ban` in $O(B T + B V)$ time. The one-hot alternatives cost $O(N S D)$ and $O(B T V)$, which becomes prohibitive for `repeated_bigram_ban` when `V` is a full LLM vocabulary rather than 16.
 
 ## In the three frameworks
 
@@ -152,12 +107,6 @@ real vocabulary.
 | an adding scatter with an empty index | no change | no change | no change |
 | `cumprod` of a boolean tensor | int64 | int32 | bool; its `sum` is int32 |
 
-Every entry was run on PyTorch 2.15, JAX 0.12, and MLX 0.32.4.
+Every entry was verified on PyTorch 2.15, JAX 0.12, and MLX 0.32.4.
 
-The frameworks agree on the trap of this problem: an indexed `+=` is a read, an add,
-and a write, and with repeated indices the writes overwrite each other. Only the
-named adding operations accumulate. They differ in what those are called and in their
-speed: `index_add_` and `.at[].add` take the row index as it is, `scatter_add_` wants
-it expanded to the shape of the source as in Gathering Along an Axis, and in MLX the
-adding scatter was slow enough at 4096 rows that a matrix product with a one-hot
-matrix beat it by a wide margin.
+All three frameworks share the main pitfall of this problem. Indexed `+=` executes as a read, an add, and a write, so duplicate indices overwrite each other instead of accumulating. Only named adding scatters accumulate safely. The frameworks differ in their APIs and performance. `index_add_` and `.at[...].add` accept a 1D row index directly, while `scatter_add_` requires expanding the index to match the source shape. In MLX, the adding scatter is slow enough at 4096 rows that multiplying by a one-hot matrix is substantially faster.

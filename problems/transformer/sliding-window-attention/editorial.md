@@ -1,27 +1,16 @@
 ## The idea
 
-A causal mask says "not the future": $j \le i$. A sliding window adds "and not the
-distant past": $j > i - w$. Together, query $i$ sees the keys
+Let $T$ be the sequence length and $w$ be the window size. A standard causal mask allows only past and current keys ($j \le i$), and a sliding window also requires keys to fall within the window ($j > i - w$). Combining both inequalities means query $i$ attends to the keys
 
 $$
-\max(0,\; i - w + 1),\; \dots,\; i ,
+\max(0,\; i - w + 1),\; \dots,\; i .
 $$
 
-which is $w$ keys once $i \ge w - 1$ and $i + 1$ keys before that. As a matrix, the
-mask is a band of width $w$ lying on and below the diagonal.
+That gives $w$ visible keys whenever $i \ge w - 1$, and $i + 1$ keys near the start of the sequence. As a `(T, T)` matrix, the mask is a diagonal band of width $w$ on and below the main diagonal.
 
-The cleanest way to build any such mask is to stop thinking about triangles and write
-the rule as a comparison of two index grids. A column vector of query indices and a
-row vector of key indices broadcast to every pair $(i, j)$, and the rule is typed in
-exactly as it is stated. There is nothing to get wrong about offsets of `triu` and
-`tril`, and the limit cases need no code: for $w \ge T$ the second condition is always
-true and the mask is causal; for $w = 1$ only the diagonal remains.
+The clearest way to construct this mask is to compare index grids directly instead of manipulating triangle offsets. Broadcasting a `(T, 1)` column of query indices against a `(1, T)` row of key indices produces every pair $(i, j)$, letting you write the two inequalities verbatim. Edge cases require no special handling. When $w \ge T$, the lower bound $j > i - w$ is always true and the mask becomes standard causal attention. When $w = 1$, only the diagonal $j = i$ remains.
 
-Attention under the mask is unchanged from the causal case. The hidden scores are set
-to $-\infty$ before the softmax, so they contribute $e^{-\infty} = 0$ to the numerator
-and to the denominator: each row is a proper distribution over its visible keys, and
-the output of query $i$ is a function of $q_i$ and of the keys and values inside its
-window only. Every row keeps its diagonal, so no row is entirely $-\infty$.
+Once the mask is built, attention works the same way as in the causal case. Set hidden scores to $-\infty$ before the softmax so they contribute $e^{-\infty} = 0$ to both the numerator and the denominator. Every row then forms a valid probability distribution over its visible keys, and query $i$'s output depends only on $q_i$ and the keys and values inside its window. Because the diagonal is always visible, no row is all $-\infty$.
 
 ## Reference solution (PyTorch)
 
@@ -39,60 +28,24 @@ def sliding_window_attention(q, k, v, window):
     return torch.softmax(scores, dim=-1) @ v
 ```
 
-JAX and MLX use `where(visible, scores, -inf)`. The same band can be written as
-`tril(ones) & triu(ones, diagonal=-(window - 1))`; note the `window - 1`.
+JAX and MLX replace `masked_fill` with `where(visible, scores, -inf)`. You can also express the same band with triangle helpers as `tril(ones) & triu(ones, diagonal=-(window - 1))`, paying attention to the `window - 1` offset.
 
 ## Common mistakes
 
-- **Window off by one.** `j >= i - window`, or `triu(..., diagonal=-window)`, keeps
-  `window + 1` keys. The mask looks right, and with a window in the thousands nobody
-  counts. This is not hypothetical: descriptions and code bases differ on whether the
-  window includes the current token. The Mistral 7B announcement describes token $i$
-  attending to tokens $[i - \text{sliding\_window},\, i]$, an interval that read
-  literally contains one more token than the rule used here and in Gemma. When you
-  port a model, find out which one its weights were trained with.
-- **Symmetric window.** `abs(i - j) < window` is the mask of a bidirectional local
-  encoder. In a decoder it lets each token see the next `window - 1` tokens, which do
-  not exist yet at generation time. Earlier outputs then change when later tokens are
-  appended, and a KV cache, which never recomputes them, disagrees with the full
-  forward pass.
-- **Window measured from the end of the sequence.** "The last `window` tokens" is the
-  right set of keys for the last query, which is the only one a single decoding step
-  computes. Used for all rows (by slicing `k[..., -window:, :]`, or with `j >= T -
-  window`), it hides everything from the early queries, whose rows become all
-  $-\infty$ and whose outputs are NaN, and shows the middle ones the wrong keys.
-- **The opposite mask convention.** Half of the libraries use `True` for "attend" and
-  the other half for "hide". A function that returns a mask must say which, and this
-  one says `True` means visible.
-- **Masking after the softmax.** Zeroing the weights outside the window leaves the
-  visible weights divided by a sum over the whole causal row. They no longer sum to 1,
-  and they still depend on the hidden keys.
+- **Window off by one.** Writing `j >= i - window` or `triu(..., diagonal=-window)` keeps `window + 1` keys per row. The mask still looks like a plausible diagonal band, and when `window` is in the thousands nobody notices by eye. Descriptions and codebases also differ on whether the window count includes the current token. For example, the Mistral 7B announcement wrote the interval $[i - \text{sliding\_window},\, i]$, which literally contains one more token than the convention used here and in Gemma. Always verify which convention a checkpoint was trained with.
+- **Symmetric window.** Writing `abs(i - j) < window` creates a bidirectional local encoder mask. In a decoder, it lets each token see the next `window - 1` future tokens, which do not exist during generation. Earlier outputs then change when new tokens are appended, causing cached decoding to disagree with a full forward pass.
+- **Measuring the window from the end of the sequence.** Attending to "the last `window` tokens" (by slicing `k[..., -window:, :]` or checking `j >= T - window`) only works for the final query during single-token decoding. Applied to all rows, it masks out every key for early queries (producing all $-\infty$ rows and NaNs) and shows middle queries the wrong keys.
+- **Flipping the boolean convention.** Some libraries use `True` to mean "attend" and others use `True` to mean "mask out." Here, `True` means visible.
+- **Masking after the softmax.** Zeroing weights outside the window after taking the softmax leaves the visible weights normalized by the full causal denominator. They no longer sum to 1, and they still depend on the hidden keys.
 
 ## Complexity
 
-As written, $O(B\,H\,T^2\,d)$ time and $O(B\,H\,T^2)$ memory, the same as full
-attention: the masked scores are computed and thrown away. Only the band of
-$O(T\,w)$ scores is needed, and a real implementation computes only those.
+This dense implementation takes $O(B\,H\,T^2\,d)$ time and $O(B\,H\,T^2)$ memory, the same as full causal attention, because masked scores are still computed before being discarded. Only the $O(T\,w)$ entries inside the band are actually needed, and production kernels compute only those.
 
 ## In the wild
 
-During generation nobody builds this mask. A decoding step has one query, the newest
-token, and it must see the last `window` keys. If the cache of a windowed layer keeps
-exactly the most recent `window` keys and values (a rolling buffer that overwrites the
-oldest entry), the single row of scores needs no mask at all, and the layer's memory
-is constant however long the conversation gets. The mask is needed for prefill, where
-all prompt positions are processed in one pass, and it must agree exactly with what
-the rolling cache will later hold. That is the reason the off-by-one matters.
+During autoregressive decoding, inference engines do not build a `(T, T)` mask at all. A decoding step processes a single new query that must attend to the most recent `window` keys. If the layer's KV cache is a rolling buffer of size `window` that overwrites the oldest entry, that single query attends to the entire buffer with no mask and uses constant memory regardless of sequence length. The 2D mask is used during prefill, when all prompt positions run in one pass, and it must match the rolling cache's exact window so prefill and decoding stay consistent.
 
-A window does not limit how far information travels through the model. Each windowed
-layer moves it at most $w - 1$ positions, so after $L$ such layers a token can be
-influenced by tokens up to $L\,(w - 1)$ positions back.
+A local window does not limit total receptive field across depth. Each windowed layer passes information forward by up to $w - 1$ positions, so after $L$ windowed layers a token can depend on inputs up to $L\,(w - 1)$ positions earlier.
 
-Mistral 7B v0.1 used a window of 4,096 in every layer; the v0.2 release dropped
-sliding-window attention in favor of a full 32k context. Gemma 3 mixes the two kinds
-of layer, five local layers with a span of 1,024 tokens for each global layer, which
-keeps most of the KV cache bounded while the global layers preserve long-range access.
-In Google's PyTorch reference the local mask is the causal mask plus a large negative
-number on `tril(..., diagonal=-sliding_window_size)`, that is on $j \le i - w$, and in
-Hugging Face Transformers the overlay is `kv_idx > q_idx - sliding_window`. Both are
-the rule of this problem.
+Mistral 7B v0.1 used a 4,096-token sliding window in every layer, while v0.2 replaced it with full 32k causal attention. Gemma 3 combines both by interleaving five 1,024-token local layers for every global layer, keeping most of the KV cache bounded while retaining long-range access. Google's PyTorch reference builds the local mask by adding a large negative value on `tril(..., diagonal=-sliding_window_size)` (positions $j \le i - w$), and Hugging Face Transformers uses `kv_idx > q_idx - sliding_window`. Both implement the exact rule in this problem.

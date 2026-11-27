@@ -1,28 +1,18 @@
 ## The idea
 
-A gather along an axis is defined by one formula. For an input with three axes, read
-along axis 1:
+A gather along an axis follows a single rule. For a 3D input gathered along axis 1, each output entry at `(i, j, k)` reads from the input at that same `i` and `k`, using `index[i, j, k]` as the axis-1 coordinate:
 
 $$
 \text{out}[i, j, k] = \text{input}[i,\ \text{index}[i, j, k],\ k] .
 $$
 
-Read it as: the output has the shape of the index; for each output entry, keep every
-coordinate except the one on the gathered axis, and look that one up in the index. So
-the index must have one entry per output entry, which means one axis per input axis.
-Each function is this formula with the index reshaped to fit.
+The output takes the shape of `index`. Because each output position looks up its gathered coordinate in `index`, `index` must have the same number of axes as `input`. Each of the three functions applies this rule after reshaping the index to match.
 
-**`token_scores`** reads along `V`: `out[b, t, k] = logits[b, t, index[b, t, k]]`.
-One token per position means `k` has a single value, so the index is `ids` with a
-last axis of size 1, and the `(B, T, 1)` result loses that axis again.
+**`token_scores`** reads along the vocabulary axis (`V`, axis 2), computing `out[b, t, k] = logits[b, t, index[b, t, k]]`. Because we select one token per `(b, t)` position, `k` has size 1. Adding a trailing size-1 axis to `ids` gives shape `(B, T, 1)`, and removing axis 2 from the `(B, T, 1)` output restores `(B, T)`.
 
-**`take_columns`** reads along axis 1 of two: `out[b, k] = values[b, idx[b, k]]`. The
-formula and the specification are the same line.
+**`take_columns`** reads along axis 1 of a 2D tensor, computing `out[b, k] = values[b, idx[b, k]]`. The index `idx` already has two axes, so it passes directly into the gather.
 
-**`reorder_steps`** reads along `T`: `out[b, t, d] = x[b, index[b, t, d], d]`. The
-specification wants `x[b, perm[b, t], d]`, so `index[b, t, d] = perm[b, t]` for every
-`d`: the permutation repeated along the feature axis. `expand` makes that repetition
-without copying.
+**`reorder_steps`** reads along the time axis (`T`, axis 1), computing `out[b, t, d] = x[b, index[b, t, d], d]`. We want `x[b, perm[b, t], d]`, which means `index[b, t, d]` must equal `perm[b, t]` for every feature `d`. Repeating `perm[:, :, None]` along the feature axis with `expand` creates that `(B, T, D)` index without copying memory.
 
 ## Reference solution (PyTorch)
 
@@ -40,7 +30,7 @@ def reorder_steps(x, perm):
     return torch.gather(x, 1, index)
 ```
 
-In JAX and MLX:
+In JAX and MLX, `take_along_axis` broadcasts size-1 axes automatically:
 
 ```python
 jnp.take_along_axis(logits, ids[:, :, None], axis=2).squeeze(2)
@@ -48,7 +38,7 @@ jnp.take_along_axis(values, idx, axis=1)
 jnp.take_along_axis(x, perm[:, :, None], axis=1)  # the (B, T, 1) index is broadcast over D
 ```
 
-The same reads as paired indexing, for comparison:
+For comparison, here are the same three reads written with paired indexing:
 
 ```python
 b = torch.arange(B)[:, None]  # (B, 1)
@@ -58,36 +48,20 @@ values[b, idx]  # take_columns
 x[b, perm]  # reorder_steps
 ```
 
-Paired indexing names every indexed coordinate with a tensor. A gather names only the
-one that varies and leaves the others implicit, which is why its index must have the
-full rank.
+Paired indexing supplies an explicit index tensor for every indexed axis. A gather names only the axis that varies and leaves the remaining coordinates implicit, which is why the index must match the input's rank.
 
 ## Common mistakes
 
-- **The gather on the wrong axis.** `gather(logits, 1, ids[:, :, None])` reads
-  `logits[b, ids[b, t], 0]`: the id is used as a position. It raises only when an id
-  is at least `T`, so a small vocabulary or a long sequence hides it. The same holds for
-  `gather(values, 0, idx)`, which uses the index as a row number.
-- **A bare `squeeze()` after the gather.** `gather(logits, 2, ids[:, :, None])` is
-  `(B, T, 1)`, and `squeeze()` removes the last axis together with every other axis of
-  size 1: a batch of one comes back as `(T,)` and a single position as `(B,)`. Name
-  the axis, `squeeze(2)`, or index it away with `[:, :, 0]`.
-- **Plain indexing with the index tensor.** `logits[:, :, ids]` applies all of `ids`
-  at every position and returns `(B, T, B, T)`.
-- **An unexpanded index in PyTorch.** `gather(x, 1, perm[:, :, None])` returns
-  `(B, T, 1)`: feature 0 of each chosen step and nothing else. The shape looks like
-  something to fix afterwards, and expanding the *result* to `(B, T, D)` copies
-  feature 0 into every feature. Expand the index, before the gather.
-- **`perm` on the batch axis.** `gather(x, 0, index)` picks a batch row with a step
-  number: `out[b, t] = x[perm[b, t], t]`. It runs whenever `T <= B`.
-- **One permutation for the whole batch.** `x[:, perm[0]]` is right for a batch of one
-  and for batches whose rows share a permutation.
+- **Gathering along the wrong axis.** Calling `gather(logits, 1, ids[:, :, None])` reads `logits[b, ids[b, t], 0]`, treating the token id as a sequence position. It only raises an error when an id is at least `T`, so a small vocabulary or a long sequence hides the bug. The same happens with `gather(values, 0, idx)`, which treats column indices as row numbers.
+- **Using a bare `squeeze()` after the gather.** In `token_scores`, `gather(logits, 2, ids[:, :, None])` has shape `(B, T, 1)`. Calling `squeeze()` without an axis removes every size-1 axis, turning a batch of 1 into `(T,)` and a single step into `(B,)`. Always name the axis with `squeeze(2)` or index it away with `[:, :, 0]`.
+- **Using plain indexing with the index tensor.** Writing `logits[:, :, ids]` applies the entire `(B, T)` index tensor at every `(b, t)` position and returns shape `(B, T, B, T)`.
+- **Forgetting to expand the index in PyTorch.** Calling `gather(x, 1, perm[:, :, None])` returns shape `(B, T, 1)`, containing only feature 0 of each chosen step. Expanding the *result* to `(B, T, D)` afterwards copies feature 0 across all features. Expand `perm[:, :, None]` before calling `gather`.
+- **Applying `perm` on the batch axis.** Calling `gather(x, 0, index)` picks a batch row using a step number (`out[b, t] = x[perm[b, t], t]`). This runs without error whenever `T <= B`.
+- **Reusing one permutation for the whole batch.** Writing `x[:, perm[0]]` works only when `B == 1` or when every batch item shares the same permutation.
 
 ## Complexity
 
-Each function copies one value per entry of the result: $O(B\,T)$, $O(B\,K)$, and
-$O(B\,T\,D)$. The expanded index of `reorder_steps` is a view in PyTorch and costs no
-memory.
+Each function copies one float per output entry, taking $O(B\,T)$ time for `token_scores`, $O(B\,K)$ for `take_columns`, and $O(B\,T\,D)$ for `reorder_steps`. In PyTorch, `expand` returns a view and allocates no extra memory.
 
 ## In the three frameworks
 
@@ -101,16 +75,6 @@ memory.
 | an index out of range | `gather`: `RuntimeError`. `take_along_dim`: not checked, returns some in-range value | NaN there for a float input, the minimum integer for an integer input | not checked, the value is unspecified |
 | a negative index | `gather`: `RuntimeError`. `take_along_dim`: counts from the end | counts from the end | counts from the end |
 
-The difference that changes results is the fourth row. `torch.gather` takes
-the index literally: the output has exactly the index's shape, and nothing is
-broadcast. `torch.take_along_dim` and the two `take_along_axis` functions broadcast
-the index against the other axes of `x`, so `(B, T, 1)` reorders whole steps. Code
-ported from JAX or MLX to `torch.gather` therefore needs the `expand`, and without it
-returns one feature.
+The fourth row is the difference most likely to change results. `torch.gather` takes the index shape literally without broadcasting, so the output always matches `index.shape`. By contrast, `torch.take_along_dim`, `jnp.take_along_axis`, and `mx.take_along_axis` broadcast size-1 axes of the index against `x`, so a `(B, T, 1)` index reorders full feature vectors. Porting code from JAX or MLX to `torch.gather` therefore requires an explicit `expand`.
 
-The other difference is what happens to a bad index. `torch.gather` raises for an index
-that is out of range or negative, and it is the only one that does:
-`torch.take_along_dim` returned in-range values without raising when this was run on
-PyTorch 2.15. JAX's `take_along_axis` fills an out-of-range read with NaN in a float
-array and with the minimum integer in an integer array (plain indexing clamps
-instead), and MLX does not check at all.
+The frameworks also differ on out-of-range and negative indices. `torch.gather` is the only variant that raises an error for both. On PyTorch 2.15, `torch.take_along_dim` returned in-range values without raising. JAX's `take_along_axis` fills out-of-range reads with `NaN` for float arrays and the minimum integer for integer arrays (unlike plain indexing, which clamps), while MLX performs no bounds check.

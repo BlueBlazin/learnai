@@ -1,28 +1,12 @@
 ## The idea
 
-A tensor operation picks its result type from the types of its operands before it
-looks at any value. If the true result does not fit that type, the bits that do not
-fit are dropped. So for every integer operation there are two questions: what is the
-range of the true result, and what type will hold it.
+A tensor operation chooses its output dtype from its operand dtypes before reading any values. If the exact result falls outside that dtype's range, the high bits are dropped silently. Before writing any integer expression, check the true range of the intermediate result and make sure the computation runs in a type wide enough to hold it.
 
-**`dequantize`.** `q` is int8, and a Python int takes the type of the tensor it meets,
-so `q - zero_point` is an int8 subtraction. Its true range is $[-255, 255]$. Whenever
-the difference leaves $[-128, 127]$ it wraps by 256: `100 - (-100)` is `200 - 256 =
--56`. The fix is to change the type before subtracting. float32 represents every
-integer up to $2^{24}$ exactly, so casting `q` to float32 first loses nothing, and
-the result has to be float32 anyway.
+**`dequantize`.** Because `q` is `int8` and `zero_point` is a Python int, `q - zero_point` runs in `int8`. The true difference lies in $[-255, 255]$, so any value outside $[-128, 127]$ wraps by 256. For example, `100 - (-100)` becomes `200 - 256 = -56`. Cast `q` before subtracting. Since `float32` represents every integer up to $2^{24}$ exactly and the output must be `float32` anyway, casting `q` to `float32` first is both exact and direct.
 
-**`saturating_add_u8`.** uint8 plus uint8 is uint8, and the true range is
-$[0, 510]$. `200 + 100` is `300 - 256 = 44`. Clamping the uint8 sum at 255 cannot
-help: every uint8 value is already at most 255. Add in int16, clamp there, and cast
-back. The cast back is exact because the clamp has put every value in range.
+**`saturating_add_u8`.** Adding two `uint8` tensors produces a `uint8` result, even though the exact sum ranges over $[0, 510]$. Thus `200 + 100` wraps to `300 - 256 = 44`. Clamping after adding in `uint8` does nothing because every `uint8` value is already at most 255. Instead, cast both operands to `int16`, add, clamp at 255, and cast back to `uint8`. The final cast is lossless because the clamp keeps every value in $[0, 255]$.
 
-**`block_and_offset`.** Floor and truncation differ exactly when the true quotient is
-negative and not a whole number: $-7 / 3 = -2.33$ is $-3$ rounded down and $-2$
-rounded toward zero. The remainder follows the quotient, since
-`pos = block * size + offset` must hold: floor gives an offset in $[0, \text{size})$,
-truncation gives $-1$ for position $-7$. A block table indexed by `block` and a
-buffer indexed by `offset` need the floor pair.
+**`block_and_offset`.** Floor division and truncating division disagree whenever the true quotient is negative and non-integer. For `-7 / 3 = -2.33...`, floor gives `-3` while truncation gives `-2`. Because `pos = block * size + offset` must hold, floor division yields an offset in $[0, \text{size})$, whereas truncation yields `-1` for position `-7`. Indexing a block table by `block` and a buffer by `offset` requires the floor pair.
 
 ## Reference solution (PyTorch)
 
@@ -42,46 +26,25 @@ def block_and_offset(pos, size):
     return block, offset
 ```
 
-In JAX and MLX the casts are `x.astype(...)`, the clamp is `minimum(total, 255)`, and
-the division is `floor_divide` and `remainder`.
+In JAX and MLX, replace `.to(...)` with `.astype(...)`, use `minimum(total, 255)` to clamp, and use `floor_divide` and `remainder`.
 
-Other correct forms. For the sum, staying in uint8 and never overflowing:
-`a + torch.minimum(b, 255 - a)`, since `255 - a` is the room left; or detecting the
-wrap, `torch.where(a + b < a, 255, a + b)`, since a wrapped sum is smaller than
-either operand. For the division, `pos // size` and `pos % size` are the floor pair
-in all three frameworks at the versions used here, and `jnp.divmod` and `mx.divmod`
-return both.
+Other valid implementations exist. You can stay in `uint8` without overflowing by writing `a + torch.minimum(b, 255 - a)`, where `255 - a` is the remaining headroom. You can also detect the wrap with `torch.where(a + b < a, 255, a + b)`, because a wrapped unsigned sum is always smaller than either operand. For `block_and_offset`, `pos // size` and `pos % size` compute the floor pair in all three frameworks at the versions tested here, and `jnp.divmod` and `mx.divmod` return both at once.
 
 ## Common mistakes
 
-- **Subtracting in int8.** `(q - zero_point) * scale` is the formula as written and
-  wraps for half of the codes when `zero_point = -128`. It is right when
-  `zero_point = 0`, which is the symmetric quantization most tests start with.
-- **The zero point after the scale.** `q * scale - zero_point` subtracts a code from
-  a real number. The two agree when `scale = 1` or `zero_point = 0`.
-- **float64 for safety.** `q.to(torch.float64)` gives the right numbers in the wrong
-  type, and a float64 tensor makes every float32 tensor it meets float64 in PyTorch.
-  JAX truncates a request for float64 to float32 with a warning, and MLX raises for
-  float64 on the GPU.
-- **Adding in uint8.** `a + b`, with or without a `clamp` after it.
-- **Clamping after the wrap.** `torch.clamp(a + b, max=255)` returns `a + b`.
-- **Forgetting to cast back.** The clamped int16 tensor has the right values and
-  twice the memory, and it is not what a uint8 buffer or a later uint8 operation
-  expects. The result type is part of this function's contract.
-- **Truncating division.** `torch.div(pos, size, rounding_mode="trunc")`,
-  `int(pos / size)`, and a float quotient cast to an integer all round toward zero.
-  Block `0` then covers positions `-(size - 1)` to `size - 1`, almost twice as many
-  as any other block.
-- **`fmod` for the offset.** Its result has the sign of `pos`, so negative positions
-  get negative offsets, which index from the end of a buffer without an error.
-- **Dividing in float.** `torch.floor(pos / size)` rounds down correctly and divides
-  inexactly: float32 holds `999999999` as `1000000000`, so position `999999999` with
-  `size = 1000` lands in block `1000000` where `999999` is right.
+- **Subtracting in `int8`.** Writing `(q - zero_point) * scale` directly wraps half of the codes when `zero_point = -128`. It happens to pass when `zero_point = 0`, which is the symmetric quantization case most tests try first.
+- **Applying `zero_point` after scaling.** `q * scale - zero_point` subtracts a quantized code from a scaled float. It only agrees with the true formula when `scale = 1` or `zero_point = 0`.
+- **Casting to `float64`.** `q.to(torch.float64)` produces the right numbers in the wrong dtype, and in PyTorch a `float64` tensor promotes every `float32` tensor it touches to `float64`. JAX downgrades `float64` to `float32` with a warning by default, and MLX raises an error for `float64` on GPU.
+- **Adding in `uint8`.** Computing `a + b` directly wraps sums above 255.
+- **Clamping after the wrap.** `torch.clamp(a + b, max=255)` returns `a + b` unchanged because the `uint8` sum has already wrapped into $[0, 255]$.
+- **Forgetting to cast back to `uint8`.** Leaving the clamped result in `int16` doubles memory usage and violates the output dtype contract expected by downstream `uint8` buffers and operations.
+- **Using truncating division.** `torch.div(pos, size, rounding_mode="trunc")`, `int(pos / size)`, and casting a float quotient to int all round toward zero. That makes block `0` span `-(size - 1)` through `size - 1`, nearly twice as many positions as every other block.
+- **Using `fmod` for the offset.** `fmod` keeps the sign of `pos`, so negative positions produce negative offsets that silently index from the end of a buffer.
+- **Dividing in `float32`.** `torch.floor(pos / size)` rounds in the right direction, but `float32` division is inexact for large integers. Because `float32` rounds `999999999` to `1000000000`, `size = 1000` puts that position in block `1000000` instead of `999999`.
 
 ## Complexity
 
-One pass over the input for each function, $O(n)$. The int16 intermediate of the sum
-is twice the size of its inputs while it lives.
+Each function makes one pass over an input of $n$ elements in $O(n)$ time. The `int16` intermediate in `saturating_add_u8` temporarily uses twice the memory of one input tensor.
 
 ## In the three frameworks
 
@@ -111,11 +74,4 @@ is twice the size of its inputs while it lives.
 
 Every entry was run on PyTorch 2.15, JAX 0.12, and MLX 0.32.4.
 
-The promotion rules agree on everything this problem needs: a Python int never
-widens a tensor, and equal types stay as they are. Three differences are worth
-knowing. In PyTorch a tensor with no axes behaves like a Python number in promotion,
-so an int32 zero point stored as a 0-d tensor still leaves `q - zero_point` in int8,
-where JAX and MLX widen to int32. MLX refuses a Python int that does not fit the
-tensor's type, which turns one silent wrap into an error. And an out-of-range float
-cast to an integer type wraps in PyTorch and saturates in JAX and MLX on this
-machine, so clamp while still in float, as Affine int8 Quantization does.
+All three frameworks agree on the promotion rules needed for this problem. A Python int never widens a tensor, and operations on equal types preserve that type. Three cross-framework differences are worth noting. First, PyTorch treats a 0D tensor like a Python scalar during promotion, so subtracting a 0D `int32` zero point still leaves `q - zero_point` in `int8`, whereas JAX and MLX promote to `int32`. Second, MLX rejects a Python int that does not fit in the tensor's dtype, turning a silent wrap into a `ValueError`. Third, casting an out-of-range float to an integer wraps in PyTorch but saturates in JAX and MLX on this machine, so always clamp while still in floating point.

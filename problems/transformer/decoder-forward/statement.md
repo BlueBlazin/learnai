@@ -1,8 +1,7 @@
-Implement the whole forward pass of a modern decoder-only transformer: token ids in,
-next-token logits out, from a dictionary of checkpoint weights. Every building block
-is one you have already written and is available from the kit; the work is assembling
-them in the right order, with the right tensor in each slot, for a layout in which
-almost every mistake still produces logits of the right shape.
+Implement the full forward pass of a modern decoder-only transformer that maps token
+IDs to next-token logits from a dictionary of checkpoint weights. Every individual
+building block is available in the kit, so your task is to wire them together in the
+exact order and layout expected by the checkpoint.
 
 ![This problem is the whole forward pass, from token ids to next-token probabilities.](assets/map.svg)
 
@@ -12,74 +11,77 @@ almost every mistake still produces logits of the right shape.
 def forward(params, cfg, tokens): ...
 ```
 
-The model is the layout shared by Llama, Qwen, Mistral, and Granite: token embedding
-without a position embedding, `cfg.n_layers` pre-norm blocks with rotary positions and
-grouped-query attention, a final norm, and a linear output head.
+The architecture follows the layout shared by Llama, Qwen, Mistral, and Granite. It
+consists of a token embedding table without a learned position embedding,
+`cfg.n_layers` pre-norm blocks with rotary position embeddings (RoPE) and grouped-query
+attention (GQA), a final RMSNorm, and a linear output head.
 
-`cfg` is a [`DecoderConfig`](../../../python/src/learnai/kit/decoder.py) with the
-fields `vocab_size`, `d_model`, `n_layers`, `n_heads`, `n_kv_heads`, `d_mlp`,
-`rope_base`, `norm_eps`, `tie_embeddings`, and the derived
-`head_dim = d_model // n_heads`. `params` maps the names in the table under
-[Shapes](#shapes) to tensors. All linear weights are in `(out, in)` layout, and there
-are no biases. Write $D$ for `d_model`, $H$ for `n_heads`, $H_{kv}$ for `n_kv_heads`,
-and $d$ for `head_dim`.
+The input `tokens` is an integer tensor of shape `(B, T)` with token IDs in
+`[0, vocab_size)`, where $B$ is the batch size and $T$ is the sequence length. `cfg` is
+a [`DecoderConfig`](../../../python/src/learnai/kit/decoder.py) with fields
+`vocab_size`, `d_model`, `n_layers`, `n_heads`, `n_kv_heads`, `d_mlp`, `rope_base`,
+`norm_eps`, `tie_embeddings`, and the derived `head_dim = d_model // n_heads`. `params`
+maps the weight names in [Shapes](#shapes) to float32 tensors. All linear weights use
+`(out, in)` layout with no biases.
 
-**1. Embed.** $x = E[\text{tokens}]$ with $E$ = `model.embed_tokens.weight`: shape
-`(B, T, D)`. The embeddings are not scaled.
+Write $D$ for `d_model`, $H$ for `n_heads`, $H_{kv}$ for `n_kv_heads`, and $d$ for
+`head_dim`. The forward pass returns float32 logits of shape `(B, T, vocab_size)`,
+where row `[b, t]` scores the next token following `tokens[b, : t + 1]`.
 
-**2. Blocks.** For layer $i = 0, \dots, $ `n_layers` $- 1$, in order, with the weights
+**1. Embed.** Look up token vectors $x = E[\text{tokens}]$ using
+$E =$ `model.embed_tokens.weight`, giving shape `(B, T, D)`. Do not scale the
+embeddings.
+
+**2. Blocks.** For layer $i = 0, \dots, \texttt{n\_layers} - 1$ in order, using weights
 named `model.layers.{i}.*`:
 
 $$
 x \leftarrow x + \operatorname{Attn}_i\big(\operatorname{RMSNorm}(x;\, g^{(i)}_1)\big), \qquad
-x \leftarrow x + \operatorname{MLP}_i\big(\operatorname{RMSNorm}(x;\, g^{(i)}_2)\big),
+x \leftarrow x + \operatorname{MLP}_i\big(\operatorname{RMSNorm}(x;\, g^{(i)}_2)\big).
 $$
 
-where $g_1$ is `input_layernorm.weight`, $g_2$ is `post_attention_layernorm.weight`,
-and every RMSNorm in the model uses `eps = cfg.norm_eps`.
+Here $g^{(i)}_1$ is `input_layernorm.weight`, $g^{(i)}_2$ is
+`post_attention_layernorm.weight`, and every RMSNorm in the model uses
+`eps = cfg.norm_eps`.
 
-$\operatorname{Attn}_i(u)$, for a normalized input $u$ of shape `(B, T, D)`:
+For a normalized input $u$ of shape `(B, T, D)`, $\operatorname{Attn}_i(u)$ performs
+five steps:
 
-1. Project: $q = u\,W_q^\top$ of shape `(B, T, H * d)`, and $k = u\,W_k^\top$,
+1. Project $q = u\,W_q^\top$ of shape `(B, T, H * d)`, and $k = u\,W_k^\top$ and
    $v = u\,W_v^\top$ of shape `(B, T, H_kv * d)`.
-2. Split heads: reshape the last axis into `(heads, d)` and move the head axis forward.
-   $q$ becomes `(B, H, T, d)`; $k$ and $v$ become `(B, H_kv, T, d)`. Head $h$ owns
-   features $h d, \dots, (h + 1) d - 1$ of the projection.
-3. Rotate $q$ and $k$, and not $v$, with RoPE: within each head, the feature pair
-   $(2j, 2j + 1)$ of the vector at position $t$ is rotated counterclockwise by the
-   angle $t \cdot \texttt{rope\_base}^{-2j/d}$. Positions are $t = 0, \dots, T - 1$ in
-   every row. This is `ops.rope(x, positions, cfg.rope_base)`.
-4. Attend causally with grouped-query attention: query head $h$ uses key/value head
-   $\lfloor h / (H / H_{kv}) \rfloor$, the scores are divided by $\sqrt{d}$, and query
-   position $t$ attends to key positions $s \le t$ only. This is
-   `ops.attention(q, k, v, mask)` with a boolean mask that is `True` where $s \le t$;
-   the result has shape `(B, H, T, d)`.
+2. Split heads by reshaping the last axis into `(heads, d)` and moving the head axis to
+   position 1. Now $q$ has shape `(B, H, T, d)`, while $k$ and $v$ have shape
+   `(B, H_kv, T, d)`. Head $h$ owns features $h d, \dots, (h + 1) d - 1$ of the
+   projection.
+3. Rotate $q$ and $k$ (and not $v$) with RoPE. Within each head, feature pair
+   $(2j, 2j + 1)$ at position $t$ rotates counterclockwise by
+   $t \cdot \texttt{rope\_base}^{-2j/d}$, using positions $t = 0, \dots, T - 1$ for
+   every row. Compute this with `ops.rope(x, positions, cfg.rope_base)`.
+4. Run causal grouped-query attention. Query head $h$ pairs with key/value head
+   $\lfloor h / (H / H_{kv}) \rfloor$, attention scores are divided by $\sqrt{d}$, and
+   query position $t$ attends only to key positions $s \le t$. Compute this with
+   `ops.attention(q, k, v, mask)` using a boolean mask that is `True` where $s \le t$.
+   The output has shape `(B, H, T, d)`.
 5. Merge heads back to `(B, T, H * d)` (the inverse of step 2) and project with
    $W_o^\top$.
 
-$\operatorname{MLP}_i(u)$ is the SwiGLU MLP, `ops.swiglu(u, W_gate, W_up, W_down)`.
+$\operatorname{MLP}_i(u)$ is the SwiGLU MLP, computed with
+`ops.swiglu(u, W_gate, W_up, W_down)`.
 
-**3. Final norm.** $x \leftarrow \operatorname{RMSNorm}(x;\, g)$ with $g$ =
-`model.norm.weight`.
+**3. Final norm.** Apply $x \leftarrow \operatorname{RMSNorm}(x;\, g)$ with
+$g =$ `model.norm.weight` and `eps = cfg.norm_eps`.
 
-**4. Head.** $\text{logits} = x\,W_{\text{head}}^\top$, where $W_{\text{head}}$ is
+**4. Head.** Compute $\text{logits} = x\,W_{\text{head}}^\top$, choosing $W_{\text{head}}$
+from `cfg.tie_embeddings`:
 
-- `model.embed_tokens.weight` if `cfg.tie_embeddings` is `True`. In that case `params`
-  has **no** key `lm_head.weight`, exactly like a checkpoint with tied embeddings;
-- `lm_head.weight` if `cfg.tie_embeddings` is `False`.
+- If `cfg.tie_embeddings` is `True`, use `model.embed_tokens.weight`. In this case
+  `params` has **no** `lm_head.weight` key, matching a tied checkpoint.
+- If `cfg.tie_embeddings` is `False`, use `lm_head.weight`.
 
-Arguments and result:
-
-- `params`: a dict from names to float32 tensors.
-- `cfg`: the `DecoderConfig` the weights were made for.
-- `tokens`: integer tensor of shape `(B, T)`, ids in `[0, vocab_size)`.
-- Returns the logits: float32, shape `(B, T, vocab_size)`. Row `[b, t]` scores the
-  token that follows `tokens[b, : t + 1]`.
-
-Use the kit's [`ops`](../../../python/src/learnai/kit/ops/__init__.py) for the
-blocks: `ops.rms_norm`, `ops.rope`, `ops.attention` (which does the grouped-query
-pairing when `k` and `v` have fewer heads than `q`), and `ops.swiglu`. Do not call the
-kit's own forward pass, `decoder_forward_ref` or `decoder_block_ref`.
+Use [`learnai.kit.ops`](../../../python/src/learnai/kit/ops/__init__.py) for the
+primitives: `ops.rms_norm`, `ops.rope`, `ops.attention` (which handles grouped-query
+pairing automatically when `k` and `v` have fewer heads than `q`), and `ops.swiglu`. Do
+not call the kit's reference forward pass, `decoder_forward_ref` or `decoder_block_ref`.
 
 ## Shapes
 
@@ -100,7 +102,7 @@ kit's own forward pass, `decoder_forward_ref` or `decoder_block_ref`.
 
 ## Example
 
-A one-layer model of width 4 with two query heads sharing one key/value head, and the
+A one-layer model of width 4 with two query heads sharing one key/value head, using the
 kit's seeded weights:
 
 ```python
@@ -116,11 +118,11 @@ forward(params, cfg, tokens)
 #   [ 0.527882, -0.490735, -2.421456, -5.390296, -1.365599]]]
 ```
 
-Here `head_dim` is 2, so `q_proj.weight` is `(4, 4)` and `k_proj.weight` and
-`v_proj.weight` are `(2, 4)`; each head holds a single RoPE pair, rotated by $t$
+Here `head_dim` is 2, so `q_proj.weight` has shape `(4, 4)` while `k_proj.weight` and
+`v_proj.weight` have shape `(2, 4)`. Each head holds a single RoPE pair rotated by $t$
 radians at position $t$.
 
-The model is causal, which you can see by changing the last token only:
+Changing only the last token illustrates causality:
 
 ```python
 forward(params, cfg, [[1, 3, 4]])
@@ -129,26 +131,29 @@ forward(params, cfg, [[1, 3, 4]])
 #   [ 0.037625, -0.767143,  0.937001, -1.124330,  0.166404]]]
 ```
 
-The first two rows are identical, because positions 0 and 1 cannot see position 2.
+The first two rows stay identical because positions 0 and 1 cannot attend to position 2.
 
 ## Constraints
 
 - Results are compared with the kit's oracle to a relative tolerance of `1e-3` and an
-  absolute tolerance of `1e-4` (the pass is a deep stack; the logits have a standard
-  deviation of about 2).
+  absolute tolerance of `1e-4` (the pass is a deep stack, and the logits have a
+  standard deviation of about 2).
 - $1 \le B \le 4$, $2 \le T \le 16$, `n_layers` $\le 4$, `d_model` $\le 32$,
   `vocab_size` $\le 64$. `n_heads` is a multiple of `n_kv_heads`, and `head_dim` is
   even.
-- `cfg.norm_eps` and `cfg.rope_base` are not always the defaults; read them from `cfg`.
+- `cfg.norm_eps` and `cfg.rope_base` are not always the defaults. Always read them from
+  `cfg`.
 - Do not call `decoder_forward_ref` or `decoder_block_ref`.
 
 ## Why this matters
 
-This function is what an inference engine *is*: everything else in serving (the KV
-cache, batching, quantization, speculative decoding) is a way of computing these same
-logits faster or cheaper, and each of them is tested by comparing against this plain
-pass. It is also the code you write when you port a model to a new runtime, and the
-port is where the conventions bite. A checkpoint lists tensors, not wiring: it does not
-say that values are left unrotated, that the stream gets one more norm before the
-head, or that a missing `lm_head.weight` means "reuse the embedding". Get one of these
-wrong and nothing crashes; the model just becomes somewhat, or completely, worse.
+This forward pass defines the model's exact behavior. Every inference optimization—such
+as KV caching, batching, quantization, and speculative decoding—aims to compute these
+same logits faster or cheaper and is validated by comparing against this plain pass.
+
+It is also the exact code you write when porting a model to a new runtime, where subtle
+conventions cause silent bugs. A checkpoint lists tensor shapes rather than wiring. It
+does not tell you that values stay unrotated, that the stream takes one final norm
+before the head, or that a missing `lm_head.weight` means reusing the embedding matrix.
+If any of those details are wrong, the code still runs without crashing while model
+quality quietly collapses.

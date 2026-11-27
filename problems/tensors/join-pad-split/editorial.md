@@ -1,26 +1,14 @@
 ## The idea
 
-`cat` and `stack` differ in one thing: whether the axis they join along exists
-before the call. Count the axes of the pieces and of the result, and the choice is
-made.
+`cat` and `stack` differ in one way. `cat` joins along an axis that already exists, while `stack` creates a new axis. Comparing the number of axes in the inputs and the output tells you which one you need.
 
-**`pad_rows`** is both, one after the other. Padding a row is a join along the axis
-the row has: `pad` values and tokens, in the order the side asks for. That gives `B`
-tensors of shape `(T_max,)`. Turning them into `(B, T_max)` adds an axis, so it is a
-`stack`.
+**`pad_rows`** uses both operations in sequence. Padding a single row joins `pad` values and tokens along the row's existing 1D axis, giving `B` tensors of shape `(T_max,)`. Combining those `B` rows into a `(B, T_max)` batch adds a batch axis, so it uses `stack`.
 
-The mask is a statement about positions, and the lengths determine it: on the right
-side row `i` is real at positions `t < n_i`, on the left at `t >= T_max - n_i`. Both
-are a comparison of `arange(T_max)` with a per-row number. Comparing `ids` with
-`pad` looks equivalent and is not, because many models pad with a token that also
-occurs in text (their end-of-sequence token).
+The mask depends only on sequence lengths. For row `i` of length $n_i$, right padding places real tokens at positions `t < n_i`, and left padding places them at positions `t >= T_max - n_i`. Both compare `arange(T_max)` against a per-row threshold. Checking `ids != pad` looks equivalent, but it breaks whenever a model uses a token that also appears in text (such as the end-of-sequence token) as its pad ID.
 
-**`shift_right`** joins a `(B, 1)` column of `bos` with the `(B, T - 1)` block
-`ids[:, :-1]` along axis 1, which both have: a `cat`. The slice `ids[:, :1]` keeps
-the column axis, where `ids[:, 0]` would drop it and leave nothing to `cat` along.
+**`shift_right`** joins a `(B, 1)` column filled with `bos` and the `(B, T - 1)` slice `ids[:, :-1]` along axis 1. Both pieces already have that column axis, so this is a `cat`. Indexing `ids[:, :1]` keeps the 2D shape `(B, 1)`, whereas `ids[:, 0]` would drop axis 1 and leave a 1D tensor that cannot be concatenated along axis 1.
 
-**`stack_steps`** makes `(B, T, V)` from pieces of shape `(B, V)`: a new axis at
-position 1.
+**`stack_steps`** turns `T` tensors of shape `(B, V)` into one tensor of shape `(B, T, V)`. That inserts a new axis at position 1, so it is a `stack` with axis 1.
 
 ## Reference solution (PyTorch)
 
@@ -50,49 +38,27 @@ def stack_steps(steps):
     return torch.stack(steps, dim=1)
 ```
 
-The JAX and MLX versions use `pad(row, (gap, 0), constant_values=pad)`, `stack`, and
-`concatenate(..., axis=1)`.
+The JAX and MLX versions use `pad(row, (gap, 0), constant_values=pad)`, `stack`, and `concatenate(..., axis=1)`.
 
-Other correct forms: allocate `torch.full((B, T_max), pad)` and assign each row into
-a slice of it (in JAX with `.at[i, :n].set(row)`);
-`torch.nn.utils.rnn.pad_sequence(rows, batch_first=True, padding_value=pad,
-padding_side=side)` for `ids`; `F.pad(ids, (1, -1), value=bos)` for the shift, since
-a negative amount crops in PyTorch; and `torch.roll(ids, 1, dims=1)` followed by
-writing `bos` into column 0.
+Several other implementations are also valid. You can allocate a `(B, T_max)` tensor filled with `pad` and write each row into its slice (using `.at[i, :n].set(row)` in JAX). In PyTorch, `torch.nn.utils.rnn.pad_sequence(rows, batch_first=True, padding_value=pad, padding_side=side)` builds `ids` directly, and `F.pad(ids, (1, -1), value=bos)` shifts right because negative pad amounts crop in PyTorch. You can also call `torch.roll(ids, 1, dims=1)` and then overwrite column 0 with `bos`.
 
 ## Common mistakes
 
-- **The sides exchanged.** `F.pad(row, (0, gap))` pads after the tokens. Equal-length
-  rows cannot show it, and neither can the longest row of any batch.
-- **The mask of the padding.** Some libraries use true for "ignore this position"
-  (`key_padding_mask` in `torch.nn.MultiheadAttention`). Here true means a real
-  token.
-- **`mask = ids != pad`.** False at every real token that has the pad id.
-- **An integer mask.** `mask.to(torch.int64)` holds the right numbers, and `~mask`
-  on it is `-1` and `-2`. The specification asks for booleans.
-- **The shift by `roll`.** `torch.roll(ids, 1, dims=1)` puts the last token of each
-  row in column 0. Without `dims`, PyTorch (and JAX and MLX without `axis`) rolls the
-  flattened tensor, so column 0 of row `b` receives the last token of row `b - 1`.
-- **Forgetting to drop the last column.** `cat([first, ids], dim=1)` is
-  `(B, T + 1)`.
-- **Shifting left.** Dropping the first column and appending at the end is the
-  target sequence of a training step, not the input.
-- **`stack` on the default axis.** `torch.stack(steps)` is `(T, B, V)`. It has the
-  right shape when `B == T`, with rows and steps exchanged.
-- **`stack` on the last axis.** `dim=-1` gives `(B, V, T)`, right in shape when
-  `T == V`.
-- **`cat` where a new axis is needed.** `torch.cat(steps, dim=1)` is `(B, T * V)`:
-  the steps of a row laid end to end. A `reshape(B, T, V)` after it happens to be
-  right, and after `cat(steps, dim=0)` it is not.
-- **A bare `squeeze()` on the result.** It removes the batch axis of a batch of one
-  and the step axis of a single step.
+- **Swapping left and right padding.** Calling `F.pad(row, (0, gap))` pads after the tokens. Tests with equal-length rows or the longest row in a batch will not catch this.
+- **Inverting the mask.** Some APIs (such as `key_padding_mask` in `torch.nn.MultiheadAttention`) use `True` for padding positions to ignore. Here `True` marks a real token.
+- **Computing `mask = ids != pad`.** This marks real tokens as `False` whenever their token ID equals `pad`.
+- **Returning an integer mask.** Converting the mask to `int64` keeps `0` and `1`, but bitwise negation `~mask` produces `-1` and `-2` instead of flipping booleans. The specification requires a boolean tensor.
+- **Shifting with `roll` alone.** `torch.roll(ids, 1, dims=1)` wraps the last token of each row into column 0. Calling `roll` without `dims` (or `axis` in JAX and MLX) flattens the tensor first, so column 0 of row `b` gets the last token of row `b - 1`.
+- **Forgetting to drop the last column.** `cat([first, ids], dim=1)` returns shape `(B, T + 1)` instead of `(B, T)`.
+- **Shifting left instead of right.** Dropping column 0 and appending at the end builds a training target sequence, not a right-shifted decoder input.
+- **Stacking on the default axis.** `torch.stack(steps)` produces shape `(T, B, V)`. When `B == T`, the shape still matches, but batch rows and steps are transposed.
+- **Stacking on the last axis.** Using `dim=-1` produces `(B, V, T)`, which has the right shape whenever `T == V`.
+- **Using `cat` instead of `stack`.** `torch.cat(steps, dim=1)` produces `(B, T * V)`, laying each row's steps end to end. A subsequent `reshape(B, T, V)` recovers the right layout after `dim=1`, but not after `cat(steps, dim=0)`.
+- **Calling bare `squeeze()` on the output.** This removes the batch axis when `B == 1` or the step axis when `T == 1`.
 
 ## Complexity
 
-Every function copies each output entry once: $O(B\,T_{max})$, $O(B\,T)$, and
-$O(B\,T\,V)$. A decode loop that calls `cat` on a growing tensor at every step
-copies the whole history each time, $O(T^2)$ in total, which is why
-`stack_steps` takes the list and joins once.
+Each function copies every output element once, giving $O(B\,T_{\max})$ for `pad_rows`, $O(B\,T)$ for `shift_right`, and $O(B\,T\,V)$ for `stack_steps`. In a decode loop, calling `cat` on a growing tensor at every step copies the full history each time for $O(T^2)$ total work. Collecting step outputs in a list and calling `stack_steps` once avoids that quadratic cost.
 
 ## In the three frameworks
 
@@ -113,9 +79,4 @@ copies the whole history each time, $O(T^2)$ in total, which is why
 
 Every entry was run on PyTorch 2.15, JAX 0.12, and MLX 0.32.4.
 
-Two rows change results without raising. A single pair given to `pad` means the last
-axis in PyTorch and every axis in JAX and MLX, so `(1, 2)` ported unchanged pads rows
-as well as columns. And the integer argument of `split` is a piece size in PyTorch
-and a number of pieces in JAX and MLX: `split(x, 2)` on six columns gives three
-pieces in one and two in the others. `cat` promotes silently in all three, so a
-`bos` column built as a float tensor turns the whole batch of ids into float32.
+Two of these cross-framework differences change results without raising an error. Passing a single pair `(1, 2)` to `pad` pads only the last axis in PyTorch, but pads every axis in JAX and MLX, so porting it unchanged pads rows as well as columns. Also, an integer argument to `split` means chunk size in PyTorch and number of chunks in JAX and MLX, so `split(x, 2)` on six columns returns three chunks in PyTorch and two in JAX and MLX. In addition, `cat` promotes dtypes silently in all three frameworks, so concatenating a float `bos` column with integer `ids` turns the entire batch into `float32`.

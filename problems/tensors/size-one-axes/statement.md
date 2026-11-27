@@ -1,6 +1,4 @@
-Write three small functions that each decide what happens to one axis: kept with size
-1, or removed. The values are easy. The shapes are the exercise, and they have to be
-right when a batch, a sequence, or a feature axis happens to have size 1.
+Implement three tensor functions (`normalize_over`, `last_step`, and `column`) that control whether a size-1 axis is preserved or removed. Each function must return the exact target shape even when a batch, sequence, or feature axis happens to have size 1.
 
 ## Specification
 
@@ -10,33 +8,25 @@ def last_step(x): ...
 def column(x, j): ...
 ```
 
-**`normalize_over(x, dim)`** divides `x` by its sum over the axis `dim`. The result has
-the shape of `x`, and every slice of it along `dim` sums to 1. For a matrix and
-`dim = 1`:
+**`normalize_over(x, dim)`** divides `x` by its sum along axis `dim`. The input `x` has between 1 and 4 axes and strictly positive entries, so no sum is zero. The integer `dim` may be negative, where `-1` refers to the last axis. The output has the same shape as `x`, and every slice along `dim` sums to 1. For a 2D matrix with `dim = 1`:
 
 $$
 \text{out}[i, j] = \frac{x[i, j]}{\sum_{k} x[i, k]} .
 $$
 
-`x` has one to four axes, and `dim` may be negative (`-1` is the last axis). Every
-entry of `x` is positive, so no sum is zero.
-
-**`last_step(x)`** takes `x` of shape `(B, T, D)` and returns the last step of every
-row, shape `(B, D)`:
+**`last_step(x)`** takes a 3D tensor `x` of shape `(B, T, D)` (batch size `B`, sequence length `T`, feature size `D`) and returns the final time step of each batch item with shape `(B, D)`:
 
 $$
 \text{out}[b, d] = x[b, T - 1, d] .
 $$
 
-**`column(x, j)`** takes `x` of shape `(B, V)` and a Python int `j` with $0 \le j < V$,
-and returns column `j` as a column, shape `(B, 1)`:
+**`column(x, j)`** takes a 2D tensor `x` of shape `(B, V)` and a Python integer `j` ($0 \le j < V$), and returns column `j` as a 2D column tensor of shape `(B, 1)`:
 
 $$
 \text{out}[b, 0] = x[b, j] .
 $$
 
-The result shapes are exactly these for every input. `last_step` returns two axes when
-`B = 1` or `D = 1`, and `column` returns two axes when `B = 1`.
+These output shapes apply to every input. `last_step` always returns a 2D tensor even when `B = 1` or `D = 1`, and `column` always returns a 2D tensor even when `B = 1`.
 
 ## Shapes
 
@@ -51,17 +41,12 @@ The result shapes are exactly these for every input. `last_step` returns two axe
 
 ## Tools
 
-- A reduction (`sum`, `mean`, `max`) removes the axis it reduces. With `keepdim=True`
-  (PyTorch) or `keepdims=True` (JAX, MLX) the axis stays, with size 1.
-- An integer index removes the axis it indexes. A slice keeps its axis, even when the
-  slice has length 1.
-- `squeeze(dim)` (PyTorch) or `squeeze(axis)` (JAX, MLX) removes one axis of size 1,
-  the one you name.
+- A reduction (`sum`, `mean`, `max`) removes the reduced axis by default. Passing `keepdim=True` (PyTorch) or `keepdims=True` (JAX, MLX) keeps that axis with size 1.
+- Indexing with an integer removes that axis. Indexing with a slice keeps the axis, even if the slice has length 1.
+- Calling `squeeze(dim)` (PyTorch) or `squeeze(axis)` (JAX, MLX) removes only the named size-1 axis.
 
 > [!WARNING]
-> `squeeze()` with no argument removes **every** axis of size 1, including a batch axis
-> that is 1 only because this batch holds one row. Code that uses it passes every test
-> with `B > 1` and returns the wrong shape for a single request.
+> Calling `squeeze()` with no argument removes **every** axis of size 1, including a batch axis that happens to have size 1 for a single input. Code using bare `squeeze()` passes every test where `B > 1` and breaks on a batch of size 1.
 
 ## Example
 
@@ -87,25 +72,17 @@ x = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]  # shape (2, 3)
 column(x, 1)  # [[2.0], [5.0]], shape (2, 1)
 ```
 
-`last_step(y)` has shape `(1, 4)`, not `(4,)`: a batch of one row is still a batch.
+`last_step(y)` has shape `(1, 4)` rather than `(4,)` because a batch of one item is still a batch.
 
 ## Constraints
 
-- `normalize_over` is compared with the reference to a relative tolerance of `1e-4` and
-  an absolute tolerance of `1e-6`. `last_step` and `column` copy values and are compared
-  exactly.
-- Every size is between 1 and 16, and entries of the input of `normalize_over` lie in
-  $[0.5, 4]$.
+- `normalize_over` is compared against the reference with a relative tolerance of `1e-4` and an absolute tolerance of `1e-6`. `last_step` and `column` copy values and are compared exactly.
+- Every axis size is between 1 and 16. Entries of the input to `normalize_over` lie in $[0.5, 4]$.
 - $-k \le \text{dim} < k$ for an input with $k$ axes.
 - No Python loops are needed.
 
 ## Why this matters
 
-RMSNorm divides by a mean that has to keep its axis, exactly as `normalize_over` does,
-and so does every softmax and every renormalization after a top-k or top-p filter.
-Unembedding Only What You Need starts from `last_step`. Gathering the Last Real Token
-asks for a `(B, V)` result, and a solution that ends in a bare `squeeze()` passes
-every case there but the one with a single row or a single vocabulary entry. That
-is how this bug behaves in a server: batched load tests pass, and the first request
-that arrives alone, a batch of one, either fails with a shape error two calls later
-or is broadcast against something it should not be.
+RMSNorm, softmax, and top-k/top-p renormalization all divide by a reduction whose axis must be kept, just like `normalize_over`. Unembedding Only What You Need starts with `last_step`. Gathering the Last Real Token expects a `(B, V)` output, where a bare `squeeze()` passes every case except a single-item batch or a size-1 vocabulary.
+
+In production inference servers, this bug passes batched load tests and fails only when a lone request arrives as a batch of size 1. At that point, the dropped batch axis either triggers a shape error downstream or broadcasts silently against the wrong dimension.

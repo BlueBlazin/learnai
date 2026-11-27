@@ -1,7 +1,4 @@
-Write three sums of products over named axes: attention scores, a bilinear form per
-batch row, and a projection with a different matrix for every head. Each is one line
-once its index equation is written down, and the equation is where the mistakes are:
-which axes are paired, which are summed, and in what order the rest come out.
+Implement three tensor contractions: attention scores between queries and keys, a bilinear form evaluated per batch row, and a linear projection that applies a separate weight matrix to each attention head. Each function computes a sum of products over named axes, where the pairing and output order of those axes determine the result.
 
 ## Specification
 
@@ -11,36 +8,29 @@ def bilinear(x, w, y): ...
 def per_head_project(x, w): ...
 ```
 
-**`attention_scores(q, k)`** takes queries `q` of shape `(B, H, T, D)` and keys `k` of
-shape `(B, H, S, D)`, and returns the dot product of every query with every key of the
-same batch row and head, shape `(B, H, T, S)`:
+**`attention_scores(q, k)`** computes dot products between queries and keys within each batch row and attention head. Here `B` is the batch size, `H` is the number of heads, `T` is the number of query positions, `S` is the number of key positions, and `D` is the head dimension. For every batch index `b`, head `h`, query position `t`, and key position `s`, the output is the dot product over `D`:
 
 $$
 \text{out}[b, h, t, s] = \sum_{d} q[b, h, t, d]\; k[b, h, s, d] .
 $$
 
-The query position comes before the key position. The scores are not divided by
-$\sqrt{D}$.
+The query position axis comes before the key position axis. Do not divide the scores by $\sqrt{D}$.
 
-**`bilinear(x, w, y)`** takes `x` of shape `(B, D)`, a matrix `w` of shape `(D, E)`,
-and `y` of shape `(B, E)`, and returns one number per row, shape `(B,)`:
+**`bilinear(x, w, y)`** evaluates a bilinear form for each batch row independently. Here `x` holds `B` vectors of size `D`, `w` is a `(D, E)` weight matrix, and `y` holds `B` vectors of size `E`. For each batch index `b`, the function returns one scalar:
 
 $$
 \text{out}[b] = \sum_{d} \sum_{e} x[b, d]\; w[d, e]\; y[b, e] .
 $$
 
-Row `b` of `x` meets row `b` of `y` and no other row.
+Row `b` of `x` pairs only with row `b` of `y`, never with other batch rows.
 
-**`per_head_project(x, w)`** takes `x` of shape `(B, H, T, D)` and one matrix per
-head, `w` of shape `(H, D, E)`, and returns shape `(B, H, T, E)`:
+**`per_head_project(x, w)`** projects a tensor of `B` batch rows, `H` heads, `T` positions, and feature dimension `D` into output dimension `E` using one `(D, E)` matrix per head:
 
 $$
 \text{out}[b, h, t, e] = \sum_{d} x[b, h, t, d]\; w[h, d, e] .
 $$
 
-Head `h` is multiplied by `w[h]`.
-
-- Every input is a float32 tensor, and every function returns a float32 tensor.
+Each head `h` uses its own matrix `w[h]`, shared across all batch rows and sequence positions.
 
 ## Shapes
 
@@ -59,38 +49,29 @@ Head `h` is multiplied by `w[h]`.
 
 ## Tools
 
-`einsum(equation, *operands)` (`torch.einsum`, `jnp.einsum`, `mx.einsum`) computes
-any sum of products from its index equation. The equation has one group of letters
-per operand, one letter per axis, then `->` and the letters of the result:
+`einsum(equation, *operands)` (`torch.einsum`, `jnp.einsum`, `mx.einsum`) computes any sum of products from an index equation. The equation lists one group of letters per operand (one letter per axis), followed by `->` and the letters of the output:
 
-- A letter names an axis. The same letter on two operands means the same index: the
-  two axes are walked together and must have the same size.
-- A letter that is missing after `->` is summed over.
-- The letters after `->` are the axes of the result, in that order.
+- Each letter names an axis. Using the same letter on two operands links those axes, so they are indexed together and must have the same size.
+- Any letter omitted after `->` is summed over.
+- The letters after `->` define the output axes in that exact order.
 
-So `"ij,j->i"` is a matrix times a vector, $\text{out}[i] = \sum_j a[i, j]\, v[j]$, and
-`"bi,bj->bij"` is an outer product per row, with nothing summed.
+For example, `"ij,j->i"` multiplies a matrix by a vector, $\text{out}[i] = \sum_j a[i, j]\, v[j]$, while `"bi,bj->bij"` computes an outer product per row without summing any axis.
 
-Matrix multiplication is the special case that the `@` operator covers: `a @ b` sums
-the last axis of `a` against the second-to-last axis of `b`, and broadcasts all the
-axes before those as in Broadcasting on Purpose. A contraction that does not have
-that layout needs its axes moved first (`transpose`, `swapaxes`, or `None`).
+The `@` operator handles the special case of matrix multiplication. Writing `a @ b` sums the last axis of `a` against the second-to-last axis of `b` and broadcasts all leading axes. Contractions that do not match this layout require reordering or adding axes first with `transpose`, `swapaxes`, or `None`.
 
 > [!WARNING]
-> Nothing checks that the letters mean what you intended. Letters in the wrong order
-> after `->`, or on an operand whose two axes have the same size, give a transposed
-> result of the right shape.
+> Nothing checks that your index letters match your intent. Putting letters in the wrong order after `->`, or swapping two axes that happen to have the same size, silently produces a transposed result with the expected shape.
 
-Either tool is a correct way to solve this problem.
+Either `einsum` or `@` is a valid way to solve this problem.
 
 ## Example
 
 ```python
-q = [[[[1.0, 0.0], [0.0, 1.0]]]]  # shape (1, 1, 2, 2): T = 2
-k = [[[[1.0, 10.0], [2.0, 20.0], [3.0, 30.0]]]]  # shape (1, 1, 3, 2): S = 3
+q = [[[[1.0, 0.0], [0.0, 1.0]]]]  # shape (1, 1, 2, 2), T = 2
+k = [[[[1.0, 10.0], [2.0, 20.0], [3.0, 30.0]]]]  # shape (1, 1, 3, 2), S = 3
 attention_scores(q, k)
-# [[[[ 1.0,  2.0,  3.0],            # query 0 reads feature 0 of each key
-#    [10.0, 20.0, 30.0]]]]          # shape (1, 1, 2, 3): one row per query
+# [[[[ 1.0,  2.0,  3.0],            # query 0 selects feature 0 of each key
+#    [10.0, 20.0, 30.0]]]]          # shape (1, 1, 2, 3), one row per query
 
 x = [[1.0, 2.0], [0.0, 1.0]]  # shape (2, 2)
 w = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]  # shape (2, 3)
@@ -98,35 +79,27 @@ y = [[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]]  # shape (2, 3)
 bilinear(x, w, y)
 # [24.0, 5.0]                       # shape (2,)
 
-x = [[[[1.0, 0.0]], [[0.0, 1.0]]]]  # shape (1, 2, 1, 2): H = 2
+x = [[[[1.0, 0.0]], [[0.0, 1.0]]]]  # shape (1, 2, 1, 2), H = 2
 w = [
-    [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],  # the matrix of head 0
-    [[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]],  # the matrix of head 1
+    [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],  # matrix for head 0
+    [[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]],  # matrix for head 1
 ]  # shape (2, 2, 3)
 per_head_project(x, w)
-# [[[[ 1.0,  2.0,  3.0]],           # head 0: row 0 of w[0]
-#   [[40.0, 50.0, 60.0]]]]          # head 1: row 1 of w[1]; shape (1, 2, 1, 3)
+# [[[[ 1.0,  2.0,  3.0]],           # head 0 selects row 0 of w[0]
+#   [[40.0, 50.0, 60.0]]]]          # head 1 selects row 1 of w[1], shape (1, 2, 1, 3)
 ```
 
-For `bilinear`, row 0 is `[1, 2] @ w = [9, 12, 15]`, then `[9, 12, 15]` times
-`[1, 0, 1]` summed, 24. Row 1 is `[4, 5, 6]` times `[0, 1, 0]` summed, 5.
+In `bilinear`, row 0 computes `[1, 2] @ w = [9, 12, 15]`, then takes its dot product with `[1, 0, 1]` to get `24.0`. Row 1 computes `[0, 1] @ w = [4, 5, 6]`, then takes its dot product with `[0, 1, 0]` to get `5.0`.
 
 ## Constraints
 
-- Results are compared with the reference to a relative tolerance of `1e-4` and an
-  absolute tolerance of `1e-4`, which accepts the sums taken in any order.
-- Every size is between 1 and 8. Any of them can be 1, and any two can be equal.
-- Entries lie in $[-2, 2]$ in the random cases; the cases with hand-written values
-  use whole numbers up to 1000.
+- Results are compared against the reference with a relative tolerance of `1e-4` and an absolute tolerance of `1e-4`, which allows floating-point sums in any order.
+- Every dimension size is between `1` and `8`. Any dimension can be `1`, and any two dimensions can be equal.
+- Random test inputs have entries in $[-2, 2]$. Hand-written test cases use whole numbers up to `1000`.
 - No Python loops are needed.
 
 ## Why this matters
 
-`attention_scores` is the score computation of Causal Self-Attention and of
-Grouped-Query Attention, where `T` and `S` differ as soon as there is a KV cache. Caching Latents
-with Multi-Head Latent Attention applies one matrix per head with
-`"hcq,btq->bhtc"`, the same pairing as `per_head_project`. One Step of the Gated
-Delta Rule reads a per-head memory matrix with `"hvk,hk->hv"`, and Multiplying
-Without Dequantizing sums group by group with `"...gk,ogk->...og"`. A model's test
-shapes are often square (as many queries as keys, a square projection), and that is
-where a transposed contraction returns the right shape and wrong numbers.
+`attention_scores` is the core score computation in causal self-attention and grouped-query attention, where `T` and `S` differ as soon as a KV cache is used. Multi-head latent attention applies one matrix per head with `"hcq,btq->bhtc"`, the same head-pairing pattern as `per_head_project`. Similarly, the gated delta rule reads a per-head memory matrix with `"hvk,hk->hv"`, and grouped quantized matrix multiplication contracts group by group with `"...gk,ogk->...og"`.
+
+Unit tests often use square shapes, such as equal query and key lengths or square projection matrices. On those shapes, a transposed contraction returns the right shape with completely wrong values, causing silent bugs during training or inference.

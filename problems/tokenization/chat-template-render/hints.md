@@ -1,21 +1,21 @@
-If you first build the string and then look for `<|im_start|>` in it to find the
-special tokens, what happens when a user's message contains `<|im_start|>`? At what
-moment do you still know for certain whether a piece of the prompt is a special token
-or text?
+If you build the prompt string first and then search it for `<|im_start|>`, what happens
+when a user's message contains `<|im_start|>`? At what point in the rendering process do
+you still know for sure whether a string is a template special token or user text?
 
 ---
 
-Build the segment list as you go, and derive the string from it at the end with
-`"".join(...)`. Two small helpers keep the list canonical: `special(token)` appends
-`("special", token)`, and `text(piece)` appends text, except that it does nothing for
-an empty piece and, when the last segment is already text, extends that segment
-instead of adding a new one. Then the function is a transcription of the four parts of
-the specification: BOS, the default system turn if the first message is not a system
-message, the messages, the generation prompt.
+Build the segment list as you render, then derive the final string at the end with
+`"".join(...)`. Use two small helpers to keep the list canonical. `special(token)`
+appends `("special", token)`. `text(piece)` ignores empty strings. It merges `piece`
+into the previous segment if that segment is already `"text"`, and otherwise appends
+`("text", piece)`. With those helpers, the function directly follows the four parts of
+the specification: BOS, the default system turn when the first message is not
+`"system"`, the messages, and the optional generation prompt.
 
 ---
 
-The only part with state is the tool run. Looking at the neighbors is enough:
+The only stateful part is grouping consecutive `"tool"` messages, and checking the
+previous and next message is enough:
 
 ```python
 if role == "tool":
@@ -28,6 +28,6 @@ if role == "tool":
         text("\n")
 ```
 
-Every other message is `special(IM_START)`, `text(role + "\n" + content)`,
-`special(IM_END)`, `text("\n")`, and the generation prompt is `special(IM_START)`,
+Every other message emits `special(IM_START)`, `text(role + "\n" + content)`,
+`special(IM_END)`, and `text("\n")`. The generation prompt emits `special(IM_START)` and
 `text("assistant\n")`.

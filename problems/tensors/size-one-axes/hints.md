@@ -1,17 +1,10 @@
-For each function, write the shape you get after every operation, and do it twice: once
-for a general input, and once for an input where `B = 1`. If the two shapes differ in
-their number of axes, one of your operations is removing an axis because of its size
-and not because you named it.
+For each function, write down the shape after every operation twice: once for a general input and once when `B = 1`. If the two results have different numbers of axes, one of your operations is dropping an axis based on its runtime size rather than its position.
 
 ---
 
-- `normalize_over`: the sum over `dim` has one axis fewer than `x`. To divide, it has
-  to line up with `x` again along every other axis, for any `dim`. Ask the reduction to
-  keep the axis it sums over.
-- `last_step`: you want to remove the `T` axis and no other. Which kind of index
-  removes exactly the axis it is applied to?
-- `column`: you want to keep the `V` axis with size 1. Which kind of index keeps its
-  axis?
+- `normalize_over`: summing over `dim` removes that axis, so the result has one fewer dimension than `x`. To divide cleanly for any `dim`, tell the reduction to keep the summed axis with size 1.
+- `last_step`: you want to drop the `T` axis and keep `B` and `D`. Which kind of index removes only the axis it indexes?
+- `column`: you want to keep the `V` axis with size 1. Which kind of index preserves its axis?
 
 ---
 
@@ -25,5 +18,4 @@ x[:, -1]                                    # (B, T, D) -> (B, D): an integer re
 x[:, j : j + 1]                             # (B, V) -> (B, 1): a slice keeps its axis
 ```
 
-`x[:, -1:].squeeze(1)` and `x[:, j][:, None]` are equally right. A `squeeze()` with no
-argument is not.
+`x[:, -1:].squeeze(1)` and `x[:, j][:, None]` are equally valid. Calling `squeeze()` with no argument is not.

@@ -1,54 +1,35 @@
 ## The idea
 
-For one query, attention is a ratio of two sums over the keys,
+For a single query, attention is the ratio of two sums over all visible keys:
 
 $$
-\text{out} = \frac{\sum_j e^{s_j} v_j}{\sum_j e^{s_j}} ,
+\text{out} = \frac{\sum_j e^{s_j} v_j}{\sum_j e^{s_j}}.
 $$
 
-and sums can be accumulated in any order, a block at a time. The only obstacle is
-that $e^{s_j}$ is not representable: float32 overflows above $s = 88.7$ and
-underflows below $-103$. `stable-softmax` fixes this by factoring out $e^{m}$ with
-$m = \max_j s_j$, but here the maximum over *all* keys is not known until the last
-block.
+Sums can be accumulated one block at a time in any order. The obstacle is floating-point range. In `float32`, $e^{s_j}$ overflows above $s_j \approx 88.7$ and underflows below $s_j \approx -103$. `stable-softmax` avoids this by factoring out $e^m$ where $m = \max_j s_j$, but in a streaming pass the global maximum is unknown until the last block.
 
-The online softmax (Milakov and Gimelshein, 2018) factors out the maximum *so far*
-and repairs the sums when it changes. Keep three quantities per query:
+Online softmax (Milakov and Gimelshein, 2018) factors out the maximum *seen so far* and rescales the accumulated sums whenever that maximum grows. For each query, track three quantities:
 
 $$
 m = \max_{j \text{ seen}} s_j, \qquad
 \ell = \sum_{j \text{ seen}} e^{s_j - m}, \qquad
-o = \sum_{j \text{ seen}} e^{s_j - m}\, v_j .
+o = \sum_{j \text{ seen}} e^{s_j - m}\, v_j.
 $$
 
-**Invariant.** $\ell\, e^{m}$ and $o\, e^{m}$ are the true sums over the keys seen so
-far, so $o / \ell$ is attention over exactly those keys.
+**Invariant.** At every step, $\ell\, e^{m}$ and $o\, e^{m}$ equal the unshifted denominator and numerator over all keys seen so far. Their ratio $o / \ell$ is therefore exact attention over those keys.
 
-**Update.** A block with scores $s_j$, $j \in B$, raises the maximum to
-$m' = \max(m, \max_{j \in B} s_j)$. Rewriting the old sums in the new unit multiplies
-them by $e^{m - m'}$, and the block's terms are computed in the new unit directly:
+**Update.** When a new block $B$ arrives with scores $s_j$ ($j \in B$), the new maximum is $m' = \max(m, \max_{j \in B} s_j)$. Multiplying the old sums by $e^{m - m'}$ converts them to the new scale $e^{m'}$, and the new block's terms are computed directly in that scale:
 
 $$
 \ell' = \ell\, e^{m - m'} + \sum_{j \in B} e^{s_j - m'}, \qquad
-o' = o\, e^{m - m'} + \sum_{j \in B} e^{s_j - m'}\, v_j .
+o' = o\, e^{m - m'} + \sum_{j \in B} e^{s_j - m'}\, v_j.
 $$
 
-Substituting shows that the invariant holds for $m', \ell', o'$. By induction, after
-the last block $o / \ell$ is attention over all keys, whatever the partition into
-blocks: that is the property the tests check directly.
+Substituting the definitions confirms that the invariant holds for $(m', \ell', o')$. By induction, $o / \ell$ after the last block equals attention over all keys regardless of how they are partitioned into blocks.
 
-**Stability.** Every exponent is $\le 0$: $m - m' \le 0$ because the maximum never
-decreases, and $s_j - m' \le 0$ by definition of $m'$. So nothing overflows. Once a
-query has seen a visible key, the term of its current maximum is $e^0 = 1$ and
-earlier terms are only ever scaled down, so $1 \le \ell \le N$: no division by zero.
-Terms that underflow are below $10^{-45}$ of the largest and do not matter.
+**Stability.** Every exponent is at most 0. Because $m$ never decreases, $m - m' \le 0$. By definition of $m'$, $s_j - m' \le 0$. Nothing overflows. Once a query has seen at least one visible key, the term achieving the current maximum contributes $e^0 = 1$, and earlier positive terms are only scaled down. Thus $1 \le \ell \le N$, preventing division by zero. Terms that underflow are smaller than $10^{-45}$ times the largest term and do not affect `float32` results.
 
-**The empty start.** Before a query's first visible key, $m = -\infty$, $\ell = 0$,
-$o = 0$. If a block is fully masked for it, $m' = -\infty$ as well, and
-$s_j - m' = -\infty - (-\infty)$ is NaN. Nothing is wrong mathematically (the block
-contributes zero); the arithmetic needs one guard: subtract 0 instead of $-\infty$.
-Then the block's terms are $e^{-\infty} = 0$, and at the first visible block the
-rescale factor is $e^{-\infty - m'} = 0$, applied to sums that are 0.
+**The empty start.** Before a query sees its first visible key, $m = -\infty$, $\ell = 0$, and $o = 0$. If a block is fully masked for that query, $m'$ remains $-\infty$, so $s_j - m'$ evaluates to $-\infty - (-\infty) = \text{NaN}$. Guard against this by replacing $-\infty$ with $0$ in the shift. Masked scores then give $e^{-\infty - 0} = 0$, leaving $\ell$ and $o$ at 0. When the first visible block arrives with finite $m'$, the rescale factor is $e^{-\infty - m'} = 0$, which safely multiplies the zero sums.
 
 ## Reference solution (PyTorch)
 
@@ -72,61 +53,26 @@ def blockwise_attention(q, kv_blocks):
     return acc / norm
 ```
 
-- The state has one row per query; the maximum is per query, with the axis kept so it
-  broadcasts against the scores.
-- `acc` starts as the scalar 0 and takes the shape `(T, D_v)` from the first block,
-  since $D_v$ is not known before.
-- Nothing from a block outlives its iteration: `k`, `v`, `mask`, `scores`, and
-  `weights` are rebound by the next one. The MLX reference adds
-  `mx.eval(top, norm, acc)` at the end of each iteration. MLX builds a lazy graph,
-  and without the evaluation the graph of the final result would reference every
-  block's arrays until the very end, which is the memory use the algorithm exists to
-  avoid.
+- The running state keeps one row per query with a trailing size-1 axis so it broadcasts against the block scores.
+- `acc` starts as scalar `0.0` and takes shape `(T, D_v)` on the first block, since $D_v$ is not known beforehand.
+- No block tensor outlives its loop iteration because `k`, `v`, `mask`, `scores`, and `weights` are rebound on the next step. The MLX reference calls `mx.eval(top, norm, acc)` at the end of each iteration. Because MLX builds a lazy computation graph, skipping `mx.eval` would keep every block's arrays alive in the graph until the final return.
 
 ## Common mistakes
 
-- **No rescale when the maximum grows.** The sums from earlier blocks stay in the
-  old unit and are overweighted by $e^{m' - m}$. Invisible when the first block
-  holds the maximum, which is why a test with sorted or similar keys misses it.
-- **Normalizing per block and averaging.** A softmax inside each block gives every
-  block the same total weight. Attention over the union is not the mean of
-  attentions over the parts; the parts must be weighted by their normalizers, which
-  is what $\ell$ carries.
-- **A block-local maximum.** Shifting each block by its own maximum is stable and
-  wrong: the blocks end up in different units and are added as if they were not.
-- **A plain running sum of `exp(score)`.** Correct on paper, `inf / inf` or `0 / 0`
-  in float32 as soon as scores leave $[-103, 88]$.
-- **One maximum for all queries.** The shift must be per query. With a shared
-  maximum, a query whose scores are a few hundred below another's has every term
-  underflow, and its output is `0 / 0`.
-- **NaN from a fully masked block.** `exp(scores - new_top)` with both `-inf`. The
-  NaN enters `norm` and `acc` and never leaves, since every later update multiplies
-  it.
-- **Ignoring the mask**, or applying it by multiplying weights with 0 after the
-  exponential, which still lets a masked score set the maximum.
-- **Two passes.** Computing the global maximum first and summing second needs the
-  blocks twice. The iterator is exhausted after the first loop.
-- **Collecting the blocks** (`list(kv_blocks)`, appending to lists, concatenating as
-  you go) and running ordinary attention. The numbers are right and the memory is
-  $O(N)$, the thing the problem rules out.
+- **Skipping the rescale when the maximum grows.** Earlier sums remain in the old scale and are overweighted by $e^{m' - m}$. This bug is invisible whenever the first block already contains the global maximum.
+- **Normalizing per block and averaging.** Taking a softmax inside each block gives every block equal total weight. Attention over the union must weight each block by its unnormalized sum $\ell$, not average block outputs.
+- **Using a block-local maximum.** Shifting each block by its own maximum avoids overflow, but adds sums that are in incompatible scales.
+- **Accumulating unshifted `exp(score)`.** This works on paper, but produces `inf / inf` or `0 / 0` in `float32` as soon as scores leave $[-103, 88]$.
+- **Sharing one maximum across all queries.** The shift must be per query. With a shared maximum, a query whose scores sit hundreds below another query's scores underflows completely and returns `0 / 0`.
+- **NaN from a fully masked block.** Computing `exp(scores - new_top)` when both are `-inf` introduces `NaN` into `norm` and `acc`. Every subsequent update propagates that `NaN`.
+- **Ignoring the mask or zeroing after `exp`.** Multiplying weights by 0 after exponentiation still lets masked scores affect `new_top` and shift valid scores into underflow.
+- **Making two passes.** Finding the global maximum in one loop and summing in a second fails because `kv_blocks` is exhausted after the first pass.
+- **Collecting all blocks.** Calling `list(kv_blocks)` or concatenating blocks along the key axis produces the right values, but uses $O(N)$ memory and violates `peak_blocks_held`.
 
 ## Complexity
 
-$O(T \cdot N \cdot (D + D_v))$ time, the same as ordinary attention. Memory is
-$O(T \cdot D_v)$ for the state plus $O(T \cdot n)$ for the scores of one block,
-independent of the number of keys.
+Time is $O(T \cdot N \cdot (D + D_v))$, identical to standard attention. Memory is $O(T \cdot D_v)$ for the running state plus $O(T \cdot n)$ for one block's scores, independent of the total key count $N$.
 
 ## In the wild
 
-The recurrence is from Milakov and Gimelshein, "Online normalizer calculation for
-softmax" (arXiv 1805.02867, 2018), who used it to fuse softmax with a following
-top-k in one pass over the logits. FlashAttention (Dao, Fu, Ermon, Rudra, and Ré,
-arXiv 2205.14135, 2022) applies it to attention: its Algorithm 1 loops over blocks
-of keys and values sized to fit in on-chip memory and keeps, per block of queries, a
-running maximum $m$, a running normalizer $\ell$, and the partial output $O$, which
-it rescales by $e^{m - m^{\text{new}}}$ at each step, exactly the update above (it
-stores $O$ already divided by $\ell$ and renormalizes as it goes; FlashAttention-2
-defers the division to the end, as the reference here does). The same update is what
-lets attention be computed over a KV cache held in separate pages or on separate
-devices: each part returns its partial $(m, \ell, o)$, and partial results combine
-with the rule for two blocks.
+The online normalizer recurrence comes from Milakov and Gimelshein, "Online normalizer calculation for softmax" (arXiv 1805.02867, 2018), who used it to fuse softmax and top-k into a single pass over logits. FlashAttention (Dao, Fu, Ermon, Rudra, and Ré, arXiv 2205.14135, 2022) applies it to attention. Its Algorithm 1 tiles keys and values into on-chip memory and maintains a running maximum $m$, normalizer $\ell$, and partial output $O$ per query block, rescaling by $e^{m - m^{\text{new}}}$ at each step. FlashAttention-1 stores $O$ already divided by $\ell$ and renormalizes on every step, while FlashAttention-2 defers the division to the end as in the reference above. The same associative update allows attention over paged or distributed KV caches. Each partition returns its partial $(m, \ell, o)$, and partitions merge using the two-block rule.

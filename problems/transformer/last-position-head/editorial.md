@@ -1,22 +1,14 @@
 ## The idea
 
-The output layer is linear and acts on each position independently:
-$\text{logits}_{b,t} = W_{\text{out}}\, h_{b,t}$. Selecting a position therefore commutes
-with projecting:
+Let $H$ be the hidden-state tensor of shape `(B, T, D)` and $W_{\text{out}}$ be the output matrix of shape `(V, D)`. Because the output layer is linear and acts on each position independently ($\text{logits}_{b,t} = H_{b,t}\, W_{\text{out}}^\top$), selecting a position commutes with the projection:
 
 $$
 \big(H\, W_{\text{out}}^\top\big)_{b,\,T-1} \;=\; H_{b,\,T-1}\; W_{\text{out}}^\top .
 $$
 
-The two sides are the same numbers at very different costs. The left side multiplies
-$B \cdot T$ vectors by a $V \times D$ matrix and materializes $B \cdot T \cdot V$
-logits; the right side multiplies $B$ vectors and materializes $B \cdot V$. The ratio is
-exactly $T$, the prompt length.
+Both sides produce the exact same values at very different costs. The left side multiplies $B \cdot T$ vectors by a $V \times D$ matrix and materializes $B \cdot T \cdot V$ logits. The right side multiplies only $B$ vectors and materializes $B \cdot V$ logits, reducing both work and memory by a factor of $T$, the sequence length.
 
-Which position to select follows from how a decoder is trained: position $t$ has seen
-tokens $0..t$ and its output is scored against token $t + 1$. The continuation of the
-whole sequence is thus predicted at position $T - 1$. Position 0 predicts the second
-token of the prompt, which is already known.
+Selecting position $T - 1$ follows from how autoregressive decoders are trained. Position $t$ has attended to tokens $0 \dots t$ and its logits are scored against token $t + 1$. The continuation of the sequence is therefore predicted at position $T - 1$, whereas position 0 predicts the second prompt token, which is already known.
 
 ## Reference solution (PyTorch)
 
@@ -26,56 +18,25 @@ def next_token_logits(hidden, w_out):
     return last @ w_out.T
 ```
 
-The JAX and MLX versions are character for character the same. Integer indexing drops
-the time axis, giving `(B, D)`, and the product with the transposed `(V, D)` matrix
-gives `(B, V)`.
+The JAX and MLX versions are identical. Integer indexing along axis 1 drops the time dimension, yielding shape `(B, D)`, and multiplying by the transposed `(V, D)` matrix produces shape `(B, V)`.
 
 ## Common mistakes
 
-- **Projecting everything, then slicing.** `(hidden @ w_out.T)[:, -1]` is what you get
-  by calling a model that returns full logits and indexing the result. It is correct
-  and $T$ times too expensive. No framework here removes the waste for you: eager
-  PyTorch has already done the product when the slice runs, and the lazy graphs of
-  JAX and MLX compute the full product too.
-- **The wrong position.** `hidden[:, 0]` is the first position. `hidden[:, T - 2]`
-  comes from confusing the length with the last index; with `T = 1` the index is `-1`
-  and wraps around to the right answer, so a single-token test does not catch it.
-- **The wrong axis.** `hidden[-1]` is the last *sequence*, shape `(T, D)`. When
-  $B = T$ the result even has the right shape.
-- **Flattening batch and time.** After `hidden.reshape(B * T, D)` the last position of
-  sequence $b$ is row $b\,T + T - 1$. Taking the last `B` rows instead returns the last
-  $B$ positions of the final sequence. With a batch of one it is correct.
-- **Keeping the time axis.** `hidden[:, -1:]` keeps a time axis of length 1, and the
-  result is `(B, 1, V)`. Downstream code that takes an argmax over the last axis still
-  runs, and the stray axis surfaces somewhere else.
-- **Not transposing the weights.** `last @ w_out` fails on shapes unless $V = D$.
+- **Projecting everything, then slicing.** Computing `(hidden @ w_out.T)[:, -1]` gives the right numbers but does $T$ times too much work. None of the frameworks eliminate this waste automatically. Eager PyTorch completes the full matrix product before slicing, and the lazy graphs in JAX and MLX also compute the full product.
+- **Selecting the wrong position.** `hidden[:, 0]` selects the first position instead of the last. `hidden[:, T - 2]` comes from confusing the sequence length with the last index. When `T = 1`, `T - 2` evaluates to `-1` and wraps around to the right element, so single-token tests miss this bug.
+- **Indexing the wrong axis.** `hidden[-1]` selects the last *sequence* rather than the last position, producing shape `(T, D)`. When $B = T$, the output even has the expected shape.
+- **Flattening batch and time incorrectly.** After `hidden.reshape(B * T, D)`, the last position of sequence $b$ sits at row $b\,T + T - 1$. Taking the last `B` rows instead grabs the last $B$ positions of the final sequence, a bug that passes when $B = 1$.
+- **Keeping the time axis.** Slicing with `hidden[:, -1:]` preserves a length-1 time axis and returns shape `(B, 1, V)`. Downstream code that calls `argmax` over the last axis still runs, hiding the stray dimension until later.
+- **Forgetting to transpose `w_out`.** Computing `last @ w_out` raises a shape mismatch whenever $V \ne D$ and silently computes the wrong product when $V = D$.
 
 ## Complexity
 
-$O(B\,D\,V)$ time and $O(B\,V)$ memory, independent of $T$. The wasteful order is
-$O(B\,T\,D\,V)$ time and $O(B\,T\,V)$ memory.
+Slicing first takes $O(B\,D\,V)$ time and $O(B\,V)$ memory, independent of $T$. Projecting first takes $O(B\,T\,D\,V)$ time and $O(B\,T\,V)$ memory.
 
-The measured gap is smaller than the factor $T$ in arithmetic, because a product of
-this size is fast enough that fixed per-call costs show. On the machine these tests
-were written on, for $B = 8$, $T = 512$, $D = 64$, $V = 8192$ the wasteful order took
-about 100 times as long in PyTorch on the CPU, 20 times in JAX, and 8 times in MLX on
-the GPU, where the single small product is dominated by the cost of dispatching to
-the GPU. With a real vocabulary and hidden width the fixed costs vanish and the full
-factor appears, along with the memory: a 4,096-token prompt and a 128,000-entry
-vocabulary make about $5 \times 10^8$ logits per sequence, 2 GB in float32.
+In practice, the measured speedup is smaller than $T$ when the single matrix product is small enough that fixed per-call overhead shows up. On the test machine for $B = 8$, $T = 512$, $D = 64$, $V = 8192$, projecting first took about 100 times longer in PyTorch on CPU, 20 times longer in JAX, and 8 times longer in MLX on GPU (where GPU dispatch overhead dominates the small product). At realistic model sizes, fixed overhead vanishes and the full factor appears in both latency and memory. For example, a 4,096-token prompt with a 128,000-entry vocabulary produces roughly $5 \times 10^8$ logits per sequence, or 2 GB in float32.
 
 ## In the wild
 
-Model code written for training returns logits at every position, since the loss
-needs them all. Inference code paths cut the hidden states before the head. Hugging
-Face Transformers gives many causal models an argument for exactly this
-(`logits_to_keep`, earlier named `num_logits_to_keep`), which slices the hidden states
-before the head is applied. Engines built for serving apply the final norm and the
-head to the last position only during prefill, and decoding steps have a single
-position anyway.
+Training implementations return logits for every position because the cross-entropy loss scores the whole sequence. Inference paths slice the hidden states before the output head. Hugging Face Transformers exposes a `logits_to_keep` argument (formerly `num_logits_to_keep`) on many causal models for this exact purpose. Dedicated serving engines apply the final normalization layer and output head only to the last position during prefill, while decoding steps already have a single position per sequence.
 
-Two refinements go beyond this problem. In a padded batch the last real token of each
-row is at a different index, so the selection becomes a gather by sequence length
-(the `last-token-gather` problem). And when a request asks for the log-probabilities
-of its prompt tokens, every position is needed after all, which is one reason that
-option is expensive.
+Two practical cases extend this pattern. In a padded batch, each sequence ends at a different index, so slicing becomes a gather indexed by sequence length (covered in `last-token-gather`). Also, when a user requests log-probabilities for the prompt tokens themselves, the server must unembed every position, which is why prompt logprobs are expensive.

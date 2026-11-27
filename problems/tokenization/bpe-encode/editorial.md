@@ -1,26 +1,15 @@
 ## The idea
 
-BPE training produces merges one at a time: "the most frequent adjacent pair is
-`(e, r)`, call it a new token; now the most frequent pair is ...". Encoding replays
-that history on new text. The merge learned first must be applied first, because
-later merges were learned on text in which the earlier ones had already happened.
-That is why the rule is "the lowest-rank pair present in the sequence", and why two
-tempting shortcuts are wrong:
+BPE training learns merges one at a time by repeatedly merging the most frequent adjacent pair into a new token. Encoding replays that merge history on new text. Earlier merges must be applied first because later merges were learned on text where earlier merges had already taken place.
 
-- *Scan the text and merge whatever pair you meet first.* For `abc` with `(b, c)` at
-  rank 0 and `(a, b)` at rank 1 this produces `[ab] c`, but training merged `b c`
-  everywhere before it ever counted `a b`, so the model only knows `a [bc]`.
-- *Find the longest vocabulary entry at each position.* That is WordPiece. With merges
-  `(b, c)`, `(a, b)`, `([ab], c)` the vocabulary contains `abc`, yet BPE can never
-  produce it from the text `abc`: after rank 0 there is no `[ab]` to extend.
+This explains why the rule always selects the lowest-rank pair present in the sequence, and why two common shortcuts fail:
 
-The loop terminates because every applied merge shortens the sequence by at least one.
-The result is unique because the pairs are distinct: exactly one pair has the lowest
-rank, and step 4 of the statement fixes what happens to its occurrences.
+- **Merging the leftmost pair.** Scanning the sequence and merging the first valid pair fails on `"abc"` with `(b, c)` at rank 0 and `(a, b)` at rank 1. It produces `[ab] c`, whereas training merged `b c` everywhere before counting `a b`, leaving `a [bc]`.
+- **Greedy longest match.** Picking the longest vocabulary entry at each position is WordPiece, not BPE. With merges `(b, c)`, `(a, b)`, and `([ab], c)`, the vocabulary contains `abc`, yet BPE never produces it from `"abc"` because rank 0 consumes `b c` before `[ab]` can form.
 
-Within one pass, occurrences can only collide when the pair is `(x, x)` and the text
-has a run of three or more `x`. Consuming both positions of a match (`i += 2`) resolves
-it left to right.
+The encoding loop always terminates because every applied merge shortens the sequence by at least one token. The output is unique because all pairs in `merges` are distinct, so one pair has the lowest rank at each step, and the left-to-right pass fixes how its occurrences are replaced.
+
+Within a single pass, matches can only overlap when the chosen pair is `(x, x)` and the sequence contains a run of three or more `x`. Advancing the index by two (`i += 2`) after each match resolves overlaps from left to right.
 
 ## Reference solution (Python)
 
@@ -66,68 +55,33 @@ def decode(ids, merges):
     return data.decode("utf-8", errors="replace")
 ```
 
-`decode` uses a stack instead of recursion so that a deep chain of merges (token 900
-built from token 899 built from ...) cannot hit Python's recursion limit, and it looks
-merges up by id on demand, so it does not care in which order the table lists them.
+`decode` uses an explicit stack instead of recursion so a deep merge chain cannot hit Python's recursion limit. It also looks up merges by id on demand, so the order of entries in `merges` does not matter.
 
 ## Why bytes
 
-Starting from bytes gives a closed base vocabulary of 256 symbols that covers every
-possible input: no unknown-token id, no normalization table, any emoji or script works
-on day one. The price is that tokens are byte strings, not strings. A token can be the
-first two bytes of a three-byte character. So `decode` must join bytes first and
-convert to text once, and a streaming server must hold back a trailing incomplete
-character until the next token completes it.
+Starting from UTF-8 bytes gives a closed base vocabulary of 256 symbols that covers every possible input. No unknown-token id or normalization table is needed, and any emoji or script works immediately.
+
+The tradeoff is that tokens represent arbitrary byte strings rather than complete Unicode characters. A single token can hold only the first two bytes of a three-byte character. That is why `decode` must concatenate all bytes before decoding once, and why a streaming server must buffer an incomplete trailing character until the next token arrives.
 
 ## Common mistakes
 
-- **One sweep over the merge list.** `for i, pair in enumerate(merges): replace(pair)`
-  is correct only if no merge needs a token created by a later one. A table straight
-  from training has that property; the statement does not promise it, and the case
-  with the merges `[(257, c), (a, b)]` shows the difference: rank 0 becomes applicable
-  only after rank 1 ran, and a single sweep has already moved past it.
-- **Overlapping matches.** Marking every position where the pair starts and merging at
-  all of them turns `a a a` into two `[aa]` tokens, which decode to four bytes. The
-  round trip fails only on runs, so ordinary English text hides the bug.
-- **Characters instead of bytes.** `[ord(ch) for ch in text]` agrees with UTF-8 on
-  ASCII and nowhere else: `é` becomes the single id 233 instead of `195, 169`, and code
-  points above 255 collide with merge ids.
-- **Merging the leftmost pair.** Picking the first mergeable pair in the text instead
-  of the lowest-ranked one anywhere (see above).
-- **Greedy longest match.** A different tokenization algorithm (see above).
-- **Decoding token by token.** `"".join(bytes_of(t).decode(...) for t in ids)` breaks
-  every character whose bytes straddle a token boundary, and with `errors="replace"`
-  it does so silently.
+- **One sweep over the merge list.** Running `for i, pair in enumerate(merges): replace(pair)` works only when every merge refers solely to earlier merges. A table straight from training satisfies that property, but this problem does not guarantee it. With `[(257, c), (a, b)]`, rank 0 becomes applicable only after rank 1 runs, so a single sweep misses it.
+- **Overlapping matches.** Marking every starting index where the pair occurs and replacing all of them turns `a a a` into two `[aa]` tokens, which decode to four bytes. Because this bug only appears on repeated runs, ordinary English text often hides it.
+- **Characters instead of bytes.** Using `[ord(ch) for ch in text]` matches UTF-8 on ASCII and breaks everywhere else. `"é"` becomes id `233` instead of `195, 169`, and code points above 255 collide with merge ids.
+- **Merging the leftmost pair.** Picking the first mergeable pair in the text instead of the lowest-ranked pair anywhere in the sequence produces the wrong segmentation.
+- **Greedy longest match.** Matching the longest vocabulary entry at each position implements WordPiece rather than ranked BPE.
+- **Decoding token by token.** Running `"".join(bytes_of(t).decode(...) for t in ids)` breaks every character split across a token boundary. With `errors="replace"`, this failure happens silently.
 
 ## Complexity
 
-Let $n$ be the number of bytes and $m$ the number of merges. Each pass costs $O(n)$
-and removes at least one token, so there are at most $n - 1$ passes and the reference
-takes $O(n^2)$ time in the worst case and $O(n + m)$ memory. With a table that only
-refers to earlier merges, every merge is applied in at most one pass, which tightens
-the bound to $O(n \cdot \min(n, m))$. On real text the number of passes is far below
-both bounds, but it does grow with the input length.
+Let $n$ be the number of UTF-8 bytes in `text` and $m$ be the number of merges. Each pass takes $O(n)$ time and removes at least one token, so there are at most $n - 1$ passes. The reference solution therefore runs in $O(n^2)$ worst-case time and $O(n + m)$ space. When merges only reference earlier merges, each merge applies in at most one pass, tightening the time bound to $O(n \cdot \min(n, m))$.
 
-Faster approaches, when it matters:
+Faster approaches when performance matters:
 
-- **Sweep the merge list once** when the table is known to refer only to earlier
-  merges. Then applying a merge can never make a lower-ranked one applicable, and the
-  single sweep is exact: $O(n \cdot m)$ in the worst case but trivially simple, and
-  fast if you skip merges whose pair does not occur.
-- **Priority queue over a linked list.** Keep the tokens in a doubly linked list and
-  the mergeable positions in a heap keyed by (rank, position). A merge touches only its
-  two neighbors, so the whole encoding is $O(n \log n)$. Hugging Face `tokenizers` does
-  this per word.
-- **Pre-tokenize and cache.** GPT-2 splits text into words with a regular expression
-  first and encodes each word on its own; words repeat, so a dictionary from word to
-  ids removes most of the work. Splitting also bounds $n$ per call.
+- **Single sweep over the merge list.** When the table is guaranteed to refer only to earlier merges, applying a merge never enables a lower-ranked one. A single pass over `merges` is then exact, taking $O(n \cdot m)$ worst-case time while staying simple.
+- **Priority queue over a doubly linked list.** Store tokens in a doubly linked list and mergeable positions in a min-heap keyed by `(rank, position)`. Each merge updates only its two neighbors, giving $O(n \log n)$ time. Hugging Face `tokenizers` uses this approach per word.
+- **Pre-tokenization and caching.** GPT-2 splits text into words with a regular expression and encodes each word separately. Caching word-to-id mappings avoids repeating work on common words and keeps $n$ small per call.
 
 ## In the wild
 
-GPT-2's original `encoder.py` is this algorithm on strings of byte-characters: its
-`bpe()` function computes `min(pairs, key=lambda pair: self.bpe_ranks.get(pair,
-float("inf")))` in a loop. `tiktoken` keys the table by the merged bytes and uses the
-token id as the rank, with the same "lowest rank first" loop in Rust. `llama.cpp`
-implements BPE for GPT-2-style vocabularies with a priority queue over symbol pairs.
-All of them add a pre-tokenization step and special tokens on top, which are left out
-here.
+GPT-2's original `encoder.py` uses this exact loop over byte-character strings, computing `min(pairs, key=lambda pair: self.bpe_ranks.get(pair, float("inf")))` at each step. `tiktoken` keys its table by merged byte strings and uses token ids as ranks, running the same lowest-rank-first loop in Rust. `llama.cpp` implements GPT-2-style BPE with a priority queue over symbol pairs. Production tokenizers also add pre-tokenization and special token handling on top of this core loop.

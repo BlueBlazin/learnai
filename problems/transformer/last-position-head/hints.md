@@ -1,20 +1,13 @@
-The function is two operations, a selection and a matrix product, and they can be done
-in either order with the same result. Count the multiplications each order performs
-for `B = 8`, `T = 512`, `D = 64`, `V = 8192`. Which order never creates a tensor with
-both a `T` axis and a `V` axis?
+The function combines two operations, a position selection and a matrix multiplication, which give the same result in either order. Count the multiplications each order performs for `B = 8`, `T = 512`, `D = 64`, `V = 8192`. Which order avoids ever creating a tensor with both a `T` axis and a `V` axis?
 
 ---
 
-Select first. Take the hidden state of the last position of every sequence, a tensor
-of shape `(B, D)`, and only then apply the output matrix. Two details:
+Select the last position first to obtain a tensor of shape `(B, D)`, and then apply `w_out`. Keep two indexing details in mind:
 
-- The time axis is the **second** axis of `hidden`. Indexing the first axis picks a
-  sequence, not a position.
-- Index with an integer, not with a slice of length one, so that the time axis
-  disappears and the result is `(B, V)` and not `(B, 1, V)`.
+- The time dimension is the **second** axis of `hidden` (axis 1). Indexing axis 0 selects a sequence instead of a position.
+- Use an integer index rather than a length-1 slice so the time axis is removed and the output has shape `(B, V)` instead of `(B, 1, V)`.
 
-The matrix is stored as `(V, D)`, so mapping row vectors of width `D` to width `V`
-needs its transpose.
+Because `w_out` has shape `(V, D)`, transpose it before multiplying on the right of a `(B, D)` matrix.
 
 ---
 
@@ -23,6 +16,4 @@ last = hidden[:, -1]  # (B, D): the last position of each sequence
 logits = last @ w_out.T  # (B, V)
 ```
 
-`-1` as an index means "the last one" in every framework, for any `T`, including
-`T = 1`. If your result is right but the speed case fails, look for a product whose
-left operand still has shape `(B, T, D)`.
+Index `-1` selects the last element in every framework for any $T \ge 1$, including `T = 1`. If your numerical outputs match the reference but the speed test fails, check whether your matrix multiplication still takes a `(B, T, D)` tensor on the left.

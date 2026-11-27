@@ -1,20 +1,20 @@
-Write one helper that rotates the trailing `rope_dim` channels of a tensor of shape
-`(..., N, d)` by a vector of `N` positions, and count how many times the definition
-uses it. Which three tensors does it apply to, and with which positions? Note that a
-position can be negative: rotating by $-p$ is the inverse of rotating by $p$.
+Write a single helper function that rotates the trailing `rope_dim` channels of a
+tensor of shape `(..., N, d)` using a vector of `N` positions. Count how many times the
+specification calls it, and check which three tensors and position vectors it takes.
+Remember that positions can be negative, and rotating by $-p$ undoes a rotation by $p$.
 
 ---
 
-The helper: slice off `x[..., :d - rope_dim]` (unchanged) and `x[..., d - rope_dim:]`
-(the slice). Inside the slice, the pairs are adjacent channels, `tail[..., 0::2]` and
-`tail[..., 1::2]`, and the frequencies are `base ** (-arange(0, rope_dim, 2) /
-rope_dim)`: the denominator is `rope_dim`, not `d`. Rotate, interleave the two halves
-again (stack on a new last axis, then reshape), and concatenate the unchanged channels
-in front.
+To build the helper, split `x` into `x[..., :d - rope_dim]` (unchanged) and
+`x[..., d - rope_dim:]` (the rotary slice). Inside the slice, pair adjacent channels
+`tail[..., 0::2]` and `tail[..., 1::2]`, and compute frequencies as
+`base ** (-arange(0, rope_dim, 2) / rope_dim)` with `rope_dim` in the denominator, not
+`d`. Apply the 2D rotation, interleave the rotated pairs back together (stack on a new
+last axis and reshape), and concatenate the unchanged channels in front.
 
-Then the function is: rotate `q` by `pos_q`, rotate `kv` by `pos_k`, and use the
-rotated `kv` twice, as the key in `q @ kv.T / sqrt(d)` and as the value in
-`weights @ kv`.
+In `shared_kv_attention`, rotate `q` by `pos_q` and `kv` by `pos_k`. Use the rotated
+`kv` twice: as the key in `q @ kv.T / sqrt(d)` and as the value in `weights @ kv`.
+Finally, rotate the attention output back by `-pos_q`.
 
 ---
 
@@ -27,6 +27,6 @@ out     = softmax(scores, -1) @ kv      # (H, T, d)
 return rot(out, -pos_q)
 ```
 
-The last line works because rotation is linear: turning the weighted sum by
-$-p_t$ turns every term by $-p_t$, and a row that was turned by $p_s$ ends up turned
-by $p_s - p_t$.
+The final rotation works because rotation is linear. Turning the weighted sum by $-p_t$
+turns every term by $-p_t$, so a cached row rotated by $p_s$ arrives rotated by
+$p_s - p_t$.

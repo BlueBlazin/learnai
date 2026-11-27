@@ -1,35 +1,37 @@
 ## The idea
 
-The forward pass is a residual stream with a fixed itinerary:
+For a decoder with $L = \texttt{n\_layers}$ blocks, the forward pass moves the residual
+stream through a fixed sequence of stages:
 
 $$
 E[\text{tokens}] \;\to\; \underbrace{\text{block}_0 \to \dots \to \text{block}_{L-1}}_{x \,\leftarrow\, x + f(\operatorname{norm}(x)) \text{, twice per block}} \;\to\; \operatorname{RMSNorm} \;\to\; W_{\text{head}}^\top .
 $$
 
-Nothing here is new arithmetic. What makes it a problem is that the model is defined
-by a set of conventions that live in the code that trained it, and none of them can be
-read off the weights:
+Every individual operation is already familiar. The challenge is matching the exact
+conventions that the training code used, since none of them can be inferred from the
+checkpoint tensors alone:
 
-- **Where position enters.** There is no position embedding. Position exists only as
-  the RoPE rotation of queries and keys inside every attention, applied per head.
-  Because the score of a rotated query and a rotated key depends only on the
-  *difference* of their positions, the values must stay unrotated: they are the
-  content that gets mixed, not part of the comparison.
-- **Where the norms are.** Two per block, each on the input of a sublayer, plus one on
-  the stream after the last block. The last one exists because pre-norm blocks never
-  normalize the stream itself.
-- **What the head is.** With tied embeddings the checkpoint has one matrix doing two
-  jobs: row $v$ of $E$ is the input vector of token $v$ and also the direction whose
-  dot product with the final state is the logit of token $v$. The key `lm_head.weight`
-  is simply absent.
-- **What a head is.** A slice of `head_dim` consecutive features of the projection.
-  Queries have `n_heads` of them and keys and values `n_kv_heads`; `ops.attention`
-  pairs query head $h$ with key/value head $\lfloor h / G \rfloor$.
+- **Where position enters.** There is no learned position embedding. Position enters
+  only through the RoPE rotation applied per head to queries and keys inside every
+  attention layer. Because the dot product of a rotated query and a rotated key depends
+  only on the *difference* of their positions, the values stay unrotated so that
+  attention mixes content without injecting absolute position.
+- **Where the norms sit.** Two norms run inside each block on the sublayer inputs, and
+  one final norm runs on the residual stream after the last block. That final norm is
+  needed because pre-norm blocks never normalize the stream itself.
+- **How the output head works.** With tied embeddings, one matrix serves two roles. Row
+  $v$ of $E$ is both the input embedding for token $v$ and the output direction whose
+  dot product with the final state produces the logit for token $v$. In that case
+  `lm_head.weight` is absent from `params`.
+- **How heads are laid out.** Each head is a contiguous slice of $d = \texttt{head\_dim}$
+  features in the projection output. Queries have $H = \texttt{n\_heads}$ heads, keys and
+  values have $H_{kv} = \texttt{n\_kv\_heads}$ heads, and with group size $G = H / H_{kv}$,
+  `ops.attention` pairs query head $h$ with key/value head $\lfloor h / G \rfloor$.
 
-A good way to gain confidence in a forward pass is the causality check in the tests:
-change the tokens from position $t$ on, and the logits before $t$ must not move. It
-needs no reference, and it fails for a missing mask, a mask on the wrong axis, and any
-accidental mixing across time.
+The causality test is a reliable sanity check that requires no reference
+implementation. If you modify tokens from position $t$ onward, every logit before
+position $t$ must remain unchanged. That check immediately catches a missing mask, a
+transposed mask, or accidental mixing across the sequence axis.
 
 ## Reference solution (PyTorch)
 
@@ -62,63 +64,66 @@ def forward(params, cfg, tokens):
     return x @ head.T
 ```
 
-JAX and MLX differ only in spelling: `transpose(0, 2, 1, 3)` for the head axis and
-`jnp.tril` / `mx.tril` for the mask.
+The JAX and MLX versions differ only in API spelling, using `transpose(0, 2, 1, 3)` for
+the head axis and `jnp.tril` or `mx.tril` for the causal mask.
 
 ## Common mistakes
 
-- **Forgetting the final norm.** `model.norm.weight` is one small vector among dozens
-  of tensors, used once, outside the loop. Without it the head sees a stream whose
-  scale has grown through every block. The logits keep roughly their ranking early on
-  and are far too large, so sampling temperatures stop meaning what they should.
-- **Rotating the values.** Applying RoPE to `v` "for symmetry" injects absolute
-  position into the content that attention copies. Nothing un-rotates it afterwards.
-- **A head that silently defaults.** `params.get("lm_head.weight", zeros)`, or loading
-  with `strict=False`, turns the missing key of a tied checkpoint into a head of
-  zeros (or of random numbers) instead of an error. Every logit is then 0 and the
-  model is uniform. Decide from the config, and index the dict so that a wrong
-  decision fails loudly.
-- **Always tying.** The opposite mistake: using the embedding matrix as the head when
-  the checkpoint does have its own `lm_head.weight`.
-- **The other RoPE pair layout.** This model rotates adjacent pairs $(2j, 2j+1)$, as
-  Meta's original Llama code does. Hugging Face's `rotate_half` pairs feature $j$ with
-  feature $j + d/2$. Both are valid conventions, and a model trained with one is
-  garbage under the other. They are the same model up to a permutation of the rows of
-  `q_proj` and `k_proj`, which is exactly what Hugging Face's Llama conversion script
-  applies to those two matrices.
-- **RoPE before the head split.** Rotating the `(B, T, n_heads * head_dim)` projection
-  as one wide vector spreads the frequencies over the whole width instead of repeating
-  them in every head, and gives queries and keys different frequency tables when
-  $H_{kv} \ne H$. It is correct only for a single head.
-- **No causal mask.** The last position's logits are still right, since it may see
-  everything, so a test that looks only at the final row does not notice.
-- **Hard-coded hyperparameters.** `norm_eps` is `1e-5` in Llama and `1e-6` in Qwen and
-  Gemma; `rope_base` is 10,000 in most models, 500,000 in Llama 3, and 1,000,000 in
-  Qwen. Read them from the config.
+- **Forgetting the final norm.** `model.norm.weight` is a single small vector used once
+  outside the layer loop. Without it, the head receives a residual stream whose norm has
+  grown across every block. Early logits may still keep a similar ranking, but their
+  magnitudes become far too large and sampling temperatures stop behaving as intended.
+- **Rotating the values.** Applying RoPE to `v` injects absolute position into the value
+  vectors that attention copies, and nothing un-rotates them afterward.
+- **Silently defaulting a missing head.** Calling `params.get("lm_head.weight", zeros)`
+  or loading with `strict=False` turns the missing key of a tied checkpoint into zeros
+  or random weights instead of an error, making every logit uniform. Choose the head
+  matrix from `cfg.tie_embeddings` and index `params` directly so a mismatch fails
+  loudly.
+- **Always tying the head.** Using the embedding matrix as the output head even when
+  `cfg.tie_embeddings` is `False` ignores the checkpoint's separate `lm_head.weight`.
+- **Using the wrong RoPE pair layout.** This model rotates adjacent pairs $(2j, 2j+1)$,
+  matching Meta's original Llama code. Hugging Face's `rotate_half` pairs feature $j$
+  with feature $j + d/2$. Both conventions are valid, but a checkpoint trained with one
+  produces garbage under the other. The two layouts differ by a permutation of the rows
+  of `q_proj` and `k_proj`, which Hugging Face's Llama conversion script applies during
+  export.
+- **Applying RoPE before splitting heads.** Rotating the `(B, T, n_heads * head_dim)`
+  projection as one wide vector spreads the rotation frequencies across the entire width
+  instead of repeating them per head. It also gives queries and keys different frequency
+  tables whenever $H_{kv} \ne H$, so it only matches for a single head.
+- **Omitting the causal mask.** The final token's logits are still numerically correct
+  because the last position can attend to every earlier token, so a test that checks
+  only the last row will miss the bug.
+- **Hard-coding hyperparameters.** `norm_eps` is `1e-5` in Llama and `1e-6` in Qwen and
+  Gemma. `rope_base` is `10000` in many models, `500000` in Llama 3, and `1000000` in
+  Qwen. Always read both from `cfg`.
 
-A mistake that is *not* one: starting the positions at 1 instead of 0. RoPE scores
-depend only on position differences, so shifting every position of a row by the same
-amount changes nothing. No test can detect it, and it does not matter, as long as the
-shift is the same for queries and keys and consistent with the positions used for
-tokens appended later.
+One thing that is *not* a bug is starting positions at 1 instead of 0. Because RoPE
+attention scores depend only on relative position differences, shifting every position
+in a row by the same constant leaves the output unchanged as long as queries, keys, and
+any later appended tokens share the same offset.
 
 ## Complexity
 
-With $L$ layers, width $D$, MLP width $M$, and vocabulary $V$: $O(L\,B\,T\,D\,(D + M))$
-for the projections and MLPs, $O(L\,B\,H\,T^2 d)$ for attention, and $O(B\,T\,D\,V)$
-for the head. Memory is $O(B\,H\,T^2)$ for the attention weights of one layer at a
-time. During generation only the last row of logits is needed, and recomputing the
-whole prefix for every new token makes generation quadratic in length; removing that
-waste is the KV cache.
+For batch size $B$, sequence length $T$, $L$ layers, model width $D$, $H$ query heads of
+width $d$, MLP width $M$, and vocabulary size $V$, the time complexity is
+$O(L\,B\,T\,D\,(D + M))$ for the projections and MLPs, $O(L\,B\,H\,T^2 d)$ for
+attention, and $O(B\,T\,D\,V)$ for the output head. Peak attention memory is
+$O(B\,H\,T^2)$ for one layer at a time. During autoregressive generation, only the last
+row of logits is needed, and recomputing the full prefix for every new token makes
+generation quadratic in length. A KV cache removes that redundant work.
 
 ## In the wild
 
-Hugging Face's `LlamaModel.forward` followed by `lm_head` is this function, with the
-same parameter names. llama.cpp builds the same graph per layer (`build_norm`,
-`build_attn` with `ggml_rope_ext` applied to the query and key tensors only, then the
-feed-forward) and ends with the output norm and the output matrix. Tied embeddings are
-recorded in the Hugging Face config as `tie_word_embeddings`; many small models tie
-(the weight is a large share of a small model), while Llama 3 and most large models
-keep a separate head. Real engines also never materialize the logits of every
-position during generation: they slice the last position before the final norm and
-the head, which is the `last-position-head` problem.
+Hugging Face's `LlamaModel.forward` followed by `lm_head` implements this exact pass
+with the same parameter names. `llama.cpp` builds the same per-layer graph
+(`build_norm`, `build_attn` with `ggml_rope_ext` on queries and keys only, and the
+feed-forward block) followed by the final norm and output projection.
+
+Hugging Face records tied embeddings under `tie_word_embeddings`. Small models often tie
+them because the embedding table is a large fraction of total parameters, whereas
+Llama 3 and most large models keep a separate head. Production serving engines also
+avoid computing logits for every position during generation. Instead, they slice the
+final token before the final norm and output head, which is the `last-position-head`
+problem.

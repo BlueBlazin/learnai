@@ -1,27 +1,13 @@
-Work on one token first and name the three slices of the projected vector before doing
-anything with them: `raw[:, :N]`, `raw[:, N:2*N]`, `raw[:, 2*N:]`, and the same three
-slices of `base`. The last one becomes a matrix with `reshape(T, N, N)`.
+Work out the shapes on a single token first, then slice the projected tensor `raw` across all tokens into `raw[:, :N]`, `raw[:, N:2*N]`, and `raw[:, 2*N:]`, along with the matching slices of `base`. Reshape the last slice to `(T, N, N)` to form the matrix of logits.
 
 ---
 
-The norm is over the flattened vector of length `N * D`, one mean square per token,
-and it has no gain: `flat / sqrt(mean(flat**2, -1, keepdims) + 1e-6)`. Normalizing each
-stream separately throws away the relative sizes of the streams, which is information
-the projection is meant to see. The `1e-6` is a constant of the model; `eps` appears
-in four other places: added to `pre`, added to the softmax, and inside every row and
-column divisor.
+Normalize the flattened vector of length `N * D` as a whole, using one mean square per token and no gain: `flat / sqrt(mean(flat**2, -1, keepdims) + 1e-6)`. Normalizing each stream separately erases the relative magnitudes across streams, which the projection needs to see. Keep `1e-6` fixed in the norm. Use `eps` only in its four places: added to `pre`, added to the softmax output, and added inside every row and column divisor.
 
 ---
 
-"Divide every column by its sum" is a sum over axis `-2` (down the rows) with
-`keepdim`, and "every row" a sum over axis `-1`. Write the first column step, then a
-loop that runs `iters - 1` times with a row step and a column step. Check yourself on
-the example: after one iteration the columns of `comb` sum to 1 and the rows do not.
+Dividing every column by its sum means summing over axis `-2` (down the rows) with `keepdim=True`. Dividing every row by its sum means summing over axis `-1`. Run the initial column step first, then loop `iters - 1` times doing a row step followed by a column step. Verify on the worked example that after one iteration, the columns of `comb` sum to 1 while the rows do not.
 
 ---
 
-For the merge, write out stream `n` of the result: `post[t, n] * y[t]` plus
-`sum_j comb[t, j, n] * streams[t, j]`. The index that is summed is the *first* index
-of `comb`, so as a matrix product it is `comb` transposed times the streams:
-`comb.transpose(-1, -2) @ streams`, or `einsum("tjn,tjd->tnd", comb, streams)`. The
-first term needs `post[:, :, None] * y[:, None, :]`.
+For `hc_merge`, write out stream `n` of token `t`: `post[t, n] * y[t]` plus `sum_j comb[t, j, n] * streams[t, j]`. Because the sum contracts over the first matrix axis `j` of `comb`, the matrix product uses `comb` transposed: `comb.transpose(-1, -2) @ streams` (or `einsum("tjn,tjd->tnd", comb, streams)`). Broadcast the first term as `post[:, :, None] * y[:, None, :]`.

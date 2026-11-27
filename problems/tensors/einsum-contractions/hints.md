@@ -1,20 +1,12 @@
-For each function, copy the formula from the specification and list its letters.
-Which letters appear on the left-hand side (they are the result's axes, in that
-order)? Which appear only under the sum? That list is the whole `einsum` equation.
+For each function, write out the summation formula from the specification and inspect its index letters. The letters on the left-hand side become the output axes after `->`, in that order. Any letter that appears only under the sum is omitted after `->`. Together, those letters give the full `einsum` equation.
 
 ---
 
-- `attention_scores`: `q` is `b h t d`, `k` is `b h s d`, the result is `b h t s`.
-  `d` is the only letter that is summed.
-- `bilinear`: `x` is `b d`, `w` is `d e`, `y` is `b e`, the result is `b`. Three
-  operands in one equation are fine. The `b` on `x` and the `b` on `y` are the same
-  letter, which is what pairs row `b` with row `b`.
-- `per_head_project`: `x` is `b h t d`, `w` is `h d e`, the result is `b h t e`. The
-  `h` on `w` is the `h` on `x`.
+- `attention_scores`: `q` has axes `b h t d`, `k` has axes `b h s d`, and the output has axes `b h t s`. Only `d` is summed over.
+- `bilinear`: `x` has axes `b d`, `w` has axes `d e`, `y` has axes `b e`, and the output has axis `b`. `einsum` accepts all three operands in one call. Using the same `b` on `x` and `y` pairs row `b` with row `b`.
+- `per_head_project`: `x` has axes `b h t d`, `w` has axes `h d e`, and the output has axes `b h t e`. Sharing `h` matches each head of `x` with its own matrix in `w`.
 
-With `@` instead: the keys need `S` and `D` swapped so that `D` is summed; `x @ w`
-is `(B, E)` and still has to meet `y` row by row; and `(B, H, T, D) @ (H, D, E)`
-broadcasts the `(H,)` of `w` against the `(B, H)` of `x`.
+If you use `@` instead, swap `S` and `D` on `k` so `D` is contracted. For `bilinear`, `x @ w` has shape `(B, E)` and still needs a row-by-row dot product with `y`. For `per_head_project`, `(B, H, T, D) @ (H, D, E)` automatically broadcasts `(H,)` against `(B, H)`.
 
 ---
 

@@ -1,23 +1,23 @@
 A streaming server sends text to the client while the model is still generating.
-Implement the detokenizer for that loop: it receives one token at a time and returns
-the text that can be sent now. Tokens are byte strings, and a character's bytes may be
-spread over several tokens, so the function must hold back an unfinished character,
-and nothing else, without ever decoding the whole sequence again.
+Implement the detokenizer for that loop. It receives one token at a time and returns the
+text that can be sent immediately. Because tokens are raw byte strings, a single UTF-8
+character can span multiple tokens. Your detokenizer must hold back only an unfinished
+character at the end of the stream, without ever decoding the whole sequence again.
 
 ![This problem is the Detokenize step, turning one token at a time into the text that can be sent.](assets/map.svg)
 
 ## Specification
 
 ```python
-def detok_step(state, token_id: int, vocab: ToyVocab) -> tuple[state, str]: ...
-def detok_flush(state) -> str: ...
+def detok_step(state: Any, token_id: int, vocab: ToyVocab) -> tuple[Any, str]: ...
+def detok_flush(state: Any) -> str: ...
 ```
 
 `vocab` is a [`ToyVocab`](../../../python/src/learnai/kit/vocab.py), the kit's small
-token table. `vocab.bytes(token_id)` returns the bytes of one token. Special tokens
-(ids 0 to 4, such as `<|eos|>`) have the bytes `b""`.
+token table. Calling `vocab.bytes(token_id)` returns the byte string for one token.
+Special tokens (ids 0 to 4, such as `<|eos|>`) have empty bytes `b""`.
 
-**The stream.** A stream is a sequence of tokens $t_1, \dots, t_K$ fed one per call:
+**The stream.** A stream feeds a sequence of tokens $t_1, \dots, t_K$ one per call.
 
 ```python
 state = None
@@ -27,67 +27,70 @@ for token_id in tokens:
 send(detok_flush(state))
 ```
 
-The first call receives `state = None`. After that, `state` is whatever your
-`detok_step` returned; its type is your choice, and the tests never look inside it.
+The first call passes `state = None`. Every later call passes the `state` returned by
+the previous `detok_step`. You may choose any type for `state`, and the tests never
+inspect its contents.
 
-**What each step returns.** Let $B_k$ be the bytes of the first $k$ tokens,
-concatenated, and let $D$ be UTF-8 decoding with `errors="replace"`. Split $B_k$ into
-a *final part* $F_k$ and a *pending tail*: the pending tail is the unfinished
-character at the very end of $B_k$, if there is one, and $F_k$ is everything before
-it. "Unfinished character" has the precise meaning of the `utf8-boundaries` problem: a
-UTF-8 lead byte followed by fewer continuation bytes than it calls for, where the
-bytes present are still allowed by the UTF-8 table, so that more bytes could complete
-it to one valid character. The tail is at most three bytes long.
+**What each step returns.** Let $B_k$ be the concatenation of the bytes from the first
+$k$ tokens, and let $D$ denote UTF-8 decoding with `errors="replace"` (which replaces
+invalid byte sequences with the replacement character `�`, U+FFFD). Split $B_k$ into a
+*final part* $F_k$ and a *pending tail*. The pending tail is the unfinished character at
+the very end of $B_k$, if one exists, and $F_k$ is everything before it.
 
-Then:
+Here, an "unfinished character" has the same definition as in `utf8-boundaries`. It is a
+UTF-8 lead byte followed by fewer continuation bytes than it requires, where the bytes
+present are still valid according to the UTF-8 byte table so that more bytes could
+complete one valid character. A pending tail is at most three bytes long.
 
-- step $k$ returns the text that became final in this step: $D(F_k)$ without its
-  first $|D(F_{k-1})|$ characters ($D(F_{k-1})$ is always a prefix of $D(F_k)$, and
-  $F_0$ is empty);
-- `detok_flush` returns $D$ of the pending tail of $B_K$: `""` if there is none, and
-  otherwise `"�"`, since a character that was never finished is invalid.
+With this split (and empty $F_0$), $D(F_{k-1})$ is always a prefix of $D(F_k)$:
 
-So every character is returned by the first step at which it is certain, the
-concatenation of all returned texts and the flush equals $D(B_K)$, the decode of the
-whole sequence, and no step ever returns half a character.
+- Step $k$ returns the newly finalized text, which is $D(F_k)$ with its first
+  $|D(F_{k-1})|$ characters removed.
+- `detok_flush` returns $D$ applied to the pending tail of $B_K$. That is `""` when no
+  bytes are pending, and `"�"` otherwise, because an unfinished character at the end of
+  the stream is invalid.
 
-Consequences that the functions must get right:
+Under these rules, every character is returned at the earliest step where it is settled.
+The concatenation of all step outputs and the flush equals $D(B_K)$, and no step ever
+emits half a character.
 
-- **Invalid bytes are final immediately.** A byte that cannot start a character (a
-  stray continuation byte, `FF`), and an unfinished character followed by a byte that
-  cannot continue it, are returned as U+FFFD in the step that makes them certain,
-  exactly as they appear in $D(B_K)$. Only a tail that can still become a valid
-  character waits.
-- **A step often returns `""`**: when the token only starts or continues a character,
-  and for every special token. A special token has no bytes, so it changes nothing: an
-  unfinished character before it is still pending after it.
-- **A step can return several characters**, for example a U+FFFD for an abandoned
-  character followed by the text of the current token.
-- `detok_flush(None)` is `""`. `detok_flush` does not end the state's life: calling it
-  twice returns the same text.
-- **States are values.** `detok_step` must not modify the state it is given, and must
-  not keep the stream's progress anywhere else (a global, an attribute of `vocab`). The
-  caller may continue from the same state more than once, as beam search does, and may
-  advance several streams in turn.
+Your implementation must also satisfy these edge cases:
+
+- **Invalid bytes are final immediately.** A byte that cannot start a character (such as
+  a stray continuation byte or `FF`) is never held back. The same applies when an
+  unfinished character is followed by a byte that cannot continue it. Both are returned
+  as `�` in the step that settles them, matching $D(B_K)$. Only a tail that can still
+  become a valid character waits.
+- **A step can return `""`.** This happens when a token only starts or continues a
+  pending character, and for every special token. Because a special token has empty
+  bytes, it leaves any pending tail unchanged.
+- **A step can return multiple characters.** For example, a single token can settle an
+  abandoned character as `�` and also contribute its own text.
+- **Flushing is idempotent.** `detok_flush(None)` returns `""`. Calling `detok_flush`
+  does not mutate or invalidate `state`, so calling it twice returns the same string.
+- **States are immutable values.** `detok_step` must not mutate the `state` it receives,
+  and must not store stream progress in globals or attributes on `vocab`. A caller may
+  branch from the same state multiple times (as in beam search) or interleave multiple
+  streams.
 
 > [!NOTE]
-> One corner is left open. After the lead byte `ED`, a second byte in `A0..BF` is not
-> valid UTF-8 (it would encode a UTF-16 surrogate), so by the rule above it does not
-> wait. CPython's incremental decoder does hold it back. Either behavior is accepted:
-> the tests never put a byte `A0..BF` after `ED`.
+> One corner case is left open. After the lead byte `ED`, a second byte in `A0..BF` is
+> invalid UTF-8 (it would encode a UTF-16 surrogate), so by the rule above it does not
+> wait. CPython's incremental decoder does hold it back. Either behavior is accepted,
+> and the tests never place a byte in `A0..BF` after `ED`.
 
-**Cost.** `vocab` counts every byte it hands out in `vocab.counters.bytes_decoded`
-(both `vocab.bytes` and `vocab.decode` count). Over a whole stream, that counter must
-not exceed **four times** the total number of bytes of the tokens fed. A character has
-at most four bytes, so no token ever needs to be looked up in more than four steps;
-looking each token up once is enough. Decoding the sequence from the start at every
-step costs on the order of $K^2$ bytes and fails this limit.
+**Cost.** `vocab` counts every byte it returns in `vocab.counters.bytes_decoded` (both
+`vocab.bytes` and `vocab.decode` increment this counter). Across an entire stream,
+`bytes_decoded` must not exceed **four times** the total byte length of the tokens fed.
+A UTF-8 character is at most four bytes long, so no token ever needs to be looked up in
+more than four steps, and looking each token up once is sufficient. Re-decoding the
+entire prefix at each step costs $O(K^2)$ bytes and exceeds this limit.
 
 ## Example
 
-With `vocab = ToyVocab(size=64, seed=0)`, take the tokens whose bytes are `{"`, `é`
+With `vocab = ToyVocab(size=64, seed=0)`, consider the tokens whose bytes are `{"`, `é`
 (`C3 A9`, one token), `": `, the first half of `😀` (`F0 9F`), its second half
-(`98 80`), `"}`, and finally `<|eos|>`:
+(`98 80`), `"}`, and `<|eos|>`.
 
 | step | token bytes | returned text | pending after the step |
 |---|---|---|---|
@@ -99,15 +102,15 @@ With `vocab = ToyVocab(size=64, seed=0)`, take the tokens whose bytes are `{"`, 
 | 6 | `22 7D` | `"}` | |
 | 7 | (special) | `""` | |
 
-`detok_flush` returns `""`, and the pieces concatenate to `{"é": 😀"}`.
+`detok_flush` returns `""`, and the outputs concatenate to `{"é": 😀"}`.
 
 ![Steps 3 to 6 of the table: the four bytes of `😀` arrive in two tokens, and the first two wait for the rest.](assets/stream-steps.svg)
 
-A stream that stops in the middle of a character: the tokens `5`, a space, and the
-first two bytes of `€` (`E2 82`) return `"5"`, `" "`, `""`, and `detok_flush` returns
-`"�"`.
+Now consider a stream that stops mid-character. Feeding the tokens `5`, a space, and the
+first two bytes of `€` (`E2 82`) returns `"5"`, `" "`, and `""`. Calling `detok_flush`
+then returns `"�"`.
 
-Invalid bytes do not wait. With the tokens `E2 82`, `a`, `F0 9F`:
+Invalid bytes do not wait. With the tokens `E2 82`, `a`, and `F0 9F`:
 
 | step | token bytes | returned text | pending after the step |
 |---|---|---|---|
@@ -115,28 +118,28 @@ Invalid bytes do not wait. With the tokens `E2 82`, `a`, `F0 9F`:
 | 2 | `61` | `"�a"` | |
 | 3 | `F0 9F` | `""` | `F0 9F` |
 
-Step 2 settles the first character: `a` cannot continue it, so `E2 82` is invalid and
-comes out as one U+FFFD together with the `a`. `detok_flush` returns `"�"` for
-the unfinished `F0 9F`.
+In step 2, `a` (`61`) cannot continue `E2 82`. That settles `E2 82` as invalid, so step
+2 emits one `�` followed by `a`. Finally, `detok_flush` returns `"�"` for the
+unfinished `F0 9F`.
 
 ## Constraints
 
-- Streams have at most 5000 tokens. Vocabularies have 64 to 282 tokens with various
-  seeds, so token ids must not be hard-coded; at size 282 every byte value is a token,
-  and streams contain arbitrary invalid byte sequences.
-- The text of every step and of the flush is compared exactly.
-- `vocab.counters.bytes_decoded` is at most four times the total bytes of the tokens
-  fed, for every stream.
-- Use `vocab.bytes` or `vocab.decode` to get at the token bytes; `vocab.pieces` is an
-  uncounted view that exists for the tests.
+- Streams contain at most 5000 tokens. Vocabularies have 64 to 282 tokens with various
+  seeds, so do not hard-code token ids. At size 282, every single byte value is a token
+  and streams include arbitrary invalid byte sequences.
+- Every step's output and the flush output are compared for exact string equality.
+- `vocab.counters.bytes_decoded` must be at most four times the total bytes of the
+  tokens fed for every stream.
+- Use `vocab.bytes` or `vocab.decode` to read token bytes. `vocab.pieces` is an
+  uncounted view reserved for the test suite.
 
 ## Why this matters
 
-This function runs once per generated token for every streaming request. Decoding each
-token on its own is the classic bug: multi-byte characters arrive as `�` in the middle
-of a word, most visibly with emoji and CJK text. Decoding the whole output again at
-every step fixes the text and makes a 4000-token response cost millions of byte copies
-on the server's hot path. And the common heuristic of holding output back whenever the
-decoded text ends in `�` stalls on bytes that really are invalid: the client sees
-nothing until some later token happens to release it. The exact rule is small, but
-each of the three shortcuts ships in real systems.
+This function runs once per generated token on every streaming request. Decoding each
+token independently breaks any multi-byte character split across token boundaries,
+turning emoji and CJK text into `�`. Re-decoding the full output on every step fixes
+the text, but turns a 4000-token response into millions of byte copies on the server's
+hot path. A third common shortcut is to hold output back whenever the decoded string
+ends in `�`, which stalls on genuinely invalid bytes until a later token happens to
+flush them. The exact rule is small, yet all three buggy shortcuts appear in production
+systems.

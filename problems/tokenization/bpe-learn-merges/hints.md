@@ -1,28 +1,15 @@
-Keep the corpus as it is given: one entry per distinct word, with its frequency. What
-do you need to store for each word so that "count the pairs", "apply a merge", and
-"count again" are each a simple loop? And which of those three has to be repeated
-after every single merge?
+Keep the corpus in its frequency-map form, with one entry per distinct word and its count. Think about how to represent each word so that counting pairs, applying a merge, and recounting are each a simple loop. Which of those steps must run again after every merge?
 
 ---
 
-Represent each word as a list of symbols, `[*word, "</w>"]`, next to its frequency.
-One step is: build a `Counter` of adjacent pairs (`itertools.pairwise` yields them,
-overlapping ones included; add the word's frequency for each), stop if it is empty,
-choose a pair, append it to the result, and rebuild every word's list with the pair
-merged. The counts are taken again from the rebuilt lists in the next step: a merge
-destroys some pairs and creates new ones.
+Store each word as a list of symbols, `[*word, "</w>"]`, paired with its frequency. In each step, build a `Counter` of adjacent pairs across all words using `itertools.pairwise` (which includes overlapping pairs) and add the word's frequency for each pair. If the counter is empty, stop. Otherwise, pick the winning pair, append it to the result, and rebuild every word's symbol list with that pair merged. Recount from the rebuilt lists on the next step because every merge destroys old pairs and creates new ones.
 
 ---
 
-Selection with the tie rule is one expression: the highest count first, then the
-smallest pair.
+Selection with the tie-breaking rule is a single expression that prioritizes the highest count and then the smallest pair:
 
 ```python
 best = min(counts, key=lambda pair: (-counts[pair], pair))
 ```
 
-Apply the merge with an index loop, not with string replacement: at position `i`, if
-`symbols[i] == left` and `symbols[i + 1] == right`, append `left + right` and advance
-by **two**; otherwise append `symbols[i]` and advance by one. Advancing by two is what
-turns `a a a` into `aa a`, and comparing whole list elements is what keeps `(a, b)`
-from matching inside `xa b`.
+Apply the merge with an index loop rather than string replacement. At position `i`, if `symbols[i] == left` and `symbols[i + 1] == right`, append `left + right` and advance `i` by **two**. Otherwise, append `symbols[i]` and advance `i` by one. Advancing by two turns `a a a` into `aa a`, and comparing whole list elements keeps `(a, b)` from matching inside `xa b`.

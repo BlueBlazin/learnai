@@ -1,27 +1,18 @@
 ## The idea
 
-A scatter along axis 1 is one formula:
+A scatter along axis 1 writes each source entry into the column named by the index:
 
 $$
 \text{out}[i,\ \text{index}[i, j]] = \text{src}[i, j] .
 $$
 
-It is the gather formula with the index moved to the left-hand side. A gather has an
-index entry for every output entry, so every output entry is defined exactly once. A
-scatter has an index entry for every *source* entry, and that leaves two questions a
-gather never raises: what do the output entries hold that no index names, and what
-happens when two index entries name the same one? The first is answered by the tensor
-you scatter into. The second is answered by the form of the write: setting or adding.
+This is the gather formula with the index moved to the left-hand side. A gather has one index entry per output position, so every output entry is defined exactly once. A scatter has one index entry per *source* position, which raises two extra questions: what values sit in untouched output entries, and what happens when two source entries target the same position? The initial target tensor answers the first question, and the choice between a setting write and an adding write answers the second.
 
-**`one_hot_rows`.** Scatter into zeros. Row `b` gets one write, a 1 at column
-`ids[b]`. The index needs two axes, so `ids` becomes `(B, 1)`.
+**`one_hot_rows`** scatters into a `(B, V)` tensor of zeros. Row `b` receives a single `1.0` at column `ids[b]`. Because the target is 2D, `ids` needs a second axis of size 1, giving shape `(B, 1)`.
 
-**`token_counts`.** Scatter into integer zeros, with a 1 for every `(b, t)` at column
-`ids[b, t]`. A token that occurs three times in a row sends three 1s to the same
-entry, and the count is their sum, so this has to be the adding form.
+**`token_counts`** scatters into a `(B, V)` tensor of integer zeros, sending `1` to column `ids[b, t]` for every `(b, t)`. A token that appears three times sends three `1`s to the same entry, and their sum is the count, so this requires an adding write.
 
-**`write_at`.** The formula as written: scatter `values` into a copy of `x` at `idx`.
-No column is named twice, so the setting form is well defined.
+**`write_at`** applies the scatter formula directly by writing `values` into a copy of `x` at `idx`. Because no column is repeated within a row, a setting write is well defined.
 
 ## Reference solution (PyTorch)
 
@@ -40,8 +31,7 @@ def write_at(x, idx, values):
     return x.scatter(1, idx, values)
 ```
 
-In JAX the writes are paired indexing behind `.at`, with a row index that broadcasts
-against the columns:
+In JAX, all three writes use paired indexing through `.at`, with a `(B, 1)` row index that broadcasts against the column indices:
 
 ```python
 rows = jnp.arange(B)[:, None]  # (B, 1)
@@ -50,7 +40,7 @@ jnp.zeros((B, V), dtype=jnp.int32).at[rows, ids].add(1)
 x.at[rows, idx].set(values)
 ```
 
-In MLX the setting writes are `put_along_axis` and the adding write is `.at`:
+In MLX, setting writes use `put_along_axis` and the adding write uses `.at`:
 
 ```python
 mx.put_along_axis(mx.zeros((B, V)), ids[:, None], mx.array(1.0), axis=1)
@@ -58,9 +48,7 @@ mx.zeros((B, V), dtype=mx.int32).at[rows, ids].add(1)
 mx.put_along_axis(x, idx, values, axis=1)
 ```
 
-Two of the functions need no write at all. A comparison against `arange(V)` builds
-the same tables by broadcasting, at the cost of a `(B, T, V)` intermediate for the
-counts:
+`one_hot_rows` and `token_counts` can also be written without any scatter by broadcasting a comparison against `arange(V)`, though for `token_counts` this allocates a `(B, T, V)` intermediate tensor:
 
 ```python
 (ids[:, None] == torch.arange(V)).float()  # one_hot_rows
@@ -69,37 +57,18 @@ counts:
 
 ## Common mistakes
 
-- **Counting with a setting write.** `counts.scatter(1, ids, ones)` writes a 1 for
-  every occurrence, and the later writes replace the earlier ones. Every count is 0
-  or 1.
-- **Counting with `counts[rows, ids] += 1`.** This reads `counts[rows, ids]`, adds 1
-  to that copy, and assigns it back with a setting write. A repeated entry is read
-  once as 0 and written several times as 1. It is the same bug in a form that looks
-  like a loop body.
-- **Counting over the whole batch.** `bincount(ids.flatten())` has no row in it.
-  With row offsets it is a correct solution: add `b * V` to row `b`, count to
-  `B * V`, and reshape.
-- **The scatter on the batch axis.** `scatter(0, idx, values)` writes
-  `out[idx[b, k], k]`: the index picks a row. It raises only when an index is at
-  least `B`, so a tall batch hides it.
-- **The index written as the value.** `x.scatter(1, idx, idx.to(x.dtype))` runs and
-  has the right shape; the result holds column numbers where `values` belong. In
-  `scatter(dim, index, src)` the second argument says where and the third says what.
-- **One row's columns for every row.** `out[:, idx[0]] = values` writes each row at
-  the columns named by row 0. A per-row index needs a row index next to it,
-  `out[rows, idx]`, or a scatter.
-- **`scatter_` when the caller still needs `x`.** The trailing underscore writes into
-  the argument. So does `x[rows, idx] = values` in PyTorch and MLX; copy first
-  (`x.clone()`, `mx.array(x)`).
-- **A float count, or an integer one-hot.** `torch.nn.functional.one_hot` returns
-  int64 and `jax.nn.one_hot` returns float32, which is one reason to know how to build
-  the table yourself with the dtype you want.
+- **Counting with a setting write.** Calling `counts.scatter(1, ids, ones)` writes `1` for every occurrence, so later writes overwrite earlier ones and every count ends up as 0 or 1.
+- **Counting with `counts[rows, ids] += 1`.** This reads `counts[rows, ids]`, adds 1 to that copy, and writes it back with a setting write. A repeated entry is read as 0 and written back as 1 multiple times, producing the same bug as a setting scatter.
+- **Counting across the whole batch.** `bincount(ids.flatten())` ignores row boundaries. To use `bincount` per row, add row offsets `b * V` to row `b`, count into `B * V` bins, and reshape to `(B, V)`.
+- **Scattering on the batch axis.** Calling `scatter(0, idx, values)` writes to `out[idx[b, k], k]`, using the column index as a row number. It raises only when an index is at least `B`, so a large batch hides the error.
+- **Passing the index as the value.** Calling `x.scatter(1, idx, idx.to(x.dtype))` runs and produces the right shape, but fills the output with column numbers instead of `values`. In `scatter(dim, index, src)`, the second argument is the destination and the third is the value to write.
+- **Using one row's columns for every row.** Writing `out[:, idx[0]] = values` writes every row at the columns named by row 0. A per-row index requires a paired row index (`out[rows, idx]`) or a scatter.
+- **Mutating `x` in place.** Calling `x.scatter_` or `x[rows, idx] = values` in PyTorch or MLX modifies the caller's tensor. Use the out-of-place `scatter` or copy `x` first (`x.clone()`, `mx.array(x)`).
+- **Returning the wrong dtype.** Returning floats from `token_counts` or integers from `one_hot_rows` fails the dtype contract. Note that `torch.nn.functional.one_hot` returns `int64` while `jax.nn.one_hot` returns `float32`, which is another reason to build the table with an explicit dtype.
 
 ## Complexity
 
-Each write touches one entry per index entry: $O(B)$ writes for the one-hot rows,
-$O(B\,T)$ for the counts, and $O(B\,K)$ for `write_at`, on top of the $O(B\,V)$ result.
-The comparison form of the counts costs $O(B\,T\,V)$ time and memory.
+On top of allocating the $O(B\,V)$ output, each scatter touches one entry per index element: $O(B)$ writes for `one_hot_rows`, $O(B\,T)$ for `token_counts`, and $O(B\,K)$ for `write_at`. The broadcasted comparison version of `token_counts` takes $O(B\,T\,V)$ time and memory.
 
 ## In the three frameworks
 
@@ -116,16 +85,8 @@ The comparison form of the counts costs $O(B\,T\,V)$ time and memory.
 | a negative index | `scatter`, `scatter_add`: `RuntimeError` | counts from the end | counts from the end |
 | built-in one-hot | `torch.nn.functional.one_hot`, int64 | `jax.nn.one_hot`, float32 | none |
 
-Every entry was run on PyTorch 2.15, JAX 0.12, and MLX 0.32.4.
+Every entry was verified on PyTorch 2.15, JAX 0.12, and MLX 0.32.4.
 
-The frameworks differ most in the adding write. PyTorch has it as a scatter along an
-axis. JAX and MLX have it only as `.at[...].add` with paired indices, so the row index
-has to be built by hand; MLX's `put_along_axis` has no adding variant, and MLX's `.at`
-has `add`, `subtract`, `multiply`, `divide`, `maximum`, and `minimum` but no `set`.
+The biggest difference across frameworks is the adding write. PyTorch provides `scatter_add` along an axis. JAX and MLX only offer adding writes through `.at[...].add` with paired indices, so you must construct the row index yourself. MLX's `put_along_axis` has no adding variant, and MLX's `.at` supports `add`, `subtract`, `multiply`, `divide`, `maximum`, and `minimum`, but not `set`.
 
-They also differ in what a bad index does. PyTorch's scatters raise. JAX drops an
-out-of-range write silently, and MLX does not check: the write goes to the entry at
-that offset in the flattened array, which is in a later row, and is dropped only
-past the end of the array. (A setting write into the next row can then be
-overwritten by that row's own write, which looks like a drop.) A count that comes out
-one short in JAX is usually an id equal to `V`.
+Bounds checking also varies. PyTorch's scatter operations raise on out-of-range indices. JAX silently drops out-of-range writes, so a row count that comes up short in JAX often points to an id equal to `V`. MLX does not check bounds at all and writes to that flat offset in memory (landing in a later row, or dropping only past the end of the array), where a later row's own write can overwrite it and make the bug look like a dropped write.

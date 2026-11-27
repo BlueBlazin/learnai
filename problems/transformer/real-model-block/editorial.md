@@ -1,44 +1,24 @@
 ## The idea
 
-A checkpoint is weights plus conventions. The weights are in the file; the
-conventions are in the code that trained it, and a port has to restate each one.
-For this block there are six, and it helps to sort them by where they come from.
+A checkpoint consists of saved weights plus the conventions used to train them. Porting a model means reproducing each convention accurately. For Granite 4.0 350M, six conventions define this block, grouped by where they appear.
 
-**From `config.json`** (the names are IBM's):
+**From `config.json`** (using IBM's field names):
 
-- `attention_multiplier = 0.015625`. The scores are $q k^\top / 64$. Granite is
-  trained with the μP parameterization (`"init_method": "mup"`), in which attention
-  logits scale as $1/d$ rather than $1/\sqrt{d}$ so that they stay bounded as the
-  width grows. For a head of 64 dimensions the two differ by a factor of 8, which is
-  a temperature of 8 on every attention distribution in the model.
-- `residual_multiplier = 0.263`. Each branch is damped before it joins the stream:
-  $x + r \cdot f(\operatorname{norm}(x))$. It multiplies the branch output, both
-  times, and never the stream.
-- `rope_theta = 10000000`, a thousand times the usual base, which stretches the
-  longest wavelength to match a 32k context.
+- `attention_multiplier = 0.015625`. Scores are scaled by $1/64$. Granite uses the μP parameterization (`"init_method": "mup"`), which scales attention logits by $1/d$ instead of $1/\sqrt{d}$ so logits stay bounded as width grows. For $d = 64$, the two factors differ by 8x, acting as a temperature of 8 on every attention distribution.
+- `residual_multiplier = 0.263`. Both branch outputs are damped before being added to the residual stream: $x + r \cdot f(\operatorname{norm}(x))$. This factor multiplies only the branch output, never $x$.
+- `rope_theta = 10000000`. Using a base 1000x larger than the standard 10,000 stretches the longest wavelength to cover a 32k context.
 - `rms_norm_eps = 1e-05`.
 
-**From the tensor names and shapes:**
+**From tensor names and shapes:**
 
-- `shared_mlp.input_linear.weight` with $2F$ rows is the gate and the up projection
-  stacked, gate first. One matmul instead of two is a small speedup that every
-  SwiGLU implementation could make; this checkpoint bakes it into the file.
-- 1024 query features and 256 key and value features: 16 heads on 4.
+- `shared_mlp.input_linear.weight` has $2F$ rows, stacking the gate and up projections with the gate first. Fusing them turns two matrix multiplications into one.
+- Query projections have 1024 outputs while key and value projections have 256, giving 16 query heads across 4 key/value heads.
 
-**From nowhere but the reference code:**
+**From the reference code alone:**
 
-- The RoPE layout. `transformers` rotates with `rotate_half`, pairing feature $i$
-  with $i + d/2$. Meta's Llama code and the kit's `ops.rope` pair $2i$ with $2i + 1$.
-  The two are the same rotation after a fixed permutation of the 64 features, so a
-  model can be converted from one to the other by permuting rows of $W_q$ and $W_k$,
-  but a given checkpoint works with exactly one.
+- Half-split RoPE. `transformers` uses `rotate_half`, pairing feature $i$ with feature $i + d/2$. Meta's Llama code and the kit's `ops.rope` pair $2i$ with $2i + 1$. The two layouts are equivalent up to a fixed permutation of the 64 head features, so a checkpoint can be converted by permuting rows of $W_q$ and $W_k$, but any unmodified checkpoint works with only one layout.
 
-Why the rotation only shows up through differences: with half-split pairs written as
-complex numbers $z_i = a + \mathrm{i} b$, RoPE multiplies $z_i$ by
-$e^{\mathrm{i} p \theta_i}$, and the score $\operatorname{Re} \sum_i q_i \overline{k_i}$
-picks up $e^{\mathrm{i}(p_q - p_k)\theta_i}$. That is why shifting all positions by
-100 changes nothing, and why the tests need positions with gaps to see whether
-`positions` is used at all.
+Notice that RoPE affects attention scores only through relative position differences. Writing each half-split pair as a complex number $z_i = a + \mathrm{i} b$, RoPE multiplies $z_i$ by $e^{\mathrm{i} p \theta_i}$. The inner product $\operatorname{Re} \sum_i q_i \overline{k_i}$ therefore depends only on $e^{\mathrm{i}(p_q - p_k)\theta_i}$. Shifting all positions by a constant leaves scores unchanged, which is why tests must include non-contiguous positions with gaps to verify that `positions` is actually used.
 
 ## Reference solution (PyTorch)
 
@@ -81,55 +61,28 @@ def granite_block(x, weights, layer, positions):
     return x + 0.263 * (hidden @ weights[p + "shared_mlp.output_linear.weight"].T)
 ```
 
-JAX and MLX differ in spelling only: `transpose(0, 2, 1, 3)`, `jnp.repeat` /
-`mx.repeat` along axis 1, and `where(causal, scores, -inf)` for the mask.
+JAX and MLX differ only in API spelling: `transpose(0, 2, 1, 3)`, `jnp.repeat` or `mx.repeat` along axis 1, and `where(causal, scores, -inf)` for the causal mask.
 
 ## Common mistakes
 
-- **Scaling by $1/\sqrt{d}$.** The default of every attention helper, including
-  `ops.attention`, `F.scaled_dot_product_attention`, and
-  `mx.fast.scaled_dot_product_attention` unless told otherwise. Eight times sharper
-  attention.
-- **Dropping the residual multiplier**, or applying it once. Without it each branch
-  is 3.8 times too strong. With it on the attention branch only, the block is half
-  right, which is harder to notice.
-- **Multiplying the stream.** `(x + f(x)) * r` shrinks the residual stream by a
-  factor of 14 per block.
-- **Swapping gate and up.** `silu(up) * gate` has the same shape and the same
-  statistics on random weights. The gate rows are the first $F$.
-- **Adjacent-pair RoPE**, the layout of `ops.rope` and of the `rope` problem. Right
-  model, wrong permutation.
-- **Rotating clockwise.** `rotate_half` is $(a, b) \mapsto (-b, a)$. With the sign on
-  the other half, the model sees every relative offset negated: the previous token
-  looks like the next one.
-- **Base 10,000.** Only the first pair ($\theta_0 = 1$) is unaffected.
-- **Tiling KV heads.** Query heads 0 to 3 share KV head 0. `repeat` in PyTorch and
-  `tile` elsewhere produce the order 0, 1, 2, 3, 0, 1, ... instead of 0, 0, 0, 0, 1, ...
-- **Rotating the values**, or forgetting the causal mask: both are mistakes from
-  `decoder-forward`, and both still apply.
-- **Ignoring `positions`.** `arange(T)` is right for a prompt and wrong for every
-  token generated with a KV cache, where the new token's position is the length of
-  the cache.
-- **A layer prefix without its dot.** Collecting the block's tensors with
-  `name.startswith("model.layers.1")` also collects layers 10 to 19, and whichever
-  comes last wins. A three-layer test model cannot show this; a 28-layer checkpoint
-  does, at layers 1 and 2 only, which makes it a memorable afternoon.
+- **Scaling by $1/\sqrt{d}$.** This is the default in `ops.attention`, `F.scaled_dot_product_attention`, and `mx.fast.scaled_dot_product_attention`, making attention 8x sharper than Granite expects.
+- **Dropping the residual multiplier or applying it once.** Omitting $r = 0.263$ makes each branch 3.8x too strong. Applying it to only one branch leaves half the block wrong.
+- **Multiplying the residual stream.** Computing `(x + f(x)) * r` shrinks the residual stream by roughly 14x per block.
+- **Swapping gate and up.** Computing `silu(up) * gate` has the same shape and identical statistics on random weights. The first $F$ rows are the gate.
+- **Using adjacent-pair RoPE.** `ops.rope` and the `rope` problem pair $(2i, 2i+1)$, which applies the wrong feature permutation for this checkpoint.
+- **Rotating clockwise.** `rotate_half` maps $(a, b) \mapsto (-b, a)$. Flipping the sign negates every relative offset, making past tokens look like future tokens.
+- **Using base 10,000.** Only the first frequency ($\theta_0 = 1$) matches. Every other pair rotates at the wrong rate.
+- **Tiling KV heads.** Query heads 0 to 3 share KV head 0. Using `repeat` in PyTorch or `tile` in JAX/MLX produces `[0, 1, 2, 3, 0, 1, ...]` instead of `[0, 0, 0, 0, 1, ...]`.
+- **Rotating values or omitting the causal mask.** Both classic decoder bugs still break this block.
+- **Ignoring `positions`.** Using `arange(T)` works for contiguous prompts starting at 0, but fails for non-contiguous positions or cached decoding.
+- **Omitting the trailing dot in the layer prefix.** Filtering keys with `name.startswith("model.layers.1")` also matches layers 10 through 19. A three-layer test model hides this bug, while a 28-layer checkpoint triggers it on layers 1 and 2.
 
 ## Complexity
 
-$O(B\,T\,D\,(D + F))$ for the projections and the MLP, $O(B\,H\,T^2 d)$ for the
-attention. For the real model at $T = 12$ that is about 100 million multiply-adds, a
-few milliseconds.
+Projections and the MLP take $O(B\,T\,D\,(D + F))$ operations, and attention takes $O(B\,H\,T^2 d)$. For Granite 4.0 350M at $T = 12$, that is roughly 100 million multiply-adds, running in a few milliseconds.
 
 ## In the wild
 
-`transformers` implements this block as `GraniteMoeHybridDecoderLayer` (the "MoE
-hybrid" architecture with zero experts and no Mamba layers is a plain transformer),
-and `mlx-lm` and llama.cpp each restate the same six conventions in their own model
-files. The state entering layer 13 in the tests has a few entries above 10,000 while
-most are below 10. Such massive activations are common in trained language models:
-they act as fixed biases that the norms then remove, and they are a second reason to
-compare ports block by block, since an absolute tolerance chosen for the logits means
-nothing halfway up the stack. When you debug a port this way, capture the reference
-states with forward hooks, as `fixtures/make.py` does, and compare the first block
-that disagrees.
+`transformers` implements this block as `GraniteMoeHybridDecoderLayer` (a plain transformer when configured with zero experts and no Mamba layers). Runtimes like `mlx-lm` and `llama.cpp` each re-implement the same six conventions in their Granite model files.
+
+The hidden state entering layer 13 in the test suite has a few entries above 10,000 while most stay below 10. Massive activations like these are common in trained language models, where they act as fixed biases that layer normalization removes. They are another reason to validate ports block by block using forward hooks (as `fixtures/make.py` does) and inspect the first layer that diverges, since an absolute tolerance chosen for final logits is meaningless halfway through the network.

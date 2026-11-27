@@ -1,18 +1,10 @@
-Write down, for a tiny input, the list of source indices the result should read:
-for `repeat_kv_heads` with 2 groups and `n_rep = 2`, the heads read groups
-`0, 0, 1, 1`. Then check which of your framework's functions produces that list from
-`[0, 1]`, and which produces `0, 1, 0, 1`. Try both on `arange(2)` before using
-them on the real tensor.
+For a tiny input, write down the sequence of source indices the output should read. For `repeat_kv_heads` with 2 groups and `n_rep = 2`, the output heads should read groups `0, 0, 1, 1`. Check which function in your framework turns `[0, 1]` into `0, 0, 1, 1` and which produces `0, 1, 0, 1` by testing both on `arange(2)` first.
 
 ---
 
-- `repeat_kv_heads` and `expand_for_beams` are the same operation on different axes:
-  each element repeated in place, along axis 1 and along axis 0.
-- In PyTorch that is `repeat_interleave`, and `repeat` is the other one. In JAX and
-  MLX it is `repeat`, and `tile` is the other one. All of them need the axis named:
-  without it they flatten the tensor first.
-- `tile_positions` adds an axis in front and repeats along it. Since the new axis has
-  size 1, it can be expanded (broadcast), which in PyTorch and MLX copies nothing.
+- `repeat_kv_heads` and `expand_for_beams` perform the same operation on different axes, repeating each element in place along axis `1` and axis `0` respectively.
+- In PyTorch, use `repeat_interleave` (`repeat` tiles instead). In JAX and MLX, use `repeat` (`tile` tiles instead). Always specify the axis, because omitting it flattens the tensor first.
+- `tile_positions` adds a new leading axis of size `1` and expands along it. In PyTorch and MLX, expanding or broadcasting that axis avoids copying memory.
 
 ---
 
@@ -26,6 +18,4 @@ x.repeat_interleave(K, dim=0)           # expand_for_beams
 pos[None, :].expand(B, -1)              # tile_positions
 ```
 
-In JAX: `jnp.repeat(k, n_rep, axis=1)`, `jnp.repeat(x, K, axis=0)`, and
-`jnp.broadcast_to(pos, (B, pos.shape[0]))`. MLX has the same three functions under
-`mx`.
+In JAX: `jnp.repeat(k, n_rep, axis=1)`, `jnp.repeat(x, K, axis=0)`, and `jnp.broadcast_to(pos, (B, pos.shape[0]))`. MLX provides the same three functions under `mx`.

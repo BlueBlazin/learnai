@@ -1,7 +1,7 @@
 ## The idea
 
-The whole model is nine facts. Six are inside the block and were the subject of
-`real-model-block`; three are in the frame around the blocks:
+Granite 4.0 350M is defined by nine architectural facts. Six live inside each block
+(covered in `real-model-block`), and three form the frame around the blocks:
 
 | # | fact | where it comes from |
 |---|---|---|
@@ -15,25 +15,26 @@ The whole model is nine facts. Six are inside the block and were the subject of
 | 8 | final norm, then the embedding matrix as the head, then divide by 4 | `tie_word_embeddings`, `logits_scaling` |
 | 9 | weights stored as bfloat16, used as float32 | the safetensors header |
 
-Three of the config numbers form a set. Granite is trained in the μP
-parameterization, which keeps activations at the same scale whatever the width by
-moving scale factors out of the weights and into fixed multipliers: one on the way in
-(`embedding_multiplier`), one on each branch (`residual_multiplier`), one on the
-attention logits (`attention_multiplier`), and one on the way out (`logits_scaling`).
-To the training code they are hyperparameters. To a port they are part of the
-weights: leave one out and you are running a different function.
+Four of the config numbers work together as a set. Granite is trained with μP
+(Maximal Update Parameterization), which keeps activation scales stable across model
+widths by pulling scale factors out of the weights and into fixed multipliers:
+`embedding_multiplier` on the input, `residual_multiplier` on each block branch,
+`attention_multiplier` on the attention scores, and `logits_scaling` on the output.
+During training these act as hyperparameters, but during inference they are part of
+the model function itself. Leaving any one out produces a different model.
 
-Notice what does **not** matter. The final norm makes the logits invariant to the
-scale of the last hidden state, so a mistake that only rescales the stream at the end
-is invisible; the mistakes that survive are the ones that change the *mix*: the
-embedding multiplier changes how strongly the token identity competes with what the
-blocks add (each block adds branches of a fixed scale to a stream that starts 12
-times larger), and the residual multiplier changes it again 56 times over.
+Notice also which scaling errors survive to the output. Because the final RMSNorm
+normalizes the last hidden state, a mistake that only rescales the stream at the very
+end disappears. Mistakes that change the relative mix of terms do survive. The
+embedding multiplier sets how strongly token identity competes with the block updates
+(starting the stream 12 times larger), and the residual multiplier adjusts that ratio
+again across all 56 sublayer additions.
 
-And facts 8 and 9 are about absences. There is no `lm_head.weight` in the file; the
-config says why. There is no float32 in the file either, and the kit's `Weights`
-converts for you; a loader that keeps the storage type computes in 8 bits of
-mantissa, and the logits drift by tenths.
+Facts 8 and 9 are easy to miss because they concern what is absent from the file.
+There is no `lm_head.weight` tensor in the checkpoint, and `tie_word_embeddings` in
+`config.json` explains why. There are no float32 tensors in the file either. The kit's
+`Weights` loader converts bfloat16 weights to float32 for you, whereas a loader that
+keeps bfloat16 computes with only 7 mantissa bits and drifts in the logits by tenths.
 
 ## Reference solution (PyTorch)
 
@@ -81,56 +82,67 @@ def granite_logits(weights, cfg, tokens):
     return (x @ head.T) / cfg.logits_scaling
 ```
 
-The JAX and MLX versions are the same lines with `transpose(0, 2, 1, 3)`,
-`repeat(..., axis=1)`, and `where(causal, scores, -inf)`. This agrees with
-`transformers` to about $4 \cdot 10^{-5}$ on logits of magnitude 30 in all three
-frameworks.
+The JAX and MLX implementations follow the same steps using `transpose(0, 2, 1, 3)`,
+`repeat(..., axis=1)`, and `where(causal, scores, -inf)`. Across all three frameworks,
+this matches `transformers` to about $4 \cdot 10^{-5}$ on logits of magnitude 30.
 
 ## Common mistakes
 
-- **No embedding multiplier.** The blocks then add branches of the usual size to a
-  stream 12 times too small, so context overwhelms token identity from the first
-  layer on.
-- **No logits divisor**, or multiplying by it. The argmax is unchanged, which is why
-  greedy decoding hides this bug. Sampling does not: every temperature is off by a
-  factor of 4 (or 16), and perplexity is wrong.
-- **No final norm.** The head sees a stream with entries in the thousands.
-- **The attention scale, the residual multiplier, the RoPE layout, the gate and up
-  halves**: the mistakes of `real-model-block`, now 28 times each.
-- **Literals instead of `cfg`.** `12`, `0.263`, and `1/64` are this checkpoint's
-  numbers. Granite 4.2 3B has the same code path with all multipliers at 1 and a
-  separate head; a function with the 350M's numbers baked in loads it and is wrong.
-- **Always tying**, or **trusting the dict**. `weights.get("lm_head.weight",
-  embedding)` looks robust and encodes the wrong rule: whether the head is tied is a
-  property of the model, stated in the config. A file can hold a tied model's matrix
-  under both names, or a stale head left behind by a conversion script.
-- **Layers in name order.** Iterating over the sorted names of the checkpoint, or
-  over `sorted(set(layer prefixes))`, gives 0, 1, 10, 11, ..., 19, 2, 20, ...: correct
-  for every model with at most ten layers, which includes every toy model you will
-  test with. The safetensors header of this very checkpoint lists its tensors in that
-  order. Loop over `range(cfg.n_layers)`.
-- **Staying in bfloat16.** Casting the stream to the checkpoint's dtype, or never
-  leaving it, costs about 0.4 in the logits on this model: enough to flip near-ties
-  and to fail a 1e-3 comparison everywhere. Reduced precision is a deployment choice
-  to make after the float32 port matches, with its own measured tolerance.
-- **No causal mask**: the last position is still right, as in `decoder-forward`.
+- **Omitting `embedding_multiplier`.** Without it, the blocks add updates of normal
+  magnitude to a stream that is 12 times too small, so context overwhelms token
+  identity from the first layer onward.
+- **Omitting `logits_scaling`, or multiplying instead of dividing.** Greedy decoding
+  hides this bug because positive scaling preserves the argmax. However, sampling
+  temperatures are off by a factor of 4 (or 16), and perplexity is wrong.
+- **Omitting the final RMSNorm.** The output head then multiplies an unnormalized
+  residual stream with entries in the thousands.
+- **Block-level bugs repeated across all 28 layers.** Getting the attention scale,
+  residual multiplier, RoPE half-split layout, or SwiGLU gate/up split wrong (the same
+  pitfalls as in `real-model-block`) compounds across every layer.
+- **Hardcoding literals instead of reading `cfg`.** Constants like `12`, `0.263`, and
+  `1/64` belong to this specific checkpoint. Other models on the same code path, such
+  as Granite 4.2 3B with unit multipliers and an untied head, will load and silently
+  produce wrong logits if those numbers are hardcoded.
+- **Always tying the head, or inferring tying from `weights`.** Writing
+  `weights.get("lm_head.weight", embedding)` encodes the wrong rule. Whether the head
+  is tied is declared by `cfg.tied_embeddings`. A checkpoint or wrapper can contain a
+  duplicate or stale `lm_head.weight` even when the model is tied.
+- **Iterating layers in lexicographical order.** Sorting checkpoint tensor names or
+  layer prefixes produces `0, 1, 10, 11, ..., 19, 2, 20, ...`. This passes every toy
+  model with ten or fewer layers, but fails on 28 layers. The safetensors header of
+  this checkpoint lists its tensors in lexicographical order, so always loop over
+  `range(cfg.n_layers)`.
+- **Computing in bfloat16.** Keeping the activations or weights in bfloat16 shifts the
+  logits by roughly 0.4 on this model, which flips near-ties and fails the `1e-3`
+  tolerance everywhere. Reduced precision is a deployment trade-off to evaluate only
+  after the float32 port matches.
+- **Missing the causal mask.** As in `decoder-forward`, the final position still looks
+  correct without a causal mask, while earlier positions leak future tokens.
 
 ## Complexity
 
-Per layer $O(B\,T\,D\,(D + F))$ for the matrices and $O(B\,H\,T^2 d)$ for attention;
-the head is $O(B\,T\,D\,V)$. For 12 tokens of the real model that is about 3 billion
-multiply-adds for the blocks and 1.2 billion for the head: a tenth of a second on a
-laptop CPU. The head costs as much as ten blocks, and during generation only its last
-row is needed (`last-position-head`).
+Let $B$ be the batch size, $T$ the sequence length, $D = \texttt{d\_model}$,
+$F = \texttt{d\_ff}$, $H = \texttt{n\_heads}$, $d = \texttt{head\_dim}$, and
+$V = \texttt{vocab\_size}$. Each transformer layer costs $O(B T D (D + F))$ for its
+linear projections and $O(B H T^2 d)$ for attention. The output head costs
+$O(B T D V)$.
+
+On a 12-token prompt for Granite 4.0 350M, the 28 blocks take about 3 billion
+multiply-adds and the output head takes about 1.2 billion, running in roughly a tenth
+of a second on a laptop CPU. The head alone costs as much as ten transformer blocks,
+which is why generation usually computes only the last position's logits
+(`last-position-head`).
 
 ## In the wild
 
-Every runtime that supports Granite carries these facts in its own words:
-`transformers` in `GraniteMoeHybridModel`, `mlx-lm` in its `granite` model file,
-llama.cpp in the GGUF metadata keys its converter writes for the multipliers. When
-one of them gains support for a new architecture, the pull request almost always
-contains a table like the one in the constraints: a prompt, the reference logits, the
-port's logits, the largest difference. The next problems build on this function: a
-KV cache turns the quadratic recomputation into one new row per token
-(`real-model-cached-generate`), and an 8-bit checkpoint is judged by how far its
-logits move from these (`quantize-real-weights`).
+Every inference runtime that supports Granite encodes these same conventions in its
+own format: `transformers` in `GraniteMoeHybridModel`, `mlx-lm` in its `granite`
+model module, and `llama.cpp` in the GGUF metadata keys written by its converter. When
+a runtime adds support for a new architecture, the pull request almost always includes
+a verification table comparing a prompt's reference logits, ported logits, and maximum
+error.
+
+The next problems build directly on this forward pass. Adding a KV cache replaces
+quadratic recomputation with one new row per generated token
+(`real-model-cached-generate`), and quantizing the checkpoint to 8 bits is judged by
+how far its logits move from these float32 values (`quantize-real-weights`).

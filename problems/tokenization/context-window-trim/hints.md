@@ -1,28 +1,19 @@
-Two questions settle the structure. Which messages may never be dropped? And at which
-positions is it legal to cut the rest, so that what remains still starts with a
-question and every answer and tool result still has its question?
+Two questions settle the structure. First, which messages may never be dropped? Second, at which indices can you cut the remaining messages so that the kept history always starts with a user message and never orphans an assistant reply or tool result?
 
 ---
 
-Split off the system message if `messages[0]` is one. In the rest, every index that
-holds a `user` message is a legal place to start: cutting there drops whole turns and
-nothing else. So the candidates are `system + rest[i:]` for each such index `i`, from
-the first (drop nothing) to the last (keep only the last turn). The budget for the
-prompt is `max_context - max_new_tokens`.
+Separate the system message into `head` if `messages[0]["role"] == "system"` (or `[]` otherwise), and put the remaining messages in `rest`. In `rest`, every index holding a `"user"` message is a valid cut point that drops only whole turns. The candidate lists are `head + rest[i:]` for each such index `i`, from the first (drop nothing) to the last (keep only the last turn). The prompt token budget is `max_context - max_new_tokens`.
 
 ---
 
-Walk the candidates from the longest to the shortest and return the first one whose
-count is within the budget:
+Check the candidates from longest to shortest and return the first one within budget:
 
 ```python
-for i in user_indices:  # ascending: oldest turn first
+for i in user_indices:  # ascending order drops oldest turns first
     kept = head + rest[i:]
     if count_tokens(kept) <= max_context - max_new_tokens:
         return kept
 raise ValueError(...)
 ```
 
-Count each candidate as a whole list, since the count is not additive. Slicing and
-concatenating build a new list every time, so the argument is never modified and the
-result is never the caller's own list.
+Pass each full candidate list to `count_tokens`, since token counts are not additive. Slicing and concatenating always create a new list, so `messages` is never modified.

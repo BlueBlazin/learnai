@@ -1,31 +1,14 @@
 ## The idea
 
-Batching must be invisible: row $b$ of the batched result has to equal the model run
-on sequence $b$ alone. Look at the last real token of a short row and ask what could
-make the batched computation differ. There are exactly three channels.
+Batching must be invisible, so row $b$ of the batched output must match running the decoder on sequence $b$ alone. Let $L_b$ be the length of sequence $b$ in a batch of $B$ sequences, $T = \max_b L_b$ be the padded width, and $P_b = T - L_b$ be the number of leading pad slots in row $b$. Three channels could cause a padded row to diverge from a solo run:
 
-1. **Attention.** The token's output is a weighted sum over the keys it may see. Alone,
-   those are its own sequence's tokens up to itself. In the batch, the padding slots
-   are also in the row, so they must be removed from every real query's view: the
-   padding condition goes on the **key** axis. Combined with causality, query $i$ of
-   row $b$ sees key $j$ when $j \le i$ and $j \ge P_b$.
-2. **Position.** Alone, the first token is at position 0. Each row counts from its
-   own first real token: $\text{position} = j - P_b$.
-3. **Readout.** The answer is the logits at the last real token. Left padding puts it
-   in column $T - 1$ for every row; right padding puts it in column $L_b - 1$, a
-   different column per row.
+1. **Attention.** A real token's attention output is a weighted sum over the keys it can see. Alone, it sees only earlier tokens in its own sequence. In a padded batch, padding slots sit in the same row, so they must be masked out on the **key** axis. Combining causality with the real-token condition allows query $i$ of row $b$ to attend to key $j$ if and only if $j \le i$ and $j \ge P_b$.
+2. **Positions.** Alone, a sequence starts at position 0. Subtracting $P_b$ from each column index $j$ gives $\text{position} = j - P_b$, placing every row's first real token at position 0.
+3. **Readout.** Next-token logits come from the last real token of each sequence. Left padding aligns that token at column $T - 1$ for every row, whereas right padding leaves it at a different column $L_b - 1$ per row.
 
-Induction over the layers finishes the argument: if the real tokens of a row hold the
-same vectors as in the solo run at the input of a layer, and attention only reads real
-keys with the same relative positions, they hold the same vectors at its output.
-What the padding slots hold never matters, provided it is a finite number.
+By induction across layers, if every real token enters a layer with the same hidden vector as in a solo run, and attention reads only real keys with matching relative positions, every real token exits the layer with the same vector. The hidden states stored in padding slots do not matter as long as they stay finite.
 
-That proviso is the one numerical trap. With left padding, a padding query at column
-$i < P_b$ has no key it may attend to. A softmax over a row that is entirely $-\infty$
-is $0/0$ = NaN, so the padding slot's vector becomes NaN. In the next layer the real
-queries give that slot an attention weight of exactly 0, and $0 \cdot \text{NaN}$ is
-NaN: the padding has leaked after all, through the values. The kit's `ops.attention`
-returns zero for a query with nothing to see, which is why the provided block is safe.
+Finiteness is the one numerical hazard. Under left padding, any padding query at column $i < P_b$ has no valid keys to attend to. Taking a softmax over an all-$-\infty$ row produces $0/0 =$ NaN, poisoning that padding slot's hidden state. In the next layer, real queries assign that slot an attention weight of 0, and $0 \cdot \text{NaN}$ still evaluates to NaN, leaking into the real tokens. The kit's `ops.attention` handles this by returning zero for any query with no unmasked keys, which keeps `decoder_block` safe.
 
 ## Reference solution (PyTorch)
 
@@ -48,63 +31,25 @@ def batched_forward(params, cfg, seqs, pad_id):
     return x @ head.T
 ```
 
-Slicing the last column before the final norm and the head saves the projection to
-the vocabulary for every other position; the norm and the head act on each position
-independently, so the result is the same.
+Slicing `x[:, -1]` before the final RMSNorm and vocabulary projection avoids computing logits for the other $T - 1$ positions. Both operations act independently on each token position, so the result is unchanged.
 
 ## Common mistakes
 
-- **Attending to padding.** Using the causal mask alone. Every short row then computes
-  the logits of a longer sequence that starts with pad tokens. The result looks
-  reasonable and depends on the batch.
-- **The padding mask on the wrong axis.** `real[:, None, :, None]` blocks padding
-  *queries* (whose outputs nobody reads) and leaves padding *keys* visible to
-  everyone. The shapes broadcast identically. The mask's last axis is the key.
-- **Replacing the causal mask instead of combining.** A mask that only hides padding
-  lets every token see the real tokens after it.
-- **Finding padding by value.** `tokens != pad_id` also hides real tokens that happen
-  to have the padding id. With the common setup `pad_token = eos_token`, that is every
-  end-of-sequence token inside a multi-turn prompt. Use the lengths (in practice: the
-  attention mask the tokenizer returns), never the values.
-- **Right padding with a last-column readout.** With right padding and a causal mask
-  the real tokens are actually computed correctly without any padding mask, because
-  the padding is in their future. But column $-1$ then holds a padding slot for every
-  short row. Either read column $L_b - 1$ per row, or pad on the left.
-- **NaN from fully masked rows.** Described above. It passes in a one-layer model,
-  where nothing reads the poisoned slots, and fails from two layers on. The usual
-  fixes are a softmax that maps an empty row to zeros, a large finite negative number
-  instead of $-\infty$, or letting padding queries attend to themselves (the rule the
-  `attention-mask-builder` problem uses).
+- **Attending to padding.** Using only a causal mask lets every short row attend to its leading pad tokens, effectively running the model on a longer sequence prefixed with `pad_id`. The logits look plausible but depend on the rest of the batch.
+- **Putting the padding mask on the wrong axis.** Using `real[:, None, :, None]` masks padding *queries* (whose outputs are discarded) while leaving padding *keys* visible to real queries. Both shapes broadcast cleanly to `(B, n_heads, T, T)`, so there is no shape error. Always place the padding mask on the last (key) axis.
+- **Replacing the causal mask instead of combining.** Masking only padding lets tokens attend to future real tokens.
+- **Detecting padding by token value.** Checking `tokens != pad_id` masks out legitimate tokens that happen to equal `pad_id`. When `pad_token = eos_token`, that hides every end-of-sequence token inside a multi-turn prompt. Always derive the mask from sequence lengths (or the tokenizer's attention mask).
+- **Right padding with a last-column readout.** Under right padding with a causal mask, real tokens never see the trailing padding, so their hidden states are actually correct. However, column `-1` holds a pad token for every short row. You must either gather column $L_b - 1$ per row or pad on the left.
+- **NaN from fully masked rows.** As noted above, an unprotected softmax on an all-$-\infty$ row produces NaN. A one-layer model hides this bug because nothing reads the poisoned padding slot afterwards, but two or more layers fail immediately. Standard fixes include zeroing out empty softmax rows, using a large finite negative mask value instead of $-\infty$, or letting padding queries attend to themselves (as in `attention-mask-builder`).
 
-**About the positions.** Step 3 of the specification is the right habit, and it is
-what you need for learned absolute position embeddings. For this model, though, it
-cannot change the logits: RoPE scores depend only on the *difference* between the
-query's and the key's positions, so shifting all positions of a row by the same $P_b$
-(which is what counting from the padded start does) gives the same attention weights,
-up to float32 rounding. The tests therefore cannot tell `column - pads` from `column`,
-and neither can the model. The per-row positions start to matter the moment tokens
-are appended with a KV cache: the cached keys were rotated with one set of positions,
-and the next token must continue that same numbering.
+**A note on positions.** Computing `column - pads` is the right general practice and is required for models with learned absolute position embeddings. For a pure RoPE model, however, shifting every position in a row by the same offset $P_b$ leaves all relative differences $(i - j)$ unchanged, so plain `arange(T)` produces the same attention weights up to float32 rounding. Per-row positions still become essential as soon as you append tokens with a KV cache, because newly generated tokens must continue the exact position numbering used when caching the prompt keys.
 
 ## Complexity
 
-One pass over a `(B, T)` tensor with $T = \max_b L_b$: $O(L\,B\,T\,D\,(D + M))$ for
-projections and MLPs and $O(L\,B\,H\,T^2 d)$ for attention, plus $O(B\,D\,V)$ for the
-head on the last column only. The padding is computed and thrown away: a batch of one
-long and many short sequences wastes most of its arithmetic, which is why engines sort
-or bucket requests by length before batching them.
+Let $L$ be the number of layers, $B$ the batch size, $T = \max_b L_b$ the padded length, $D$ the model width, $M$ the MLP hidden width, $H$ the number of heads, $d$ the head dimension, and $V$ the vocabulary size. One batched pass takes $O(L\,B\,T\,D\,(D + M))$ time for linear projections and MLPs, $O(L\,B\,H\,T^2\,d)$ time for attention, and $O(B\,D\,V)$ time for the output head on the last column. Because padding slots are still computed and then discarded, batching one very long sequence with many short ones wastes most of its FLOPs. Serving engines mitigate this by sorting or bucketing requests by length.
 
 ## In the wild
 
-Hugging Face `generate` expects `tokenizer.padding_side = "left"` for decoder-only
-models and warns when it detects right padding, for exactly the readout reason above.
-Its `attention_mask` of shape `(B, T)` is expanded to the `(B, 1, T, T)` additive mask
-built here, and for the fully masked rows of left padding Transformers has a helper,
-`AttentionMaskConverter._unmask_unattended`, that lets those rows attend to
-everything rather than produce NaN in the fused attention kernel. For models with
-learned absolute positions (GPT-2), `generate` derives `position_ids` from the mask
-with a cumulative sum; for RoPE models such as Llama the positions are a plain
-`arange`, which works because of the shift invariance described above. Engines built
-on continuous batching (vLLM, llama.cpp's server) mostly avoid padding altogether in
-the decode phase: every running sequence contributes exactly one new token per step,
-and each attends to its own cache.
+Hugging Face's `generate` expects `tokenizer.padding_side = "left"` for decoder-only models and logs a warning if right padding is used, specifically so the final token aligns at column `-1`. Internally, it expands the `(B, T)` `attention_mask` into a `(B, 1, T, T)` additive mask, and uses `AttentionMaskConverter._unmask_unattended` to let fully masked left-padding rows attend to all positions rather than trigger NaNs in fused attention kernels.
+
+For models with learned absolute positions like GPT-2, `generate` computes `position_ids` from the attention mask via a cumulative sum. For RoPE models like Llama, it can use a plain `arange` during prefill because of RoPE's shift invariance. Modern serving engines with continuous batching (such as vLLM and llama.cpp's server) largely eliminate padding during decode by stepping one new token per active sequence against each sequence's own KV cache.

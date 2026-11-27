@@ -1,27 +1,15 @@
-Take the shortest sequence in a batch and write down its padded row. For its last
-token, list every way in which the batched computation could differ from running that
-sequence alone: which other vectors can reach it through attention, what position it
-is rotated with, and which column its logits are read from. Each item on that list is
-one thing to build.
+Write down the left-padded row for the shortest sequence in a batch. For its final real token, list every way the batched pass could differ from running that sequence alone: which keys it can attend to, what RoPE position it receives, and which column its logits are read from. Each item corresponds to one piece you need to construct.
 
 ---
 
-Everything follows from one small tensor: `pads`, the number of padding slots in front
-of each row, with shape `(B, 1)`, compared against the column index `arange(T)` with
-shape `(1, T)`.
+Everything can be built from two small index tensors: `pads` (the number of leading pad slots per row, shape `(B, 1)`) and `column` (`arange(T)`, shape `(1, T)`).
 
-- `real = column >= pads` has shape `(B, T)`. Do not compute it as
-  `tokens != pad_id`: a real token may have the same id.
-- The mask must broadcast to `(B, n_heads, T, T)`, where the third axis is the query
-  and the last axis is the key. The causal part depends on (query, key) and is the
-  same for all rows; the padding part depends on (row, key). Give each a shape with
-  ones in the axes it does not depend on, and combine them with a logical and.
-- `positions = column - pads` has shape `(B, T)`, which `decoder_block` accepts.
-- With left padding the answer of every row is in column `-1`.
+- Compute `real = column >= pads` with shape `(B, T)`. Do not use `tokens != pad_id`, because a real token can equal `pad_id`.
+- Build a boolean mask broadcastable to `(B, n_heads, T, T)`, where axis 2 is the query and axis 3 is the key. The causal condition depends on `(query, key)` and is shared across rows, while the padding condition depends on `(row, key)`. Reshape each with size-1 singleton axes where needed and combine them with logical AND.
+- Compute `positions = column - pads` with shape `(B, T)`, which `decoder_block` accepts directly.
+- Because the batch is left-padded, read every row's final hidden state from column `-1`.
 
-A padding query ends up with no key it may attend to. The provided block returns zero
-for it; if you write your own attention, a softmax over a row of `-inf` is NaN, and
-that NaN reaches the real tokens in the next layer through `0 * NaN`.
+A left-padding query has no valid keys to attend to. The provided `decoder_block` safely returns zero for such queries. If you write your own attention instead, remember that softmax over an all-`-inf` row produces NaN, which then leaks into real tokens in the next layer via `0 * NaN`.
 
 ---
 
@@ -38,7 +26,4 @@ mask = causal[None, None, :, :] & real[:, None, None, :]             # (B, 1, T,
 positions = column - pads                                            # (B, T)
 ```
 
-Then embed `tokens`, run `decoder_block(cfg, layer_params(params, i), x, mask,
-positions)` for every layer, take `x[:, -1]`, apply the final norm with
-`cfg.norm_eps`, and multiply by the transposed head (the embedding matrix if
-`cfg.tie_embeddings`, else `lm_head.weight`).
+Next, embed `tokens`, pass `x` through `decoder_block(cfg, layer_params(params, i), x, mask, positions)` for each layer `i`, slice `x[:, -1]`, apply the final RMSNorm with `cfg.norm_eps`, and multiply by the transposed output head (`model.embed_tokens.weight` if `cfg.tie_embeddings` is `True`, else `lm_head.weight`).

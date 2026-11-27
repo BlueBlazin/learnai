@@ -1,9 +1,6 @@
 ## The idea
 
-A `tokenizer.json` describes a pipeline, and the file's sections are its stages in
-order: `added_tokens`, `normalizer`, `pre_tokenizer`, `model`, `post_processor`, and,
-for the way back, `decoder`. Granite's file leaves the normalizer and the
-post-processor empty, so encoding is four nested loops:
+A `tokenizer.json` file describes a staged pipeline whose sections run in order: `added_tokens`, `normalizer`, `pre_tokenizer`, `model`, `post_processor`, and, in reverse, `decoder`. Because Granite's file leaves the normalizer and post-processor empty, encoding is a four-stage pipeline:
 
 $$
 \text{text} \xrightarrow{\text{added tokens}} \text{stretches}
@@ -12,31 +9,14 @@ $$
 \xrightarrow{\text{BPE}} \text{ids}.
 $$
 
-Each stage exists to stop the next one from doing something wrong.
+Each stage protects the next stage from breaking token boundaries:
 
-- **Added tokens first**, on the raw text, because nothing downstream may see them.
-  The pattern would cut `<|end_of_text|>` into `<|`, `end`, `_of`, `_text`, `|>`, and
-  BPE would never put it back together: there is no chain of merges that builds it.
-  Its entry in `vocab` is unreachable by design. The `special` flag does not change
-  this. It only says whether a decoder asked to skip special tokens drops the token;
-  `<think>` and `<tool_call>` are added, atomic, and not special.
-- **Words** bound the merges. BPE inside a word is cheap and cacheable, and the same
-  word always gets the same ids wherever it appears. The pattern is the tokenizer's
-  opinion about what a word is, and it is data: Granite 4.0 uses the tiktoken
-  `cl100k` pattern (a word takes one leading non-letter with it, digits come in
-  groups of three, a space is not attached to digits), while Granite 4.2 uses GPT-2's.
-  The same 100,000 merges then give `[644, 220, 2366, 21]` for `"In 2026"` under one
-  and `[644, 220, 508, 1627]` under the other.
-- **ByteLevel** makes the vocabulary printable. BPE works on bytes, but JSON keys are
-  strings, so each byte gets a character: itself if it is printable in Latin-1, and a
-  character from U+0100 on otherwise. That is why a leading space shows up as `Ġ` and
-  why `é`, the bytes `C3 A9`, is spelled `Ã©` in the vocabulary.
-- **BPE** is the loop from `bpe-encode` over strings instead of ints: the merged
-  symbol is the concatenation, and its id is whatever `vocab` says.
+- **Added tokens run first** on the raw text so downstream stages never see them. The word regex would split `<|end_of_text|>` into `<|`, `end`, `_of`, `_text`, and `|>`, and no sequence of BPE merges can reassemble it. Its entry in `vocab` is unreachable by BPE on purpose. The `special` flag does not change matching. It only tells a decoder whether to hide the token when skipping special tokens. Tokens like `<think>` and `<tool_call>` are added and atomic even though `special` is `false`.
+- **Words bound the merges.** Running BPE inside each word keeps merges cheap and cacheable, and ensures a word always gets the same ids regardless of context. The split pattern is model data, not a constant. Granite 4.0 uses the tiktoken `cl100k` pattern (a word takes one leading non-letter, digits split into groups of three, and spaces do not attach to digits), whereas Granite 4.2 uses GPT-2's pattern. With the same 100,000 merges, `"In 2026"` encodes to `[644, 220, 2366, 21]` under Granite 4.0's pattern and `[644, 220, 508, 1627]` under GPT-2's.
+- **ByteLevel makes the vocabulary printable.** BPE operates on raw bytes, but JSON object keys must be valid Unicode strings. ByteLevel maps each byte to itself if it is printable in Latin-1, and to a character from U+0100 upward otherwise. That is why a leading space appears as `Ġ` and `é` (bytes `C3 A9`) appears as `Ã©` in `vocab`.
+- **BPE** runs the same merge loop as `bpe-encode`, but over strings instead of integer ids. Each merged token is the concatenation of its two parts, and its id is looked up in `vocab`.
 
-Decoding is the inverse of the last two stages only: ids to bytes, bytes to text. The
-word boundaries and the added-token boundaries leave no trace in the ids, and need
-none.
+Decoding inverts only the last two stages, mapping ids to bytes and decoding those bytes as UTF-8. Word and added-token boundaries leave no trace in the id sequence and are not needed to reconstruct the text.
 
 ## Reference solution (Python)
 
@@ -97,62 +77,27 @@ def load_tokenizer(tokenizer_json):
     return encode, decode
 ```
 
-The added tokens that the file also lists in `vocab` get their bytes twice, first
-through the alphabet and then from `content`; the second assignment wins and, for
-ASCII contents, is the same.
+Added tokens that also appear in `vocab` are written into `token_bytes` twice: first via the byte alphabet, then overwritten with `content.encode("utf-8")`. The second assignment always wins, and for ASCII tokens both produce the same bytes.
 
 ## Common mistakes
 
-- **Ranking merges by vocabulary id.** In a tiktoken-derived vocabulary such as
-  Granite's, token $256 + r$ is the product of merge $r$, so "lowest id first" and
-  "lowest rank first" agree and the bug is invisible. The format promises no such
-  thing: the rank is the position in `merges`.
-- **Computing ids as `256 + rank`.** The same coincidence from the other side, and a
-  habit from tokenizers that are defined by their merge list alone. Look ids up.
-- **Looking for added tokens after pre-tokenization**, or only as whole words. By
-  then they are in pieces. They are matched on the raw text, before anything else.
-- **Matching only `special` added tokens.** In Granite's file 12 of the 96 added
-  tokens are not special, among them `<think>`, `<tool_call>`, and `<|fim_prefix|>`.
-  They are still single tokens. A miniature whose added tokens are all special cannot
-  show this; the real file does.
-- **Taking the shorter of two added tokens at one position.** Leftmost, then longest;
-  an alternation regex gets this right only if the alternatives are sorted by length,
-  longest first.
-- **Assuming the GPT-2 pattern.** Most byte-level BPE files say
-  `"pre_tokenizer": {"type": "ByteLevel", "use_regex": true}`, which means GPT-2's
-  pattern. This one carries its own `Split` regex and switches ByteLevel's off. Read
-  the file.
-- **An incomplete byte alphabet.** Mapping the space to `Ġ`, the newline to `Ċ`, and
-  everything else to `chr(byte)` works for ASCII text. The bytes `0x80` to `0xA0`
-  occur in almost every non-Latin character (`東` is `E6 9D B1`), and they have their
-  own characters.
-- **Merging the leftmost mergeable pair** instead of the pair of lowest rank: the bug
-  `bpe-encode` was about, still available here.
-- **Decoding token by token.** `🙂` is four bytes that may sit in two or three tokens;
-  decoding each alone yields replacement characters. Join the bytes, decode once.
-- **Dropping special tokens in `decode`.** `Tokenizer.decode` in the `tokenizers`
-  library does that by default (`skip_special_tokens=True`). It is a display option,
-  not part of what the ids mean.
+- **Ranking merges by vocabulary id.** In tiktoken-derived vocabularies like Granite's, token $256 + r$ happens to be the result of merge $r$, so "lowest id first" and "lowest rank first" agree and hide the bug. The format makes no such guarantee. Always use the pair's index in `merges` as its rank.
+- **Computing ids as `256 + rank`.** This is the same assumption in reverse, carried over from tokenizers defined only by a merge list. Always look up ids in `vocab`.
+- **Matching added tokens after pre-tokenization.** By the time the word regex runs, added tokens have already been split into fragments. Match added tokens on the raw text first.
+- **Matching only `special` added tokens.** Twelve of Granite's 96 added tokens have `"special": false`, including `<think>`, `<tool_call>`, and `<|fim_prefix|>`. They are still atomic tokens. A miniature test file whose added tokens are all special will not catch this bug, but the real file will.
+- **Picking the shorter added token at the same position.** The rule is leftmost, then longest. In a Python regex alternation, the first matching branch wins, so you must sort escaped alternatives from longest to shortest.
+- **Hardcoding the GPT-2 pattern.** Many byte-level BPE files set `"pre_tokenizer": {"type": "ByteLevel", "use_regex": true}` to use GPT-2's pattern. Granite supplies its own `Split` regex and disables ByteLevel's built-in regex, so you must read the pattern from the file.
+- **Using an incomplete byte alphabet.** Mapping only space to `Ġ`, newline to `Ċ`, and everything else to `chr(byte)` works on ASCII but fails on non-Latin text. Bytes `0x80`–`0xA0` appear in most multi-byte UTF-8 characters (for example, `東` is `E6 9D B1`) and map to code points from U+0100 upward.
+- **Merging the leftmost mergeable pair.** Always merge the pair with the lowest rank in `merges`, not the first mergeable pair from the left.
+- **Decoding token by token.** A multi-byte character like `🙂` (4 bytes) can span two or three tokens. Decoding each token separately produces U+FFFD replacement characters. Concatenate all token bytes first, then decode once.
+- **Dropping special tokens in `decode`.** The `tokenizers` library defaults to `skip_special_tokens=True` in `Tokenizer.decode`, which is a display convenience rather than the raw decoding of the id sequence. Keep all tokens here.
 
 ## Complexity
 
-Loading is linear in the size of the file. Encoding a word of $m$ bytes costs
-$O(m^2)$ in the worst case with this loop ($m$ rounds, each a pass over the list);
-words are short, so the total is close to linear in the text. Production tokenizers
-cache the ids of each distinct word, which makes the amortized cost a dictionary
-lookup per word, and use a priority queue inside long words.
+Loading takes time linear in the size of `tokenizer_json`. With this BPE loop, encoding a word of $m$ bytes takes $O(m^2)$ time in the worst case ($m$ merge rounds, each scanning the token list). Because words are short, total encoding time is nearly linear in the input length. Production tokenizers cache the encoded ids of each distinct word for amortized $O(1)$ lookup per repeated word, and use a priority queue for long words.
 
 ## In the wild
 
-The `tokenizers` library runs exactly this pipeline in Rust, with an Aho-Corasick
-automaton for the added tokens (leftmost-longest, as specified here) and the Oniguruma
-regex engine for the pattern, which is why the pattern speaks `\p{L}` and why `\s`
-means Unicode White_Space rather than Python's slightly wider class;
-`translate_pattern` papers over both. tiktoken stores the same vocabulary as a list
-of byte strings with ranks and no merge list at all: it merges the adjacent pair
-whose *concatenation* has the lowest rank, which is the "rank by id" rule, valid there
-because the format defines ids that way. Converting between the two formats is
-exactly the coincidence the note in the statement warns about. Chat templates
-(`chat-template-render`) produce the strings that step 1 then turns into role tokens,
-and `special-tokens-split` is the policy layer deciding when user text may contain
-them.
+The `tokenizers` library implements this exact pipeline in Rust. It uses an Aho-Corasick automaton for leftmost-longest added-token matching and the Oniguruma regex engine for pre-tokenization. Oniguruma supports `\p{L}` and defines `\s` as Unicode `White_Space` (slightly narrower than Python's `\s`), which `translate_pattern` bridges for Python's `re`.
+
+By contrast, `tiktoken` stores a vocabulary as ranked byte strings without a separate merge list. It merges the adjacent pair whose *concatenation* has the lowest rank, which is valid there because the format defines ids by merge order. Converting a tiktoken vocabulary into `tokenizer.json` creates the exact $256 + r$ coincidence noted in the statement. Upstream, chat templates (`chat-template-render`) emit the strings that step 1 turns into role tokens, while `special-tokens-split` handles the policy of when user input is allowed to contain them.

@@ -1,20 +1,14 @@
-At each position you are looking for the longest substring starting there that is in
-the vocabulary. In which order should you try the possible end positions so that the
-first hit is the answer? And what string do you actually look up when the piece does
-not start the word?
+At each position, you want the longest substring starting there that exists in `vocab`. In what order should you test candidate end positions so the first hit is guaranteed to be the longest? And how does the lookup string change once you move past index 0?
 
 ---
 
-Keep an index `start`. For `end` from `len(word)` down to `start + 1`, build the
-candidate: `word[start:end]` if `start == 0`, otherwise `"##" + word[start:end]`. The
-first candidate that is in `vocab` is the piece: record its id and set `start = end`.
-Two exits need care. If the inner loop ends without a hit, the answer is
-`[vocab[unk]]` for the whole word, so return immediately instead of appending. And the
-length check `len(word) > max_chars` comes before any of this.
+Track the current index `start`. For `end` from `len(word)` down to `start + 1`, form the candidate as `word[start:end]` when `start == 0`, or `"##" + word[start:end]` otherwise. On the first candidate found in `vocab`, append its ID and update `start = end`.
+
+Two edge cases need care. First, check `len(word) > max_chars` before the loop starts. Second, if the inner loop finishes without a match, return `[vocab[unk]]` immediately so any earlier pieces are discarded.
 
 ---
 
-Python's `for ... else` expresses the inner loop exactly:
+Python's `for ... else` handles the inner loop cleanly:
 
 ```python
 for end in range(len(word), start, -1):
@@ -23,9 +17,8 @@ for end in range(len(word), start, -1):
         ids.append(vocab[piece])
         start = end
         break
-else:  # no break: nothing matched at this position
+else:  # no break means nothing matched at this position
     return [vocab[unk]]
 ```
 
-Wrap it in `while start < len(word)`. An empty word never enters the loop and returns
-the empty list.
+Wrap this in `while start < len(word):`. An empty word skips the loop and returns `[]`.

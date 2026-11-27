@@ -1,24 +1,18 @@
-Before writing any arithmetic, write the two shapes one under the other, **aligned at
-the right edge**, and read the columns. For `scale_rows` that is `(B, T, D)` over
-`(B,)`: which axis of `x` does the only axis of `s` sit under? Which shape would `s`
-need so that its `B` sits under the `B` of `x`?
+Before writing any arithmetic, write the two operand shapes one above the other, **aligned at the right edge**, and read down each column. For `scale_rows`, compare `(B, T, D)` above `(B,)`. Which axis of `x` does `s` sit under, and what shape does `s` need so its `B` axis sits under `x`'s `B` axis?
 
 ---
 
-Each function needs its operands reshaped so that every axis meets either an axis of
-the same meaning or a 1.
+Reshape each operand so every axis meets either its matching partner or a size-1 axis.
 
-- `relative_positions`: `i` varies down the rows and `j` along the columns, so you need
-  the positions once as a column `(T, 1)` and once as a row `(1, T)`.
-- `scale_rows`: `s` must become `(B, 1, 1)`.
-- `pairwise_sq_dist`: the result has an `N` axis and an `M` axis, and `D` is summed
-  away. Give `a` and `b` shapes that broadcast to `(N, M, D)`.
+- `relative_positions`: `i` varies down the rows and `j` varies across the columns, so form a column `(T, 1)` and a row `(1, T)`.
+- `scale_rows`: reshape `s` to `(B, 1, 1)`.
+- `pairwise_sq_dist`: the output keeps `N` and `M` and sums out `D`, so reshape `a` and `b` to broadcast to `(N, M, D)`.
 
-Indexing with `None` adds an axis of size 1 at that place.
+Indexing with `None` inserts a size-1 axis at that position.
 
 ---
 
-The key lines, with the shape of each operand:
+The key lines and their operand shapes:
 
 ```
 pos = arange(T)

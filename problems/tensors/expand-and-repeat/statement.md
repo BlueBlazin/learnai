@@ -1,8 +1,4 @@
-Write three functions that make a tensor larger by repeating what is in it: key/value
-heads shared by several query heads, batch rows copied once per beam, and one row of
-positions for a whole batch. There are two orders in which copies can be laid out
-along an axis, the frameworks disagree about which one the name `repeat` means, and
-both orders return the same shape.
+Implement three functions that enlarge a tensor by repeating its elements: duplicating key/value heads for shared query heads, copying batch rows for beam search, and broadcasting a single position vector across a batch. Copies along an axis can be laid out in two different orders that produce the exact same shape, and frameworks disagree on which order `repeat` refers to.
 
 ## Specification
 
@@ -12,40 +8,33 @@ def expand_for_beams(x, K): ...
 def tile_positions(pos, B): ...
 ```
 
-**`repeat_kv_heads(k, n_rep)`** takes `k` of shape `(B, G, T, D)`, the keys of `G`
-groups, and returns `G * n_rep` heads, shape `(B, G * n_rep, T, D)`. Each group
-serves `n_rep` consecutive heads:
+**`repeat_kv_heads(k, n_rep)`** repeats key/value head groups so that each group serves `n_rep` consecutive query heads. Here `B` is the batch size, `G` is the number of key/value groups, `T` is the sequence length, and `D` is the head dimension. The output has `G * n_rep` heads, where group `g` fills `n_rep` adjacent slots:
 
 $$
-\text{out}[b,\ g \cdot n_{rep} + r] = k[b, g] \qquad \text{for } 0 \le r < n_{rep} .
+\text{out}[b,\ g \cdot n_{\text{rep}} + r] = k[b, g] \qquad \text{for } 0 \le r < n_{\text{rep}} .
 $$
 
-Head `h` of the result is group `h // n_rep`.
+Equivalently, output head `h` reads from group `h // n_rep`.
 
-**`expand_for_beams(x, K)`** takes token ids `x` of shape `(B, T)` and returns `K`
-consecutive copies of every row, shape `(B * K, T)`:
+**`expand_for_beams(x, K)`** duplicates each row of token IDs `x` (of `B` prompts and length `T`) `K` times consecutively along the batch axis:
 
 $$
 \text{out}[b \cdot K + j] = x[b] \qquad \text{for } 0 \le j < K .
 $$
 
-The `K` beams of prompt `b` are rows `b * K` to `b * K + K - 1`.
+The `K` beams for prompt `b` occupy rows `b * K` through `b * K + K - 1`.
 
-**`tile_positions(pos, B)`** takes positions `pos` of shape `(T,)` and returns the
-same row for every batch row, shape `(B, T)`:
+**`tile_positions(pos, B)`** repeats a 1D vector of `T` position indices across a new leading batch axis of size `B`:
 
 $$
 \text{out}[b, t] = \text{pos}[t] .
 $$
 
-- `k`: a float32 tensor; `repeat_kv_heads` returns float32.
-- `x`, `pos`: integer tensors of your framework's default integer type (int64 in
-  PyTorch, int32 in JAX and MLX). `expand_for_beams` and `tile_positions` return
-  integer tensors; any integer width is accepted.
-- `n_rep`, `K`, `B`: Python ints, at least 1. With `n_rep = 1` or `K = 1` the result
-  has the values of the input.
-- Results are compared by value. A result that shares memory with its input (an
-  expanded view) is accepted, and so is a copy.
+Additional requirements:
+
+- `x` and `pos` use your framework's default integer dtype (`int64` in PyTorch, `int32` in JAX and MLX). `expand_for_beams` and `tile_positions` may return any integer width.
+- `n_rep`, `K`, and `B` are Python `int`s of at least `1`. When `n_rep == 1` or `K == 1`, the output values match the input.
+- Results are compared by value. Both an expanded view (sharing memory with the input) and a freshly allocated copy are accepted.
 
 ## Shapes
 
@@ -60,37 +49,27 @@ $$
 
 ## Tools
 
-Repeating `[a, b]` twice along an axis has two possible results:
+Repeating `[a, b]` twice along an axis produces one of two layouts:
 
-- **each element in place**, `[a, a, b, b]`: `torch.repeat_interleave(x, n, dim=d)`,
-  `jnp.repeat(x, n, axis=d)`, `mx.repeat(x, n, axis=d)`;
-- **the whole axis again**, `[a, b, a, b]`: `torch.tile(x, reps)` and
-  `x.repeat(*reps)` in PyTorch, `jnp.tile(x, reps)`, `mx.tile(x, reps)`, with one
-  count per axis.
+- **Interleaving each element in place** gives `[a, a, b, b]`. Use `torch.repeat_interleave(x, n, dim=d)`, `jnp.repeat(x, n, axis=d)`, or `mx.repeat(x, n, axis=d)`.
+- **Tiling the whole axis** gives `[a, b, a, b]`. Use `torch.tile(x, reps)` or `x.repeat(*reps)` in PyTorch, `jnp.tile(x, reps)` in JAX, or `mx.tile(x, reps)` in MLX, supplying one repetition count per axis.
 
 > [!WARNING]
-> `repeat` means the second in PyTorch and the first in JAX, MLX, and NumPy. Code
-> ported between them keeps its shape and changes its order.
+> `repeat` tiles the whole axis in PyTorch, but interleaves each element in JAX, MLX, and NumPy. Porting code between them preserves the output shape while silently changing the element order.
 
-`x.expand(sizes)` in PyTorch and `broadcast_to(x, shape)` in all three repeat an axis
-of size 1, or add leading axes. In PyTorch the result is a view that reads the same
-memory many times, and nothing is copied. In MLX an evaluated `mx.broadcast_to`
-added no memory either. In JAX `jnp.broadcast_to` took as long as `jnp.tile` when
-measured, so there it saves nothing. That is the broadcasting of Broadcasting on Purpose made explicit, so it
-needs the axis to exist with size 1 first (`None`). Merging the new axis into a
-neighbor with `reshape`, as in Reshape, Transpose, and Memory Order, turns it into
-one of the two orders above, and which one depends on the side of the neighbor the
-new axis was put on.
+To repeat a size-1 axis or add leading axes, use `x.expand(sizes)` in PyTorch or `broadcast_to(x, shape)` in any of the three frameworks. In PyTorch, `expand` returns a zero-copy view that reads the same memory repeatedly. In MLX, an evaluated `mx.broadcast_to` also adds no extra memory. In JAX, `jnp.broadcast_to` takes about the same time as `jnp.tile` when run eagerly.
+
+To repeat an axis whose size is greater than `1` using `expand` or `broadcast_to`, insert a size-1 axis with `None`, expand it, and merge it into the adjacent axis with `reshape`. Whether the merged result interleaves or tiles depends on which side of the target axis you place the new size-1 axis.
 
 ## Example
 
 ```python
-k = [[[[0.0, 1.0]], [[100.0, 101.0]]]]  # shape (1, 2, 1, 2): groups 0 and 1
+k = [[[[0.0, 1.0]], [[100.0, 101.0]]]]  # shape (1, 2, 1, 2), groups 0 and 1
 repeat_kv_heads(k, n_rep=2)
-# [[[[  0.0,   1.0]],               # head 0: group 0
-#   [[  0.0,   1.0]],               # head 1: group 0
-#   [[100.0, 101.0]],               # head 2: group 1
-#   [[100.0, 101.0]]]]              # head 3: group 1; shape (1, 4, 1, 2)
+# [[[[  0.0,   1.0]],               # head 0 from group 0
+#   [[  0.0,   1.0]],               # head 1 from group 0
+#   [[100.0, 101.0]],               # head 2 from group 1
+#   [[100.0, 101.0]]]]              # head 3 from group 1, shape (1, 4, 1, 2)
 
 x = [[1, 2, 3], [4, 5, 6]]  # shape (2, 3)
 expand_for_beams(x, K=2)
@@ -105,25 +84,17 @@ tile_positions(pos, B=2)
 #  [0, 1, 2]]                       # shape (2, 3)
 ```
 
-The other order would give heads `0, 1, 0, 1` and rows `[1, 2, 3], [4, 5, 6],
-[1, 2, 3], [4, 5, 6]`, in the same shapes.
+Using the tiled order instead would produce heads `0, 1, 0, 1` and rows `[1, 2, 3], [4, 5, 6], [1, 2, 3], [4, 5, 6]`, with the exact same shapes.
 
 ## Constraints
 
-- Results are compared with the reference exactly: values are copied.
-- `B`, `G`, `T`, and `D` are between 1 and 8, and `n_rep` and `K` between 1 and 4.
-  Any of them can be 1, and any two can be equal.
-- Token ids and positions lie in $[0, 1000)$.
+- Results are compared against the reference for exact equality because values are only copied.
+- `B`, `G`, `T`, and `D` are between `1` and `8`, and `n_rep` and `K` are between `1` and `4`. Any dimension can be `1`, and any two dimensions can be equal.
+- Token IDs and positions lie in $[0, 1000)$.
 - No Python loops are needed.
 
 ## Why this matters
 
-Grouped-Query Attention repeats each key/value head for the query heads that share
-it, in the order of `repeat_kv_heads`; tiled, most query heads attend with another
-group's keys and the output still has the right shape. A
-State-Space Step and Its Attention Form repeats its group parameters across heads the
-same way. Sparse Expert Dispatch builds the token index of every (token, expert) pair
-with `arange(n).repeat_interleave(k)`. Heavy-Hitter KV Eviction starts from
-`arange(S)` expanded to `(B, H, S)`, which is `tile_positions` with one more axis.
-A batched beam search copies every prompt `K` times before its first step, and its
-bookkeeping (row `i` belongs to prompt `i // K`) assumes this order.
+Grouped-query attention repeats each key/value head for the query heads that share it, using the interleaved order of `repeat_kv_heads`. If you tile instead, most query heads attend to another group's keys while the output still has the expected shape. State-space models repeat group parameters across heads the same way. Sparse expert dispatch builds token indices for `(token, expert)` pairs with `repeat_interleave`, and heavy-hitter KV eviction expands a 1D vector of sequence positions across both batch and head axes, just like `tile_positions` with an extra axis.
+
+Batched beam search duplicates every prompt `K` times before decoding. All downstream bookkeeping relies on row `i` belonging to prompt `i // K`, which silently breaks if the rows are tiled instead of interleaved.

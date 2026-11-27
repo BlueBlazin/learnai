@@ -1,24 +1,10 @@
 ## The idea
 
-A WordPiece vocabulary holds two kinds of entries: pieces that can start a word, and
-pieces that can continue one, stored with a `##` prefix. Encoding a word is a greedy
-scan (Devlin et al., 2018, following Wu et al., 2016): at the current position take
-the longest piece of the right kind, move past it, repeat. BERT's reference
-implementation (`WordpieceTokenizer.tokenize` in `google-research/bert`,
-`tokenization.py`) is exactly the loop below, including its two blunt rules: a word
-longer than `max_input_chars_per_word` (200 by default there) is not examined at all,
-and a word in which some position has no matching piece becomes the single token
-`[UNK]`.
+A WordPiece vocabulary holds two kinds of entries. Pieces that can start a word are stored as plain strings, and pieces that can continue a word are stored with a `##` prefix. Encoding a word is a greedy left-to-right scan (Devlin et al., 2018, following Wu et al., 2016). At the current position, take the longest matching piece of the right kind, advance past it, and repeat. BERT's reference implementation (`WordpieceTokenizer.tokenize` in `google-research/bert`, `tokenization.py`) uses this exact loop along with two blunt rules. First, any word longer than `max_input_chars_per_word` (200 by default) is rejected before scanning. Second, if any position has no matching piece, the entire word collapses to `[UNK]`.
 
-Greedy is not optimal, and it is not meant to be. It does not find the split with the
-fewest pieces, and it gives up on words that a search could split. What matters is
-that it is the function the model was trained behind: the model has seen `[UNK]` for
-`abcd` and has never seen `ab ##cd`.
+Greedy matching is not optimal, and it is not meant to be. It does not guarantee the fewest pieces, and it fails on words that a backtracking search could split. What matters is matching the exact function the model was trained on. During training, the model saw `[UNK]` for `"abcd"` and never saw `"ab"` followed by `"##cd"`.
 
-Why longest-first works as a loop: for a fixed `start`, the candidates are nested
-prefixes of the rest of the word, so "the longest one in the vocabulary" is found by
-trying `end` from the right and stopping at the first hit. There is at most one hit
-to take per position and no state besides `start`.
+For a fixed `start`, the candidates are nested prefixes of `word[start:]`. Scanning `end` downward from `len(word)` to `start + 1` and stopping at the first dictionary hit finds the longest match directly. Each step takes one piece and requires no state beyond `start`.
 
 ## Reference solution (Python)
 
@@ -42,35 +28,17 @@ def wordpiece(word, vocab, unk, max_chars):
 
 ## Common mistakes
 
-- **Shortest match.** Iterating `end` upward returns the first single character that
-  is in the vocabulary. Every word still splits, into the longest possible sequence.
-- **The prefix on the wrong pieces.** Looking up the first piece with `##`, or later
-  pieces without it, confuses the two kinds of entries. With a vocabulary that has
-  both `able` and `##able`, the ids differ and nothing fails.
-- **`[UNK]` for the failing part only.** Emitting the pieces found so far and then one
-  unknown token looks more informative and is not what BERT does: the whole word is
-  replaced.
-- **Backtracking.** Trying a shorter earlier piece when a later position fails turns
-  some `[UNK]` words into splits the model has never seen.
-- **The length limit.** The comparison is `>` and the unit is characters. Counting
-  UTF-8 bytes makes a 70-character Japanese word "too long" for a limit of 200.
-- **An empty word** returns `[]`, not `[UNK]`: the scan never starts.
+- **Shortest match.** Iterating `end` upward returns the first single character in `vocab`, splitting every word into the longest possible sequence of pieces.
+- **Prefix on the wrong pieces.** Adding `##` to the first piece, or omitting it on later pieces, mixes up the two entry types. When `vocab` contains both `"able"` and `"##able"`, the encoder still succeeds but emits the wrong IDs.
+- **Emitting `[UNK]` only for the failing suffix.** Returning the pieces matched so far followed by `[UNK]` looks more informative, but BERT replaces the whole word with a single `[UNK]`.
+- **Backtracking.** Retrying a shorter earlier piece when a later position fails turns `[UNK]` words into subword sequences the model was never trained on.
+- **Wrong length check or unit.** The limit check must use `>` (not `>=`) and count Unicode characters rather than UTF-8 bytes. Counting bytes causes a 70-character Japanese word to exceed a 200-character limit.
+- **Empty word.** An empty string returns `[]`, not `[vocab[unk]]`, because the scan never runs.
 
 ## Complexity
 
-For a word of $n \le$ `max_chars` characters the scan performs at most $n(n+1)/2$
-lookups, each hashing a substring of up to $n$ characters: $O(n^3)$ character
-operations in the worst case. The length limit is what keeps that bounded, which is
-why over-long words are rejected before the scan and not after it.
-Linear-time WordPiece exists (Song et al., 2021, "Fast WordPiece Tokenization", a
-trie with failure links) and gives the same output.
+For a word of $n \le \texttt{max\_chars}$ characters, the scan performs at most $n(n + 1)/2$ dictionary lookups. Each lookup slices and hashes a substring of up to $n$ characters, giving $O(n^3)$ character operations in the worst case. Checking `len(word) > max_chars` before the loop keeps this work bounded. Linear-time WordPiece algorithms exist (such as Song et al., 2021, "Fast WordPiece Tokenization", using a trie with failure links) and produce the exact same output.
 
 ## In the wild
 
-The full BERT tokenizer runs this after a normalization stage (cleanup, optional
-lowercasing and accent stripping, splitting on whitespace and punctuation), so the
-`word` here is one of that stage's outputs. Then it adds `[CLS]` and `[SEP]`.
-Sentence-embedding and reranking models built on BERT, MiniLM, and their successors
-ship a `vocab.txt` whose line numbers are the ids used here. The Hugging Face
-tokenizers expose the same three parameters as `unk_token`,
-`continuing_subword_prefix`, and `max_input_chars_per_word`.
+The full BERT tokenizer runs a normalization stage before WordPiece (text cleanup, optional lowercasing and accent stripping, and splitting on whitespace and punctuation), then wraps the result in `[CLS]` and `[SEP]`. Sentence-embedding and reranking models based on BERT, MiniLM, and their successors ship a `vocab.txt` whose line numbers are the IDs used here. Hugging Face tokenizers expose the same three parameters as `unk_token`, `continuing_subword_prefix`, and `max_input_chars_per_word`.

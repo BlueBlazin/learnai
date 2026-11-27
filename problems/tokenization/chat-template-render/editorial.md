@@ -1,32 +1,32 @@
 ## The idea
 
-Rendering a template is string concatenation, and the difficulty is exactness, not
-algorithm. Three things are worth understanding rather than memorizing.
+Rendering a chat template is straightforward string assembly, so the main requirement is
+getting every character and segment boundary right. Three principles explain why the
+specification is written the way it is.
 
-**The layout is a contract with the weights.** During fine-tuning the model saw
-`<|im_start|>`, a role, a newline, the content, `<|im_end|>`, a newline, thousands of
-times, and learned to produce `<|im_end|>` when its own turn is complete. Every
-character of that frame is part of what the model conditions on. The generation
-prompt is the same frame cut off after the newline that follows `assistant`: the next
-token the model produces is the first token of its answer. Without the generation
-prompt the model may continue the user's turn or write a role name itself; with it
-appended to a conversation that already ends in a complete assistant turn, the model
-answers a second time.
+**The layout is a contract with the weights.** During fine-tuning, the model saw
+`<|im_start|>`, a role, a newline, the content, `<|im_end|>`, and a trailing newline
+thousands of times, and learned to emit `<|im_end|>` when its turn ends. Every character
+in that frame is part of what the model conditions on. The generation prompt is the same
+frame cut off right after `assistant\n`, so the first token the model generates is the
+first token of its reply. Without the generation prompt, the model may continue the
+user's turn or generate a role name itself. Adding it after a conversation that already
+ends with an assistant turn causes the model to generate a second reply.
 
-**Provenance decides what is special.** There are two ways to find the special tokens
-of a prompt. One is to render a string and search it. The other is to remember, while
-rendering, which pieces the template wrote as special tokens. Only the second is
-correct, because the first cannot tell the template's `<|im_end|>` from one that a
-user typed. So the renderer builds the segment list first, tagging each piece at the
-moment it is written, when its origin is known, and the string is derived from the
-list. Content goes through the `text` path whatever it contains, and no code ever
-inspects it.
+**Provenance decides what is special.** You could try to render the full string first
+and scan it for special tokens, or you can record which pieces are special while
+rendering. Only the second approach is safe, because scanning cannot distinguish a
+template-written `<|im_end|>` from one typed by a user. Building the segment list first
+tags every piece at the moment its origin is known, and the final string is just the
+concatenation of the segments. Message content always goes through the `text` path and
+is never inspected.
 
-**Canonical segments.** Merging adjacent text into one segment is more than tidiness:
-a tokenizer applied to `"user\nHi!"` may merge across the newline, and applied to
-`"user\n"` and `"Hi!"` separately it cannot. The segment boundaries must be the
-special tokens and nothing else, so that tokenizing segment by segment gives the same
-ids as the model's own tokenizer gives for a trusted prompt.
+**Canonical segments preserve tokenization.** Merging adjacent text into one segment is
+necessary for exact tokenization, not just cleanliness. A BPE tokenizer run on
+`"user\nHi!"` can merge tokens across the newline, whereas running it on `"user\n"` and
+`"Hi!"` separately prevents that merge. Segment boundaries must occur only at special
+tokens so that segment-by-segment tokenization produces the exact same token ids as the
+model's tokenizer on a trusted prompt.
 
 ## Reference solution (Python)
 
@@ -83,64 +83,67 @@ def render_chat(messages, add_generation_prompt, bos):
 
 ## Common mistakes
 
-- **A missing newline.** `<|im_start|>assistant` without the `\n` looks complete, and
-  the model usually copes by emitting the newline itself, at the price of a first
-  token it was never asked to predict in training. The newline after `<|im_end|>` is
-  just as much part of the format.
+- **Missing a newline.** Writing `<|im_start|>assistant` without `\n` looks almost
+  right, and the model often compensates by emitting the newline itself, wasting a
+  generation step on a token it was never trained to predict there. The newline after
+  `<|im_end|>` is equally required.
 - **Always adding the generation prompt.** The flag exists because the same template
-  renders finished conversations, for training, scoring, or caching a prefix, where
-  the last turn is already there.
-- **Two BOS tokens.** The classic version involves two libraries: the template writes
-  `bos`, and the tokenizer, called with its default of adding special tokens, adds
-  another. Inside one function it happens when a helper that renders "the first turn"
-  also writes BOS. The model has only ever seen one BOS at position 0.
-- **Parsing content for specials.** Deriving the segments by splitting the finished
-  string on special-token strings gives the right answer for every honest
-  conversation and the wrong one for the attack it is supposed to stop.
-- **Trimming content.** Some templates do strip whitespace (Llama 3's does); ChatML
-  templates do not. Applying `.strip()` out of habit changes prompts that end in a
-  newline or begin with indentation, such as code.
-- **One turn per tool message.** Parallel tool calls produce several results in a
-  row; the format puts them in one user turn, each in its own `<tool_response>` block.
-- **Rendering `tool` as a role.** `<|im_start|>tool` is what the generic rule gives,
-  and it is what some other ChatML models expect, but not this layout.
-- **"Is there a system message?" instead of "is the first message one?"** The default
-  system turn depends only on the first message. A system message in the middle of a
-  conversation is rendered where it stands and does not replace the default.
-- **Unmerged or empty text segments.** Appending role, content, and newline as three
-  segments gives the right string and the wrong segmentation, including an empty
-  segment for empty content.
+  also renders completed conversations for training, scoring, or prefix caching, where
+  the final turn is already closed.
+- **Emitting two BOS tokens.** Across two libraries, this happens when the template
+  writes `bos` and the tokenizer's default `add_special_tokens=True` adds a second one.
+  Inside one function, it happens when a helper that renders the first turn also writes
+  `bos`. The model was only trained with a single BOS at position 0.
+- **Scanning the rendered string for special tokens.** Splitting the final string on
+  special-token substrings passes every benign test and fails the exact injection attack
+  the segment list is meant to prevent.
+- **Stripping whitespace from `content`.** Some chat templates (such as Llama 3) call
+  `.strip()`, but ChatML templates do not. Stripping corrupts prompts that begin with
+  indentation or end with a newline, such as code blocks.
+- **Opening a separate turn for each tool message.** Parallel tool calls produce
+  consecutive `"tool"` messages. This layout groups each maximal run into a single user
+  turn with one `<tool_response>` block per message.
+- **Rendering `"tool"` as the turn role.** Using `<|im_start|>tool` follows the generic
+  rule used by some other ChatML variants, but this layout uses `<|im_start|>user` for
+  tool responses.
+- **Checking whether *any* message is `"system"` instead of only the first.** The
+  default system turn depends strictly on `messages[0]`. A `"system"` message later in
+  the list is rendered in place and does not suppress the default system turn.
+- **Leaving unmerged or empty text segments.** Appending the role, content, and newline
+  as separate `"text"` segments produces the right string but the wrong segmentation,
+  and creates empty segments when `content` is `""`.
 
 ## Complexity
 
-Linear in the total length of the contents. Appending to the last text segment by
-string concatenation is quadratic in principle for a very long run of text pieces;
-collecting pieces in a list and joining once per segment avoids that, and does not
-matter at these sizes.
+Time and space are linear in the total length of the message contents. Extending the
+last text segment with `+` is quadratic in theory for a very long run of text pieces,
+which can be avoided by buffering pieces in a list and joining once per segment, though
+at these sizes the difference is negligible.
 
 ## In the wild
 
-Real templates are Jinja programs stored in `tokenizer_config.json` (newer releases
-ship a separate `chat_template.jinja`) and run by `apply_chat_template` in
-`transformers` and by the Jinja engines built into `llama.cpp` and other servers. The
-layout here is what those programs do for plain messages:
+Production chat templates are Jinja programs stored in `tokenizer_config.json` (or a
+separate `chat_template.jinja` file) and executed by `apply_chat_template` in
+`transformers` or by built-in Jinja engines in servers such as `llama.cpp`. For plain
+messages, the layout in this problem matches real released templates:
 
-- Qwen2 and Hermes 3 use exactly the three-role frame and insert
-  `You are a helpful assistant.` when the first message is not a system message.
-  Hermes 3's template begins with `{{bos_token}}`, which for that model is
-  `<|begin_of_text|>`; Qwen models have no BOS token at all.
-- Qwen2.5 uses the same frame with a different default system message (`You are Qwen,
-  created by Alibaba Cloud. You are a helpful assistant.`) and renders tool results as
-  the grouped `<tool_response>` blocks in a user turn that this problem specifies.
-  Qwen3 keeps the tool format and drops the default system message.
-- SmolLM2 uses the frame with its own default system message.
+- Qwen2 and Hermes 3 use this exact three-role frame and insert
+  `You are a helpful assistant.` whenever the first message is not a system message.
+  Hermes 3 starts with `{{bos_token}}` (`<|begin_of_text|>`), while Qwen models have no
+  BOS token.
+- Qwen2.5 uses the same frame with its own default system message (`You are Qwen,
+  created by Alibaba Cloud. You are a helpful assistant.`) and groups tool results into
+  `<tool_response>` blocks inside a single user turn, matching this problem. Qwen3 keeps
+  the same tool format and drops the default system message.
+- SmolLM2 uses the same frame with its own default system message.
 
-The reference of this problem was compared with the Qwen2, Hermes 3, and Qwen2.5
-templates on random conversations (with the default system message set to each
-model's own) and produces identical strings.
+The reference solution here was tested against the Qwen2, Hermes 3, and Qwen2.5
+templates on random conversations (swapping in each model's default system message) and
+produces identical strings.
 
-So "ChatML" names a family, and a server must run the model's own template, not a
-generic one. The injection problem is real in these stacks: `apply_chat_template`
-returns a string, and tokenizing it parses every special-token string in it, including
-those from user content. Servers defend by tokenizing content separately from the
-template's markers, or by escaping or rejecting special-token strings in user input.
+Because "ChatML" refers to a family of templates with subtle differences, a server must
+always run the model's own template rather than a generic one. Special-token injection
+is also a real issue in these stacks. `apply_chat_template` returns a plain string, so
+tokenizing it parses every special-token substring, including those from user input.
+Servers mitigate this by tokenizing user content separately from template markers, or by
+escaping or rejecting special-token strings in user input.

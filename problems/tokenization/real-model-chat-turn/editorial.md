@@ -1,33 +1,14 @@
 ## The idea
 
-Three small pieces, in a fixed order.
+Break the turn into three independent components executed in a fixed order.
 
-**The template is data about the model.** Granite 4.0 ships a Jinja template of about
-a hundred lines; for plain messages it reduces to three rules. Every prompt opens with
-a system turn; a leading system message replaces the default text instead of adding a
-second system turn (and an empty one does not count); and the prompt ends in an open
-assistant turn with nothing after `<|end_of_role|>`. Rendering is then a join over
-`(role, content)` pairs. Encoding the whole string once is safe here because the
-contents are trusted. With untrusted content you would encode the template's special
-tokens and the contents separately, which is the lesson of `chat-template-render`.
+**Prompt formatting is model-specific data.** Granite 4.0 ships a hundred-line Jinja template, which reduces to three rules for plain messages. Every prompt begins with a system turn. A leading non-empty system message replaces the default text rather than adding a second system turn, while an empty leading system message is ignored. Finally, the prompt ends with an open assistant header (`<|start_of_role|>assistant<|end_of_role|>`) and no trailing newline. Once the `(role, content)` pairs are assembled, formatting is a single string join. Encoding the full string at once is safe here because message contents are guaranteed to contain no special-token text. With untrusted user input, you would encode special tokens and message contents separately, as in `chat-template-render`.
 
-**The loop has two exits, and they differ by one call.** The model call is the
-expensive part, so the loop is arranged around when a call is *needed*: logits are
-needed only if another token will be chosen from them. After the end-of-turn token no
-token follows, so it is never fed. After the `max_new_tokens`-th token no token
-follows either, so that one is not fed. The number of calls is therefore one for the
-prompt plus one per generated token, minus one if the limit ended the turn.
+**The generation loop has two exits that differ by one `step` call.** Because calling the model is the expensive operation, only call `step` when you will actually choose another token from its logits. Neither the `<|end_of_text|>` token nor the `max_new_tokens`-th generated token is followed by another token, so neither is fed to `step`. Total calls equal one for the prompt plus one per generated token, minus one if `max_new_tokens` ends the turn.
 
-**Text is a byte stream.** A token is a byte string. The decoder's state is the
-unfinished character at the end of the stream, at most three bytes; everything before
-it is final and can be sent. An incremental UTF-8 decoder is exactly that state
-machine. Special tokens have no bytes in the reply, and the flush at the end turns a
-character that will never be finished into U+FFFD, so the concatenation of the pieces
-always equals the decoding of the whole reply.
+**Streaming text is a stateful byte stream.** Each token contributes a sequence of bytes, and a multi-byte UTF-8 character can cross token boundaries. An incremental UTF-8 decoder buffers only the trailing incomplete character (at most three bytes) and immediately emits everything finalized before it. Special tokens contribute `b""` so their names never leak into user-visible text. Flushing with `final=True` after the loop turns any trailing incomplete sequence into a single U+FFFD, guaranteeing that concatenating all yielded pieces matches decoding the full reply at once.
 
-The yield comes before the next `step`. A generator makes this natural: the consumer
-receives the piece, and the forward pass for the next token only starts when it asks
-for more.
+Yielding each piece before calling `step([token])` comes naturally in a generator. The caller receives the newly decoded text immediately, and the forward pass for the next token starts only when the caller asks for the next item.
 
 ## Reference solution (Python)
 
@@ -65,49 +46,24 @@ def chat_turn(messages, tokenizer, step, max_new_tokens):
 
 ## Common mistakes
 
-- **No generation prompt.** The prompt ends after the user's `<|end_of_text|>\n`, and
-  the model is free to continue with anything, often another user turn.
-- **A newline after the assistant header.** ChatML has one; Granite does not. One
-  extra token, and every reply is conditioned on a prefix the model never saw.
-- **No default system turn**, **the first system message rendered twice**, or **an
-  empty system message kept as an empty turn.** All three are the same rule read
-  carelessly: there is exactly one opening system turn, and it is never empty.
-- **Stripping content.** The template inserts it verbatim.
-- **The stop token as text.** `<|end_of_text|>` printed at the end of every reply is
-  the most visible chat bug there is. The related one, **stopping on any special
-  token**, cuts replies short when the model emits one in the middle.
-- **Special tokens shown as text.** `tokenizer.token_bytes` returns the name of a
-  special token, which is what a debugger wants and a user does not.
-- **Decoding token by token.** `token_bytes(t).decode(errors="replace")` turns the
-  emoji of the example into four `�`. On the real model this is every emoji and a good
-  part of Japanese and Chinese text.
-- **No flush.** A reply cut by the limit in the middle of a character loses it
-  silently; the whole-reply decoding has a `�` there, so the stream and the stored
-  transcript disagree.
-- **Empty pieces.** A piece per token, empty or not, makes every client filter.
-- **One token too many**, or **a call after the last token.** Both are off-by-one
-  errors in the loop's exits; the second is invisible in the text and costs a forward
-  pass per request.
-- **The prompt fed token by token.** Forty forward passes instead of one. Prefill is
-  a single call.
-- **Buffering.** Collecting the pieces and yielding them at the end is a correct
-  transcript and a broken stream: time to first token becomes the time of the whole
-  reply.
-- **Token ids in 16 bits.** A compact array of unsigned shorts holds the miniature
-  tokenizer's ids and overflows on Granite's first prompt token, 100264. Vocabularies
-  passed 65,536 long ago.
+- **Omitting the generation prompt.** Ending the prompt right after the user's `<|end_of_text|>\n` leaves the model free to start any role, often generating another user turn.
+- **Adding a newline after the assistant header.** ChatML puts a newline there, but Granite does not. That single extra token puts every reply on a prefix the model never saw during training.
+- **Mishandling the leading system turn.** Omitting the default system turn, rendering the first system message twice, or keeping an empty leading system message as an empty turn all violate the rule that every prompt starts with exactly one non-empty system turn.
+- **Stripping message content.** The template inserts every `"content"` string verbatim.
+- **Emitting the stop token or stopping on any special token.** Printing `<|end_of_text|>` at the end of a reply leaks control markers, while stopping on any special token cuts replies short whenever the model emits a non-stop special token mid-turn.
+- **Rendering special tokens as text.** `tokenizer.token_bytes` returns the literal marker string for a special token, which is useful for debugging but should not appear in the reply.
+- **Decoding token by token.** Calling `token_bytes(t).decode(errors="replace")` on each token turns multi-token emojis and many CJK characters into `�`.
+- **Forgetting the final flush.** If `max_new_tokens` cuts off a multi-byte character mid-sequence, skipping `decode(b"", final=True)` silently drops it instead of emitting `�`, causing the streamed output to disagree with full-reply decoding.
+- **Yielding empty strings.** Yielding a piece on every token forces downstream consumers to filter out empty chunks.
+- **Off-by-one loop exits.** Generating one token too many or calling `step` after the `max_new_tokens`-th token breaks exact step counts and wastes a forward pass per request.
+- **Prefilling the prompt one token at a time.** Passing prompt IDs individually triggers dozens of forward passes instead of a single prefill call.
+- **Buffering the whole reply.** Collecting all pieces in a list and yielding at the end produces the right transcript but breaks streaming, turning time to first token into time to last token.
+- **Storing token IDs in 16-bit integers.** Unsigned 16-bit integers fit the miniature tokenizer's IDs but overflow on Granite's first prompt token (100,264), since modern vocabularies exceed 65,536 tokens.
 
 ## Complexity
 
-One model call over the $P$ prompt tokens and at most `max_new_tokens` single-token
-calls; with the model's KV cache, each of those costs one token through the layers.
-Detokenization is $O(1)$ state and $O(\text{bytes})$ work in total.
+For a prompt of $P$ tokens, `chat_turn` makes one prefill call over $P$ tokens and at most `max_new_tokens - 1` single-token decode calls (or as many single-token calls as generated tokens when stopped early by `<|end_of_text|>`). With the model's KV cache, each decode call processes one token through the layers. Incremental detokenization uses $O(1)$ state and $O(\text{bytes})$ total work.
 
 ## In the wild
 
-`transformers` splits this into `apply_chat_template`, `generate`, and a
-`TextIteratorStreamer`; `mlx-lm` into the tokenizer's template and
-`stream_generate` with its `StreamingDetokenizer`; `llama.cpp` renders the same Jinja
-template in C++. All of them stop on a set of end-of-turn ids read from the model's
-files, because the stop token is model data too: for Granite 4.0 it is
-`<|end_of_text|>`, id 100257, and for the next model it is something else.
+Production libraries split this same pipeline across a few helpers. `transformers` combines `apply_chat_template`, `generate`, and `TextIteratorStreamer`. `mlx-lm` pairs the tokenizer's template with `stream_generate` and `StreamingDetokenizer`. `llama.cpp` renders the same Jinja template in C++. All of them read stop-token IDs from model metadata rather than hardcoding them, because the end-of-turn marker varies by model (for Granite 4.0 it is `<|end_of_text|>`, ID 100,257).

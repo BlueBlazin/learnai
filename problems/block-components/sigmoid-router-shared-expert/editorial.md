@@ -1,44 +1,43 @@
 ## The idea
 
-A softmax router makes experts compete: raising one logit lowers every other
-probability. A sigmoid router scores each expert on its own, $s_e = \sigma(r_e)$, so
-an expert's affinity for a token does not depend on how many other experts like it.
-Competition enters only through the top-k. Four separate decisions follow, and the
-code is one line each.
+A softmax router forces experts to compete before selection because raising one logit
+lowers every other probability. A sigmoid router instead scores each expert
+independently, $s_e = \sigma(r_e)$, so an expert's affinity for a token does not depend
+on how many other experts also match that token. Competition enters only at the top-$k$
+step.
 
-**Scores.** $\sigma(r)$, or $\sqrt{\operatorname{softplus}(r)}$, which is unbounded
-above and close to $\sqrt{r}$ for large logits where the sigmoid saturates at 1.
+**Score function.** Each logit passes through either $\sigma(r)$ or
+$\sqrt{\operatorname{softplus}(r)}$. Unlike the sigmoid, which saturates at 1 for large
+logits, $\sqrt{\operatorname{softplus}(r)}$ grows unboundedly like $\sqrt{r}$.
 
-**Selection uses a bias; weights do not.** The bias $b_e$ was tuned during training
-to balance the load: an overloaded expert gets a lower bias, an underloaded one a
-higher bias. It answers "who should take this token", which is a property of the
-whole batch. The weight answers "how much does this expert know about this token",
-which is the score itself. So the top-k is taken over $s + b$, and the weights are
-built from $s$.
+**Biased selection, unbiased weights.** The per-expert bias $b_e$ is tuned during
+training to balance expert load across a batch. An overloaded expert receives a lower
+bias, and an underloaded expert receives a higher bias. Selection answers which experts
+should handle the token, so top-$k$ runs on $s + b$. Weighting answers how strongly a
+chosen expert matches the token, so the weights use the unbiased scores $s$.
 
-**Normalize, then scale.** Dividing the chosen scores by their sum makes the weights
-a convex combination; multiplying by `scale` afterwards sets the size of the routed
-contribution relative to everything else in the residual stream. In the other order
-the scale is in the numerator and in the denominator and cancels:
+**Normalize, then scale.** Dividing the chosen scores by their sum produces a convex
+combination. Multiplying by `scale` afterward sets the magnitude of the routed sum
+relative to the rest of the residual stream. If you multiply by $c = \texttt{scale}$
+before normalizing, $c$ cancels out of the fraction:
 
 $$
 \frac{c\,s_j}{\sum_i c\,s_i} = \frac{s_j}{\sum_i s_i} .
 $$
 
-**The shared expert is outside all of it.** It sees every token, with weight 1. It is
-not a $(k+1)$-th routed expert: it has no score, it is not normalized, and it is not
-scaled.
+**Independent shared expert.** The shared expert runs on every token with weight 1. It
+is not treated as a $(k+1)$-th routed expert, so it has no router score, no
+normalization, and no scaling.
 
-The $10^{-20}$ in the denominator exists for one case. If every chosen score
-underflows to 0, the weights are $0 / 10^{-20} = 0$ instead of $0/0$. It is small
-enough to leave every other case alone, including scores of $10^{-13}$: an epsilon of
-the usual size, `1e-6`, would not.
+The $10^{-20}$ term in the denominator handles one edge case. If every chosen score
+underflows to 0, the weights evaluate to $0 / 10^{-20} = 0$ instead of `NaN`. At the
+same time, $10^{-20}$ is small enough not to distort tiny non-zero scores around
+$10^{-13}$, whereas a larger epsilon like `1e-6` would.
 
-A note on precision: float32 `softplus` is not the same function everywhere for
-very negative inputs. At a logit of $-12$ the built-in of MLX 0.32.4 and that of
-PyTorch differ by 1.3 parts in $10^4$ (measured on 2026-11-21), and the textbook
-`log(1 + exp(x))` is worse. That is why this problem keeps `sqrtsoftplus` logits
-within $\pm 5$, where all of them agree.
+As a precision note, float32 `softplus` implementations diverge for very negative
+inputs. At logit $-12$, MLX 0.32.4 and PyTorch differ by 1.3 parts in $10^4$ (measured
+on 2026-11-21), and naive `log(1 + exp(x))` is worse. Keeping `"sqrtsoftplus"` logits
+within $\pm 5$ stays in the region where all implementations agree.
 
 ## Reference solution (PyTorch)
 
@@ -69,75 +68,79 @@ def moe_shared(x, w_router, bias, experts_w, shared_w, k, scale, score_fn="sigmo
     return y
 ```
 
-The stable sort of the negated biased scores gives the order "largest first, ties by
-lowest index" in one call. The JAX and MLX versions differ only in the names of
-`gather` and `softplus`.
+A stable sort of the negated biased scores gives descending order with ties broken by
+lowest expert index in a single call. The JAX and MLX solutions differ only in the
+names of `gather` and `softplus`.
 
 ## Common mistakes
 
-- **Softmax scores.** The habit from `moe-router-forward`. After renormalizing over
-  the chosen experts the weights are $e^{r_j} / \sum e^{r_i}$, not
-  $\sigma(r_j) / \sum \sigma(r_i)$: much sharper, and the bias, tuned for scores
-  between 0 and 1, swamps probabilities that are mostly near 0.
-- **Weights from the biased scores.** Gathering from `scores + bias` after the top-k
-  is the shortest code and lets a load-balancing statistic rescale the experts'
-  outputs. A negative bias can even make a weight negative.
-- **The bias dropped,** or added to the logits instead of the scores. Both select a
-  different set of experts for many tokens. $\sigma(r + b)$ is not $\sigma(r) + b$.
-- **Scale before the normalization.** It cancels, and the weights sum to 1.
-- **No normalization.** The raw scores times the scale: the weights of a token then
-  sum to anything between 0 and $k \cdot \texttt{scale}$.
-- **`softplus` without the square root.**
-- **The shared expert normalized with the others, scaled, or forgotten.** With
-  identical routed experts the layer must return $\texttt{scale} \cdot f(x) +
-  f_{\text{shared}}(x)$, which separates all three.
-- **The epsilon.** Without it, all-zero scores give NaN; with `1e-6`, tiny scores
-  give tiny weights that no longer sum to the scale.
-- **Ties to the highest index,** from sorting ascending and taking the last `k`.
-- **An unknown score function treated as sigmoid,** in `route` or only in the layer
-  that calls it. A configuration that says `sqrtsoftplus` to a loader that knows
-  only `sigmoid` should stop, not route.
+- **Using softmax scores.** Carrying over the habit from `moe-router-forward` produces
+  renormalized weights $e^{r_j} / \sum e^{r_i}$ instead of
+  $\sigma(r_j) / \sum \sigma(r_i)$. The distribution is much sharper, and a bias tuned
+  for $[0, 1]$ sigmoid scores swamps small softmax probabilities.
+- **Computing weights from biased scores.** Gathering from `scores + bias` lets a
+  load-balancing statistic rescale expert outputs. A negative bias can even produce a
+  negative weight.
+- **Dropping the bias, or adding it to logits instead of scores.** Both change which
+  experts are selected because $\sigma(r + b) \ne \sigma(r) + b$.
+- **Multiplying by `scale` before normalizing.** The scale cancels in the ratio, so the
+  weights sum to 1 instead of `scale`.
+- **Skipping normalization.** Using `chosen * scale` directly leaves each token's
+  weight sum anywhere between 0 and $k \cdot \texttt{scale}$.
+- **Forgetting the square root on `softplus`.**
+- **Mishandling the shared expert.** Normalizing it with routed experts, multiplying it
+  by `scale`, or omitting it all fail. When every routed expert is identical, the layer
+  must return $\texttt{scale} \cdot f(x) + f_{\text{shared}}(x)$, which distinguishes
+  all three bugs.
+- **Missing or oversized epsilon.** Omitting `1e-20` produces `NaN` when all chosen
+  scores underflow to 0. Using `1e-6` shrinks tiny scores near $10^{-13}$ so the
+  weights no longer sum to `scale`.
+- **Breaking ties toward the highest index.** Sorting ascending and slicing the last
+  `k` entries reverses the tie-breaking order.
+- **Defaulting an unknown `score_fn` to `"sigmoid"`.** Either `route` or `moe_shared`
+  silently falling back to sigmoid hides configuration errors instead of raising
+  `ValueError`.
 
 ## Complexity
 
-$O(N\,E\,D)$ for the router and $O(N\,E \log E)$ for the sort. The dense layer costs
-$O(N\,E\,H\,D)$; an engine runs each expert on its own tokens only, $O(N\,k\,H\,D)$,
-which is the subject of `moe-sparse-dispatch`.
+The router projection takes $O(N\,E\,D)$ time and the sort takes $O(N\,E \log E)$ time.
+Dense expert evaluation takes $O(N\,E\,H\,D)$ time. A production engine runs each
+expert only on its assigned tokens in $O(N\,k\,H\,D)$ time, which is covered in
+`moe-sparse-dispatch`.
 
 ## In the wild
 
-Checked on 2026-11-21.
+Verified on 2026-11-21.
 
-- **The paper.** "DeepSeek-V3 Technical Report" (arXiv 2412.19437), Eq. 12 to 16:
-  sigmoid affinities, gating values normalized among the selected experts, shared
-  experts added without gating, and a per-expert bias added to the affinities for the
-  top-k selection only, with the sentence "the bias term is only used for routing".
-  The scale is not in those equations.
-- **The code** (`transformers` 5.23.0). `GlmMoeDsaTopkRouter` computes
-  `scores = router_logits.sigmoid()`, takes the top-k of
-  `scores + e_score_correction_bias`, gathers from `scores`, divides by
-  `sum + 1e-20` when `norm_topk_prob` is set, and multiplies by
-  `routed_scaling_factor`. `DeepseekV4TopKRouter` is the same with
-  `score_fn = ACT2FN[config.scoring_func]`, and `SqrtSoftplusActivation` in
-  `activations.py` is `softplus(x).sqrt()`. `GlmMoeDsaMoE` and
+- **Paper.** "DeepSeek-V3 Technical Report" (arXiv 2412.19437), Equations 12 to 16,
+  defines sigmoid affinities, weight normalization among chosen experts, ungated shared
+  experts, and a per-expert bias added only during top-$k$ selection ("the bias term is
+  only used for routing"). The scaling factor does not appear in those equations.
+- **Code** (`transformers` 5.23.0). `GlmMoeDsaTopkRouter` computes
+  `scores = router_logits.sigmoid()`, takes top-$k$ over
+  `scores + e_score_correction_bias`, gathers from `scores`, divides by `sum + 1e-20`
+  when `norm_topk_prob` is enabled, and multiplies by `routed_scaling_factor`.
+  `DeepseekV4TopKRouter` follows the same flow using
+  `score_fn = ACT2FN[config.scoring_func]`, where `SqrtSoftplusActivation` in
+  `activations.py` computes `softplus(x).sqrt()`. Both `GlmMoeDsaMoE` and
   `DeepseekV4SparseMoeBlock` return `routed + shared_experts(x)`.
-- **The configurations.** `zai-org/GLM-5.3`: 256 routed experts, 8 per token, 1
-  shared, `routed_scaling_factor` 2.5, `scoring_func` sigmoid.
-  `deepseek-ai/DeepSeek-V4-Pro-0813`: 384 routed, 6 per token, 1 shared, 2.5,
-  `sqrtsoftplus`. The public test "GLM-5.3 and DeepSeek-V4" compares `route` with the
-  two router modules on these numbers (`fixtures/make.py`).
+- **Configurations.** `zai-org/GLM-5.3` uses 256 routed experts, 8 active per token, 1
+  shared expert, `routed_scaling_factor = 2.5`, and `"sigmoid"`.
+  `deepseek-ai/DeepSeek-V4-Pro-0813` uses 384 routed experts, 6 active per token, 1
+  shared expert, `routed_scaling_factor = 2.5`, and `"sqrtsoftplus"`. The public test
+  "GLM-5.3 and DeepSeek-V4" compares `route` against both library router modules on
+  these settings (`fixtures/make.py`).
 
-Where this problem is simpler than the code, or chooses for it:
+Differences between this problem and the library implementations:
 
-- `torch.topk(..., sorted=False)` promises no order and no tie rule. The order "best
-  first, ties to the lowest index" is this problem's, chosen so that the result can
-  be compared exactly; the weights per expert are the library's.
-- The GLM router can first restrict the choice to the best of several expert groups.
-  Both configurations above have one group, where that step does nothing.
-- The routed experts of DeepSeek-V4 clamp their gate and up projections
-  (`swiglu_limit`), and its first layers pick experts from a table indexed by token
-  id instead of by top-k. Neither is modeled here.
-- `mlx-lm` 0.32.2 (`models/kimi_k3.py`, `_group_expert_select`) implements the same
-  rule for Kimi's sigmoid router, with one difference: it skips the normalization
-  when `top_k` is 1, so the single weight is the raw score times the scale, where
-  the routers above return the scale.
+- `torch.topk(..., sorted=False)` makes no guarantee on output order or tie breaking.
+  This problem specifies descending order with lowest-index tie breaking so indices can
+  be compared exactly, while the per-expert weights match the library.
+- The GLM router supports first restricting selection to top expert groups. Both
+  configurations above use a single group, so that step is a no-op.
+- DeepSeek-V4 clamps its routed experts' gate and up projections (`swiglu_limit`), and
+  its earliest layers select experts from a token-id lookup table instead of top-$k$.
+  Neither is modeled here.
+- `mlx-lm` 0.32.2 (`models/kimi_k3.py`, `_group_expert_select`) uses the same rule for
+  Kimi's sigmoid router except when `top_k == 1`. In that case it skips normalization
+  and returns the raw score times `scale`, whereas the routers above return `scale`.

@@ -1,9 +1,4 @@
-Implement the encoder of a unigram tokenizer, the model behind SentencePiece: every
-vocabulary piece has a log-probability, and a text is split into the sequence of
-pieces with the highest total. There is no merge order to replay; the answer is the
-optimum over all ways of cutting the text, found by dynamic programming. The difficulty
-is in the corners that make the optimum unique: characters the vocabulary cannot spell,
-and segmentations that score the same.
+Implement the encoder of a unigram tokenizer, the model behind SentencePiece. Each vocabulary piece has a log-probability score, and the encoder finds the segmentation with the highest total score (the Viterbi search) while handling unknown characters and exact score ties.
 
 ![This problem is the Encode step, choosing the split of the text with the highest total score.](assets/map.svg)
 
@@ -13,46 +8,32 @@ and segmentations that score the same.
 def unigram_encode(text: str, pieces: dict[str, float]) -> list[str]: ...
 ```
 
-- `text`: the string to split. Positions are **characters** (Unicode code points), not
-  bytes. The text is taken as it is: no normalization, and a space is a character like
-  any other.
-- `pieces`: the vocabulary, a non-empty dict from piece (a non-empty string) to its
-  **score**, the log-probability of the piece.
-- Returns the list of pieces, in order. Their concatenation is `text`.
+- `text`: the string to split. Positions are **characters** (Unicode code points), not bytes. Do not normalize the string, and treat spaces like any other character.
+- `pieces`: a non-empty dict mapping each vocabulary piece (a non-empty string) to its **score** (log-probability).
+- Returns the list of pieces in order. Their concatenation equals `text`.
 
-**Segmentations.** A segmentation cuts `text` into consecutive non-empty substrings
-$x_1, \dots, x_m$. Each substring must be one of:
+**Segmentations.** A segmentation splits `text` into consecutive non-empty substrings $x_1, \dots, x_m$. Each substring $x_i$ must be either:
 
-- a **vocabulary piece**: a key of `pieces`, with its score;
-- an **unknown character**: a single character that is not a key of `pieces`, with
-  the score
+- a **vocabulary piece**, which is a key in `pieces` with its corresponding score, or
+- an **unknown character**, which is a single character not present as a key in `pieces`. Its score is
 
 $$
-s_{\text{unk}} = \min_{p \,\in\, \texttt{pieces}} \operatorname{score}(p) \;-\; 10 .
+s_{\text{unk}} = \min_{p \,\in\, \texttt{pieces}} \operatorname{score}(p) - 10 .
 $$
 
-  An unknown character is available wherever the character itself is not in the
-  vocabulary, whether or not a longer piece starts at that position. A character that
-  is in the vocabulary is never unknown.
+An unknown character is allowed at any position whose single character is not in `pieces`, even if a longer vocabulary piece starts at that position. A character that is a key in `pieces` is never treated as unknown. Because every character can be taken individually, every string has at least one valid segmentation.
 
-Every text has at least one segmentation: one character at a time.
+**Optimal segmentation.** Choose the best segmentation using these rules in order:
 
-**The result** is the best segmentation in this order:
+1. Highest **total score**, $\sum_{i=1}^{m} \operatorname{score}(x_i)$.
+2. Among ties, the **fewest pieces** ($m$).
+3. Among ties, the segmentation whose first piece is **longest**. If the first pieces have the same length, prefer the longest second piece, and so on (lexicographically largest list of piece lengths).
 
-1. the highest **total score** $\sum_i \operatorname{score}(x_i)$;
-2. among those, the **fewest pieces**;
-3. among those, the one whose first piece is **longest**; if the first pieces are the
-   same, the one whose second piece is longest; and so on. (The list of piece lengths
-   is the largest in lexicographic order.)
+Any two distinct segmentations of the same string differ in piece length at some position, so these three rules define a unique answer.
 
-Two different segmentations differ in their lengths at some position, so the result
-is unique.
+An unknown character appears in the output as itself (a one-character string). An empty string returns `[]`. Do not modify `pieces`.
 
-An unknown character appears in the result as itself, a one-character string. The
-empty text gives `[]`. The function does not modify `pieces`.
-
-Write the search yourself, with the standard library only: do not use a tokenizer
-library.
+Write the search yourself using only the Python standard library. Do not use a tokenizer library.
 
 ## Example
 
@@ -75,7 +56,7 @@ unigram_encode("hugz", pieces)  # ["h", "ug", "z"]
 
 ![Every piece that matches `hugs` is an arrow between two character positions, labeled with its score. A segmentation is a path from 0 to 4.](assets/lattice.svg)
 
-The six segmentations of `hugs`:
+Here are all six segmentations of `hugs`:
 
 | segmentation | total | pieces |
 |---|---|---|
@@ -86,54 +67,35 @@ The six segmentations of `hugs`:
 | `hug s` | $-9 - 2 = -11$ | 2 |
 | `h u g s` | $-11$ | 4 |
 
-Two reach $-8.5$, and `hu gs` has fewer pieces. The longest piece at the start, `hug`,
-is in the vocabulary but rare, and the best segmentation does not use it.
+Both `hu gs` and `h ug s` reach $-8.5$, and `hu gs` wins because it uses fewer pieces. Although `hug` is the longest piece at position 0, its score is low, so the optimal segmentation avoids it.
 
-In `hugz`, `z` is not in the vocabulary. The lowest score is $-9$, so an unknown
-character scores $-19$, and the result is the best split of `hug` followed by `z`,
-with the total $-6.5 - 19 = -25.5$.
+In `hugz`, the character `z` is not in `pieces`. The lowest vocabulary score is $-9$, so an unknown character scores $-19$. The best segmentation splits `hug` into `["h", "ug"]` and appends `z`, giving a total of $-6.5 - 19 = -25.5$.
 
-Rule 3 decides between segmentations with the same total and the same number of
-pieces:
+Rule 3 breaks ties when two segmentations have the same total score and the same number of pieces:
 
 ```python
 unigram_encode("abc", {"a": -1.0, "c": -1.0, "ab": -2.0, "bc": -2.0})  # ["ab", "c"]
 ```
 
-`ab c` and `a bc` both total $-3$ with two pieces; `ab` is the longer first piece.
+Both `ab c` and `a bc` total $-3$ with two pieces. `ab c` wins because its first piece `ab` is longer than `a`.
 
-An unknown character can be the right choice even where a piece matches:
+An unknown character can be optimal even when a vocabulary piece starts at the same position:
 
 ```python
 unigram_encode("abcd", {"ab": -1.0, "bcd": -1.0})  # ["a", "bcd"]
 ```
 
-No single character is in the vocabulary, so each is available as an unknown at
-$-1 - 10 = -11$. Starting with `ab` leaves `c` and `d` unknown, $-23$ in total;
-starting with the unknown `a` costs $-11 - 1 = -12$.
+No single character is in `pieces`, so each character is available as an unknown at $-1 - 10 = -11$. Starting with `ab` leaves `c` and `d` as unknowns for a total of $-23$. Starting with the unknown `a` followed by `bcd` scores $-11 - 1 = -12$, which is higher.
 
 ## Constraints
 
-- `text` has at most 2,000 characters. `pieces` has 1 to 2,000 entries, each piece
-  1 to 32 characters long.
-- Every score is finite, at most 0, at least $-1000$, and a multiple of $1/8$. Sums of
-  such numbers are exact in floating point, so two segmentations tie exactly when
-  their totals are equal, in whatever order you add.
-- The result is compared exactly, piece by piece. On texts of up to 13 characters it
-  is also compared with an exhaustive search over all segmentations.
-- There is no speed requirement beyond the time limit, but the number of
-  segmentations is $2^{n-1}$ for $n$ characters: enumerating them is not an option at
-  $n = 2000$.
+- `text` has at most 2,000 characters. `pieces` has 1 to 2,000 entries, and each piece is 1 to 32 characters long.
+- Every score is finite, at most 0, at least $-1000$, and a multiple of $1/8$. Sums of these numbers are exact in floating point, so equal totals match regardless of addition order.
+- Results are compared exactly, piece by piece. On texts of up to 13 characters, results are also checked against an exhaustive search over all segmentations.
+- There is no speed requirement beyond the time limit. However, a string of length $n$ has $2^{n-1}$ segmentations, so exhaustive enumeration will not finish at $n = 2000$.
 
 ## Why this matters
 
-Unigram is one of the two tokenizer families you will meet in checkpoints
-(SentencePiece models for T5, ALBERT, XLNet, and many multilingual and speech
-models), and an engine that ships such a model has to reproduce this search. The
-places where ports go wrong are the ones this problem pins down. An encoder that takes
-the longest match at each position agrees with Viterbi on most common words and
-diverges on the rest, so the model receives valid ids in an order it rarely saw.
-An encoder that treats unknown characters as free, or as fatal, changes the
-segmentation of everything around them. And an encoder that indexes bytes works until
-the first accented letter or emoji that is not in the vocabulary. None of these fail
-loudly: the ids are all in range, and the output is merely worse.
+Unigram is one of the two major subword tokenizer families, used by SentencePiece models such as T5, ALBERT, XLNet, and many multilingual and speech models. Any inference engine serving these models must reproduce the exact Viterbi search.
+
+Small implementation shortcuts fail silently. Taking the longest match at each position agrees with Viterbi on most common words, then diverges on rare ones and feeds the model valid token ids in an unexpected order. Treating unknown characters as free or fatal alters the segmentation of surrounding text. Indexing bytes instead of code points works on ASCII and breaks on the first unknown accented letter or emoji. None of these bugs raise an error, yet all of them degrade model output.

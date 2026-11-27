@@ -1,31 +1,13 @@
 ## The idea
 
-Special tokens live outside the text. No sequence of characters is *supposed* to
-produce them; they are inserted by the code that builds the prompt. But prompts are
-built as strings, so tokenizers offer a convenience: write the special token's name in
-the string, and the tokenizer turns it into the id. That convenience is safe for
-strings the server wrote and dangerous for strings a user wrote, and the tokenizer
-cannot tell which is which. So the caller has to say, and `allowed` is how.
+Special tokens live outside ordinary text. No sequence of user characters is supposed to produce them, because only the prompt-building code should insert them. However, prompts are often assembled as strings, so tokenizers offer a convenience that turns a special token's string name into its id. That convenience is safe for server-generated template strings and dangerous for user-supplied text. Since the tokenizer cannot tell who wrote the string, the caller must specify what is permitted via `allowed`.
 
-The function is a splitter in front of the real encoder. It cuts the text at special
-strings, emits their ids directly, and hands everything in between to
-`encode_ordinary`. Two design decisions make it predictable:
+`encode_with_specials` acts as a splitter in front of `encode_ordinary`. It cuts the text at special strings, emits their ids directly, and passes each intervening slice to `encode_ordinary`. Two design choices keep the behavior predictable:
 
-- **Finding is separate from allowing.** The scan looks for every special, and only
-  then asks whether the one it found is allowed. If the search only looked for allowed
-  specials, a disallowed one would silently fall through as text; whether that is
-  acceptable is exactly what the caller should decide, by choosing between a strict
-  set (an error) and `"none_as_text"` (text). Raising by default turns a silent
-  injection attempt into a visible failure.
-- **Earliest position, then longest.** Scanning left to right and consuming each match
-  makes the result independent of dictionary order. Preferring the longest key at a
-  position means a token whose string extends another one (`<|sep|>` and `<|sep|>\n`)
-  can be produced at all.
+- **Finding is separate from allowing.** The scan searches for every key in `specials` and only then checks whether the matched key is in `allowed`. If the scan ignored disallowed specials, they would silently fall through as ordinary text. Raising on disallowed specials turns a silent injection attempt into a visible error, while callers who want plain-text fallback can explicitly pass `"none_as_text"`.
+- **Earliest position, then longest.** Scanning left to right and consuming each match makes the output independent of dictionary order. Choosing the longest key at a given index ensures that a longer special extending a shorter one (like `<|sep|>\n` extending `<|sep|>`) remains reachable.
 
-The runs between specials must reach `encode_ordinary` whole and unmodified. BPE is
-context-dependent: `true` is one token, and `t`, `r`, `u`, `e` encoded separately are
-four. Whitespace is content too: the newline after `<|im_start|>user` is part of the
-format the model was trained on.
+Each ordinary run between specials must reach `encode_ordinary` whole and unmodified. BPE depends on adjacent characters, so `true` may encode as one token while `t`, `r`, `u`, `e` encoded separately become four. Whitespace is also meaningful, such as the newline after `<|im_start|>user` in a chat template.
 
 ## Reference solution (Python)
 
@@ -57,46 +39,20 @@ def encode_with_specials(text, specials, encode_ordinary, allowed):
 
 ## Common mistakes
 
-- **Shortest match.** Trying keys in an order that finds `<|sep|>` before
-  `<|sep|>\n` leaves the longer token unreachable, and the leftover `\n` becomes an
-  ordinary token the model did not see at that place in training.
-- **Always parsing specials.** Ignoring `allowed` is the vulnerable default described
-  above. It passes every test in which the caller allows everything.
-- **Encoding a disallowed special as text.** Lenient, and wrong for this contract: the
-  caller who wanted leniency asks for `"none_as_text"`; the caller who passed a set
-  wants to hear about anything else.
-- **Splitting on one special at a time.** `text.split(special)` in a loop over the
-  dictionary resolves conflicts by dictionary order: a special listed first claims its
-  occurrences even where another special starts earlier or is longer.
-- **Searching from the right.** `rfind`, or a recursive split at the last match, gives
-  the same result until two matches overlap; then the later one wins. `"\n\n"` in
-  `"a\n\n\nb"` must match at index 1, not at index 2.
-- **Dropping the tail.** The loop ends when the scan reaches the end of the text, and
-  the last run has not been encoded yet. A text with no special at all is the extreme
-  case: the whole text is the tail.
-- **Stripping or re-chunking the runs.** `.strip()` on each run, or encoding character
-  by character, changes the ids without changing the decoded text much, so it is easy
-  to miss by eye.
+- **Matching the shortest key first.** Checking keys in an order that matches `<|sep|>` before `<|sep|>\n` makes the longer token unreachable and turns the leftover `\n` into an ordinary token.
+- **Always parsing specials.** Ignoring `allowed` introduces the prompt-injection bug directly. It still passes any test where all specials are allowed.
+- **Encoding disallowed specials as text.** A caller who wants plain-text fallback passes `"none_as_text"`. When the caller passes a set, any other special must raise `ValueError`.
+- **Splitting on one special at a time.** Calling `text.split(special)` in a loop over `specials` lets dictionary order decide conflicts, so an earlier dictionary entry can win over a match that starts earlier in `text` or is longer.
+- **Searching from the right.** Using `rfind` or splitting recursively at the last match breaks on overlapping occurrences. For example, `"\n\n"` in `"a\n\n\nb"` must match at index 1, not index 2.
+- **Dropping the tail.** When the loop reaches the end of `text`, the final ordinary run has not been encoded yet. A string with no specials at all is entirely tail.
+- **Stripping or re-chunking ordinary runs.** Calling `.strip()` on runs or encoding character by character changes the token ids while keeping the decoded text almost identical, making the bug hard to spot by eye.
 
 ## Complexity
 
-With $n$ characters, $k$ specials, and special strings of length at most $m$, the scan
-is $O(n \cdot k \cdot m)$ in the worst case and the calls to `encode_ordinary` cover each
-character once. Production tokenizers compile the specials into one automaton or
-regular expression and find all matches in a single pass, $O(n)$.
+With $n$ characters in `text`, $k$ keys in `specials`, and special strings of length at most $m$, the scan takes $O(n \cdot k \cdot m)$ time in the worst case. Each ordinary character is passed to `encode_ordinary` at most once. Production tokenizers compile the special strings into a single automaton or regular expression to find all matches in $O(n)$ time.
 
 ## In the wild
 
-`tiktoken` is where the strict contract comes from. Its `encode(text,
-allowed_special=set(), disallowed_special="all")` raises `ValueError` when the text
-contains a special token that is not allowed; `disallowed_special=()` turns the check
-off, so that special strings are encoded as ordinary text; and `encode_ordinary`
-is the fast path that ignores specials entirely. Two differences from this problem:
-tiktoken searches the raw text for disallowed specials *before* splitting, so a
-disallowed special raises even where an allowed match would have covered part of it,
-and it finds specials with a regular-expression alternation rather than by longest
-match. Hugging Face tokenizers parse special tokens in the input by default; the
-`split_special_tokens=True` argument is their "as text" mode. `llama.cpp`'s
-`llama_tokenize` takes a `parse_special` flag for the same purpose. The pattern in a
-well-built server is always the same: the chat template's markers are tokenized with
-specials enabled, message content with specials disabled.
+This strict contract comes from `tiktoken`. Its `encode(text, allowed_special=set(), disallowed_special="all")` raises `ValueError` on any disallowed special token. Passing `disallowed_special=()` turns that check off and encodes special strings as ordinary text, while `encode_ordinary` skips special-token matching altogether. Two details differ from this problem. First, `tiktoken` scans the raw text for disallowed specials *before* splitting, so a disallowed special raises even if an allowed match would have overlapped it. Second, it matches via a regex alternation rather than longest-match.
+
+Hugging Face tokenizers parse special tokens by default and provide `split_special_tokens=True` to encode them as text. Similarly, `llama.cpp`'s `llama_tokenize` takes a `parse_special` flag. Well-built servers tokenize template markers with specials enabled and user message content with specials disabled.

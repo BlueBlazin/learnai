@@ -1,8 +1,4 @@
-Run one turn of a chat with a real model, IBM's Granite 4.0 350M: render the
-conversation in the model's own prompt layout, let the model read it, generate
-greedily until the model ends its turn, and stream the reply as text. The tokenizer
-and the model call are given. What is left is everything a chat endpoint does around
-them, where each mistake still produces an answer, only a worse one.
+Implement one turn of a chat with IBM's Granite 4.0 350M. Format the conversation into the model's prompt layout, run greedy decoding until the model finishes or hits the token limit, and stream the reply as UTF-8 text.
 
 ![This problem is the whole path, one chat turn from the messages to streamed text.](assets/map.svg)
 
@@ -12,81 +8,53 @@ them, where each mistake still produces an answer, only a worse one.
 def chat_turn(messages, tokenizer, step, max_new_tokens): ...  # a generator of str
 ```
 
-- `messages`: the conversation, a non-empty list of dicts with the keys `"role"`
-  (`"system"`, `"user"`, or `"assistant"`) and `"content"` (a string).
-- `tokenizer`: the model's tokenizer, a
-  [`ByteLevelBPE`](../../../python/src/learnai/kit/bpe.py) from the kit.
-  `tokenizer.encode(text)` returns a list of ints, and an added token written in the
-  text (such as `<|end_of_text|>`) becomes its single id; `tokenizer.token_bytes(i)`
-  returns the bytes of one token; `tokenizer.specials` is a dict from the text of each
-  special token to its id.
-- `step`: the model. `step(token_ids)` takes a non-empty list of Python ints, feeds
-  those tokens to the model after everything fed before, and returns the logits of
-  the token that comes next: a float32 numpy array of shape `(V,)`. The model keeps
-  its own state (a KV cache), so nothing is ever fed twice.
-- `max_new_tokens`: a Python int, at least 1.
-- `chat_turn` is a generator. It yields the reply as non-empty strings.
+- `messages`: a non-empty list of dicts, each with keys `"role"` (`"system"`, `"user"`, or `"assistant"`) and `"content"` (a string).
+- `tokenizer`: the model's tokenizer, a [`ByteLevelBPE`](../../../python/src/learnai/kit/bpe.py) from the kit. `tokenizer.encode(text)` returns a list of Python ints and encodes any added special token written in `text` (such as `<|end_of_text|>`) as its single ID. `tokenizer.token_bytes(token_id)` returns the raw bytes of one token. `tokenizer.specials` is a dict mapping each special token's text to its ID.
+- `step`: a callable representing the model. Calling `step(token_ids)` with a non-empty list of Python ints feeds those tokens after everything previously fed and returns the next-token logits as a `float32` NumPy array of shape `(V,)`, where `V` is the vocabulary size. The model keeps its own KV cache, so never feed the same token twice.
+- `max_new_tokens`: a Python int, at least `1`.
+- `chat_turn` is a generator that yields the reply as non-empty strings.
 
-**1. The prompt.** Granite's layout marks each turn with three special tokens:
+**1. Prompt formatting.** Granite marks each turn with three special tokens:
 
 ```
 <|start_of_role|>{role}<|end_of_role|>{content}<|end_of_text|>\n
 ```
 
-where `\n` is one newline character. The prompt text is the concatenation of:
+Here `\n` is a single newline character. Concatenate three parts to build the prompt text:
 
-1. **A system turn, always.** If the first message has the role `system` and its
-   content is not empty, that content is the system text, and the message is not
-   rendered again in part 2. Otherwise the system text is the default,
+1. **A leading system turn (always present).** If the first message has role `"system"` and non-empty content, use that content as the system text and do not render the first message again in part 2. Otherwise, use the default system text:
 
    ```
    You are a helpful assistant. Please ensure responses are professional, accurate, and safe.
    ```
 
-   (a first system message with empty content is dropped in favor of it).
-2. **One turn per remaining message**, in order, with its own role. A `system`
-   message that is not the first message is an ordinary turn with the role `system`.
-3. **The generation prompt**: `<|start_of_role|>assistant<|end_of_role|>`, with
-   nothing after it. The turn is left open for the model.
+   If the first message has role `"system"` and empty content, drop it and use this default instead.
+2. **One turn per remaining message**, in order, using each message's own role and content. A `"system"` message after the first message is rendered normally with role `"system"`.
+3. **The generation prompt**, `<|start_of_role|>assistant<|end_of_role|>`, with nothing after it. This leaves the assistant turn open for the model to complete.
 
-Content is inserted verbatim: no stripping, also when it is empty. The prompt ids are
-`tokenizer.encode(text)` of the whole text; nothing is added in front.
+Insert every `"content"` string verbatim without stripping whitespace, even when it is empty. Produce the prompt IDs by calling `tokenizer.encode(text)` once on the full prompt string, without adding any extra token in front.
 
-**2. Generation.** Call `step` once with all prompt ids. Then repeat: the next token
-is the index of the largest logit. If it is the id of `<|end_of_text|>`
-(`tokenizer.specials["<|end_of_text|>"]`), the turn is over: the token is not text,
-and it is not fed to `step`. Otherwise it is a generated token; if it is the
-`max_new_tokens`-th, the turn is over as well, and otherwise call `step` with a list
-holding just that token. So `step` is called once for the prompt and once for every
-generated token except, when the limit ends the turn, the last one: a call whose
-logits nobody reads is a forward pass wasted.
+**2. Generation.** Call `step` once with all prompt IDs to obtain the initial logits. Then repeat:
 
-**3. Text.** Tokens are byte strings, and one character's bytes may be spread over
-several tokens. Let the bytes of the reply be the bytes of its generated tokens in
-order, where a token in `tokenizer.specials` contributes no bytes (it is fed to
-`step` like any other, and counts toward the limit). After each generated token,
-yield the text that has become final: everything decoded as UTF-8, invalid bytes as
-U+FFFD, **except an unfinished character at the very end**, which waits for its
-remaining bytes. When the turn is over, an unfinished character that is still
-waiting is yielded as one U+FFFD. Never yield an empty string: a token that only
-starts or continues a character yields nothing.
+- Choose the next token as the index of the largest logit.
+- If that token is `tokenizer.specials["<|end_of_text|>"]`, stop the turn. Do not emit text for it and do not feed it to `step`.
+- Otherwise, treat it as a generated token. If it is the `max_new_tokens`-th generated token, end the turn without calling `step` again. Otherwise, call `step([token])` to get the next logits.
 
-This is the rule of `streaming-detokenizer`, and Python's incremental decoder
-implements it: `codecs.getincrementaldecoder("utf-8")(errors="replace")`, with
-`decode(data)` per token and `decode(b"", final=True)` at the end.
+In total, `step` is called once for the prompt and once for each generated token except the last one when `max_new_tokens` ends the turn. Calling `step` on that final token would run a forward pass whose logits are never read.
 
-**4. Streaming.** Yield the text of a token *before* calling `step` with that token.
-A consumer that stops reading must not have paid for a forward pass it never saw the
-result of, and one that keeps reading sees each piece a model call earlier.
+**3. Text decoding.** Tokens are byte strings, and a single UTF-8 character can span multiple tokens. Form the reply's byte stream from the generated tokens in order, where any token ID in `tokenizer.specials.values()` contributes zero bytes (`b""`). Special tokens other than `<|end_of_text|>` are still fed to `step` and still count toward `max_new_tokens`.
 
-Write the template out by hand: a template engine (`jinja2`) and the `transformers`
-and `tokenizers` packages are not allowed.
+After each generated token, yield all newly finalized UTF-8 text, replacing invalid bytes with U+FFFD. Hold back any incomplete character at the end of the stream until later tokens supply its remaining bytes. When the turn ends, flush the decoder so any still-incomplete character is yielded as a single U+FFFD. Never yield an empty string.
+
+This is the same rule as `streaming-detokenizer`, and Python's standard incremental decoder implements it via `codecs.getincrementaldecoder("utf-8")(errors="replace")`. Call `decode(data)` for each token and `decode(b"", final=True)` at the end.
+
+**4. Streaming order.** Yield the text produced by a token *before* calling `step` with that token. A consumer that stops early avoids paying for an extra forward pass, and one that keeps reading receives each piece one model call sooner.
+
+Write the prompt template by hand. Importing `jinja2`, `transformers`, or `tokenizers` is not allowed.
 
 ## Example
 
-`messages = [{"role": "user", "content": "Hi!"}]`, `max_new_tokens = 16`. There is no
-system message, so the prompt text is (one line break shown per `\n`; the text ends
-right after `<|end_of_role|>`):
+Take `messages = [{"role": "user", "content": "Hi!"}]` and `max_new_tokens = 16`. Because there is no system message, the prompt uses the default system text and ends right after `<|end_of_role|>` (one line break per `\n`):
 
 ```
 <|start_of_role|>system<|end_of_role|>You are a helpful assistant. Please ensure responses are professional, accurate, and safe.<|end_of_text|>
@@ -94,12 +62,11 @@ right after `<|end_of_role|>`):
 <|start_of_role|>assistant<|end_of_role|>
 ```
 
-The first public case uses a miniature tokenizer of 382 tokens, under which this text
-is 54 ids, and a scripted model that emits the ten tokens below.
+The first public test uses a miniature tokenizer of 382 tokens and a scripted model. Under this tokenizer, the prompt encodes to 54 IDs, and the scripted model emits the ten tokens below.
 
-| call of `step` | argmax of the logits it returns (bytes) | yielded |
+| Call of `step` | Argmax of returned logits (bytes) | Yielded |
 |---|---|---|
-| the 54 prompt ids | `48` | `"H"` |
+| the 54 prompt IDs | `48` | `"H"` |
 | that token | `65 6C` | `"el"` |
 | that token | `6C 6F` | `"lo"` |
 | that token | `21` | `"!"` |
@@ -108,44 +75,23 @@ is 54 ids, and a scripted model that emits the ten tokens below.
 | that token | `9F` | nothing |
 | that token | `99` | nothing |
 | that token | `82` | `"🙂"` |
-| that token | `<|end_of_text|>` | (the generator ends) |
+| that token | `<|end_of_text|>` | (generator ends) |
 
-Ten calls, six pieces, and the reply is `"Hello! 🙂"`. The emoji is the four bytes
-`F0 9F 99 82`, one token each in this tokenizer; decoding the tokens one by one would
-yield four replacement characters. With `max_new_tokens = 7` the turn would end after
-the token `9F`: `step` is called seven times (the seventh generated token is not
-fed), and the pieces are `"H"`, `"el"`, `"lo"`, `"!"`, `" "`, `"�"`.
+This takes ten calls to `step`, yields six pieces, and produces `"Hello! 🙂"`. The emoji is the four-byte UTF-8 sequence `F0 9F 99 82`, split across four tokens in this tokenizer. Decoding each token independently would have produced four replacement characters instead.
 
-On the real model, the conversation "Reply with three different emoji and nothing
-else." is a prompt of 39 tokens, and the reply is nine tokens, three per emoji
-(`F0 9F`, `91`, `8D` for the first): the pieces are `"👍"`, `"👎"`, `"👎"`.
+With `max_new_tokens = 7`, the turn ends right after the token `9F`. `step` is called seven times (the seventh generated token is not fed), and flushing the incomplete emoji at the end produces the pieces `"H"`, `"el"`, `"lo"`, `"!"`, `" "`, `"�"`.
+
+On the real Granite model, the user message `"Reply with three different emoji and nothing else."` produces a 39-token prompt and a nine-token reply. Each emoji spans three tokens (for example, `F0 9F`, `91`, `8D` for the first), and the yielded pieces are `"👍"`, `"👎"`, `"👎"`.
 
 ## Constraints
 
-- Everything is compared exactly: the token ids of every call of `step`, and the
-  list of yielded strings. The expected prompts are the model's own Jinja template
-  rendered by `transformers`; the expected real replies are its greedy `generate`.
-- At most 8 messages; contents contain no special-token text, and may be empty or
-  contain spaces and newlines. The logits always have a unique maximum.
-- The cases that need no download use the miniature tokenizer (the same pre-tokenizer
-  and special-token names as Granite's, with other ids) and scripted logits; token ids
-  must be looked up, never written as literals. Scripted replies contain invalid
-  UTF-8 and special tokens other than `<|end_of_text|>`; they never put a byte
-  `A0..BF` after `ED`, the one corner in which decoders disagree.
-- The real tokenizer has 100,352 tokens, and its special tokens have ids above
-  100,255. Real prompts have 33 to 49 tokens; reading one takes the kit's numpy model
-  about 0.3 seconds. The time limit per case is 20 seconds.
+- Both the token IDs passed to every call of `step` and the list of yielded strings are checked for exact equality. Expected prompts match Granite's Jinja template rendered by `transformers`, and expected real-model replies match its greedy `generate`.
+- `messages` contains at most 8 messages. Message contents contain no special-token text and may be empty or include spaces and newlines. Logits always have a unique maximum.
+- Tests that require no model download use a miniature tokenizer (same pre-tokenizer and special-token names as Granite, different IDs) and scripted logits. Always look up token IDs from `tokenizer` instead of hardcoding integers. Scripted replies include invalid UTF-8 and special tokens other than `<|end_of_text|>`, but never place a byte in `0xA0..0xBF` immediately after `0xED` (the one edge case where UTF-8 decoders disagree).
+- The real Granite tokenizer has 100,352 tokens, with special-token IDs above 100,255. Real prompts have 33 to 49 tokens, and prefilling one takes about 0.3 seconds on the kit's NumPy model. The time limit is 20 seconds per case.
 
 ## Why this matters
 
-A chat model is a text-completion model that was fine-tuned on one exact byte layout,
-and the chat endpoint is the code that reproduces it. Granite's layout is not ChatML:
-other markers, a system turn that is always present, no newline after the assistant
-header. Send ChatML to it, or forget the generation prompt, and it still answers,
-in a voice it was never trained to use; evaluations quietly drop a few points and
-nobody finds out why. The streaming half fails just as quietly: decode token by token
-and every emoji and many CJK characters arrive as `�`; feed the end-of-turn token back
-and the model starts talking to itself; buffer the reply and time to first token
-becomes time to last token. This loop, done right, is what `tokenizer.apply_chat_template`
-plus `generate` with a `TextStreamer` do in `transformers`, and what `mlx_lm.stream_generate`
-does on a Mac.
+A chat model is fine-tuned on one exact prompt byte layout, and the chat endpoint must reproduce it faithfully. Granite's layout differs from ChatML in its role markers, its mandatory system turn, and the absence of a newline after the assistant header. Sending ChatML or omitting the generation prompt still produces fluent output, but evaluation scores quietly drop because the model is running off-distribution.
+
+The streaming layer fails just as quietly. Decoding token by token turns emojis and many CJK characters into `�`. Feeding the stop token back into the model can make it continue generating past the end of its turn. Buffering the entire reply before yielding turns time to first token into time to last token. Together, this prompt formatter, decode loop, and incremental detokenizer implement the core behavior of `tokenizer.apply_chat_template` plus `generate` with `TextStreamer` in `transformers`, and `mlx_lm.stream_generate` on macOS.

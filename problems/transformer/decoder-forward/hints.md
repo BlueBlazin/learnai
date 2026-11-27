@@ -1,28 +1,30 @@
-Before writing any code, list the tensors in `params` and tick each one off as you
-decide where it is used. For a two-layer tied model there are 21 of them. Which one is
-used twice? Which one is used once, outside the loop, and is the easiest to forget?
+Before writing any code, list the tensors in `params` and check each one off as you
+decide where it is used. For a two-layer tied model there are 21 tensors. Which one is
+used twice? Which one is used once outside the loop and is the easiest to forget?
 
 ---
 
-Build the pass as a stream `x` of shape `(B, T, d_model)` that is only ever added to:
+Structure the forward pass around a residual stream `x` of shape `(B, T, d_model)` that
+is only ever updated by addition inside the layer loop:
 
-1. `x = embed[tokens]`.
-2. For each layer: the pre-norm block from the previous problem. The new part is
-   inside attention. After the projections, reshape `q` to `(B, T, n_heads, head_dim)`
-   and move the head axis to position 1; do the same for `k` and `v` with
-   `n_kv_heads`. Only now apply `ops.rope` to `q` and `k`: its last axis must be one
-   head (`head_dim` wide), and its second-to-last axis must be time. Then
-   `ops.attention` with a lower-triangular boolean mask, then undo the reshape.
-3. `x = rms_norm(x, model.norm.weight)`, once, after the loop.
-4. Multiply by the transposed head. Which matrix that is depends on
-   `cfg.tie_embeddings`, not on what happens to be in the dict.
+1. Start with `x = embed[tokens]`.
+2. For each layer, run the pre-norm block from the previous problem with multi-head
+   attention and RoPE. After the projections, reshape `q` to
+   `(B, T, n_heads, head_dim)` and move the head axis to position 1. Do the same for `k`
+   and `v` using `n_kv_heads`. Only after splitting heads should you apply `ops.rope` to
+   `q` and `k`, since its last axis must be one head (`head_dim`) and its second-to-last
+   axis must be time. Run `ops.attention` with a lower-triangular boolean mask, then
+   merge the heads back.
+3. After the loop, apply `x = rms_norm(x, model.norm.weight)` once.
+4. Multiply by the transposed head weight. Choose the matrix from `cfg.tie_embeddings`
+   rather than checking what happens to be in `params`.
 
 Pass `cfg.norm_eps` to every norm and `cfg.rope_base` to every rotation.
 
 ---
 
-The attention sublayer of one layer, in PyTorch (`p` is the prefix
-`f"model.layers.{i}."`):
+Here is the attention sublayer for one layer in PyTorch, where `p` is
+`f"model.layers.{i}."`:
 
 ```python
 def heads(t, n):  # (B, T, n * head_dim) -> (B, n, T, head_dim)
@@ -38,5 +40,5 @@ attended = attended.transpose(1, 2).reshape(batch, seq, cfg.d_model)
 x = x + attended @ params[p + "self_attn.o_proj.weight"].T
 ```
 
-with `positions = arange(T)` and `causal = tril(ones(T, T))` as booleans. The head is
-`params["model.embed_tokens.weight" if cfg.tie_embeddings else "lm_head.weight"]`.
+Use `positions = arange(T)` and `causal = tril(ones(T, T))` as booleans. The head weight
+is `params["model.embed_tokens.weight" if cfg.tie_embeddings else "lm_head.weight"]`.
