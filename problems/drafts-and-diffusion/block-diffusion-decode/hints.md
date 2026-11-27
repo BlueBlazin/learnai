@@ -1,35 +1,17 @@
-Write the loop as two nested loops and decide, for every variable, at which level it
-lives: once per call, once per canvas, or once per step. The cache, the current
-canvas, the previous step's scaled logits, and the list of drafts each belong to
-exactly one level, and two of the bugs this problem is about are a variable kept alive
-one level too long.
+Structure your solution as two nested loops and assign every variable to one of three scopes: once per call, once per canvas, or once per step. The prefix cache, the current canvas, the previous step's scaled logits, and the list of drafts each belong to exactly one scope. Two of the most common bugs come from letting a canvas-level variable leak into the next canvas.
 
 ---
 
-One step produces three things of shape `(L,)` that are easy to confuse: the sampled
-candidates, the canvas after acceptance and renoising, and the argmax draft. Only the
-second is fed to the next `denoise` call. Only the third is compared between steps,
-appended to the text, searched for the end-of-sequence token, and encoded.
+Each step produces three `(L,)` token tensors that are easy to mix up: the sampled candidates, the canvas after acceptance and renoising, and the argmax draft. Feed only the renoised canvas into the next `denoise` call. Use only the argmax draft for stability comparisons, output appending, EOS checking, and encoding into the cache.
 
-The step is the function of `entropy-bound-denoise-step` applied to `z = logits / t`:
-its softmax for the sampling, `ops.eb_accept(z, bound)` for the acceptance, its
-argmax for the draft, its entropies for the mean. Keep `z` after the step; it is the
-third argument of the next `denoise` call of the same canvas.
+Apply the `entropy-bound-denoise-step` logic to the temperature-scaled logits `z = logits / t`. Use `z` for the softmax probabilities, `ops.eb_accept(z, entropy_bound)` for acceptance, `argmax` for the draft, and the mean entropy for confidence. Save `z` as the third argument to the next `denoise` call within the same canvas.
 
 ---
 
-The stop test needs the drafts of the earlier steps of this canvas. Stability asks
-whether the last $s$ of them all equal the new draft, and whether there are $s$ of them
-at all. Write the slice so that it is empty for $s = 0$: `drafts[-s:]` is the whole list
-when `s` is 0, `drafts[len(drafts) - s:]` is not.
+To check stability, keep a list of the argmax drafts from earlier steps of the current canvas. A step is stable when at least $s$ prior drafts exist and all of the last $s$ drafts equal the new draft. Write the slice carefully so that $s = 0$ selects an empty slice: `drafts[-s:]` returns the entire list when `s == 0`, whereas `drafts[len(drafts) - s:]` returns `[]`.
 
-Test for stopping after the sampler has run and the draft is recorded; then the draft
-you hold when the loop ends is the right one in both cases, a stop and the step limit.
+Check the stopping condition after updating the canvas and computing the current step's draft. That way, the `draft` variable always holds the final step's draft whether the inner loop breaks early or runs to `max_steps`.
 
 ---
 
-After a canvas: look for the end-of-sequence token in its draft only, and if it is
-there cut, pad, and return without touching the encoder. Otherwise append the draft, and
-call `model.encode(draft, cache)` only if another canvas follows. Count the encoder
-calls of your loop by hand for three canvases: there should be three, of $P$, $L$, and
-$L$ tokens.
+When a canvas finishes, search only its final draft for `model.eos_id`. If it appears, replace all tokens after its first occurrence with `model.pad_id`, append the result, and return immediately without calling `model.encode`. Otherwise, append the draft and call `model.encode(draft, cache)` only if another canvas will follow. Trace a 3-canvas run by hand to verify you make exactly 3 encoder calls of sizes $P$, $L$, and $L$.

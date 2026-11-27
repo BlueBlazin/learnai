@@ -1,16 +1,8 @@
-When `model(tokens)` returns, what has been computed? If the clock is read right
-after, what did the interval contain? And when the result is finally evaluated, in
-which interval does that land? Answer the same three questions for a warm-up run.
+When `model(tokens)` returns, what has actually been computed? If you read `clock()` right after, what work did that interval measure, and which interval will pay for the computation once it finally runs? Ask the same questions for a warm-up run.
 
 ---
 
-Write one function that performs a complete run and returns its two times and its
-tokens, and use it for warm-up and measured runs alike. Inside it, each phase ends
-with an evaluation *before* the clock is read: `mx.eval(token)` blocks until the token
-is computed, and the token depends on the logits and the cache, so nothing of the
-phase is left pending. In the generation phase evaluate once per step, feeding
-`token.reshape(1)` back with the cache. Keep the tokens as arrays while timing and
-convert them to ints after the last clock reading.
+Write a single helper function that executes one complete run and returns its prompt time, generation time, and tokens, then use it for both warm-up and measured runs. Inside that helper, end each phase by calling `mx.eval(token)` *before* reading the clock. Because `token` depends on the logits and the cache, evaluating it blocks until all work for that phase finishes. In the generation loop, evaluate once per step and feed `token.reshape(1)` back with `cache`. Keep tokens as MLX arrays while timing and convert them to Python ints after the final clock reading.
 
 ---
 
@@ -31,8 +23,4 @@ def run():
     return first_token - start, end - first_token, tokens
 ```
 
-Call it `n_warmup` times and drop the results, then `n_runs` times. Use
-`statistics.median` on the prompt times and on the generation times separately (it
-averages the two middle values of an even count), and divide `len(prompt)` and
-`n_tokens` by them. The generation rate counts `n_tokens` steps, not the
-`n_tokens + 1` tokens of the run: the first token belongs to the prompt time.
+Call `run()` `n_warmup` times and discard the results, then call it `n_runs` times and keep the timings. Use `statistics.median` separately on the prompt times and generation times (it averages the two middle values when `n_runs` is even). Divide `len(prompt)` by the median prompt time and `n_tokens` by the median generation time, since the first of the `n_tokens + 1` tokens belongs to the prompt phase.

@@ -1,24 +1,12 @@
-Give every weight its own thread. A thread knows only its position in the grid, so
-make the position *be* the weight's coordinates: which grid shape makes
-`thread_position_in_grid.x` the column and `.y` the row? Then everything a thread
-needs is integer arithmetic on those two numbers: which word, which bits of it, which
-group.
+Assign one GPU thread to each output weight. Because a thread only knows its grid coordinates, choose a 2D grid shape where `thread_position_in_grid.x` is the column and `thread_position_in_grid.y` is the row. From those two coordinates, use integer arithmetic to find the packed word, the bit offset inside that word, and the scale/bias group.
 
 ---
 
-With `p = 32 / bits` codes per word, the thread for `(row, col)` reads word
-`col / p` of its row, shifts it right by `bits * (col % p)`, and masks with
-`(1 << bits) - 1`. Its group is `col / group_size`. All three buffers are row-major,
-so the flat indices are `row * words_per_row + col / p` and
-`row * groups_per_row + col / group_size`, and the output index is
-`row * n_in + col`. Keep the word and the code `uint`: a right shift of a signed
-integer copies the sign bit. Pass `bits` as a template int, read `words_shape[1]`
-and `scales_shape[1]` for the row widths, and compute in `float`, converting to the
-output type `T` at the end.
+With `p = 32 / bits` codes per word and `n_in` weights per row, the thread for `(row, col)` reads word `col / p` in its row, shifts right by `bits * (col % p)`, and masks with `(1 << bits) - 1`. Its group index within the row is `col / group_size`. Since all buffers are row-major, the flat indices are `row * words_per_row + col / p` for `words`, `row * groups_per_row + col / group_size` for `scales` and `biases`, and `row * n_in + col` for the output. Keep `word` and `code` as `uint` so right shifts fill with zeros instead of copying the sign bit. Pass `bits` as a template int, read `words_shape[1]` and `scales_shape[1]` for the row widths, compute in `float`, and cast to `T` once when writing the output.
 
 ---
 
-The body:
+The kernel body:
 
 ```cpp
 uint col = thread_position_in_grid.x;
@@ -34,7 +22,4 @@ uint group = row * n_groups + col / (n_in / n_groups);
 out[row * n_in + col] = T(fma(float(code), float(scales[group]), float(biases[group])));
 ```
 
-launched with `template=[("T", scales.dtype), ("BITS", bits)]`,
-`grid=(n_in, n_out, 1)`, a threadgroup such as `(32, 8, 1)`,
-`output_shapes=[(n_out, n_in)]`, and `output_dtypes=[scales.dtype]`. Leave
-`ensure_row_contiguous` at its default so strided inputs are copied first.
+Launch it with `template=[("T", scales.dtype), ("BITS", bits)]`, `grid=(n_in, n_out, 1)`, a threadgroup such as `(32, 8, 1)`, `output_shapes=[(n_out, n_in)]`, and `output_dtypes=[scales.dtype]`. Keep `ensure_row_contiguous` at its default so strided views are copied before the kernel runs.

@@ -1,18 +1,10 @@
-`mx.get_peak_memory()` and `mx.get_active_memory()` describe the whole process, since
-it started. To turn them into "what did this call use", what do you have to do (and
-read) *before* the call, and what has to be true of the result before you read them
-*after* it?
+`mx.get_peak_memory()` and `mx.get_active_memory()` report process-wide totals since startup. To isolate what a single call used, what must you run and record *before* calling `fn`, and what must finish *after* calling `fn` before you read the counters?
 
 ---
 
-Before the call: evaluate the arguments (so their cost is already paid), empty the
-buffer cache, reset the peak, and note the active memory as a baseline. After the
-call: evaluate the result, wait for the GPU with `mx.synchronize()`, then read the
-peak and the active memory and subtract the baseline from each. The cache is read
-as it is; it was empty before the call.
+Before the call, evaluate the arguments so their cost is already paid, synchronize, clear the buffer cache, reset the peak counter, and record active memory as a baseline. After the call, evaluate the result, wait for the GPU with `mx.synchronize()`, and subtract the baseline from both peak and active memory. Read the cache memory directly since it started empty.
 
-`mx.eval` accepts any nesting of tuples, lists, and dicts and ignores what is not an
-array, so `mx.eval(args)` and `mx.eval(result)` work whatever `fn` takes and returns.
+`mx.eval` accepts arbitrarily nested tuples, lists, and dicts and ignores non-arrays, so `mx.eval(args)` and `mx.eval(result)` work for any inputs and outputs of `fn`.
 
 ---
 
@@ -28,6 +20,4 @@ mx.eval(result)
 mx.synchronize()
 ```
 
-Then `peak_bytes = mx.get_peak_memory() - baseline`, and the same for the active
-memory. For `predicted_bytes`, `math.prod(shape)` is the number of elements (it is 1
-for `()`), and `dtype.size` is the number of bytes per element.
+Compute `peak_bytes = mx.get_peak_memory() - baseline` and `active_bytes = mx.get_active_memory() - baseline`, and read `mx.get_cache_memory()` directly. For `predicted_bytes`, use `math.prod(shape)` for the element count (which returns `1` for `()`) and `dtype.size` for the byte width of each element.

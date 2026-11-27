@@ -1,42 +1,19 @@
-Start with `state=None` and ignore what you return as state: stage 2 only reads the
-logits. The block structure is `decoder-forward` with the mixer chosen per layer by
-`cfg.layers[i]`. For the attention mixer, write down the shape of every tensor between
-`q_proj` and `o_proj` before writing code. Where do the $2dH$ columns of the query
-projection go, and which of the resulting tensors are normalized, which rotated, and
-which neither?
+Start by targeting stage 2 with `state=None` and ignore the returned state at first, since stage 2 checks only `logits`. The outer block structure matches `decoder-forward`, except `cfg.layers[i]` picks the mixer for each layer. For the attention mixer, trace the tensor shape at every step between `q_proj` and `o_proj` before coding. Check how the $2 d H$ columns of `q_proj` split into queries and gates, and note which tensors are normalized, which are rotated, and which are left untouched.
 
 ---
 
-The query projection is reshaped to `(T, H, 2 * d)` first and cut along the last axis
-second; cutting the flat `(T, 2 * d * H)` output in the middle gives the first $H / 2$
-heads everything. Norm, then heads to the front (`(H, T, d)` and `(G, T, d)`), then
-`ops.partial_rope` with both `cfg.rope_base` and `cfg.partial_rotary_factor`: its
-defaults are another base and "rotate every channel". The gate is reshaped back to
-`(T, H * d)`, in the same head order as the merged attention output, and goes through a
-sigmoid.
+Reshape the `q_proj` output to `(T, H, 2 * d)` first, then split along the last axis to get `q` and `gate`. Splitting the flat `(T, 2 * d * H)` tensor in half puts all of the first $H / 2$ heads into `q`. Normalize `q` and `k` over the last axis, transpose heads to the front (`(H, T, d)` and `(G, T, d)`), and call `ops.partial_rope` with both `cfg.rope_base` and `cfg.partial_rotary_factor` (its defaults use a different base and rotate every channel). Reshape `gate` to `(T, H * d)` in head order and pass it through a sigmoid before multiplying the merged attention output.
 
-For a linear-attention layer the only work is collecting the nine tensors under the
-names `ops.gated_delta_layer` expects and passing it the head count and the epsilon,
-which it cannot read from the shapes.
+For a linear-attention layer, collect the nine tensors under `model.layers.{i}.linear_attn.` into a dict matching `ops.gated_delta_layer` and pass both `cfg.n_key_heads` and `cfg.norm_eps`, which cannot be inferred from tensor shapes.
 
 ---
 
-For stage 3, ask of each layer: what does a second call need in order to compute
-exactly what one long call would have computed? A linear-attention layer answers with
-the pair it already returns. An attention layer needs every earlier key and value, and
-one number that is nowhere in the arguments: how many tokens came before. That number
-decides two things, the positions the new queries and keys are rotated with and the
-width of the mask, and it can be read off the cached keys.
+For stage 3, ask what each layer needs from earlier calls to match a single full-sequence pass. A linear-attention layer already returns the `(conv_state, S)` pair it needs. A full-attention layer needs all earlier keys and values plus the number of prior tokens $P$, which is not passed separately. Read $P$ from the sequence dimension of the cached keys (`past[0].shape[1]`), and use it for both the new token positions and the attention mask width.
 
-Rotate only the new keys, then put them after the cached ones. The cached keys were
-rotated when they were new.
+Rotate only the new keys at positions `P .. P + T - 1`, then concatenate them after the cached keys. The cached keys were already normalized and rotated when they were created.
 
 ---
 
-The mask of a call with $P$ cached tokens and $T$ new ones has $T$ rows and $P + T$
-columns, and row $t$ is `True` up to and including column $P + t$: a comparison of
-`arange(P + T)` against the new positions. With $T = 1$ it is all `True`, which is why
-a decode step that passes no mask works and a chunked prefill that copies it does not.
+With $P$ cached tokens and $T$ new tokens, the causal mask has shape `(T, P + T)`. Row $t$ is `True` for columns `0 .. P + t`, which you can build by comparing `arange(P + T)[None, :] <= positions[:, None]`. When $T = 1$ this mask is all `True`, so omitting the mask passes single-token decode steps but fails on multi-token chunked prefills.
 
-Build the returned state as a new list, one pair per layer in layer order, and leave
-the list you were given alone: the tests continue twice from one state.
+Return a new list for `state` with one pair per layer in layer order, and never mutate the `state` list passed in by the caller.

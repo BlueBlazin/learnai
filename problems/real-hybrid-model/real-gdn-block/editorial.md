@@ -1,38 +1,19 @@
 ## The idea
 
-The block is two lines of algebra, and you have written both parts before: the Gated
-DeltaNet mixer in `gated-delta-layer` and SwiGLU in `swiglu-mlp`. What is new is what
-the checkpoint does not say.
+The block combines two components from earlier problems: the Gated DeltaNet mixer (`gated-delta-layer`) and a SwiGLU MLP (`swiglu-mlp`). What makes porting a real checkpoint tricky is the conventions that live in code rather than in the safetensors metadata.
 
-**Two conventions for a norm weight, in one block.** In the reference implementation
-(`Qwen3_5RMSNorm` in Hugging Face Transformers 5.23) the block norm's parameter is
-initialized to zeros and applied as `x_normed * (1.0 + weight)`. The norm inside the
-delta layer (`Qwen3_5RMSNormGated`) initializes its parameter to ones and applies it as
-`weight * x_normed`. Both are called `...norm.weight` or `...layernorm.weight` in the
-file, and both have a shape that fits either reading. The values tell them apart: in
-layer 1 of Qwen3.5 0.8B the two block norms have means 0.43 and 0.17, and the gated
-norm 0.93. A gain belongs near one.
+**Two norm conventions in the same block.** In Hugging Face Transformers 5.23, `Qwen3_5RMSNorm` initializes its block-norm weight to zeros and scales by `(1.0 + weight)`. Inside the delta mixer, `Qwen3_5RMSNormGated` initializes its weight to ones and scales by `weight` directly. Both tensors end in `norm.weight` and have shapes that work under either convention, so nothing fails at load time. Inspecting the values reveals the difference. In layer 1 of Qwen3.5 0.8B, `input_layernorm.weight` and `post_attention_layernorm.weight` have means `0.43` and `0.17`, while `linear_attn.norm.weight` has mean `0.93`. A plain gain sits near `1.0`.
 
 | tensor | stored | used as |
 |---|---|---|
 | `input_layernorm.weight`, `post_attention_layernorm.weight` | gain − 1 | `1 + w` |
 | `linear_attn.norm.weight` | gain | `w` |
 
-The final norm of the model and the query and key norms of its attention layers are
-offsets as well; they are the subject of `real-hybrid-logits`.
+The model's final norm and the query/key norms in its full-attention layers also use the offset convention. Those appear in `real-hybrid-logits`.
 
-**An epsilon that only real activations test.** RMSNorm divides by
-$\sqrt{\operatorname{mean}(u^2) + \epsilon}$. On a standard normal test vector the mean
-square is 1 and any $\epsilon$ below $10^{-4}$ is float noise. The hidden states of this
-model have a typical entry of 0.02 to 0.04, a mean square near $10^{-3}$, and there
-$10^{-5}$ in place of $10^{-6}$ changes the norm by about half a percent. The config
-says `rms_norm_eps: 1e-06`; the kit's `ops.rms_norm` defaults to `1e-5`, the value of
-the Granite models.
+**An epsilon that only real activations expose.** RMSNorm divides by $\sqrt{\operatorname{mean}(u^2) + \epsilon}$. On standard normal test inputs, $\operatorname{mean}(u^2) \approx 1$, so changing $\epsilon$ between `1e-5` and `1e-6` is hidden in float32 noise. In Qwen3.5 0.8B, hidden-state entries are around `0.02` to `0.04`, giving a mean square near $10^{-3}$. At that scale, using `1e-5` instead of `1e-6` shifts the normalized output by about 0.5%. The config specifies `rms_norm_eps = 1e-6`, whereas `ops.rms_norm` defaults to `1e-5` (matching Granite models).
 
-**The state.** A linear-attention layer cannot rebuild its past from a cache of keys
-and values. It carries the last $K - 1 = 3$ rows of the projected input (6144 numbers
-each) for the convolution and the memory $S$ of the delta rule (16 heads of
-$128 \times 128$): 280,576 numbers per layer, whatever the length of the sequence.
+**Fixed-size recurrent state.** Unlike full attention, a linear-attention layer does not cache past keys and values. It stores only the last $K - 1 = 3$ rows of the projected QKV input (`3 * 6144` floats) for the causal convolution and the delta-rule memory `S` (`16 * 128 * 128` floats). That totals 280,576 numbers per layer regardless of sequence length.
 
 ## Reference solution (PyTorch)
 
@@ -87,62 +68,30 @@ def qwen_gdn_block(x, weights, layer, state):
     return x, state
 ```
 
-The JAX and MLX versions are the same lines. On the fixture's prompt this agrees with
-`transformers` to within $3 \cdot 10^{-7}$ at the compared columns (entries of size
-0.03), in all three frameworks and whether the 12 rows go in one call or two, although `transformers` computes a multi-token call with the chunked form
-of the delta rule and this is the token-by-token form: the two are the same recurrence.
+The JAX and MLX solutions follow the same steps. On the 12-token prompt, this matches `transformers` within $3 \times 10^{-7}$ across the compared columns (entries around `0.03`) in all three frameworks, whether run in one call or split across two. Even though `transformers` uses a chunked formulation for multi-token prompts and this code runs token by token, both compute the same recurrence.
 
 ## Common mistakes
 
-- **The stored block-norm weight used as a gain.** The stream is scaled by about 0.4
-  going into the mixer and 0.2 going into the MLP. Nothing overflows and nothing looks
-  broken; `mlx-lm` avoids the question by adding the one when it loads the file.
-- **The one added to the gated norm too.** "This model's norms are offsets" is true of
-  five kinds of norm weight (the two block norms, the final norm, `q_norm`, `k_norm`)
-  and false of this one.
-- **The default epsilon.** Right on every random test tensor, half a percent off on
-  the real model.
-- **`dt_bias` left out**, or `A_log`. The first row of a new sequence is unchanged, so
-  a single-token smoke test passes.
-- **A flipped kernel.** `conv1d.weight` is applied as stored, the last tap on the
-  current row. A hand-written "convolution" that reverses it reads the past in the
-  wrong order.
-- **Gate before norm.** A Mamba-2 block normalizes `y * silu(z)`; this layer
-  normalizes `y` and then multiplies.
-- **The MLP reading the block's input** instead of the stream after the mixer.
-- **Gate and up exchanged** in SwiGLU: the two matrices have the same shape.
-- **Computing in bfloat16** because the file is bfloat16. The weights are decoded to
-  float32 for a reason: eight bits of mantissa fail this tolerance on the small model
-  already.
-- **State dropped or half carried.** Ignoring `state` breaks every continued call;
-  carrying `S` and restarting the convolution breaks the first three rows after each
-  boundary, which is exactly the prefill-then-decode pattern of a server.
-- **The state updated in place.** `memory *= g` overwrites the `S` the caller handed
-  in. A server keeps a snapshot of the state to roll back a rejected speculative
-  token, to branch a beam, or to reuse a cached prefix for two requests; after an
-  in-place update the snapshot is the new state and the old one is gone. Every
-  split-sequence test passes, because each call receives a fresh tensor.
-- **Names matched without the trailing dot.** `"model.language_model.layers.1"` is a
-  prefix of layers 10 to 19, and this file lists `layers.1.` before `layers.10.`, so a
-  dict built from every matching name ends up with another layer's tensors. Correct for
-  layer 13, and for every model of at most ten layers.
-- **Calling `ops.gated_delta_layer`.** It is the answer to the previous problem.
+- **Using stored block-norm weights as plain gains.** This scales the stream by roughly `0.4` into the mixer and `0.2` into the MLP without overflowing or raising errors. (`mlx-lm` avoids this at runtime by adding `1` when loading weights.)
+- **Adding `1` to `linear_attn.norm.weight` as well.** Five norm types in Qwen3.5 use offsets (the two block norms, the final norm, `q_norm`, and `k_norm`), but the gated norm inside Gated DeltaNet does not.
+- **Using the default RMSNorm epsilon (`1e-5`).** This passes on unit-variance random inputs and is off by about 0.5% on the real model.
+- **Omitting `dt_bias` or `A_log`.** Row 0 of a fresh sequence has a zero memory state, so a single-token smoke test misses decay bugs.
+- **Reversing the convolution kernel.** `conv1d.weight` is applied as stored with its last tap on the current token. Flipping it reads past tokens in reverse order.
+- **Applying the gate before the norm.** Mamba-2 normalizes `y * silu(z)`, whereas this layer normalizes `y` first and multiplies by `silu(z)` afterward.
+- **Feeding the original block input to the MLP.** The MLP must read the residual stream after adding the mixer output.
+- **Swapping `gate_proj` and `up_proj` in SwiGLU.** Both matrices have shape `(F, D)`, so swapping them produces no shape error.
+- **Computing in bfloat16.** Checkpoint weights are stored in bfloat16 and decoded to float32 by `weights`. Running the block in bfloat16 fails the tolerance even on the small model.
+- **Dropping or partially carrying state.** Ignoring `state` breaks every continued call. Carrying `S` without `conv_state` breaks the first `K - 1 = 3` rows after any chunk boundary, which is the exact prefill-to-decode transition in serving.
+- **Updating `S` in place (`memory *= g`).** Mutating the caller's state corrupts snapshots kept for speculative-decoding rollback, beam branching, or shared prefix caching. Simple split-sequence tests do not catch this if each call passes a fresh tensor.
+- **Matching layer prefixes without the trailing dot.** `"model.language_model.layers.1"` is a prefix of layers 10 through 19. Because safetensors lists `layers.1.` before `layers.10.`, collecting matching keys into a dict overwrites layer 1 with later layers while leaving layer 13 and small models unaffected.
+- **Calling `ops.gated_delta_layer`.** That helper implements the previous problem and is disallowed here.
 
 ## Complexity
 
-Per call $O(T \cdot D \cdot (C + F))$ for the projections and the MLP and
-$O(T \cdot H \cdot d_v \cdot d_k)$ for the recurrence: for the real sizes about 22
-million multiply-adds per token in the block, under a twentieth of them in the delta
-rule. The
-state is $3C + H d_v d_k$ numbers per layer and sequence and does not grow.
+Each call performs $O(T \cdot D \cdot (C + F))$ work in the linear projections and MLP, plus $O(T \cdot H \cdot d_v \cdot d_k)$ work in the recurrence. At Qwen3.5 0.8B dimensions, that is about 22 million multiply-adds per token, with less than 5% in the delta-rule recurrence. The carried state takes $3C + H d_v d_k$ floats per layer and sequence and stays constant with sequence length.
 
 ## In the wild
 
-`transformers` keeps the same state in another layout (four rows of convolution input
-as `(1, 6144, 4)`, and the memory transposed, keys before values), and it switches
-between a chunked rule for prompts and this recurrent rule for one cached token; its
-two paths agree with each other to about $10^{-4}$ on this model's logits, measured for
-this curriculum. `mlx-lm` 0.32.2 adds the `1.0` to the offset norms once, at load time,
-and does it in bfloat16, which rounds every gain; the consequence for the logits is in
-the editorial of `real-hybrid-logits`. The layer itself is from "Gated Delta Networks:
-Improving Mamba2 with Delta Rule" (arXiv 2412.06464).
+`transformers` stores the same state in a different layout: four convolution rows shaped `(1, 6144, 4)` and a transposed memory matrix with keys before values. It uses a chunked algorithm for prompts and this token-by-token recurrence for cached decoding. Measured on this model's logits, the two paths agree to about $10^{-4}$.
+
+`mlx-lm` 0.32.2 adds `1.0` to the offset norms once at load time in bfloat16, which rounds every gain. The editorial for `real-hybrid-logits` examines how that affects logits. The Gated DeltaNet layer itself comes from "Gated Delta Networks: Improving Mamba2 with Delta Rule" (arXiv 2412.06464).

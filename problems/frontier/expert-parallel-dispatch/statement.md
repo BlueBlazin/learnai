@@ -1,9 +1,4 @@
-Run a mixture-of-experts layer whose experts live on different devices. Every token
-lives on a home device, is routed to $k$ experts, and has to reach the devices that
-hold them; the weighted results have to come back. Do it with one message of rows
-per pair of devices and one message of results back, each token crossing once per
-remote device however many of its experts live there, and each expert called once
-on everything that arrived for it.
+Implement `ep_forward`, an expert-parallel mixture-of-experts (MoE) layer where experts are distributed across multiple devices. Each token starts on a home device, is routed to its top $k$ experts, and must have its weighted expert outputs returned to its home device. Batch transfers into one dispatch message and one combine message per active device pair, send each token at most once per remote device, and call each active expert once on all rows routed to it.
 
 ## Specification
 
@@ -11,87 +6,55 @@ on everything that arrived for it.
 def ep_forward(x, home, w_router, experts, placement, devs, k): ...
 ```
 
-- `x`: float32 tensor of shape `(N, D)`, one row per token.
-- `home`: a list of $N$ Python ints. `home[t]` is the device on which token $t$
-  lives: its row is there before the layer, and its output is needed there after.
-- `w_router`: float32 `(E, D)`, in `(out, in)` layout. Every device has a copy, so
-  routing is computed at home.
-- `experts`: a [`CountingExperts`](../../../python/src/learnai/kit/moe.py), as
-  in `moe-sparse-dispatch`: `experts(e, rows)` runs expert `e` on rows `(n, D)`,
-  returns `(n, D)` row for row, and counts one `expert_calls` and `n`
-  `expert_rows`.
-- `placement`: a list of $E$ Python ints. Expert $e$ lives on device
-  `placement[e]`, and only there.
-- `devs`: a [`SimDevices`](../../../python/src/learnai/kit/simdevices.py) with
-  `devs.n_devices` devices. `devs.send(src, dst, tensor)` is one message: it
-  returns the tensor for the receiving side to use and adds one to `sends` and the
-  tensor's size in bytes to `comm_bytes`. Sending from a device to itself is an
-  error.
-- `k`: a Python int, $1 \le k \le E$.
-- Returns `y`: float32 `(N, D)`.
+Let $N$ be the number of tokens, $D$ the hidden dimension, $E$ the number of experts, and `n_devices` the number of devices (`devs.n_devices`).
 
-**Routing and output** are those of `moe-sparse-dispatch`. For token $t$: router
-logits $r = W_{\text{router}} x_t$; $S_t$ is the set of the $k$ experts with the
-largest logits, equal logits ranked by index, lowest first; weights
-$w_{t,e} = \operatorname{softmax}(r)_e / \sum_{j \in S_t} \operatorname{softmax}(r)_j$;
-and
+- `x`: input token representations, one row per token.
+- `home`: list of device indices where `home[t]` is the home device of token $t$. Token $t$'s input row starts on `home[t]`, and its final output row must end up there.
+- `w_router`: router weight matrix in `(out, in)` layout. Every device holds a copy, so routing is computed on each token's home device.
+- `experts`: a [`CountingExperts`](../../../python/src/learnai/kit/moe.py) object, as in `moe-sparse-dispatch`. Calling `experts(e, rows)` applies expert `e` row-wise to a tensor of shape `(n, D)`, returns shape `(n, D)`, increments `expert_calls` by 1, and adds `n` to `expert_rows`.
+- `placement`: list of device indices where expert $e$ lives exclusively on device `placement[e]`.
+- `devs`: a [`SimDevices`](../../../python/src/learnai/kit/simdevices.py) simulator with `devs.n_devices` devices. Calling `devs.send(src, dst, tensor)` sends one message from device `src` to device `dst`, returns `tensor` for the receiver to use, increments `sends` by 1, and adds the tensor's byte size to `comm_bytes`. Sending from a device to itself raises an error.
+- `k`: number of experts selected per token ($1 \le k \le E$).
+- Returns `y`: the MoE layer output, one row per token.
+
+**Routing and output.** Routing follows `moe-sparse-dispatch`. For each token $t$ with input row $x_t$, compute router logits $r = W_{\text{router}} x_t$. Let $S_t$ be the set of the $k$ experts with the largest logits, breaking ties by smaller expert index first. Normalize the softmax probabilities over the selected experts to get weights $w_{t,e} = \operatorname{softmax}(r)_e / \sum_{j \in S_t} \operatorname{softmax}(r)_j$. Letting $f_e(x_t)$ denote the output of expert $e$ on $x_t$, the layer output is:
 
 $$
 y_t = \sum_{e \in S_t} w_{t,e}\, f_e(x_t).
 $$
 
-**Where things happen.** Write $h_t$ = `home[t]` and $P(e)$ = `placement[e]`. A
-device computes only with rows that are on it: its own tokens and the rows it was
-sent. For every device $d$, let
+**Where computation happens.** Write $h_t = \text{home}[t]$ and $P(e) = \text{placement}[e]$. A device may only compute on rows present on it, namely its own home tokens and rows it received via `devs.send`. For each ordered pair of devices $(s, d)$, define the set of tokens on $s$ that need at least one expert on $d$:
 
 $$
-U_{s \to d} = \{\, t : h_t = s \text{ and } P(e) = d \text{ for some } e \in S_t \,\}
+U_{s \to d} = \{\, t : h_t = s \text{ and } P(e) = d \text{ for some } e \in S_t \,\}.
 $$
 
-be the tokens of device $s$ that need an expert on $d$, and
+For each token $t$ and device $d$, define the partial weighted output produced by device $d$:
 
 $$
-p_{t,d} = \sum_{e \in S_t,\; P(e) = d} w_{t,e}\, f_e(x_t)
+p_{t,d} = \sum_{e \in S_t,\; P(e) = d} w_{t,e}\, f_e(x_t).
 $$
 
-the part of token $t$'s output that device $d$ produces. Then $y_t = \sum_d
-p_{t,d}$, and the layer runs in three phases:
+Because $y_t = \sum_d p_{t,d}$, the layer executes in three phases:
 
-1. **Dispatch.** For every ordered pair of different devices $(s, d)$ with
-   $U_{s \to d}$ not empty: **one** message `devs.send(s, d, rows)`, where `rows`
-   has shape $(|U_{s \to d}|, D)$ and holds $x_t$ for $t \in U_{s \to d}$ in
-   increasing order of $t$. A token is in it once, even if several of its experts
-   live on $d$. An empty $U_{s \to d}$ means no message.
-2. **Compute.** On device $d$, each expert that lives there and was selected by at
-   least one token is called **exactly once**, on the rows of all tokens routed to
-   it, whether they are at home on $d$ or arrived from any other device (in any row
-   order). An expert that no token selected is not called. Device $d$ then forms
-   $p_{t,d}$ for every token whose row it has: weighted, and summed over that
-   token's experts on $d$.
-3. **Combine.** For every pair with a dispatch message: **one** message
-   `devs.send(d, s, results)` of shape $(|U_{s \to d}|, D)$ holding $p_{t,d}$ for
-   the same tokens in the same order. The home device adds what it receives to its
-   own part $p_{t,h_t}$.
+1. **Dispatch.** For every ordered pair of distinct devices $(s, d)$ with non-empty $U_{s \to d}$, send **one** message `devs.send(s, d, rows)`. Here `rows` has shape $(|U_{s \to d}|, D)$ and contains $x_t$ for $t \in U_{s \to d}$ in increasing order of $t$. Include each token once even if multiple selected experts live on $d$. If $U_{s \to d}$ is empty, send no message.
+2. **Compute.** On device $d$, call each local expert selected by at least one token **exactly once**, passing the rows of all tokens routed to it (both local and received, in any row order). Do not call experts that no token selected. Then weight each expert output and sum over token $t$'s experts on $d$ to form $p_{t,d}$ for every token present on $d$.
+3. **Combine.** For every pair $(s, d)$ that had a dispatch message, send **one** return message `devs.send(d, s, results)` of shape $(|U_{s \to d}|, D)$ containing $p_{t,d}$ for the same tokens in the same order. Each home device sums the received partial outputs with its own local part $p_{t,h_t}$.
 
-For $s = d$ nothing is sent: a device uses its own rows and keeps its own results.
-Which experts a row is for, and with what weights, is known wherever the row is:
-that bookkeeping travels with the rows and is not metered. Only the float rows
-are.
+When $s = d$, send nothing because the device already holds its own rows and keeps its own partial results. Routing metadata (which experts and weights belong to each row) is treated as traveling with the rows and is not metered. Only the float32 row tensors are counted.
 
-**The ledger.** With $M$ the number of ordered pairs $(s, d)$, $s \ne d$, that have
-a non-empty $U_{s \to d}$:
+**The ledger.** Let $M$ be the number of ordered pairs $(s, d)$ with $s \ne d$ and non-empty $U_{s \to d}$. At the end of `ep_forward`, the counters must match:
 
 | counter | value | why |
 |---|---|---|
-| `devs.counters.sends` | exactly $2M$ | rows out and results back, once per pair |
-| `devs.counters.comm_bytes` | exactly $2 \cdot 4D \cdot \sum_{s \ne d} \lvert U_{s \to d} \rvert$ | each routed row once per remote device, and one result row for it |
-| `experts.counters.expert_calls` | the number of experts with a token | one call per active expert |
-| `experts.counters.expert_rows` | exactly $k \cdot N$ | no expert sees a row that was not routed to it |
+| `devs.counters.sends` | exactly $2M$ | one dispatch message out and one combine message back per active pair |
+| `devs.counters.comm_bytes` | exactly $2 \cdot 4D \cdot \sum_{s \ne d} \lvert U_{s \to d} \rvert$ | each routed row sent once per remote device, and one result row returned |
+| `experts.counters.expert_calls` | number of experts with at least one token | one call per active expert |
+| `experts.counters.expert_rows` | exactly $k \cdot N$ | no expert processes a row not routed to it |
 
-No collective (`all_reduce`, `all_gather`) and no `devs.put` is used.
+Do not use collectives (`all_reduce`, `all_gather`) or `devs.put`.
 
-You may use your framework's `softmax` and sorting functions, and plain Python or
-NumPy for the bookkeeping of indices, groups, and devices.
+You may use your framework's `softmax` and sorting functions, and plain Python or NumPy for index, group, and device bookkeeping.
 
 ## Shapes
 
@@ -101,15 +64,13 @@ NumPy for the bookkeeping of indices, groups, and devices.
 | `home` | list of $N$ ints in `[0, n_devices)` | Python `int` |
 | `w_router` | `(E, D)` | float32 |
 | `placement` | list of $E$ ints in `[0, n_devices)` | Python `int` |
-| a dispatch message from $s$ to $d$ | $(\lvert U_{s \to d} \rvert, D)$ | float32 |
-| the result message from $d$ to $s$ | $(\lvert U_{s \to d} \rvert, D)$ | float32 |
-| result | `(N, D)` | float32 |
+| dispatch message from $s$ to $d$ | $(\lvert U_{s \to d} \rvert, D)$ | float32 |
+| result message from $d$ to $s$ | $(\lvert U_{s \to d} \rvert, D)$ | float32 |
+| result `y` | `(N, D)` | float32 |
 
 ## Example
 
-The layer of the `moe-sparse-dispatch` example ($D = 2$, five experts, $k = 2$, a
-router that maps a token $[a, b]$ to the logits $[a, b, -a, -b, 0]$) on three
-devices:
+Consider the layer from `moe-sparse-dispatch` ($D = 2$, $E = 5$, $k = 2$, where the router maps a token $[a, b]$ to logits $[a, b, -a, -b, 0]$) placed across three devices:
 
 ```python
 x = [[3.0, 1.0], [-1.0, 2.0], [2.0, -3.0], [1.0, 3.0], [-3.0, 1.0]]
@@ -125,53 +86,30 @@ placement = [0, 0, 1, 1, 2]  # experts 0, 1 on device 0; 2, 3 on device 1; 4 on 
 | 3 | 1 | 1 (0.8808), 0 (0.1192) | 0, 0 | device 0, **once** |
 | 4 | 1 | 2 (0.8808), 1 (0.1192) | 1, 0 | device 0 |
 
-So $U_{0 \to 1} = \{1\}$ and $U_{1 \to 0} = \{2, 3, 4\}$, and nothing involves
-device 2: expert 4 was selected by no token.
+This gives $U_{0 \to 1} = \{1\}$ and $U_{1 \to 0} = \{2, 3, 4\}$. Device 2 is completely idle because no token selects expert 4.
 
 | phase | message | payload |
 |---|---|---|
 | dispatch | `send(0, 1, x[[1]])` | 1 row, 8 bytes |
 | dispatch | `send(1, 0, x[[2, 3, 4]])` | 3 rows, 24 bytes |
-| combine | `send(1, 0, ...)` | $p_{1,1} = 0.2689\, f_2(x_1)$: 1 row, 8 bytes |
-| combine | `send(0, 1, ...)` | $p_{2,0} = 0.2689\, f_0(x_2)$, $p_{3,0} = 0.8808\, f_1(x_3) + 0.1192\, f_0(x_3)$, $p_{4,0} = 0.1192\, f_1(x_4)$: 3 rows, 24 bytes |
+| combine | `send(1, 0, ...)` | $p_{1,1} = 0.2689\, f_2(x_1)$ (1 row, 8 bytes) |
+| combine | `send(0, 1, ...)` | $p_{2,0} = 0.2689\, f_0(x_2)$, $p_{3,0} = 0.8808\, f_1(x_3) + 0.1192\, f_0(x_3)$, $p_{4,0} = 0.1192\, f_1(x_4)$ (3 rows, 24 bytes) |
 
-Four messages and 64 bytes. On device 0, expert 0 is called once with the rows of
-tokens 0, 2, 3 and expert 1 once with those of tokens 0, 1, 3, 4: local and received
-rows in the same call. On device 1, expert 2 gets tokens 1 and 4 and expert 3 gets
-token 2. Four calls, $3 + 4 + 2 + 1 = 10 = k \cdot N$ rows.
+In total, there are 4 messages and 64 bytes transferred. On device 0, expert 0 runs once on tokens 0, 2, 3 and expert 1 runs once on tokens 0, 1, 3, 4, pooling local and received rows in each call. On device 1, expert 2 runs on tokens 1 and 4 and expert 3 runs on token 2. That totals 4 expert calls and $3 + 4 + 2 + 1 = 10 = k \cdot N$ rows.
 
-Token 3 is the one to look at. Both of its experts live on device 0, so its row
-crosses once and one result row comes back, already weighted and summed. Sending a
-row per (token, expert) would cost 80 bytes instead of 64.
+Notice token 3. Both of its selected experts live on device 0, so its row crosses once and a single combined result row returns. Sending one row per `(token, expert)` assignment instead would cost 80 bytes rather than 64.
 
 ## Constraints
 
-- $1 \le N \le 64$, $2 \le D \le 32$, $1 \le E \le 8$, $1 \le k \le E$,
-  $1 \le$ `n_devices` $\le 8$. A device may hold no expert, no token, or neither.
-- The result is compared with the dense evaluation of the layer to a relative
-  tolerance of `1e-4` and an absolute tolerance of `1e-5`.
-- The four counters of the ledger are checked in every case, after the result.
-- **What the messages carry is checked too.** The tests record the tensor of every
-  `devs.send`. For each pair, the dispatch message must be exactly the rows of
-  $U_{s \to d}$ in increasing token order, and the result message must equal the
-  $p_{t,d}$ of those tokens within the tolerance above. A solution that evaluates
-  the layer in one place and sends tensors of the right sizes fails.
-- In every test, the $k$-th and $(k+1)$-th largest router logits of a token are
-  either exactly equal (small integers) or differ by more than $10^{-3}$.
-- Python loops over devices and experts are expected. No loop over tokens is
-  needed.
+- $1 \le N \le 64$, $2 \le D \le 32$, $1 \le E \le 8$, $1 \le k \le E$, and $1 \le$ `n_devices` $\le 8$. A device may hold no experts, no tokens, or neither.
+- The returned `y` is compared against the dense MoE evaluation with relative tolerance `1e-4` and absolute tolerance `1e-5`.
+- All four ledger counters are checked in every test case after checking `y`.
+- **Message contents are checked.** Tests record every tensor passed to `devs.send`. Each dispatch message must contain the exact rows of $U_{s \to d}$ in increasing token order, and each combine message must match $p_{t,d}$ for those tokens within the tolerances above. Computing the layer on one device and sending dummy tensors of the right shape will fail.
+- In every test, a token's $k$-th and $(k+1)$-th largest router logits are either exactly equal (small integers) or differ by more than $10^{-3}$.
+- Python loops over devices and experts are expected. No loop over tokens is needed.
 
 ## Why this matters
 
-A large mixture-of-experts model does not fit its experts on one GPU, and it does
-not need to: each token uses a few of them. Expert parallelism puts different
-experts on different devices and moves the tokens instead of the weights, and the
-all-to-all exchange it needs (rows out, results back) becomes the cost that
-decides throughput. Every inefficiency in this problem is a real one. One message
-per token turns a handful of large transfers into thousands of small ones, each
-with its own latency. Broadcasting every token to every device multiplies the
-traffic by the number of devices for nothing. Sending a row once per expert
-instead of once per device doubles the bytes exactly when placement worked well
-and put a token's experts together. Running an expert once per sender shrinks the
-batches that make a GPU efficient. And returning unweighted outputs for the home
-device to combine sends more rows back than went out.
+Large MoE models do not fit all their experts on a single GPU, and each token only activates a small subset of them anyway. Expert parallelism shards experts across devices and moves token activations instead of weights, making the all-to-all dispatch and combine exchange the primary bottleneck for throughput.
+
+Every counter in this problem reflects a real distributed-systems pitfall. Sending one message per token replaces a few large transfers with thousands of latency-bound small messages. Broadcasting all tokens to every device wastes bandwidth by a factor of `n_devices`. Sending one row per `(token, expert)` assignment duplicates traffic whenever co-selected experts share a device. Calling an expert separately per sender shrinks GPU batch sizes, and returning unweighted outputs sends more rows back than were dispatched.

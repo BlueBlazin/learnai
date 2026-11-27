@@ -1,37 +1,14 @@
 ## The idea
 
-**Host to device.** The GPU driver can only copy from page-locked host memory,
-memory the operating system has promised not to move or swap out. An ordinary
-(pageable) tensor therefore has to be staged into a page-locked buffer first, and the
-host is busy doing that. PyTorch's documentation of `Tensor.cuda` states the
-consequence: with `non_blocking=True` the copy is asynchronous with respect to the
-host when the source is in pinned memory, and otherwise "the argument has no effect".
-Pinning is the precondition; `non_blocking=True` on a pageable tensor is accepted,
-does the copy, and overlaps with nothing.
+**Host to device.** The GPU driver can only run asynchronous DMA (Direct Memory Access) copies from page-locked host memory that the operating system will not move or swap out. When you transfer an ordinary pageable tensor, the driver first copies it into a temporary page-locked staging buffer on the host, keeping the CPU busy. As PyTorch's `Tensor.cuda` documentation notes, `non_blocking=True` makes a copy asynchronous with respect to the host only when the source is pinned. On a pageable tensor, the argument is accepted silently and has no effect.
 
-`tensor.pin_memory()` is not an in-place operation. It copies the tensor to pinned
-memory (unless it is pinned already) and returns the copy; the tensor it was called
-on is as pageable as before.
+`tensor.pin_memory()` is not an in-place operation. Unless the tensor is already pinned, it returns a new pinned copy and leaves the original tensor pageable.
 
-An asynchronous copy only helps if something else happens meanwhile. So the copy of
-batch $i + 1$ must be *started* before the model starts on batch $i$: that is the
-look-ahead. One batch is enough, because the copy is much shorter than the model's
-work, and more than one costs device memory for batches that are not needed yet
-(with the whole source transferred up front, the dataset has to fit on the GPU).
+An asynchronous copy only saves time if useful work runs alongside it. Starting the copy of batch $i + 1$ before returning batch $i$ gives a one-batch look-ahead, so the transfer overlaps with the model's forward and backward pass on batch $i$. One batch ahead is usually enough because the transfer is shorter than the model step, while prefetching many batches wastes GPU memory (prefetching everything up front requires the entire dataset to fit on the device).
 
-No synchronization is needed on this side. Operations on a device run in the order
-they were queued, so a kernel that uses a batch runs after the copy that fills it.
-What can go wrong is on the host: if the pinned source is overwritten while the copy
-is still reading it, the device receives a mixture. PyTorch's tutorial on the subject
-demonstrates exactly this with a pinned tensor that is zeroed right after a
-non-blocking transfer. Hence one pinned copy per batch, left alone.
+No explicit synchronization is needed in this direction. Operations queued on the same CUDA stream execute in order, so any kernel that consumes a batch waits until its copy completes. The hazard is on the host side. If you overwrite a pinned buffer while the background copy is still reading from it, the device receives corrupted data. PyTorch's tutorial on `non_blocking` and `pin_memory` demonstrates this by zeroing a pinned tensor immediately after launching a non-blocking transfer. Allocating a fresh pinned copy per batch avoids this race.
 
-**Device to host.** Here the order guarantee does not reach the reader. A
-non-blocking `to("cpu")` returns a host tensor immediately, and the host can read
-host memory whenever it likes, including before the device has written to it.
-`torch.cuda.synchronize()` waits for everything queued, after which the data is
-there. The cost model is simple: each blocking copy is a wait, each synchronize is a
-wait, and one wait after all copies have been queued is enough for all of them.
+**Device to host.** Stream ordering does not protect the CPU when reading host memory. A non-blocking `to("cpu")` returns a host tensor right away, and the CPU can read from it before the GPU has written the data. Calling `torch.cuda.synchronize()` waits for all queued device work to finish so every staged host tensor is safe to read. Each blocking copy and each `sync()` costs one host wait, so queuing all non-blocking copies first and synchronizing once at the end minimizes stalls.
 
 ## Reference solution (PyTorch)
 
@@ -70,67 +47,30 @@ def fetch_results(outputs, to_host, sync):
     return torch.cat(staged, dim=0)
 ```
 
-`_done` becomes true when a call of `_start_next` finds the source empty. In
-`__next__` that happens *after* the current batch has been set aside, so the last
-batch is returned and the call after it raises. For an empty source the constructor
-already sets it. `iter(batches)` makes a list and a generator behave alike and
-guarantees that nothing is taken from the source twice.
+`_done` becomes `True` only when `_start_next` finds the source exhausted. In `__next__`, that happens *after* `current` has been saved, so the final in-flight batch is still returned and the next call raises `StopIteration`. When `batches` is empty, the constructor sets `_done = True` right away. Calling `iter(batches)` once lets lists and generators behave identically and ensures each batch is pulled only once.
 
-`fetch_results` could also concatenate on the device and make one blocking copy; that
-is one wait too, at the price of a second copy of the results in device memory.
+An alternative for `fetch_results` is to concatenate `outputs` on the device and run one blocking `to_host` call. That also uses one wait, at the cost of allocating an extra concatenated copy in GPU memory.
 
 ## Common mistakes
 
-- **`non_blocking=True` from pageable memory.** No error, no warning, no overlap.
-- **Throwing away the result of `pin`**: `batch.pin_memory()` on its own line, then
-  `batch.to(device, non_blocking=True)`. The tensor that is transferred is the
-  pageable one.
-- **Pinning and then transferring without `non_blocking=True`.** The host waits for
-  every copy.
-- **Handing out the pinned host tensor** instead of what `to_device` returned. On a
-  CPU run nothing fails; on a GPU the model receives a CPU tensor.
-- **Transferring on demand**, or **starting the first transfer at the first `next`**.
-  The values and the pinning are right and each copy happens while the caller waits
-  for it.
-- **Dropping the last batch.** The loop "while there is a next batch, return the
-  current one" stops one batch early: when the look-ahead finds nothing, a batch is
-  still in flight.
-- **Transferring everything in the constructor.** Everything overlaps, and the device
-  holds the whole source.
-- **Reusing one pinned buffer.** Writing batch $i + 1$ into the buffer while batch
-  $i$'s copy may still be reading it. With a look-ahead it takes two buffers used in
-  turn, and proof that the older copy has finished, to do this correctly.
-- **Reading before the wait** in `fetch_results` (`torch.cat` before `sync()`, or a
-  `sync()` before the copies are queued, which waits for the model and not for the
-  copies).
-- **A blocking copy per output**, or **a `sync()` after each non-blocking copy**. The
-  data is right and the host stalls once per output.
-- **Not transferring at all**: on a CPU run `torch.cat(outputs)` is already a host
-  tensor; on a GPU it is not.
+- **Passing `non_blocking=True` on pageable memory.** PyTorch raises no error or warning, but the transfer blocks and overlaps with nothing.
+- **Ignoring the return value of `pin`.** Calling `batch.pin_memory()` on its own line and then transferring `batch` still copies the original pageable tensor.
+- **Pinning without `non_blocking=True`.** The host still blocks on every transfer.
+- **Returning the pinned host tensor** instead of the tensor returned by `to_device`. This passes silently on CPU tests but hands the model a CPU tensor on a GPU.
+- **Transferring on demand or starting the first transfer in `__next__`.** The values and pinning are valid, but the caller waits for every copy instead of overlapping it.
+- **Dropping the last batch.** Stopping as soon as the look-ahead hits `StopIteration` discards the batch that was already in flight.
+- **Transferring the entire source in `__init__`.** Every copy starts early, but the GPU must hold the whole dataset at once.
+- **Reusing one pinned buffer.** Writing batch $i + 1$ into a buffer while batch $i$'s copy may still read from it corrupts batch $i$. Safe buffer reuse requires double-buffering and explicit proof that the earlier copy finished.
+- **Reading before waiting in `fetch_results`.** Calling `torch.cat` before `sync()`, or calling `sync()` before queuing the copies, reads undefined memory.
+- **Waiting once per output.** Using blocking `to_host` calls or calling `sync()` inside the loop produces valid data but stalls the host on every tensor.
+- **Skipping `to_host` completely.** On CPU tests, `torch.cat(outputs)` already yields a CPU tensor, but on a GPU it stays on the device.
 
 ## Complexity
 
-One pinned copy and one transfer per batch; at most two batches on the device on
-behalf of the prefetcher (the one handed out and the one in flight). `fetch_results`
-makes one copy per output, one wait, and one concatenation.
+`Prefetcher` performs one pin and one transfer per batch and holds at most two batches on the device at a time (the returned batch and the one in flight). `fetch_results` performs one transfer per output, one synchronization, and one concatenation.
 
 ## In the wild
 
-`DataLoader(pin_memory=True)` does the pinning in a separate thread, so that the
-page-locked copy is not paid for by the thread that feeds the model; the training
-loop then calls `.to(device, non_blocking=True)` on batches that arrive pinned. That
-detail matters: PyTorch's tutorial "A guide on good usage of non_blocking and
-pin_memory()" measures that calling `pin_memory()` on the main thread immediately
-before the transfer is usually no faster than a plain `.to(device)`, because the
-blocking copy into page-locked memory is the same work the driver would have done.
-In this problem `pin` is an argument for that reason: where the pinning happens is
-the caller's business, and the prefetcher's job is the order of operations. The
-classic "data prefetcher" of GPU training scripts is this class with a side stream
-for the copies.
+PyTorch's `DataLoader(pin_memory=True)` pins batches in a background worker thread so the main training loop only calls `.to(device, non_blocking=True)`. That separation matters. PyTorch's tutorial *A guide on good usage of non_blocking and pin_memory()* shows that calling `pin_memory()` on the main thread right before `.to()` is rarely faster than a plain blocking `.to(device)` because the main thread still pays for the copy into page-locked memory. Here `pin` is passed in as an argument so the caller controls where pinning happens while `Prefetcher` controls the transfer ordering. Production GPU training scripts use this same prefetcher pattern, often pairing it with a dedicated CUDA stream for copies.
 
-What was verified where: on the CPU build of torch 2.15, `pin_memory()` returns a
-new tensor for which `is_pinned()` is true and leaves its argument unpinned. The
-statements about asynchronous copies, about undefined data after a non-blocking copy
-to the host, and about overwriting a pinned source are taken from the 2.15
-documentation (`Tensor.cuda`, the CUDA notes, and the tutorial named above); the GPU
-cases have not been run.
+Verification note: on the CPU build of PyTorch 2.15, `pin_memory()` returns a new tensor with `is_pinned() == True` and leaves its input unpinned. The behavior of asynchronous copies, undefined data before `sync()`, and overwriting pinned buffers is taken from the PyTorch 2.15 documentation (`Tensor.cuda`, CUDA semantics notes, and the tutorial above). The GPU test cases have not been run.

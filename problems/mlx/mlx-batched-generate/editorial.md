@@ -1,48 +1,19 @@
 ## The idea
 
-A transformer row is a function of three things: the tokens, which keys each query
-may attend to, and the positions. Padding changes none of the real tokens, so a
-padded row equals its solo run if the other two are restored:
+A transformer row's output depends on three things: its token sequence, which keys each query may attend to, and its token positions. Padding leaves the real tokens intact, so a padded row matches its solo run if you preserve the other two properties:
 
-- **Mask.** No real query attends to a padding key. Then padding contributes nothing
-  to any real token's attention, in any layer, whatever garbage the padding slots
-  compute.
-- **Positions.** Real tokens are numbered from 0.
+- **Attention mask:** Prevent every real query from attending to any padding key. Padding then contributes nothing to any real token's representations in any layer.
+- **Positions:** Number every row's real tokens starting from 0.
 
-Left padding is what makes the rest easy. The last real token of every row is in the
-last column, so the next token is `logits[:, -1]` for all rows. And every generated
-token is appended after the real tokens of its row, so a row's real tokens stay
-contiguous for the whole generation; with right padding the padding would end up in
-the middle of the sequence.
+Left padding simplifies the rest of the loop. Every row's last real token lands in the final column, so `logits[:, -1]` always scores the next token for all rows. Every newly generated token is then appended directly after the real tokens of its row, keeping all real tokens contiguous throughout generation. With right padding, the padding would sit between the prompt and the generated tokens.
 
-Three details decide whether it actually works.
+Three details determine whether the implementation works across all test cases:
 
-**The mask must follow the row into the cache.** During decoding there is one query
-per row, attending to all cached columns. The first $P_b$ of those are the row's
-padding keys, still in the cache, and they must stay hidden at every step. The decode
-mask has shape `(B, 1, 1, C + 1)`: `-inf` on the padding columns, `0` elsewhere, one
-more `0` per step. Passing no mask on the decode steps is the most natural bug in
-this problem, because a single-row decode step needs none.
+**Carry the padding mask into every decode step.** During decoding, each row has one query attending to all cached columns plus the new column. The first $P_b$ cached columns are still row $b$'s padding keys and must stay masked at every step. The decode mask has shape `(B, 1, 1, C + 1)` with `-inf` on the padding columns and `0` elsewhere, appending one `0` column per step. Dropping the mask during decode is a common bug because single-row decoding needs no mask.
 
-**A fully masked row is NaN, and NaN gets through an additive mask.** A padding query
-with nothing to attend to has scores of all `-inf`; the softmax is `0 / 0`. Nobody
-reads that row's output, but in the next layer it becomes that slot's *key*, and a
-real query's score against it is `NaN`. The mask then adds `-inf`, and
-`NaN + (-inf)` is `NaN`: the padding key is no longer hidden, and the whole softmax
-row is NaN. With one layer nothing goes wrong, which makes this easy to miss; with
-two, every padded row of the batch is destroyed. Letting each padding query attend
-to itself (the diagonal) keeps it finite. A boolean mask applied with `mx.where`
-would also survive, because it *replaces* the score; an additive mask cannot.
+**Prevent fully masked padding queries from producing NaN.** A padding query whose mask row is all `-inf` produces `0 / 0 = NaN` in softmax. Even though you discard that query's logits, its NaN hidden state becomes a key in the next layer. When a real query computes its attention score against that NaN key, `NaN + (-inf)` evaluates to `NaN`, so the additive mask fails to hide it and the entire softmax row turns into NaN. Single-layer models hide this bug, while two-layer models break on every padded row. Allowing each padding query to attend to itself (setting the diagonal to `0`) keeps its softmax finite. A boolean mask applied with `mx.where` avoids this issue because it replaces scores instead of adding to them, whereas an additive mask cannot.
 
-**Positions: what RoPE forgives and absolute positions do not.** RoPE scores depend
-only on the difference between the query's and the key's position. Shifting a whole
-row by $P_b$ (using the column number as the position, in the prompt call *and* in
-the decode steps) changes nothing, and such a solution passes every RoPE test. It
-fails with absolute positions, where a row starting at position 3 is a different
-input, and it fails with RoPE as soon as the shift is inconsistent: positions
-$j - P_b$ for the prompt and $T + s$ for the decode steps put a gap of $P_b$ between
-a short row's prompt and its continuation. Numbering each row from 0 is right for
-both.
+**Number positions from 0 for both RoPE and absolute embeddings.** RoPE attention scores depend only on relative position differences between queries and keys. Shifting an entire row by $P_b$—using raw column indices for both the prompt and decode steps—leaves RoPE outputs unchanged and passes RoPE-only tests. However, it fails on absolute sinusoidal embeddings, where starting a sequence at position 3 changes the input embeddings. It also fails on RoPE if the prompt uses shifted positions $j - P_b$ while decoding uses unshifted positions `T + step`, which introduces a gap of $P_b$ between a short prompt and its continuation. Starting each row at position 0 works for both.
 
 ## Reference solution (MLX)
 
@@ -85,68 +56,39 @@ def batch_generate(model, prompts, max_new_tokens, eos_id):
     return out
 ```
 
-The bookkeeping of finished rows lives in Python, on values read once per step.
-`token.tolist()` after `mx.eval(token, cache)` is one transfer of `B` integers. A
-finished row keeps its slot and is fed its own argmax: its cache keeps growing, its
-logits keep being computed, and nothing is appended. Removing the row instead would
-save that work and change the batch dimension of every cached array; real servers do
-it at the level of the scheduler, not inside the loop.
+Finished-row bookkeeping stays in Python using values read once per step. Calling `token.tolist()` after `mx.eval(token, cache)` transfers all `B` integers in a single host read. A finished row keeps its slot in the batch and receives its own argmax as filler while nothing further is appended to its output list. Compacting finished rows out of the batch would change the batch dimension of every cached tensor, so production servers handle compaction in an outer scheduler rather than inside the inner decode loop.
 
-The loop tests `all(done)` before building the next call. Since every row finishes
-at `max_new_tokens` at the latest, the loop always ends through that `break`, and the
-model is called exactly $g_{\max}$ times.
+The loop checks `all(done)` before launching the next forward pass. Because every row finishes by `max_new_tokens` at the latest, the loop always exits through that `break`, calling the model exactly $g_{\max}$ times.
 
 ## What batching buys
 
-Measured on this machine (M1 Max, MLX 0.32.4) on an `MLXTinyLM` with 6 layers of
-width 256 and a vocabulary of 8192, prompts of 4 to 39 tokens, 64 new tokens per row:
+Measured on an M1 Max (MLX 0.32.4) with a 6-layer `MLXTinyLM` (width 256, vocabulary 8192), prompt lengths from 4 to 39, and 64 generated tokens per row:
 
-| | 8 prompts | 32 prompts |
+| approach | 8 prompts | 32 prompts |
 |---|---|---|
-| one batch, one read per step (the reference) | 0.20 s | 0.16 s |
+| one batch, one read per step (reference) | 0.20 s | 0.16 s |
 | one batch, `.item()` per row | 0.29 s | 0.61 s |
 | one prompt at a time | 1.08 s | 4.32 s |
 
-A model this small is far from filling the GPU, so 32 rows cost the same as 8 and
-the batch is 27 times faster than the sequential loop. The middle row is the same
-batched computation with `B` reads per step: each `.item()` is a separate round trip
-to the device, and at 32 rows the round trips cost more than the model.
+A small model underutilizes the GPU, so 32 rows run in roughly the same time as 8 and beat sequential decoding by 27x. In the middle row, the GPU work is identical to the reference, but calling `.item()` per row issues `B` separate device-to-host round trips per step. At 32 rows, those round trips cost more than the transformer itself.
 
 ## Common mistakes
 
-- **No padding mask.** A causal mask alone lets every short row attend to its
-  padding. All of its tokens change.
-- **Padding on the right** and reading `logits[:, -1]`. For a short row that column
-  is a padding slot.
-- **A fully masked padding query.** NaN through the second layer, as above.
-- **The mask dropped on the decode steps.** The first token of every row is right;
-  from the second on, short rows see their cached padding.
-- **Positions from the padded layout.** `arange(T)` for every row is invisible to
-  RoPE and wrong for absolute positions. A shared `T + step` during decoding is wrong
-  for both, from the second token on.
-- **Padding found by token value** (`tokens != pad_id`). A prompt that contains the
-  padding id loses real tokens. Use the lengths.
-- **Finished rows that keep collecting**, or an EOS that is left out of the row.
-- **Stopping when the first row finishes** (`any(done)`), which truncates the rest.
-- **One more call after the last token.** Checking `all(done)` after building the
-  next step costs a full batched forward pass per generation.
-- **`.item()` per row**, or a loop over prompts: right tokens, `B` times the reads
-  or the model calls.
+- **Omitting the padding mask.** Using only a causal mask allows short rows to attend to their padding slots, changing all of their generated tokens.
+- **Right-padding while reading `logits[:, -1]`.** For any shorter row, the last column is a padding slot rather than the last prompt token.
+- **Leaving padding queries fully masked.** All-`-inf` rows produce NaN in softmax, which propagates through keys in the next layer and corrupts the batch.
+- **Dropping the mask on decode steps.** The first generated token is right, but every subsequent token of a short row attends to cached padding keys and drifts.
+- **Using padded column indices as positions.** Passing `arange(T)` for every row works under RoPE if decode steps also shift, but fails on absolute sinusoidal positions. Passing a shared `T + step` during decoding breaks both RoPE and absolute positions starting at the second token.
+- **Detecting padding by token value (`tokens != pad_id`).** If a real prompt contains `pad_id`, those real tokens get masked out. Always derive masks from prompt lengths.
+- **Appending to finished rows or excluding EOS.** Finished rows must stop collecting tokens immediately after recording `eos_id`.
+- **Stopping when the first row finishes (`any(done)`).** This truncates every longer row prematurely.
+- **Running one extra forward pass after the last token.** Checking `all(done)` after issuing the next model call wastes a full batched forward pass.
+- **Calling `.item()` per row or looping over prompts.** Both produce the right tokens but exceed the read or forward-call limits by a factor of `B`.
 
 ## Complexity
 
-$g_{\max}$ model calls on $B \cdot T + B \cdot (g_{\max} - 1)$ tokens, one evaluation
-and one read of `B` integers per step. The cache holds $T + g_{\max} - 1$ columns for
-every row, including the padding columns of short rows and the filler of finished
-ones.
+The loop makes $g_{\max}$ model calls processing $B \cdot T + B \cdot (g_{\max} - 1)$ tokens in total, with one evaluation and one device read of `B` integers per step. The KV cache stores $T + g_{\max} - 1$ columns per row, including padding slots for short rows and filler steps for early-finishing rows.
 
 ## In the wild
 
-`mlx-lm`'s `BatchKVCache` stores `left_padding` per row, builds the mask
-`(query >= key) & (key >= left_padding)` from it on every call, and gives each row
-the RoPE offset `-left_padding`, so padding slots get negative positions and real
-tokens start at 0; `mx.fast.rope` accepts a vector of per-row offsets for exactly
-this. Its mask is boolean, which is how it survives the fully masked rows. Hugging
-Face `transformers` asks for `padding_side="left"` for generation for the reason in
-the first section, and un-masks the fully masked rows of an additive mask before
-attention, for the same reason as the diagonal here.
+`mlx-lm`'s `BatchKVCache` tracks `left_padding` per row, constructs the mask `(query >= key) & (key >= left_padding)` on each call, and passes per-row RoPE offsets of `-left_padding` via `mx.fast.rope` so real tokens start at position 0. It uses a boolean mask, which avoids NaN propagation from fully masked rows. Hugging Face `transformers` similarly requires `padding_side="left"` for batched generation and unmasks fully masked rows before applying an additive attention mask.

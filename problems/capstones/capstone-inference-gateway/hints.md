@@ -1,25 +1,13 @@
-Everything the gateway does happens at three kinds of moment: a request arrives, a
-request completes, the policy is evaluated. Write one `dispatch` routine and call it
-at the end of each. Inside it there are exactly two choices, which request and
-which replica, and stages 2 to 4 each replace one of them. What is the condition
-under which `dispatch` has nothing to do?
+The gateway reacts to three events: a request arrives (`submit`), a request completes (done callback), and the autoscaler runs (`evaluate`). Write one `_dispatch` method and call it at the end of all three. Inside `_dispatch`, there are two decisions—which queued request to pick and which replica to send it to—and stages 2 through 4 each customize one of those decisions. Start by identifying the exact condition under which `_dispatch` should stop looping.
 
 ---
 
-`dispatch`: while the queue is not empty, collect the ready replicas with
-`queue_len < cfg.replica_slots`; stop if there are none; choose the request (the
-oldest, or with `cfg.fair` the earliest request of the queued tenant with the
-smallest counter); choose the replica (least `outstanding_tokens`, lowest id; or
-the router of `prefix-aware-router` with `outstanding_tokens` in place of
-`queue_len` and the list of free replicas in place of all replicas); call
-`replica.submit(request)` and add a done callback to the future it returns.
-Admission is decide first, change state second: compute the tenant's balance as
-`min(burst, balance + rate * (now - since))`, check it, check the queue bounds
-against the requests in *your* queue only, and only then store the reduced balance.
+- **`_dispatch`:** Loop while the gateway queue is non-empty. Find all replicas with `r.state == "ready"` and `r.queue_len < cfg.replica_slots`; return if none exist. Pick the next request (the oldest, or under `cfg.fair` the earliest request of the queued tenant with the smallest counter). Pick the target replica (smallest `(outstanding_tokens, id)`, or under `cfg.prefix_routing` the `prefix-aware-router` rule using `outstanding_tokens` over the free replicas). Call `replica.submit(request)` and attach a done callback to the returned future.
+- **Admission:** Decide before mutating state. Compute `min(burst, balance + rate * (now - since))`, check the rate limit, check `max_queued_requests` and `max_queued_tokens` against your gateway queue only, and only then update the bucket and enqueue.
 
 ---
 
-The completion callback and the policy, which are where the order matters:
+Here are the completion callback and autoscaling evaluation, where operation order matters:
 
 ```python
 def _finished(self, request, done):
@@ -47,7 +35,4 @@ def evaluate(self):
     return n
 ```
 
-The counter lift happens in `submit`, after the request is admitted and before it
-is appended: only if its tenant has no request in the queue, raise the tenant's
-counter to the smallest counter among queued tenants, or, with an empty queue, to
-the counter of the tenant whose request left the queue last.
+Perform the VTC counter lift in `submit` right after admission and before appending to the queue. If the tenant has no request currently in the queue, raise its counter to the minimum counter among queued tenants, or—when the queue is empty—to the counter of the tenant whose request most recently left the queue.

@@ -1,38 +1,21 @@
 ## The idea
 
-The checkpoint tells you how to build the model. Its tensor names are the module
-tree, as in `mlx-real-model-forward`, and its tensor *triples* are the layer type: a
-layer stored as `weight` (uint32), `scales`, and `biases` is an `nn.QuantizedLinear`
-(or an `nn.QuantizedEmbedding`), whose parameters have exactly those names and whose
-forward pass is `mx.quantized_matmul` on the packed codes. So the whole loader is:
+As in `mlx-real-model-forward`, the checkpoint's tensor names define the module tree. Here, the tensor triples also define the layer type. Any layer stored as `weight` (`uint32`), `scales`, and `biases` corresponds to `nn.QuantizedLinear` or `nn.QuantizedEmbedding`, which expose those exact parameter names and multiply directly from packed codes via `mx.quantized_matmul`.
 
-1. read `config.json`, including `quantization: {group_size, bits}`;
-2. build the tree with quantized layers of that group size and bit width;
-3. `load_weights(path, strict=True)`: names and shapes are checked, arrays swapped in;
-4. convert the floating parameters to float32 and evaluate.
+Loading therefore takes four steps:
 
-At no point is there a float matrix. The constructor's own initial values are lazy
-and never evaluated; `mx.load` is lazy; the codes go from the file into uint32
-parameters and stay there. `set_dtype(mx.float32)` touches floating parameters only,
-which are the per-group scales and biases (2 of every 66 stored values) and the norm
-gains.
+1. Read `config.json`, including `quantization` (`bits` and `group_size`).
+2. Build the module tree using `nn.QuantizedLinear` and `nn.QuantizedEmbedding` with that bit width and group size.
+3. Call `load_weights(path, strict=True)` to verify names and shapes and bind the checkpoint arrays.
+4. Convert floating parameters to `float32` with `set_dtype(mx.float32)` and evaluate `model.parameters()`.
 
-The forward pass differs from the small model's in what the config says (multipliers
-of 1, separate gate and up matrices, an untied head) and in the cache.
+No dense float weight matrix is ever materialized. The initial weights created by the constructors are lazy and discarded before evaluation, and `mx.load` is lazy as well. `set_dtype(mx.float32)` converts only floating parameters (`scales`, `biases`, and norm gains), leaving the `uint32` packed codes untouched.
 
-**The cache.** Each attention layer keeps the rotated keys and the values of
-everything seen. With a past of $C$ tokens, the new queries and keys are rotated at
-positions $C, C + 1, \dots$ (`rope(x, offset=C)`), appended, and the queries attend
-over all $C + T$ keys. `mx.fast.scaled_dot_product_attention`'s `"causal"` mask is
-aligned to the *last* key (the last query sees everything, the one before it all but
-one), which is exactly right for $T$ new tokens after a prefix. A single new token
-needs no mask.
+Compared to Granite 4.0 350M, the forward pass adds a KV cache, uses separate `gate_proj` and `up_proj` matrices, and always projects through `lm_head`.
 
-**The loop** is the one of `mlx-streaming-generate`: build step $t + 1$ from the
-token *array* and hand it to `mx.async_eval` before `.item()` blocks on token $t$.
-An EOS can only be recognized after the read, by which time the next step is already
-running; it is abandoned, which costs one forward pass per generation and is what
-`mlx_lm.generate_step` does too.
+**KV cache.** Each attention layer stores the rotated keys and values from previous calls. When the cache already holds $C$ tokens and the current call receives $T$ new tokens, rotate the new queries and keys with `rope(x, offset=C)`, concatenate the new keys and values onto the cached ones, and attend over all $C + T$ positions. `mx.fast.scaled_dot_product_attention`'s `"causal"` mask aligns to the last key (the last query sees all keys, the second-to-last sees all but one), which handles any $T > 1$ continuation automatically. For a single token ($T = 1$), no mask is needed.
+
+**Asynchronous generation loop.** As in `mlx-streaming-generate`, pass the unevaluated token array into step $t + 1$ and call `mx.async_eval` before calling `.item()` on token $t$. Because `eos_id` is only known after `.item()` returns, an early stop leaves one already-scheduled step unused. Discarding that extra step matches `mlx_lm.generate_step`.
 
 ## Reference solution (MLX)
 
@@ -149,15 +132,11 @@ def generate(model, prompt_ids, max_new_tokens, eos_id=None):
     return out
 ```
 
-`nn.QuantizedEmbedding` dequantizes only the rows it looks up (`weight[tokens]`,
-`scales[tokens]`, `biases[tokens]`), which is the one `mx.dequantize` in the graph.
-The reference's logits equal `mlx-lm`'s to the last bit on all three real prompts:
-the same kernels in the same order.
+`nn.QuantizedEmbedding` dequantizes only the rows indexed by `tokens` (`weight[tokens]`, `scales[tokens]`, `biases[tokens]`), which accounts for the single `mx.dequantize` in the graph. Because this implementation invokes the same kernels in the same order as `mlx-lm`, its logits match `mlx-lm` bit-for-bit on all three real prompts.
 
 ## What it costs to get it wrong
 
-Measured on this machine (M1 Max, 64 GB, MLX 0.32.4) on the real checkpoint, the
-12-token capital prompt:
+Measured on an M1 Max (64 GB, MLX 0.32.4) on the real checkpoint using the 12-token capital prompt:
 
 | implementation | parameters held | peak, load + 8 tokens | speed over 48 tokens |
 |---|---|---|---|
@@ -168,57 +147,28 @@ Measured on this machine (M1 Max, 64 GB, MLX 0.32.4) on the real checkpoint, the
 | packed parameters, `mx.dequantize` in every call | 3.84 GiB | 6.36 GiB | 10.4 tok/s |
 | float32 `nn.Linear` layers, dequantized at load | 13.63 GiB | 14.54 GiB | 22.7 tok/s |
 
-The last row is the reason the problem exists. The float32 model computes the same
-tokens. It holds 3.5 times the memory, and it is three times *slower*, with no
-unpacking to do: a decoder step reads every weight once, so its speed is the memory
-bandwidth divided by the bytes of weights, and float32 weights are four times the
-bytes. Dequantizing in every call is worse still, because the float matrices are
-written and then read on every token.
+Dequantizing into `float32` at load time produces identical tokens while using 3.5 times more memory and running 3 times slower. Each decoding step is memory-bandwidth bound and reads every weight once, so moving 4 times as many weight bytes directly cuts throughput. Calling `mx.dequantize` inside each forward pass is even slower because it writes and re-reads every float matrix on every token.
 
-Loading takes 0.2 seconds when the file is in the page cache: `mx.load` maps names to
-lazy arrays, and evaluating the parameters is one read of 3.9 GB.
+When the checkpoint is in the OS page cache, loading takes about 0.2 seconds. `mx.load` creates lazy array mappings, and `mx.eval(model.parameters())` streams the 3.9 GB file in one pass.
 
 ## Common mistakes
 
-- **Dequantizing at load** into `nn.Linear` layers: 13.6 GiB for this model, and the
-  parameter names no longer match the file.
-- **Dequantizing in the forward pass** (`x @ mx.dequantize(...).T`): the parameters
-  look right, and every token allocates the float matrices.
-- **The embedding as the head.** Right for the small Granite model, which is tied.
-  This one has an `lm_head`, and the config says `tie_word_embeddings: false`.
-- **Bit width and group size from habit.** A layer built for 8 bits in groups of 64
-  cannot load a 4-bit checkpoint: the shapes of `weight` and `scales` differ.
-- **Multipliers dropped because they are 1 here.** They are in the config; another
-  Granite checkpoint has 12, 0.263, and 4.
-- **`silu` on the wrong projection**: the gate is activated, the up projection
-  multiplies.
-- **No conversion to float32.** The model then computes in bfloat16: correct enough
-  to generate the same tokens on clear-cut steps, off by up to 0.4 in the logits,
-  and not what the fixture or a float32 comparison expects.
-- **RoPE without the offset** on cached steps: every new token is rotated as if it
-  were the first.
-- **A causal mask only when there is no cache**: a multi-token continuation then
-  sees its own future.
-- **No cache in `generate`**, a blocking `mx.eval`, or a read before the next step
-  is scheduled: right tokens, 5 times or 10% slower.
-- **An EOS that does not stop**, or a step scheduled after the token at the limit.
+- **Dequantizing at load into `nn.Linear`.** Uses 13.6 GiB for the 3B model and breaks parameter name matching with the checkpoint.
+- **Dequantizing inside the forward pass (`x @ mx.dequantize(...).T`).** Parameter names match, but every token allocates and writes full float matrices.
+- **Using the embedding as the output head.** Granite 4.2 3B has `tie_word_embeddings: false` and an explicit `lm_head`.
+- **Hardcoding `bits=8` and `group_size=64`.** Fails on checkpoints with other quantization settings (such as 4-bit, group size 32) because `weight` and `scales` shapes change.
+- **Dropping config multipliers.** Even though Granite 4.2 3B sets them to 1.0, other test configs use non-unit values.
+- **Applying `silu` to `up_proj` instead of `gate_proj`.** The gate branch is activated with SiLU and then multiplied by `up_proj(x)`.
+- **Skipping `set_dtype(mx.float32)`.** Leaving scales, biases, and norms in `bfloat16` shifts logits by up to 0.4 and fails the `float32` tolerance check.
+- **Forgetting `offset` in `nn.RoPE` on cached steps.** Without `offset=C`, every cached step rotates new tokens as position 0.
+- **Applying `mask="causal"` only when `cache is None`.** A multi-token continuation (`seq > 1`) with a non-empty cache then attends to future tokens.
+- **Skipping the KV cache, calling `mx.eval`, or reading before scheduling.** Produces the right tokens while running 10% to 5x slower and failing the `EvalSpy` checks.
+- **Missing the `eos_id` stop or scheduling past `max_new_tokens`.** Violates the exact call-count and evaluation-order checks.
 
 ## Complexity
 
-Loading is one pass over the file. A decoding step is 281 quantized
-multiplications over 3.66 billion codes, about 3.6 GiB of memory traffic, plus
-attention over the cache. The cache grows by `2 * n_layers * n_kv_heads * head_dim`
-floats per token: 41,000 for this model, 160 kB in float32.
+Loading reads the checkpoint file once. Each decoding step runs 281 quantized matrix multiplications across 3.66 billion packed weights (about 3.6 GiB of weight traffic) plus attention over the cached keys and values. The KV cache grows by `2 * n_layers * n_kv_heads * head_dim` floats per token (40,960 floats, or 160 KB in `float32`, for Granite 4.2 3B).
 
 ## In the wild
 
-`mlx_lm.utils.load_model` does these four steps for every architecture: it builds
-the float module tree, calls `nn.quantize(model, group_size, bits,
-class_predicate=...)` so that exactly the modules whose `scales` are in the file
-become quantized, and then `load_weights`. Per-layer settings in
-`config["quantization"]` allow mixed bit widths (the Granite model's
-`quant_predicate` keeps `o_proj`, `down_proj`, and the head at 8 bits when the rest
-is lower). The chat prompts in the tests were rendered with the model's own template,
-which opens the assistant turn with `<think>`: the first generated tokens are the
-model's reasoning, and with `enable_thinking=False` the template closes the block
-itself and the model answers directly.
+`mlx_lm.utils.load_model` follows the same four steps across architectures. It builds the float module tree, calls `nn.quantize(model, group_size, bits, class_predicate=...)` so only layers with `scales` in the file are quantized, and then calls `load_weights`. Per-layer entries in `config["quantization"]` also support mixed bit widths (for example, keeping `o_proj`, `down_proj`, and `lm_head` at 8 bits when other layers use lower precision). The chat prompts in the tests use Granite's chat template, which opens the assistant turn with `<think>` so the first tokens are reasoning tokens. Setting `enable_thinking=False` closes the block immediately so the model answers directly.

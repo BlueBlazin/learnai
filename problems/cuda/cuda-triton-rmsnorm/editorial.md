@@ -1,40 +1,17 @@
 ## The idea
 
-A Triton kernel is the body of a loop you do not write. The launch
-`rmsnorm_kernel[(n_rows,)](...)` runs it once per grid point, concurrently, and the
-only thing that distinguishes one run from another is `tl.program_id(0)`. Inside,
-there are no tensors with shapes, only pointers and blocks: a block is a small
-fixed-size vector that lives in registers, and `tl.load` and `tl.store` move blocks
-between registers and memory.
+Launching `rmsnorm_kernel[(n_rows,)](...)` executes the kernel once per grid point concurrently. Inside the kernel, `tl.program_id(0)` identifies which program is running. Rather than operating on shaped tensors, the kernel manipulates pointers and fixed-size register blocks, using `tl.load` and `tl.store` to move blocks between registers and memory.
 
-**One program per row** is the natural decomposition for a normalization: the row's
-sum of squares is needed by every element of the row and by nothing else, so a
-program computes it once and uses it `n_cols` times. Finer (one program per element)
-recomputes the sum `n_cols` times; coarser would leave the GPU's parallelism unused.
+**One program per row.** Every element in a row shares the same root mean square, and no other row needs it. Assigning one program per row lets each program compute that statistic once and reuse it across all `n_cols` elements. One program per element would recompute the sum `n_cols` times, while assigning multiple rows per program would leave GPU parallelism unused.
 
-**Blocks have a fixed size; rows do not.** `tl.arange(0, BLOCK)` needs a
-compile-time power of two, so a row of 37 columns in blocks of 16 is three blocks
-covering 48 columns. The last eleven do not exist. For row 0 they are the first
-eleven elements of row 1; for the last row they are whatever the allocator placed
-after the tensor. The mask `cols < n_cols` is the only thing standing between the
-kernel and that memory:
+**Fixed-size blocks and tail masking.** `tl.arange(0, BLOCK)` requires `BLOCK` to be a compile-time power of two, whereas `n_cols` can be any positive integer. For example, a row of 37 columns processed with `BLOCK=16` takes three blocks covering 48 columns, leaving 11 out-of-bounds lanes in the last block. For row 0, those 11 offsets point into the start of row 1. For the last row, they point past the end of the tensor. Guarding every memory access with `mask = cols < n_cols` prevents invalid reads and writes:
 
-- on a load, masked-off elements are not read and take the value of `other`. For a
-  sum the neutral value is 0. Without `other` they are undefined, which in practice
-  means stale register contents;
-- on a store, masked-off elements are not written.
+- On `tl.load`, masked-off lanes are not read and instead receive `other`. Using `other=0.0` is neutral for summation. Omitting `other` leaves those lanes undefined (typically stale register values).
+- On `tl.store`, masked-off lanes are not written to memory.
 
-**Two passes.** The root mean square must be known before the first element can be
-written, and a block cannot hold a whole row, so the row is read twice: once to
-accumulate, once to normalize. The accumulator is a block of `BLOCK` partial sums,
-reduced with `tl.sum` after the loop, which keeps the loop body a plain vector
-add.
+**Two passes over the row.** Because a single block cannot hold an arbitrarily long row, and the root mean square must be known before any output is written, the kernel makes two passes. The first pass accumulates partial sums of squares in a `BLOCK`-element vector, then reduces it once with `tl.sum(acc, axis=0)` after the loop. The second pass reloads `x` and `w` in blocks and stores the normalized values.
 
-**float32 inside.** In half precision the largest finite value is 65504, so a
-square overflows once $|x| > 255$. `x.to(tl.float32)` before squaring costs nothing
-(the conversion happens in registers) and the store converts the result back. The
-divisor is `n_cols`, the number of real columns, not the number of columns the
-blocks covered, and `eps` goes inside the root, as in `rmsnorm`.
+**Internal `float32` arithmetic.** The largest finite `float16` value is 65504, so squaring any value with $|x| > 255$ overflows to infinity. Casting with `.to(tl.float32)` before squaring happens in registers at negligible cost, and `tl.store` converts the final output back to `float16` automatically. Divide the sum of squares by `n_cols` (the true column count, not the padded block count) and add `eps` inside the square root.
 
 ## Reference solution (PyTorch)
 
@@ -68,64 +45,29 @@ def rms_norm(x, weight, eps=1e-5, block=64):
     return out.reshape(x.shape)
 ```
 
-The wrapper's `.contiguous()` is not a formality. A kernel receives the address of
-the tensor's first element and nothing else; `x[:, ::2]` has the right shape and its
-elements are two apart in memory. PyTorch operations honor strides; a kernel that
-computes `row * n_cols + col` does not. (`.contiguous()` returns the tensor itself
-when the layout is already right, so the common case copies nothing.) The output
-needs no initialization, since the kernel writes every element.
+Calling `.contiguous()` in the wrapper is essential. The kernel receives only base pointers and assumes row-major stride-1 layout (`row * n_cols + col`), whereas a strided view like `x[:, ::2]` has non-unit strides. When a tensor is already contiguous, `.contiguous()` returns it without copying. The output buffer uses `torch.empty_like` because the kernel writes every element.
 
-On a real GPU the block size is a tuning knob: larger blocks mean fewer loop
-iterations and wider vector operations per program. Triton's own layer-norm tutorial
-picks the next power of two above the row length, capped so that a block fits in
-64 KiB. The masked tail is what makes any choice correct.
+On a GPU, `BLOCK` is a performance tuning knob. Larger blocks reduce loop iterations and widen vector operations per program. Triton's layer-norm tutorial selects the next power of two above `n_cols`, capped so the block fits in 64 KiB, and relies on tail masking for correctness at any size.
 
 ## Common mistakes
 
-- **No mask.** Row 0's sum includes elements of row 1 and its store overwrites
-  them; the last row goes past the end of the tensor. The shim raises
-  `tl.OutOfBounds` or `tl.DataRace`; a GPU raises nothing.
-- **Masked loads but an unmasked store.** The statistics are right and each program
-  scribbles over the start of the next row, racing with the program that owns it.
-- **`cols <= n_cols`.** One element too many, on every row.
-- **`other=1.0`** (or any value that is not neutral for the reduction). Each missing
-  column adds 1 to the sum of squares. Rows whose length is a multiple of the block
-  are unaffected, which is how this survives a test with round sizes.
-- **Dividing by the padded length.** The mean is over `n_cols` columns.
-- **eps outside the root.** Indistinguishable on activations of order 1, wrong on
-  small ones.
-- **No conversion to float32.** Infinite squares for float16 activations above 255,
-  and a row of zeros.
-- **One block and no loop.** Triton's tutorial does this on purpose, with a block as
-  long as the row; with a fixed `BLOCK` everything after the first block is ignored.
-- **One program per element.** Correct, with `n_cols` times the reads.
-- **A strided tensor passed to the kernel**, or an output allocated as float32
-  whatever the input is.
+- **Omitting the mask.** Row 0 reads elements from row 1 into its sum and overwrites them on store, while the last row accesses memory past the end of the tensor. `tritonshim` raises `tl.OutOfBounds` or `tl.DataRace`, whereas a GPU fails silently.
+- **Masking loads but not stores.** The statistics are correct, but each program overwrites the start of the next row and races with the program that owns it.
+- **Using `cols <= n_cols`.** This includes one extra out-of-bounds element on every row.
+- **Using `other=1.0` (or another non-zero value).** Every masked-off column adds 1 to the sum of squares. This bug passes whenever `n_cols` is a multiple of `BLOCK` and fails on non-multiple widths.
+- **Dividing by the padded length.** The mean must be divided by `n_cols`, not the total number of lanes covered by the loop.
+- **Adding `eps` outside the square root.** This looks almost identical on unit-scale activations but produces wrong outputs on small activations.
+- **Skipping the `float32` cast.** Squaring `float16` values above 255 overflows to infinity and turns the normalized row into zeros.
+- **Processing only one block without a loop.** Triton's tutorial uses a single block only because it sets `BLOCK >= n_cols`. With a fixed `BLOCK`, omitting the loop ignores all columns past `BLOCK`.
+- **Launching one program per element.** This produces the right numbers but reads `x` `n_cols` times as often, exceeding the load limit.
+- **Passing strided tensors or allocating the wrong output dtype.** Failing to call `.contiguous()` breaks strided views, and hardcoding `float32` for `out` breaks `float16` inputs.
 
 ## Complexity
 
-`n_rows` programs, each making two passes over its row: $2 \cdot \text{n\_cols}$
-elements of `x` and $\text{n\_cols}$ gains loaded, $\text{n\_cols}$ elements stored,
-in $2 \lceil \text{n\_cols} / \text{BLOCK} \rceil$ loop iterations. No memory beyond
-the output.
+The kernel launches `n_rows` programs. Each program runs $2 \lceil \text{n\_cols} / \text{BLOCK} \rceil$ loop iterations, loads $2 \cdot \text{n\_cols}$ elements of `x` and `n_cols` elements of `w`, and stores `n_cols` elements of `out`. It allocates no extra memory beyond the output tensor.
 
 ## In the wild
 
-The forward kernel of the layer-norm tutorial in Triton's documentation has this
-exact structure (a pointer advanced by `row * stride`, `for off in range(0, N,
-BLOCK_SIZE)`, `tl.load(..., mask=cols < N, other=0.)`, a float32 accumulator reduced
-with `tl.sum`), with a mean subtraction added. The kernels `torch.compile` generates
-for a normalization look the same after fusion.
+The forward pass of Triton's official layer-norm tutorial has this exact structure: a row pointer offset by `row * stride`, a loop `for off in range(0, N, BLOCK_SIZE)`, masked loads with `other=0.0`, and a `float32` accumulator reduced with `tl.sum` (plus mean subtraction). Kernels emitted by `torch.compile` for fused normalizations follow the same pattern.
 
-What was verified where. On the CPU, under the kit's `tritonshim`: everything the
-judge checks. The shim was written from Triton's documentation and has never been
-compared with Triton itself, which does not install on the machine the problem was
-written on. Three things in particular rest on the shim author's reading rather
-than on a documented statement: that Python scalars passed at launch arrive as
-int32 and float32, that an integer divided by an integer with `/` gives float32,
-and that every block shape must be a power of two. The reference kernel does not
-depend on the second, and the tutorial depends on the first and third in the same
-way the reference does. The tutorial writes `tl.zeros([BLOCK_SIZE],
-dtype=tl.float32)` with a list where the page for `tl.zeros` documents a tuple; the
-shim accepts both. The GPU cases, which hand this
-kernel to the real compiler, have never been run.
+**Verification note.** All judge checks were verified on CPU under `tritonshim`, which was written from Triton's documentation without a local Triton installation for side-by-side testing. Three shim details rest on reading the docs rather than explicit guarantees: Python scalars arrive as `int32`/`float32`, integer `/` integer yields `float32`, and block shapes must be powers of two. The reference kernel does not rely on integer `/` integer, and the official tutorial relies on the other two in the same way. (The tutorial also passes a list to `tl.zeros([BLOCK_SIZE], dtype=tl.float32)` where the API docs specify a tuple; the shim accepts both.) The GPU test cases that invoke the real Triton compiler have not been run.

@@ -1,23 +1,12 @@
-A row behaves as it does alone if (a) nothing real ever attends to its padding,
-(b) its real tokens sit at positions $0, 1, 2, \dots$, and (c) its next token is read
-from its last real token. Which side must the padding be on so that (c) is the same
-column for every row, and stays so for every later step?
+A batched row matches its solo run if three conditions hold: no real token ever attends to padding, real tokens start at position 0, and each step's next token is read from the last real token. Which side should you pad on so that the last real token sits in the same column for every row on the prompt call and stays aligned on every decode step?
 
 ---
 
-Pad on the left. With `pad[b] = T - len(prompts[b])` and `cols = mx.arange(T)`:
-`real = cols[None, :] >= pad[:, None]` marks the real columns. The prompt mask is
-"causal and the key is real, or the key is the query itself", turned into `0` and
-`-inf` with `mx.where`; the diagonal is what keeps padding queries from becoming
-NaN. Positions are `cols[None, :] - pad[:, None]`, clipped at 0. For the decode
-steps you need three things per row that grow with the step: the token just
-generated (shape `(B, 1)`), its position `len(prompts[b]) + step`, and a mask over
-*all* cached columns plus the new one, `-inf` on the row's padding columns. Keep a
-Python list of finished flags; evaluate once and read the `B` tokens once per step.
+Pad on the left. Let `pad[b] = T - len(prompts[b])` and `cols = mx.arange(T)`, so `real = cols[None, :] >= pad[:, None]` marks the real columns. For the prompt mask, allow a query to attend to a key if the pair is causal and the key is real, or if the key is the query itself, then map booleans to `0.0` and `-inf` with `mx.where`. Including the diagonal prevents padding queries from producing NaN in softmax. Set prompt positions to `cols[None, :] - pad[:, None]` clipped at 0. On each decode step, pass the newly generated tokens of shape `(B, 1)`, positions `len(prompts[b]) + step`, and a key mask covering all cached columns plus the new column (`-inf` on each row's padding columns). Track finished rows in a Python list, evaluating and reading the batch of `B` tokens once per step.
 
 ---
 
-The pieces:
+The core implementation:
 
 ```python
 causal = cols[None, :] <= cols[:, None]
@@ -40,5 +29,4 @@ for step in range(max_new_tokens):
     logits, cache = model(token[:, None], cache, mask=key_mask, positions=(lengths + step)[:, None])
 ```
 
-Check `all(done)` **before** building the next call, and append to a row only while
-it is not done.
+Check `all(done)` **before** issuing the next model call, and append to a row only while `not done[row]`.

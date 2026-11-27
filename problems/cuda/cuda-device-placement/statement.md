@@ -1,8 +1,4 @@
-Move a nested batch to a device, then compute a small forward pass on it that needs
-two tensors of its own (position ids and a padding mask) without ever leaving that
-device. On a CPU nothing can go wrong, because everything is on the CPU; the same
-code on a GPU either raises "Expected all tensors to be on the same device" or, worse,
-quietly makes a round trip through host memory in the middle of the forward pass.
+Implement a recursive helper `to_device` that moves a nested batch of tensors onto a target device, and a forward pass `run` that classifies padded token sequences using mean pooling without ever leaving that device. On a CPU, device-placement bugs go unnoticed because every tensor is already on the CPU. On a GPU, the same mistakes either raise a device-mismatch error or trigger slow, silent round trips through host memory.
 
 ## Specification
 
@@ -11,71 +7,60 @@ def to_device(batch, device): ...
 def run(weights, inputs, device): ...
 ```
 
-**`to_device(batch, device)`** moves every tensor of a nested structure:
+### `to_device(batch, device)`
 
-- `batch`: a tensor, or a `dict`, `list`, or `tuple`, nested to any depth, whose
-  leaves are tensors and other objects (strings, numbers, `None`).
-- Returns a structure of the same form: a dict gives a dict with the same keys in the
-  same order, a list a list, a tuple a tuple. Every tensor leaf is replaced by
-  `tensor.to(device)`; every other leaf is passed through as the same object.
-- `batch` is not modified: new containers are returned, and the caller's structure
-  still holds its original tensors.
+Recursively move every tensor inside a nested container to `device`.
 
-**`run(weights, inputs, device)`** classifies a padded batch of token sequences by
-mean pooling:
+- `batch` is a `torch.Tensor`, or a `dict`, `list`, or `tuple` nested to any depth. Its leaves may be tensors or other Python objects such as strings, numbers, or `None`.
+- Return a new structure with the same container types. A `dict` produces a `dict` with the same keys in the same order, a `list` produces a `list`, and a `tuple` produces a `tuple`.
+- Replace every tensor leaf with `tensor.to(device)`, and keep every non-tensor leaf as the exact same object.
+- Do not mutate `batch`. Return new containers so the caller's original structure and tensors remain untouched.
 
-- `weights`: a dict of float tensors that are **already on `device`**, all of one
-  dtype (float32 or float16): `"tok_emb"` of shape `(V, D)`, `"pos_emb"` of shape
-  `(P, D)`, `"w_out"` of shape `(C, D)`.
-- `inputs`: a nested dict whose tensors may be on any device (in practice the CPU,
-  fresh from the data loader):
+### `run(weights, inputs, device)`
+
+Compute classification logits for a padded batch of token sequences by mean-pooling each sequence's non-padding embeddings.
+
+- `weights` is a `dict` of floating-point tensors already on `device`, all sharing the same dtype (`float32` or `float16`). It contains `"tok_emb"` (token embedding table), `"pos_emb"` (position embedding table), and `"w_out"` (output projection matrix).
+- `inputs` is a nested `dict` whose tensors may start on any device (for example, on the CPU from a data loader):
 
   ```python
   {"tokens": ..., "lengths": ..., "head": {"bias": ...}}
   ```
 
-  `tokens` holds `B` sequences padded to `T` positions; `lengths[b]` is the number
-  of real tokens in row `b`, $1 \le \texttt{lengths}[b] \le T$, and positions
-  $t \ge \texttt{lengths}[b]$ are padding whose token ids mean nothing. `bias` has
-  the dtype of the weights.
-- Returns the logits, shape `(B, C)`, in the dtype of the weights, on `device`.
+  Here `tokens` holds a batch of $B$ token sequences padded to length $T$. For each row $b$, `lengths[b]` is the number of real tokens ($1 \le \texttt{lengths}[b] \le T$). Positions $t \ge \texttt{lengths}[b]$ are padding and must not affect the result.
+- Return the classification logits on `device` with the same dtype as `weights`.
 
-With $E$ = `tok_emb`, $P$ = `pos_emb`, $W$ = `w_out`, and $n_b$ = `lengths[b]`:
+For each sequence $b$ and position $t$, add the token and position embeddings, average only over the $n_b = \texttt{lengths}[b]$ real positions, and apply the linear head. With $E_{\text{tok}} = \texttt{weights["tok\_emb"]}$, $E_{\text{pos}} = \texttt{weights["pos\_emb"]}$, $W = \texttt{weights["w\_out"]}$, and $\text{bias} = \texttt{inputs["head"]["bias"]}$:
 
 $$
-h_{b,t} = E[\texttt{tokens}_{b,t}] + P[t],
+h_{b,t} = E_{\text{tok}}[\texttt{tokens}_{b,t}] + E_{\text{pos}}[t],
 \qquad
 \bar h_b = \frac{1}{n_b} \sum_{t < n_b} h_{b,t},
 \qquad
 \text{logits}_b = W\, \bar h_b + \text{bias}.
 $$
 
-Padding positions do not contribute to the mean.
+### Placement rules
 
-**Placement rules.** The judge observes where your code puts tensors:
+The judge tracks where your code allocates tensors and whether it reads device values back to the host.
 
-1. Every tensor `run` creates is created on `device`. A factory function
-   (`torch.arange`, `torch.zeros`, `torch.ones`, `torch.full`, `torch.tensor`, ...)
-   called without `device=` puts its result on the default device, the CPU; such a
-   call fails the case.
-2. Nothing is read on the host during the forward pass: no `.cpu()`, `.numpy()`,
-   `.item()`, `.tolist()`, `int(x)`, `float(x)`, `bool(x)` on a tensor, no tensor
-   used as a slice bound or in `range`, no boolean-mask indexing (`h[mask]`), no
-   printing. Each of these makes the host wait for the device.
-3. No float tensor of a hard-coded dtype enters the computation: with float16
-   weights the result is float16.
+1. **Allocate on `device`.** Every tensor created inside `run` must be created on `device`. Calling a factory function such as `torch.arange`, `torch.zeros`, `torch.ones`, `torch.full`, or `torch.tensor` without `device=` allocates on the CPU and fails the test.
+2. **No host reads.** Do not read tensor values on the host during the forward pass. Avoid `.cpu()`, `.numpy()`, `.item()`, `.tolist()`, `int(x)`, `float(x)`, `bool(x)`, printing tensors, using a tensor as a slice bound or `range` argument, and boolean-mask indexing (`h[mask]`). Each of these forces the CPU to synchronize with the device.
+3. **Preserve dtype.** Do not introduce hard-coded float dtypes into the computation. When `weights` is `float16`, the returned logits must be `float16`.
 
 ## Shapes
 
-| name | shape | dtype |
+Here $B$ is the batch size, $T$ is the padded sequence length, $V$ is the vocabulary size, $P$ is the maximum position length ($P \ge T$), $D$ is the embedding dimension, and $C$ is the number of classes.
+
+| Name | Shape | Dtype |
 |---|---|---|
-| `weights["tok_emb"]` | `(V, D)` | float32 or float16 |
-| `weights["pos_emb"]` | `(P, D)`, $P \ge T$ | the same |
-| `weights["w_out"]` | `(C, D)` | the same |
-| `inputs["tokens"]` | `(B, T)` | int64 |
-| `inputs["lengths"]` | `(B,)` | int64 |
-| `inputs["head"]["bias"]` | `(C,)` | the dtype of the weights |
-| result of `run` | `(B, C)` | the dtype of the weights |
+| `weights["tok_emb"]` | `(V, D)` | `float32` or `float16` |
+| `weights["pos_emb"]` | `(P, D)` | same as `tok_emb` |
+| `weights["w_out"]` | `(C, D)` | same as `tok_emb` |
+| `inputs["tokens"]` | `(B, T)` | `int64` |
+| `inputs["lengths"]` | `(B,)` | `int64` |
+| `inputs["head"]["bias"]` | `(C,)` | same as `tok_emb` |
+| `run` output | `(B, C)` | same as `tok_emb` |
 
 ## Example
 
@@ -96,42 +81,20 @@ run(weights, inputs, torch.device("cpu"))
 #  [1.1,    1.2,    0.3]]
 ```
 
-- Row 0 has three real tokens: $h = [1, 0] + [0, 0]$, $[0, 1] + [0.5, 0.5]$,
-  $[1, 1] + [1, 1]$, whose mean is $[3.5, 3.5] / 3 = [1.1667, 1.1667]$. The logits
-  are $[1.1667 + 0.1,\; 1.1667 + 0.2,\; 0 + 0.3]$.
-- Row 1 has one real token: $h_0 = [1, 1] + [0, 0]$. The two padding positions are
-  ignored, so the mean is $[1, 1]$ and the logits are $[1.1, 1.2, 0.3]$. Averaging
-  over all three positions would give $[0.8333, 0.8333]$ instead.
+- Row 0 has three real tokens. The combined embeddings are $[1, 0] + [0, 0]$, $[0, 1] + [0.5, 0.5]$, and $[1, 1] + [1, 1]$, with mean $[3.5, 3.5] / 3 = [1.1667, 1.1667]$. Adding the bias after projecting with $W$ gives $[1.1667 + 0.1,\; 1.1667 + 0.2,\; 0 + 0.3]$.
+- Row 1 has one real token, with combined embedding $[1, 1] + [0, 0]$. The two padding positions are excluded, so the mean is $[1, 1]$ and the logits are $[1.1, 1.2, 0.3]$. Averaging over all three positions would incorrectly yield a mean of $[0.8333, 0.8333]$.
 
-`to_device` on the same `inputs` returns a new dict with a new inner dict, and three
-tensors on the device.
+Calling `to_device` on `inputs` returns a new outer dict containing a new `"head"` dict and three tensors on `device`.
 
 ## Constraints
 
-- $1 \le B \le 8$, $1 \le T \le 20$, $P \ge T$; token ids are in $[0, V)$.
-- float32 logits are compared with a float64 computation to a relative tolerance of
-  `1e-4` and an absolute tolerance of `1e-5`; float16 logits to `1e-2` and `3e-2`.
-- The placement rules are exact: one tensor created without `device=`, or one host
-  read, fails the case even when the logits are right.
-- **What runs where.** The cases without a hardware mark run on the CPU. They watch
-  the factory functions and the host reads made by your file, and one of them runs
-  `run` on `torch.device("meta")`, a device whose tensors have a shape and no data:
-  like a CUDA tensor, a meta tensor refuses elementwise operations with a CPU tensor,
-  and it cannot be read at all. Two cases run only on a machine with an NVIDIA GPU
-  and repeat the checks with CUDA weights and a CPU batch. The GPU cases were written
-  from the PyTorch 2.15 documentation and could not be run when the problem was
-  authored.
+- $1 \le B \le 8$, $1 \le T \le 20$, and $P \ge T$. All token IDs lie in $[0, V)$.
+- `float32` logits are compared against a `float64` reference with a relative tolerance of `1e-4` and an absolute tolerance of `1e-5`. `float16` logits use a relative tolerance of `1e-2` and an absolute tolerance of `3e-2`.
+- The placement rules are strict. Even one tensor created without `device=` or one host read fails the test, regardless of whether the numerical logits match.
+- **CPU vs. GPU tests.** Tests without a hardware mark run on the CPU. They intercept factory calls and host reads made by your code, and one test runs `run` on `torch.device("meta")`. Like CUDA tensors, meta tensors hold shape and dtype without data, reject elementwise operations with CPU tensors, and cannot be read on the host. Two additional tests run only on an NVIDIA GPU and repeat these checks with CUDA weights and a CPU batch. The GPU tests were written from the PyTorch 2.15 documentation and could not be executed when this problem was authored.
 
 ## Why this matters
 
-Batches reach a model server from the tokenizer and the data loader, on the CPU, as
-nested dicts; weights live on the GPU. Everything the forward pass builds for itself
-(position ids, causal and padding masks, a buffer for generated tokens) is created by
-a factory call, and a factory call without `device=` creates on the CPU. The lucky
-outcome is an exception at the first elementwise operation. The unlucky ones are
-silent: indexing a CUDA tensor with a CPU index tensor works, and code that "fixes"
-the exception with `.cpu()` now copies activations to host memory and back on every
-request, with the host stalled until the GPU has drained its queue. The same holds
-for dtypes: one `.float()` on a mask turns a half-precision forward pass into a
-single-precision one from that point on, doubling the memory of every later
-activation.
+In production serving, tokenizers and data loaders produce nested dicts of CPU tensors while model weights stay on the GPU. Any helper tensor created inside the forward pass—such as position IDs, causal or padding masks, or token buffers—comes from a factory call. Omitting `device=` allocates it on the CPU.
+
+At best, that triggers an immediate device-mismatch error. At worst, it fails silently. PyTorch allows indexing a CUDA tensor with a CPU index tensor, and working around errors with `.cpu()` forces host-device copies on every request while stalling the CPU until the GPU queue drains. Hard-coded dtypes cause similar silent regressions. Calling `.float()` on a mask promotes a `float16` forward pass to `float32` for every downstream layer, doubling activation memory.

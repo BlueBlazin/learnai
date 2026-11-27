@@ -1,27 +1,18 @@
-Both response modes, all three kinds of output (text, a schema's document, a tool
-call), and the disconnect need the same thing from the model: the next chosen token.
-Where does the decision "which token" live so that none of the six combinations can
-forget the constraint? And what is a non-streamed message, if a chunk is a delta to
-it?
+All six combinations of response mode (streaming or non-streaming) and output type (plain text, schema-constrained JSON, or tool calls) share the same core step: picking the next token. Where should token selection live so none of the six paths can accidentally skip the constraint? And how does a non-streaming message relate to a stream of deltas?
 
 ---
 
-Three layers, each a consumer of the one before. (1) A generation loop that reads a
-row, builds the candidates (`range(vocab.size)`, or `index[state]` plus
-`vocab.eos_id` when `state in dfa.accepting`), takes `max(candidates, key=lambda t:
-(row[t], -t))`, counts the row, and stops at end-of-sequence; it yields token texts
-and remembers `count` and whether it ended by EOS. (2) A delta generator on top of
-it: `{"content": text}`; or, for `"auto"`, the events of `parse_step` mapped to
-deltas (and `parse_end` after the loop); or, for a named tool, one start delta and
-then an arguments delta per token. (3) Two renderers: the stream sends one chunk per
-delta, the other applies the same deltas to `{"role": "assistant", "content": ""}`.
-The finish reason is `"length"` if the loop did not see EOS, else `"tool_calls"` if
-any delta had `tool_calls`, else `"stop"`. Close the model's stream in a `finally`
-around both renderers.
+Stack three layers, each consuming the one below it:
+
+1. **Generation loop:** reads each row of logits, builds the candidate set (`range(vocab.size)`, or `index[state]` plus `vocab.eos_id` when `state in dfa.accepting`), picks `max(candidates, key=lambda t: (row[t], -t))`, increments `count`, and stops on `vocab.eos_id`. It yields decoded token texts and records `count` and whether EOS was seen.
+2. **Delta generator:** wraps the generation loop. It yields `{"content": text}` for plain text or JSON schema output, maps `parse_step` and `parse_end` events to deltas for `"auto"`, or emits one start delta followed by one argument delta per token for a named tool.
+3. **Two renderers:** the streaming renderer sends one SSE chunk per delta, while the non-streaming renderer folds those same deltas into `{"role": "assistant", "content": ""}`.
+
+Set `finish_reason` to `"length"` if the loop did not see EOS, `"tool_calls"` if any delta included `tool_calls`, and `"stop"` otherwise. Close `lm.stream` in a `finally` block wrapping both renderers.
 
 ---
 
-Compile inside `make_app`, where the cache lives:
+Keep the schema cache inside `make_app`:
 
 ```python
 compiled = {}
@@ -35,9 +26,4 @@ def constraint_for(schema):
     return compiled[key]
 ```
 
-`build_index` is the one of `dfa-token-index`, for every state in `dfa.states`, so
-that no later request steps the automaton. Resolve the constraint during validation,
-before `lm.stream` is called: the schema of `response_format`, or the `parameters`
-of the named tool (`{"type": "object", "properties": {}}` if it has none). For the
-disconnect, run the sending coroutine and a `receive()` watcher as two tasks, wait
-for the first to finish, cancel both, and let the `finally` close the model's stream.
+Use `build_index` from `dfa-token-index` across all `dfa.states` eagerly so later requests never step the DFA. Resolve the constraint during request validation (before calling `lm.stream`) using either `response_format`'s schema or the named tool's `parameters` (`{"type": "object", "properties": {}}` if omitted). To handle disconnects, run the SSE sender and a `receive()` watcher as two asyncio tasks, wait for the first to finish, cancel both, and let the `finally` block close the model stream.

@@ -1,22 +1,12 @@
-`mx.async_eval(x)` returns immediately; the GPU starts computing `x` in the background,
-and a later `x.item()` waits only for whatever is not finished yet. So what must
-already be in the GPU's queue at the moment you block on token $t$? And what do you
-need to know about token $t$ to *build* the graph of step $t + 1$: its value, or just
-the array?
+`mx.async_eval(x)` returns immediately while the GPU starts computing `x` in the background, and a later `x.item()` waits only for whatever work is not finished yet. What needs to already be in the GPU queue at the moment you block on token $t$? And to build the graph for step $t + 1$, do you need token $t$'s Python integer value or just its MLX array?
 
 ---
 
-Keep two steps in hand: the current one (scheduled, about to be read) and the next
-one (built from the current token **array** with `token.reshape(1)`, then scheduled).
-Each step is `logits, cache = model(...)`, the log-softmax of `logits[-1]`, the argmax,
-and the log-probability of the argmax. Pass both the token and its log-probability to
-`mx.async_eval`: the log-probability is computed from the token, so scheduling the
-token alone leaves it out. The cache needs no mention, because the token depends on
-every array in it.
+Keep two steps alive at once: the current step (already scheduled and ready to be read) and the next step (built from the current token **array** via `token.reshape(1)` and then scheduled). Each step calls `logits, cache = model(...)`, computes the log-softmax of `logits[-1]`, takes the argmax token, and indexes its log-probability. Pass both `token` and `logprob` to `mx.async_eval` because `logprob` is computed from `token`, so scheduling `token` alone leaves `logprob` unevaluated. You do not need to pass `cache` because `token` already depends on every array in it.
 
 ---
 
-The loop:
+Structure the generator loop so step `index + 1` is scheduled before reading `token`:
 
 ```python
 token, logprob, cache = step(mx.array(prompt), None)
@@ -30,5 +20,4 @@ for index in range(n):
         token, logprob = next_token, next_logprob
 ```
 
-Do not call `mx.eval` anywhere, and do not convert the token to an int before
-building the next step.
+Do not call `mx.eval` anywhere, and never convert `token` to a Python `int` before building the next step.

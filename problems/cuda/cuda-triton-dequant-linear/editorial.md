@@ -1,48 +1,22 @@
 ## The idea
 
-A dequantized weight is needed for exactly one multiplication. So compute it where
-it is used, in the registers of the program that multiplies, and let it go: the
-kernel's memory traffic is the packed words, the scales and biases, and the
-activations, and its only store is the result.
+Each dequantized weight is used for a single multiplication. By unpacking and scaling the weights in registers inside the dot-product loop, the kernel reads only the packed words, scales, biases, and activations, and writes only the final output scalar.
 
-**One program per output element.** $y_{b,o}$ is a dot product of row $b$ of `x`
-with row $o$ of $\hat W$, independent of every other element, so the grid is
-`(n_out, batch)` and each program runs the block loop of `cuda-triton-rmsnorm` over
-the `n_in` columns with a float32 accumulator and a masked tail.
+**One program per output element.** Each output $y_{b,o}$ is the dot product of row $b$ of `x` with row $o$ of $\hat W$, independent of all other outputs. Launching on a 2D grid of `(n_out, batch)` lets every program run the same blocked loop over `n_in` columns as `cuda-triton-rmsnorm`, with a `float32` accumulator and a masked tail.
 
-**Three indices per column.** For column $c$ of output row $o$:
+**Three indices per column.** For column $c$ of output row $o$, three expressions locate the data:
 
-| what | where | why |
+| quantity | expression | reason |
 |---|---|---|
-| the word | `words_row + c // 8` | eight codes per uint32 |
-| the code in it | `(word >> 4 * (c % 8)) & 0xF` | code 0 is in the lowest bits |
-| scale and bias | `scales_row + c // group_size` | one pair per group of columns |
+| packed word | `words_row + c // 8` | eight 4-bit codes per `uint32` |
+| 4-bit code | `(word >> 4 * (c % 8)) & 0xF` | code 0 sits in the lowest bits |
+| scale and bias | `scales_row + c // group_size` | one scale/bias pair per group |
 
-All three are computed for a whole block at once: `cols // 8`, `cols % 8`, and
-`cols // group_size` are blocks of integers, and a load through a block of offsets
-reads one element per entry, whether or not entries repeat. That is the important
-step up from the previous problem, where every load was a contiguous run: here the
-offsets are a function of the column, and nothing ties them to the block. A block
-of 16 columns under groups of 24 changes group in mid-block; a block of 64 under
-groups of 8 spans eight groups. The kernel never needs to know.
+All three expressions evaluate across an entire block of columns at once (`cols // 8`, `cols % 8`, `cols // group_size`). A `tl.load` with a block of computed offsets fetches one value per lane even when multiple lanes point to the same address. Unlike `cuda-triton-rmsnorm`, where loads were strictly contiguous, these gathered offsets decouple `BLOCK` from `group_size`. A block of 16 columns with `group_size=24` switches groups mid-block, and a block of 64 with `group_size=8` spans eight groups, with no special-case branching required.
 
-**Unsigned shifts.** The word is loaded as `tl.uint32` and stays unsigned, so `>>`
-brings in zeros. The shift amount is converted to `tl.uint32` as well; mixing a
-signed and an unsigned integer of the same width promotes to unsigned in Triton, so
-this is for the reader more than for the compiler. A mask after the shift (`& 0xF`)
-is robust to either kind of shift; the two-shift idiom of signed bit-field code,
-`(word << a) >> b`, is not, and the shim refuses it as soon as the shifted value is
-negative.
+**Unsigned right shifts.** Loading `words` as `tl.uint32` keeps the shift unsigned, so `>>` always shifts in zeros. Casting the shift amount to `tl.uint32` makes the unsigned operation explicit (Triton promotes mixed signed/unsigned operands of equal width to unsigned anyway). Masking with `& 0xF` after shifting is also safer than the signed two-shift bit-field pattern `(word << a) >> b`, which fails under `tritonshim` whenever the intermediate value is negative.
 
-**float32 arithmetic.** The code becomes a float32, the scale and bias are converted
-on load, and the weight, the product, and the partial sums are float32 whatever the
-inputs are. A float16 accumulator loses on both ends: each addition rounds the
-partial sum to 11 bits, and a sum of a few hundred products of order 100 passes
-65504.
-
-**Masked columns contribute zero** because `x` is loaded with `other=0.0`; the other
-three loads get an `other=` too, so that no undefined value is ever multiplied, even
-by zero.
+**`float32` accumulation and safe masking.** Cast the unpacked code, scale, and bias to `float32` before computing the weight and multiplying by `x`. A `float16` accumulator both rounds each partial sum to 11 mantissa bits and overflows 65504 when summing a few hundred large products. Loading `x` with `other=0.0` ensures masked-off columns contribute zero, and providing `other=` on the other three loads prevents multiplying by undefined values.
 
 ## Reference solution (PyTorch)
 
@@ -92,67 +66,30 @@ def qlinear(x, words, scales, biases, group_size, block=64):
     return y.reshape(*x.shape[:-1], n_out)
 ```
 
-This is the straightforward kernel, and it is the one to get right first. It loads
-each word eight times and each scale `group_size` times; those loads hit the same
-cache line, but they are not free. Two refinements keep the structure and cut the
-traffic, at the price of tying `BLOCK` to the format:
+This kernel prioritizes clarity and independence from `group_size`. It loads each packed word 8 times and each scale/bias `group_size` times. Those repeated loads hit the same cache line, though they still issue redundant load instructions. Two standard optimizations cut load traffic at the cost of tying `BLOCK` to the quantization layout:
 
-- load `BLOCK / 8` words once and expand them against the eight shifts as a
-  two-dimensional block (`word[:, None] >> shifts[None, :]`);
-- use the identity of `quantized-matmul`,
-  $\sum_{c \in g} x_c (q_c s_g + b_g) = s_g \sum x_c q_c + b_g \sum x_c$, with one
-  block per group, so that the scale and bias are scalars loaded once per group and
-  the inner product is between activations and raw codes.
+- Load `BLOCK // 8` words once and unpack all eight nibbles via a 2D broadcast (`word[:, None] >> shifts[None, :]`).
+- Process one block per group using the identity from `quantized-matmul`, $\sum_{c \in g} x_c (q_c s_g + b_g) = s_g \sum x_c q_c + b_g \sum x_c$, loading `scale` and `bias` as scalars once per group.
 
 ## Common mistakes
 
-- **Codes read from the high bits down** (`4 * (7 - c % 8)`). Every eight weights
-  are reversed.
-- **One scale and bias per block**, taken from the block's first column. Right
-  while every block lies inside one group, so right for `BLOCK = group_size` and
-  wrong as soon as someone tunes the block size.
-- **Scales indexed without the row offset.** Every output row uses row 0's scales:
-  right for a one-row test.
-- **A signed shift.** With an arithmetic shift, codes of 8 and above come out as
-  $-8$ to $-1$; the shim stops at the shift itself.
-- **The bias outside the product** (`x * code * scale + bias`). The bias is part of
-  the weight and must be multiplied by the activation; this adds each column's bias
-  itself, $\text{group\_size} \cdot b$ per group where $b \sum x$ belongs.
-- **A float16 accumulator.** Right to three digits on short rows.
-- **No mask**, or **masks without `other=`**. The first reads the next row's
-  activations and codes into this output and runs off the tensors at the end; the
-  second multiplies undefined values. On a GPU neither fails.
-- **`y` stored transposed** (`o * batch + b`), or a launch grid with the axes
-  swapped.
-- **Dequantizing in the wrapper** and calling `matmul`. The right numbers, and the
-  float matrix back in memory.
-- **Strided tensors passed to the kernel**, or a float32 output for float16
-  activations.
+- **Unpacking nibbles from high bits to low (`4 * (7 - c % 8)`).** This reverses every block of eight weights.
+- **Loading one scale and bias per block.** Using the first column's group for the entire block works only when `BLOCK` divides `group_size` evenly and breaks as soon as `BLOCK` changes.
+- **Omitting the row offset on `scales` or `biases`.** Every output row ends up using row 0's parameters, which passes only on single-row tests.
+- **Performing a signed right shift.** An arithmetic shift turns codes 8 through 15 into $-8$ through $-1$. `tritonshim` catches this immediately by rejecting shifts on negative signed values.
+- **Placing the bias outside the multiplication (`x * code * scale + bias`).** The bias is part of the weight and must be multiplied by `x`. Leaving it outside adds $\text{group\_size} \cdot b$ per group instead of $b \sum x$.
+- **Accumulating in `float16`.** This matches to roughly three digits on short rows but drifts or overflows on longer rows and larger activations.
+- **Omitting masks or `other=`.** Missing masks read into adjacent rows or past the end of the tensor, and missing `other=` multiplies undefined values. Both fail silently on a real GPU.
+- **Transposing the output index or grid axes.** Storing at `o * batch + b` or launching on `(batch, n_out)` writes a transposed result.
+- **Dequantizing in the wrapper and calling `matmul`.** This produces the right numbers but violates the fused-kernel requirement by materializing the float weight matrix in memory.
+- **Passing strided tensors or wrong output dtype.** Skipping `.contiguous()` breaks strided inputs, and allocating `y` as `float32` breaks `float16` callers.
 
 ## Complexity
 
-`n_out * batch` programs. Each loads `4 * n_in` elements (an activation, a word, a
-scale, and a bias per column) in $\lceil \text{n\_in} / \text{BLOCK} \rceil$
-iterations and stores one. Memory beyond the inputs: the output.
+The kernel launches `n_out * batch` programs. Each program runs $\lceil \text{n\_in} / \text{BLOCK} \rceil$ loop iterations, loads `4 * n_in` elements (one activation, word, scale, and bias per column), and stores 1 output element. It uses no extra memory beyond the output tensor.
 
 ## In the wild
 
-MLX's `quantized_matmul` is this operation for the same layout; its Metal
-counterpart for dequantization alone is `mlx-metal-kernel-dequant`, which has one
-thread per weight where this kernel has one program per output. GPTQ-style formats
-pack 4-bit codes into int32 words, which is where the signed-shift bug comes from in
-practice, and store a zero point per group instead of a bias; GGUF's `Q4_K` packs
-blocks of 32 codes with 6-bit scales. The loop is the same in all of them; the three
-index expressions are what changes. A production kernel would also tile the batch
-(one program computing several outputs against the same unpacked codes) so that
-each word is unpacked once per tile and not once per output element.
+MLX's `quantized_matmul` performs this exact fused operation for the same 4-bit layout. Its Metal counterpart for standalone dequantization appears in `mlx-metal-kernel-dequant`, which assigns one thread per weight rather than one program per output. GPTQ formats pack 4-bit codes into `int32` words (which is why signed-shift bugs are common in practice) and use a zero point per group instead of an additive bias, while GGUF's `Q4_K` packs blocks of 32 codes with 6-bit scales. All of these share the same loop structure and differ mainly in the three index expressions. Production kernels also tile across the batch dimension so that each packed word is unpacked once and reused across several batch vectors.
 
-What was verified where. On the CPU, under the kit's `tritonshim`: everything the
-judge checks. The shim follows Triton's documented type rules (the unsigned type
-wins between a signed and an unsigned integer of one width; a Python integer next
-to a block takes the block's type; integer `//` and `%` round toward zero), and
-assumes, without a documented statement, that `>>` is a logical shift for unsigned
-integers (a negative signed value it refuses to shift at all), and that a torch
-`uint32` tensor is accepted as a `uint32` pointer. The reference kernel never shifts
-a signed value, so it depends only on the first assumption. The GPU cases, which
-hand this kernel to the real compiler, have never been run.
+**Verification note.** All judge checks were verified on CPU under `tritonshim`. The shim implements Triton's documented type promotion rules (unsigned wins over signed of the same width, Python integers adopt the block's dtype, and integer `//` and `%` truncate toward zero). Without explicit Triton documentation on two points, the shim assumes `>>` is a logical shift on unsigned integers (refusing negative signed shifts) and that PyTorch `uint32` tensors pass as `uint32` pointers. The reference kernel never shifts a signed value, so it depends only on the unsigned shift behavior. The GPU test cases that invoke the real Triton compiler have not been run.

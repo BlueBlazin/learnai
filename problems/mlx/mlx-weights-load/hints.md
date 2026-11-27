@@ -1,22 +1,12 @@
-`mx.load(path)` gives you names, shapes, and dtypes for free: `value.shape` and
-`value.dtype` are known without evaluating anything. Which of the seven rules can be
-decided from names and shapes alone, before any tensor is read, and before the module
-is touched?
+`mx.load(path)` exposes tensor names, shapes, and dtypes without reading any data (`value.shape` and `value.dtype` do not trigger evaluation). Which of the seven rules can you check using only names and shapes before touching `module` or reading a single byte?
 
 ---
 
-Flatten the module once: `current = dict(tree_flatten(module.parameters()))` maps
-every parameter path to its array. Walk the file's items: strip the prefix (check
-`key.startswith(prefix)` and slice; `str.lstrip` removes a *set of characters*, not a
-prefix), look the remainder up in `current`, and collect the tensors that fit into a
-dict and the others into `unexpected`. Transposing (`value.T`) and casting
-(`value.astype(current[name].dtype)`) only add graph nodes on top of the pending
-load. The Linear weights are `f"{name}.weight"` for every `(name, child)` of
-`module.named_modules()` with `isinstance(child, nn.Linear)`.
+Flatten the module's parameters once with `current = dict(tree_flatten(module.parameters()))`. Loop over the file's `(key, value)` pairs, strip `prefix` by checking `key.startswith(prefix)` and slicing (avoid `str.lstrip`, which removes a set of characters rather than a prefix), and look up the remainder in `current`. Collect matched tensors in a `loaded` dict and unmatched original keys in `unexpected`. Calling `value.T` and `value.astype(current[name].dtype)` only adds lazy graph nodes on top of the pending `Load`. Find the `nn.Linear` weights by checking `isinstance(child, nn.Linear)` across `module.named_modules()` and recording `f"{name}.weight"` (or `"weight"` if `name` is empty).
 
 ---
 
-Validate everything first, then update, then evaluate, in that order:
+Validate everything first, then update the module, then evaluate:
 
 ```python
 missing = sorted(set(current) - set(loaded))
@@ -26,7 +16,4 @@ module.update(tree_unflatten(list(loaded.items())))
 mx.eval(module.parameters())
 ```
 
-`tree_unflatten` turns `[("layers.0.q_proj.weight", w), ...]` back into the nested
-dicts and lists that `Module.update` expects; a partial tree updates only the leaves it
-has. Evaluating `module.parameters()`, and not the dict that `mx.load` returned, is
-what leaves the unexpected tensors on disk.
+`tree_unflatten` turns `[("layers.0.q_proj.weight", w), ...]` back into the nested dicts and lists that `Module.update` expects, and a partial tree updates only the leaves it contains. Evaluating `module.parameters()` instead of the dict from `mx.load` ensures unexpected tensors stay on disk.

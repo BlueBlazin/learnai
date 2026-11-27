@@ -1,10 +1,4 @@
-Build IBM's Granite 4.0 350M as an `mlx.nn` module: a class whose parameter tree
-matches the original checkpoint name for name, so that MLX's own `load_weights`
-fills it from the 705 MB safetensors file, and whose forward pass is made of MLX's
-fused kernels and reproduces the logits of `transformers`. In `real-model-logits` you
-wrote this model as one function over a dict of tensors. Here it becomes what an MLX
-runtime actually ships: a module that loads, converts between dtypes, and runs on the
-GPU.
+Implement IBM's Granite 4.0 350M as an `mlx.nn.Module` whose parameter tree matches the original safetensors checkpoint name for name so that MLX's `load_weights` loads it directly. The forward pass must use MLX's fused kernels, support dtype conversion via `set_dtype`, and reproduce the logits of `transformers`.
 
 ## Specification
 
@@ -14,30 +8,25 @@ class Granite(nn.Module):
     def __call__(self, tokens): ...
 ```
 
-`cfg` is a [`RealConfig`](../../../python/src/learnai/kit/realmodel.py), the
-architecture read from `config.json`:
+`cfg` is a [`RealConfig`](../../../python/src/learnai/kit/realmodel.py) holding the architecture fields read from `config.json`:
 
 | field | Granite 4.0 350M | meaning |
 |---|---|---|
-| `n_layers` | 28 | number of blocks |
+| `n_layers` | 28 | number of transformer blocks |
 | `d_model` | 1024 | width of the residual stream |
-| `n_heads`, `n_kv_heads` | 16, 4 | query heads, key/value heads |
-| `head_dim` | 64 | `d_model // n_heads` |
-| `d_ff` | 2048 | SwiGLU width |
-| `vocab_size` | 100352 | |
-| `norm_eps` | 1e-5 | epsilon of every RMSNorm |
-| `rope_theta` | 1e7 | RoPE base |
-| `attention_scale` | 1/64 | factor on the attention scores |
-| `embedding_multiplier` | 12.0 | factor on the embedding output |
-| `residual_multiplier` | 0.263 | factor on each branch of a block |
-| `logits_scaling` | 4.0 | divisor of the logits |
-| `tied_embeddings` | `True` | the head is the embedding matrix |
+| `n_heads`, `n_kv_heads` | 16, 4 | query heads and key/value heads |
+| `head_dim` | 64 | per-head width (`d_model // n_heads`) |
+| `d_ff` | 2048 | SwiGLU hidden width |
+| `vocab_size` | 100352 | vocabulary size |
+| `norm_eps` | 1e-5 | epsilon for every RMSNorm |
+| `rope_theta` | 1e7 | RoPE frequency base |
+| `attention_scale` | 1/64 | multiplier on attention scores |
+| `embedding_multiplier` | 12.0 | multiplier on embedding outputs |
+| `residual_multiplier` | 0.263 | multiplier on each block branch |
+| `logits_scaling` | 4.0 | divisor applied to final logits |
+| `tied_embeddings` | `True` | whether the output head shares the embedding matrix |
 
-**The parameter tree.** After `Granite(cfg)`, the parameters of the module, named as
-`mlx.utils.tree_flatten(model.parameters())` names them, are exactly the tensors of
-the checkpoint, with the shapes under [Shapes](#shapes): no parameter more, none
-fewer, none renamed. In particular a tied model has **no** `lm_head.weight`, and an
-untied one has it. The initial values do not matter. The judge then runs
+**Parameter tree.** After `Granite(cfg)` is constructed, the parameter names returned by `mlx.utils.tree_flatten(model.parameters())` must match the checkpoint's tensor names and shapes in [Shapes](#shapes) with no extra, missing, or renamed parameters. A tied model (`cfg.tied_embeddings == True`) must not have `lm_head.weight`, and an untied model must have it. Initial parameter values do not matter. The judge loads and runs the model as follows:
 
 ```python
 model = Granite(cfg)
@@ -46,55 +35,43 @@ model.set_dtype(dtype)  # float32, float16, or bfloat16
 logits = model(tokens)
 ```
 
-**The forward pass** is the one of `real-model-logits`, with every constant taken
-from `cfg`:
+**Forward pass.** Given an integer array `tokens` of shape `(B, T)` (batch size `B`, sequence length `T`), compute logits of shape `(B, T, vocab_size)` using every constant from `cfg`:
 
-1. $x = E[\text{tokens}] \cdot \texttt{embedding\_multiplier}$, with $E$ the
-   embedding matrix. No position embedding.
-2. For each layer $i$ in order, with $r = \texttt{residual\_multiplier}$:
+1. Look up token embeddings from the embedding matrix $E$ (`model.embed_tokens.weight`) and scale them:
+
+   $$x = E[\text{tokens}] \cdot \texttt{embedding\_multiplier}.$$
+
+   There is no learned position embedding.
+2. Pass $x$ through layers $i = 0, \dots, \texttt{n\_layers} - 1$ in order. Letting $r = \texttt{residual\_multiplier}$, each block updates $x$ with pre-norm residual connections:
 
    $$
    x \leftarrow x + r \cdot \operatorname{Attn}_i\big(\operatorname{RMSNorm}(x)\big), \qquad
    x \leftarrow x + r \cdot \operatorname{MLP}_i\big(\operatorname{RMSNorm}(x)\big).
    $$
 
-   - RMSNorm: $u / \sqrt{\operatorname{mean}(u^2) + \texttt{norm\_eps}} \cdot g$.
-   - Attention: `n_heads` query heads and `n_kv_heads` key/value heads of width
-     `head_dim`; query head $h$ uses key/value head
-     $\lfloor h / (\texttt{n\_heads} / \texttt{n\_kv\_heads}) \rfloor$. Queries and
-     keys are rotated with RoPE in the half-split layout (feature $j$ pairs with
-     $j + \texttt{head\_dim}/2$, base `rope_theta`), token $t$ at position $t$.
-     Scores are $q\,k^\top \cdot \texttt{attention\_scale}$; position $t$ attends to
-     positions $s \le t$; softmax; weighted sum of the values; heads merged;
-     `o_proj`.
-   - MLP: $z = u\,W_{\text{in}}^\top$ has $2 \cdot \texttt{d\_ff}$ features; the
-     first `d_ff` are the gate and the rest are up; the output is
-     $(\operatorname{silu}(\text{gate}) \odot \text{up})\,W_{\text{out}}^\top$.
-3. $x \leftarrow \operatorname{RMSNorm}(x)$ with `model.norm.weight`.
-4. $\text{logits} = x\,W_{\text{head}}^\top / \texttt{logits\_scaling}$, where
-   $W_{\text{head}}$ is $E$ if `cfg.tied_embeddings` and `lm_head.weight` otherwise.
+   - **RMSNorm:** For an input vector $u$ along the last axis and learned gain weight $g$, compute $u / \sqrt{\operatorname{mean}(u^2) + \texttt{norm\_eps}} \cdot g$.
+   - **Attention:** Project the normalized input into `n_heads` query heads and `n_kv_heads` key and value heads, each of width `head_dim`. Query head $h$ attends to key/value head $\lfloor h / (\texttt{n\_heads} / \texttt{n\_kv\_heads}) \rfloor$. Rotate queries and keys with RoPE in the half-split layout (feature $j$ pairs with $j + \texttt{head\_dim}/2$, base `rope_theta`), with token $t$ at position $t$. Scale the query-key dot products by `attention_scale` and apply a causal mask so position $t$ attends only to positions $s \le t$. Take the softmax, compute the weighted sum of values, merge the heads, and apply `o_proj`.
+   - **MLP:** Project the normalized input $u$ with $W_{\text{in}}$ (`input_linear.weight`) to obtain $z = u\,W_{\text{in}}^\top$ with $2 \cdot \texttt{d\_ff}$ features. Split $z$ along the last axis so the first `d_ff` features are `gate` and the remaining `d_ff` features are `up`, then compute $(\operatorname{silu}(\text{gate}) \odot \text{up})\,W_{\text{out}}^\top$ using $W_{\text{out}}$ (`output_linear.weight`).
+3. Apply the final normalization $x \leftarrow \operatorname{RMSNorm}(x)$ using `model.norm.weight`.
+4. Project to vocabulary logits and divide by `logits_scaling`:
 
-- `tokens`: integer array of shape `(B, T)`.
-- Returns the logits, shape `(B, T, vocab_size)`, **in the dtype of the parameters**:
-  a model converted with `set_dtype(mx.float16)` computes and returns float16.
+   $$\text{logits} = x\,W_{\text{head}}^\top / \texttt{logits\_scaling},$$
 
-**The rules of the exercise.**
+   where $W_{\text{head}}$ is $E$ when `cfg.tied_embeddings` is `True` and `lm_head.weight` otherwise.
 
-- Use MLX's fused kernels. The judge reads the lazy graph of one forward pass of an
-  `n`-layer model: it must contain `n` `ScaledDotProductAttention` operations
-  (`mx.fast.scaled_dot_product_attention`), `2n` `RoPE` operations (`nn.RoPE` or
-  `mx.fast.rope`), and `2n + 1` `RMSNorm` operations (`nn.RMSNorm` or
-  `mx.fast.rms_norm`).
-- Write the module yourself: `mlx_lm`, `transformers`, and the kit's `RealLM` and
-  `RealModel` are not allowed. `nn.Linear`, `nn.Embedding`, `nn.RMSNorm`, `nn.RoPE`,
-  and `nn.silu` are what the module is made of.
+The returned `logits` must have the same dtype as the model's parameters. For example, a model converted with `set_dtype(mx.float16)` must compute and return `float16`.
+
+**Rules.**
+
+- **Fused kernels required.** For a model with `n` layers, the judge inspects the lazy computation graph of one forward pass. It must contain `n` `ScaledDotProductAttention` operations (`mx.fast.scaled_dot_product_attention`), `2n` `RoPE` operations (`nn.RoPE` or `mx.fast.rope`), and `2n + 1` `RMSNorm` operations (`nn.RMSNorm` or `mx.fast.rms_norm`).
+- **Build the module yourself.** Importing `mlx_lm` or `transformers`, or using `RealLM` or `RealModel` from the kit, is forbidden. Build the module from `nn.Linear`, `nn.Embedding`, `nn.RMSNorm`, `nn.RoPE`, and `nn.silu`.
 
 > [!NOTE]
-> `mx.fast.scaled_dot_product_attention` has a fused kernel only for head dimensions
-> 64, 96, 128, 192, 256, and 512 (MLX 0.32.4); for any other it expands into ordinary
-> operations when it is called. Every model in the tests has `head_dim = 64`.
+> `mx.fast.scaled_dot_product_attention` has a fused kernel only for head dimensions 64, 96, 128, 192, 256, and 512 (MLX 0.32.4). For any other head dimension it expands into ordinary operations when called. Every model in the tests has `head_dim = 64`.
 
 ## Shapes
+
+The checkpoint stores every parameter in `bfloat16`, and no layer has a bias term.
 
 | parameter | shape |
 |---|---|
@@ -107,21 +84,16 @@ from `cfg`:
 | `model.layers.{i}.shared_mlp.input_linear.weight` | `(2 * d_ff, d_model)` |
 | `model.layers.{i}.shared_mlp.output_linear.weight` | `(d_model, d_ff)` |
 | `model.norm.weight` | `(d_model,)` |
-| `lm_head.weight` | `(vocab_size, d_model)`; only if `tied_embeddings` is `False` |
+| `lm_head.weight` | `(vocab_size, d_model)` (only if `tied_embeddings` is `False`) |
 
 | name | shape | dtype |
 |---|---|---|
 | `tokens` | `(B, T)` | integer |
-| result | `(B, T, vocab_size)` | the dtype of the parameters |
-
-The checkpoint stores every tensor as bfloat16; there are no biases.
+| result | `(B, T, vocab_size)` | same dtype as model parameters |
 
 ## Example
 
-The first public case is a three-layer model with random weights in Granite's layout
-and Granite's constants: vocabulary 64, `d_model = 256`, 4 query heads on 2 key/value
-heads of width 64, `d_ff = 96`, tied head. Its checkpoint holds 26 tensors:
-`model.embed_tokens.weight`, eight per layer, and `model.norm.weight`.
+The first public test uses a random three-layer model with Granite's layout and constants: `vocab_size = 64`, `d_model = 256`, 4 query heads, 2 key/value heads, `head_dim = 64`, `d_ff = 96`, and a tied head. Its checkpoint contains 26 tensors (`model.embed_tokens.weight`, 8 tensors per layer, and `model.norm.weight`).
 
 ```python
 model = Granite(cfg)
@@ -134,40 +106,20 @@ logits.shape  # (2, 6, 64)
 logits[0, 5, :5]  # [-3.320329, -0.238478, -5.581573, 13.10126, -0.75092]
 ```
 
-The graph of that call holds 3 `ScaledDotProductAttention`, 6 `RoPE`, and 7 `RMSNorm`
-operations. Inside a block the queries are `(2, 4, 6, 64)` and the keys and values
-`(2, 2, 6, 64)`; the attention kernel takes them as they are.
+The lazy graph of that call contains 3 `ScaledDotProductAttention`, 6 `RoPE`, and 7 `RMSNorm` operations. Inside each block, the query tensor has shape `(2, 4, 6, 64)` and the key and value tensors have shape `(2, 2, 6, 64)`, which the attention kernel accepts directly without repeating heads.
 
-On the real model, the 12 tokens of `"The capital of France is Paris. The capital of
-Japan is"` give logits of shape `(1, 12, 100352)` whose last row has its maximum,
-31.04, at token 27286, `" Tokyo"`.
+On the real Granite 4.0 350M checkpoint, the 12 tokens of `"The capital of France is Paris. The capital of Japan is"` produce logits of shape `(1, 12, 100352)`. The last row reaches its maximum of `31.04` at token `27286` (`" Tokyo"`).
 
 ## Constraints
 
 - $1 \le B \le 2$, $1 \le T \le 12$.
-- In float32 the logits are compared with `transformers` (float32) to a relative and
-  an absolute tolerance of `1e-3`: on the small models everywhere; on the real model
-  at 64 fixed vocabulary columns of every position and at the 8 largest logits of
-  the last position, with the argmax token required to be equal wherever the two
-  largest reference logits are more than 0.2 apart.
-- In 16 bits the absolute tolerance is 0.25 for float16 (small models only) and 1.0
-  for bfloat16 (small models and the real one, with the argmax compared where the
-  margin exceeds 2). The result must have the model's dtype.
-- The cases without a download use two random three-layer models: the one of the
-  example, and one with other multipliers, `rope_theta = 1e4`, `norm_eps = 1e-2`, and
-  an untied head.
-- The time limit per case is 30 seconds; loading and converting the real checkpoint
-  takes about 0.1 seconds on this machine and a 12-token forward pass 15 ms.
+- In `float32`, logits are compared against `transformers` (`float32`) with relative and absolute tolerance `1e-3`. On the small models all logits are checked. On the real model, the check covers 64 fixed vocabulary columns at every position and the 8 largest logits at the last position, and the argmax token must match wherever the top two reference logits differ by more than `0.2`.
+- In 16-bit precision, the absolute tolerance is `0.25` for `float16` (small models only) and `1.0` for `bfloat16` (small models and the real model, with the argmax checked wherever the margin exceeds `2`). The output dtype must match the model's dtype.
+- The non-download tests use two random three-layer models: the example model above, and a second model with different multipliers, `rope_theta = 1e4`, `norm_eps = 1e-2`, and an untied head.
+- The time limit is 30 seconds per case. Loading and converting the real checkpoint takes about 0.1 seconds on the reference machine, and a 12-token forward pass takes about 15 ms.
 
 ## Why this matters
 
-Every model `mlx-lm` runs is a file like the one you are about to write: a module
-tree whose attribute names are the checkpoint's tensor names, so that loading is
-`load_weights` and nothing else, plus a forward pass assembled from `mx.fast`
-kernels. Porting a new architecture to Apple silicon means writing exactly this, and
-the checks are the ones here. A strict load proves the tree: one misnamed submodule
-and 226 tensors have nowhere to go. Fixture logits prove the arithmetic: a missing
-multiplier or the textbook attention scale still produces fluent text, from a
-different model. And the dtype check proves the module can run in 16 bits, where one
-float32 constant in the forward pass silently doubles the memory traffic of every
-layer after it.
+Every model in `mlx-lm` follows this exact pattern. Its module attributes mirror the checkpoint's tensor names so `load_weights` works with no custom remapping, and its forward pass composes `mx.fast` kernels for Apple silicon.
+
+Each check in this problem catches a common silent failure when porting a model. Strict loading verifies the parameter tree before any math runs, because one misnamed submodule leaves 226 tensors unmatched. Fixture logits verify scaling constants and RoPE settings, because a missing multiplier or wrong attention scale can still generate fluent text from the wrong distribution. Checking the output dtype verifies 16-bit execution, where a single `float32` array constant silently upcasts activations and doubles memory traffic for every layer that follows.

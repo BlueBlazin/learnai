@@ -1,17 +1,8 @@
-After the prompt has been processed, which results of the forward pass does anyone
-use later? A layer's output at position $i$ can matter in two ways: as the input of
-the next layer at position $i$, and, through its keys and values, as something a
-later position attends to. Which of the two exists for a layer that stores no keys
-and values?
+After the prompt is processed, ask which intermediate outputs are ever used again. A layer's output at position $i$ can matter in only two ways: as input to the next layer at position $i$, or through its cached keys and values that later positions attend to. Which of those two exists for a layer that stores no keys and values?
 
 ---
 
-Split the stack at `share_from`. The lower part is an ordinary cached model: run
-`lm.layers(h, 0, share_from, cache)` on every new token. The upper part is
-`lm.layers(h, share_from, lm.n_layers, cache, kv_from=share_from - 1)`, and it only
-needs the rows whose output you will read. In the prefill that is the last row,
-`h[-1:]`; the reader rows are taken to be the last positions the source layer has
-cached, which is exactly what the last row is.
+Split the layer stack at `share_from`. Run the lower layers as an ordinary cached model with `lm.layers(h, 0, share_from, cache)` on every new token. Run the upper layers as readers with `lm.layers(h, share_from, lm.n_layers, cache, kv_from=share_from - 1)`, passing only the rows whose logits you actually need. During prefill, that is just the last row `h[-1:]`, which aligns with the last cached position in layer `share_from - 1`.
 
 ---
 
@@ -25,10 +16,8 @@ prefill_shared:
 decode_step:
     h = lm.embed([token], offset=cache.length)
     h, cache = lm.layers(h, 0, s, cache)
-    h, cache = lm.layers(h, s, L, cache, kv_from=s - 1)            # the cache from the line above
+    h, cache = lm.layers(h, s, L, cache, kv_from=s - 1)            # use the updated cache
     return lm.head(lm.norm(h))[0], cache
 ```
 
-The order in `decode_step` matters twice: the lower layers must run first, and the
-upper layers must be given the cache the lower layers just returned. With the old
-cache the new position cannot see its own keys and values.
+In `decode_step`, both the order and the cache variable matter. The lower layers must run first, and the upper layers must receive the new `cache` returned by the lower layers so the new position can attend to its own keys and values.

@@ -1,18 +1,14 @@
 ## The idea
 
-Each channel of each head runs a linear recurrence with a scalar decay:
+Each channel of each head runs a linear recurrence with a scalar decay $a_t = e^{-\Delta_t e^{A_{\log}}}$:
 
 $$
-h_t = a_t\,h_{t-1} + \Delta_t\,x_t\,B_t^\top, \qquad y_t = h_t\,C_t + D\,x_t,
-\qquad a_t = e^{-\Delta_t e^{A_{\log}}} .
+h_t = a_t\,h_{t-1} + \Delta_t\,x_t\,B_t^\top, \qquad y_t = h_t\,C_t + D\,x_t .
 $$
 
-It is a discretized differential equation $\dot h = A h + x B^\top$ with
-$A = -e^{A_{\log}} < 0$, held for a time $\Delta_t$ that the token chooses: a large
-step forgets much and writes much, a small one does neither. The softplus keeps the
-step positive, and the clamp keeps it inside a configured range.
+This is a discretized differential equation $\dot h = A h + x B^\top$ with $A = -e^{A_{\log}} < 0$, integrated over a step $\Delta_t$ chosen by the token. A large step forgets much of the prior state and writes strongly, while a small step preserves the state and writes weakly. Softplus keeps $\Delta_t$ positive, and clamping keeps it inside the configured bounds.
 
-Unrolling from $h_{-1} = 0$:
+Unrolling the recurrence from $h_{-1} = 0$ gives
 
 $$
 h_t = \sum_{s \le t} \Bigl(\prod_{r = s+1}^{t} a_r\Bigr)\,\Delta_s\,x_s\,B_s^\top
@@ -20,16 +16,9 @@ h_t = \sum_{s \le t} \Bigl(\prod_{r = s+1}^{t} a_r\Bigr)\,\Delta_s\,x_s\,B_s^\to
 y_t = \sum_{s \le t} \underbrace{(C_t \cdot B_s)\; e^{-e^{A_{\log}} \sum_{r=s+1}^{t} \Delta_r}\; \Delta_s}_{M_{t,s}}\; x_s + D\,x_t .
 $$
 
-That is an attention matrix: the score of query $t$ and key $s$ is the dot product
-$C_t \cdot B_s$, the "mask" is a decay that depends only on the step sizes between
-the two positions, and the values are the inputs scaled by their own step. No softmax,
-no learned positions. The product of decays starts at $r = s + 1$ because token $s$
-decays the state *before* it writes; its own step does not act on its own input.
+This matches the structure of attention. The score between query $t$ and key $s$ is the dot product $C_t \cdot B_s$, the mask is a causal decay determined by the step sizes between positions $s$ and $t$, and the values are the inputs scaled by their own step sizes $\Delta_s$. There is no softmax and no learned positional bias. The decay product starts at $r = s + 1$ because token $s$ decays the state before writing, so its own step does not decay its own input.
 
-The two forms are the two ends of a trade. The matrix costs $O(T^2)$ and is one
-batched product: good for prefill, in chunks, with the state carried between chunks.
-The step costs $O(1)$ per token and needs only $h$: good for decoding. An engine
-needs both, and they are correct only together.
+The two forms trade parallelism for state size. The matrix form costs $O(T^2)$ and runs as a batched matrix product, making it fast for chunked prefill when state is carried between chunks. The step form costs $O(1)$ per token and stores only $h$, making it ideal for decoding. A serving engine needs both, and they must agree numerically.
 
 ## Reference solution (PyTorch)
 
@@ -56,69 +45,29 @@ def ssd_matrix(dt, B, C, A_log):
 
 ## Common mistakes
 
-- **Reading before the update.** $y = h_{t-1} C + D x$ removes the diagonal of $M$:
-  the step and the matrix stop agreeing.
-- **$\Delta$ missing from the input term.** $x B^\top$ instead of $\Delta\,x B^\top$;
-  the step size then controls forgetting but not writing.
-- **A positive exponent.** $A = -e^{A_{\log}}$ is negative. With the sign lost the
-  state grows geometrically.
-- **Tiling the groups.** Group $j$ serves heads $jr$ to $jr + r - 1$. `tile` gives
-  0, 1, 0, 1. Invisible with one group or with one group per head.
-- **The decay sum including $s$.** $\sum_{r=s}^{t}$ multiplies every entry by an
-  extra $a_s$, the diagonal included.
-- **$\Delta_t$ for $\Delta_s$ in the matrix.** The scale belongs to the token whose
-  input is carried.
-- **No mask.** $e^{-|c_t - c_s|}$ is symmetric and looks plausible; outputs then
-  depend on later inputs.
-- **Clamp omitted,** applied on one side only, hard-coded, or applied to the raw
-  value before the softplus. Each is invisible until a step size leaves the range:
-  $\operatorname{softplus}(u) < 0.001$ needs $u < -6.9$.
-- **Updating the state in place.** `h.mul_(decay)` changes the tensor the caller
-  still holds; a caller that continues twice from one state gets two different answers.
-- **The skip connection forgotten.** $D\,x$ is not part of $M$.
+- **Reading before updating the state.** Computing $y = h_{t-1} C + D x$ removes the diagonal of $M$, breaking agreement between `ssd_step` and `ssd_matrix`.
+- **Omitting $\Delta$ from the input term.** Writing $x B^\top$ instead of $\Delta\,x B^\top$ lets the step size control forgetting but not writing.
+- **Dropping the minus sign in the exponent.** Because $A = -e^{A_{\log}}$ is negative, losing the minus sign makes the state grow exponentially.
+- **Tiling groups instead of repeating them.** With $r = H / G$ heads per group, group $j$ serves consecutive heads $jr$ through $jr + r - 1$. Using `tile` produces the pattern `0, 1, 0, 1`, which passes unnoticed when $G = 1$ or $G = H$.
+- **Including $s$ in the decay sum.** Summing from $r = s$ to $t$ multiplies every entry, including the diagonal, by an extra factor of $a_s$.
+- **Scaling by $\Delta_t$ instead of $\Delta_s$ in `ssd_matrix`.** The scale factor belongs to the source token $s$ whose input is being mixed.
+- **Omitting the causal mask.** Using a symmetric decay like $e^{-|c_t - c_s|}$ lets outputs depend on future tokens.
+- **Mishandling the clamp.** Omitting the clamp, clamping on only one side, hard-coding bounds, or clamping before softplus all fail once step sizes leave the range (note that $\operatorname{softplus}(u) < 0.001$ requires $u < -6.9$).
+- **Updating `h` in place.** Calling `h.mul_(decay)` mutates the caller's state tensor, so branching twice from the same state yields corrupted results.
+- **Forgetting the skip connection.** The term $D\,x$ is separate from $M$.
 
 ## Complexity
 
-Step: $O(H\,P\,N)$ time and state, independent of the position. Matrix: $O(H\,T^2 N)$
-to build and $O(H\,T^2 P)$ to apply. For the shipped sizes (64 heads of 64, state 128)
-the state is 524,288 numbers per layer.
+`ssd_step` takes $O(H\,P\,N)$ time and state, independent of sequence length. `ssd_matrix` takes $O(H\,T^2 N)$ time to construct and $O(H\,T^2 P)$ time to apply. At the shipped Nemotron dimensions (64 heads of width 64 with state size 128), the recurrent state holds 524,288 numbers per layer.
 
 ## In the wild
 
-Checked on 2026-11-21 by reading and running `transformers` 5.23.0, by reading
-`mlx-lm` 0.32.2, and by reading the `config.json` of
-`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` on the Hugging Face Hub
-(`mamba_num_heads` 64, `mamba_head_dim` 64, `ssm_state_size` 128, `n_groups` 8,
-`time_step_min` 0.001, no `time_step_limit` key).
+Checked on 2026-11-21 by reading and running `transformers` 5.23.0, reading `mlx-lm` 0.32.2, and inspecting `config.json` for `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` on the Hugging Face Hub (`mamba_num_heads` 64, `mamba_head_dim` 64, `ssm_state_size` 128, `n_groups` 8, `time_step_min` 0.001, and no `time_step_limit` key).
 
-- **The step.** `mamba2_selective_state_update` in
-  `transformers/models/nemotron_h/modeling_nemotron_h.py`: `dt + dt_bias`, softplus,
-  `dA = exp(dt * A)`, `state * dA + dt * B * x`, a batched product with `C`, plus
-  `hidden_states * D`. Groups are expanded so that each serves consecutive heads. The
-  public test "six cached tokens" compares your step with it.
-- **The clamp differs by path and by library.** `NemotronHMamba2Mixer` sets
-  `time_step_limit = (config.time_step_min, inf)` and passes it to
-  `mamba2_chunk_scan`, which clamps; the one-token function receives no limit and
-  does not clamp. `mlx-lm` (`models/ssm.py`, `compute_dt`) clips in both of its paths
-  with the configuration's `time_step_limit`, which its Nemotron loader sets to
-  `(0.0, inf)` when the key is absent, as it is in the shipped file; the default of
-  `ssm_update` itself is `(0.001, 100.0)`. This problem takes the limits as an
-  argument and applies them in the step, the `mlx-lm` rule, so that the step and the
-  matrix form describe one layer. The hidden test "nine tokens with the clamp"
-  compares a loop of your step, and your matrix, with `mamba2_chunk_scan` under
-  `(0.001, inf)`, with four step sizes below the limit.
-- **The matrix.** `mamba2_chunk_scan` builds exactly this within each chunk
-  (`G = einsum(C, B)`, `L = exp(segment_sum(A * dt))`, `M = G * L`) and carries the
-  state between chunks; `ssm_attn` in `mlx-lm` calls it the
-  `surrogate_attention_matrix`.
-- **Around it.** The block projects the input to a gate, to $x$, $B$, $C$ (through a
-  causal convolution of kernel 4 and SiLU), and to `dt_raw`; after the scan it gates
-  and then normalizes in groups, `rms_norm(y * silu(gate))`, the opposite order of
-  the delta layer.
-- **The paper.** "Transformers are SSMs" (arXiv 2405.21060) is where the matrix form
-  comes from; only its abstract was read for this problem, the formulas here follow
-  the code.
+- **The step.** `mamba2_selective_state_update` in `transformers/models/nemotron_h/modeling_nemotron_h.py` computes `dt + dt_bias`, applies softplus, evaluates `dA = exp(dt * A)`, updates `state * dA + dt * B * x`, contracts with `C`, and adds `hidden_states * D`. Groups are expanded so each group serves consecutive heads. The public test "six cached tokens" compares your `ssd_step` against this function.
+- **Clamp differences across paths and libraries.** `NemotronHMamba2Mixer` sets `time_step_limit = (config.time_step_min, inf)` and passes it to `mamba2_chunk_scan`, which clamps. However, the single-token function receives no limit and does not clamp. In `mlx-lm` (`models/ssm.py`, `compute_dt`), both paths clip using `time_step_limit`, which the Nemotron loader sets to `(0.0, inf)` when the config key is absent (as in the shipped file), while `ssm_update` itself defaults to `(0.001, 100.0)`. This problem passes `dt_limit` explicitly and applies it in `ssd_step` (following `mlx-lm`) so the step and matrix forms describe one consistent layer. The hidden test "nine tokens with the clamp" compares both a loop of your step and your matrix against `mamba2_chunk_scan` under `(0.001, inf)` with four step sizes below the limit.
+- **The matrix.** `mamba2_chunk_scan` builds this exact matrix within each chunk (`G = einsum(C, B)`, `L = exp(segment_sum(A * dt))`, `M = G * L`) and carries the state across chunks. In `mlx-lm`, `ssm_attn` calls it the `surrogate_attention_matrix`.
+- **Surrounding block.** The full mixer projects the input into a gate, $x$, $B$, $C$ (passed through a causal convolution of kernel size 4 and SiLU), and `dt_raw`. After the scan, it gates and then normalizes in groups via `rms_norm(y * silu(gate))`, which is the reverse of the gated delta layer's order.
+- **The paper.** The matrix formulation comes from "Transformers are SSMs" (arXiv 2405.21060). Only the abstract was consulted for this problem, and all formulas here follow the model code directly.
 
-Deliberate simplifications: no batch axis; the convolution, gate, and norm of the
-block are left out; `ssd_matrix` covers a whole sequence from a zero state instead of
-chunks with a carried state.
+Deliberate simplifications: there is no batch axis, the surrounding convolution, gate, and norm are omitted, and `ssd_matrix` covers a full sequence from a zero state rather than chunks with a carried state.

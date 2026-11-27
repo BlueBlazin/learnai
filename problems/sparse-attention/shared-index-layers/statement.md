@@ -1,6 +1,4 @@
-Run a stack of sparse-attention layers in which only some layers own an indexer. The
-others attend with the token selection of the nearest indexed layer below them, so
-most of the indexer work of the stack is skipped.
+Run a stack of sparse-attention layers in which only some layers own an indexer. The remaining layers reuse the token selection from the nearest indexed layer below them, skipping most of the stack's indexer work.
 
 ![This problem is the indices that top-k hands to the gather, which a shared layer takes from a full layer below it.](assets/map.svg)
 
@@ -10,47 +8,33 @@ most of the indexer work of the stack is skipped.
 def forward_shared(dsa, h, types, k): ...  # -> float32 (T, d_model)
 ```
 
-`dsa` is a [`TinyDSA`](../../../python/src/learnai/kit/sparse.py) with `dsa.n_layers`
-sparse-attention layers. Two of its methods are all this problem needs:
+`dsa` is a [`TinyDSA`](../../../python/src/learnai/kit/sparse.py) with `dsa.n_layers` sparse-attention layers and model width `d_model = dsa.d_model`. Given a hidden-state sequence `h` of length `T`, this problem uses two methods on `dsa`:
 
 ```python
-idx = dsa.indexer(layer, h, k)  # (T, min(k, T)) integers; one counted indexer call
-out = dsa.attend(layer, h, idx)  # (T, d_model)
+idx = dsa.indexer(layer, h, k)  # (T, min(k, T)) integers; counts one indexer call
+out = dsa.attend(layer, h, idx) # (T, d_model)
 ```
 
-- `dsa.indexer(layer, h, k)` runs the indexer of `layer` on the whole sequence `h` and
-  returns, for each token, the `k` tokens at or before it with the highest index
-  scores (`-1` in slots it cannot fill). It can be called for any layer and any `h`.
-- `dsa.attend(layer, h, idx)` is the attention of `layer` on `h`, where token `t`
-  attends to the tokens listed in `idx[t]` only. `idx` may come from another layer's
-  indexer.
+- `dsa.indexer(layer, h, k)` runs the indexer of `layer` on `h` and returns, for each token, the indices of up to `k` tokens at or before it with the highest index scores (padding unused slots with `-1`). It can be called for any layer and any `h`.
+- `dsa.attend(layer, h, idx)` runs the attention of `layer` on `h`, where token `t` attends only to the tokens listed in `idx[t]`. `idx` may come from another layer's indexer.
 
-`types[i]` is `"full"` or `"shared"` for layer `i`. Starting from the input `h`, for
-`i = 0, 1, ..., dsa.n_layers - 1` in order:
+`types[i]` is either `"full"` or `"shared"` for layer `i`. Starting from the input `h`, iterate through layers `i = 0, 1, ..., dsa.n_layers - 1` in order:
 
-1. **Selection.** If layer `i` is full, its selection is `dsa.indexer(i, h, k)`,
-   computed from the layer's own input (the current `h`). If it is shared, its
-   selection is the one used by the **nearest full layer before it**: the indices that
-   layer's indexer returned, unchanged, although `h` has changed since.
-2. **Attention with a residual.** `h = h + dsa.attend(i, h, idx)`.
+1. **Selection.** If layer `i` is `"full"`, compute its selection as `idx = dsa.indexer(i, h, k)` using the current hidden state `h` entering layer `i`. If layer `i` is `"shared"`, reuse the exact `idx` produced by the **nearest `"full"` layer before it**, unchanged even though `h` has changed since.
+2. **Attention with residual.** Update `h = h + dsa.attend(i, h, idx)`.
 
-The result is `h` after the last layer.
+Return `h` after the last layer.
 
-A shared layer has no indexer of its own and runs none. If a shared layer has no full
-layer before it, raise `ValueError` yourself, before any call to `dsa.indexer` or
-`dsa.attend`. (`dsa.attend` happens to raise `ValueError` when it is given no
-indices; an error that comes from there does not count.)
+A shared layer has no indexer of its own and must not run one. If a `"shared"` layer has no `"full"` layer before it, raise `ValueError` yourself before calling `dsa.indexer` or `dsa.attend`. Do not rely on `dsa.attend` raising `ValueError` when passed `None`; an error raised inside `dsa.attend` does not count.
 
-**Cost.** `dsa.counters.indexer_calls` must equal the number of full layers.
+**Cost rule.** `dsa.counters.indexer_calls` must equal the number of `"full"` layers in `types`.
 
-Arguments:
+**Arguments and mutability.**
 
-- `h`: float32, shape `(T, d_model)` with `d_model = dsa.d_model`.
-- `types`: a list of exactly `dsa.n_layers` strings, each `"full"` or `"shared"`. Use
-  this argument; `dsa.types` is the kit's own default pattern and is not it.
-- `k`: a Python int, $k \ge 1$; it may exceed $T$.
-- Returns float32, shape `(T, d_model)`.
-- `h` is not modified.
+- `h`: input sequence to layer 0.
+- `types`: a list of `dsa.n_layers` strings, each `"full"` or `"shared"`. Use this argument rather than `dsa.types`, which holds only the kit's default pattern.
+- `k`: Python `int` with $k \ge 1$. It may exceed `T`.
+- Do not modify `h` in place.
 
 ## Shapes
 
@@ -61,7 +45,7 @@ Arguments:
 
 ## Example
 
-Three layers, full, shared, full, on four tokens of width 4:
+Run three layers (`"full"`, `"shared"`, `"full"`) on four tokens of width 4:
 
 ```python
 dsa = TinyDSA(fw, seed=1, n_layers=3, d_model=4, n_heads=1, head_dim=2, index_heads=2, index_dim=4)
@@ -75,34 +59,16 @@ forward_shared(dsa, h, ["full", "shared", "full"], 2)
 dsa.counters.indexer_calls  # 2
 ```
 
-Layer 0 runs its indexer and selects `[[0, -1], [0, 1], [0, 2], [0, 1]]`: token 0 can
-select only itself, and token 3 selects tokens 0 and 1. Layer 1 is shared and attends
-with those indices. Its own indexer, on its own input, would have selected
-`[[0, -1], [0, 1], [1, 0], [2, 0]]`; it is not run. Layer 2 runs its indexer on its
-input and selects `[[0, -1], [1, 0], [0, 2], [0, 1]]`. With all three layers full, the
-last two rows of the result would differ (row 3 would start with `0.244022`).
+Layer 0 runs its indexer and selects `[[0, -1], [0, 1], [0, 2], [0, 1]]`. Token 0 can select only itself, and token 3 selects tokens 0 and 1. Layer 1 is shared and attends with those same indices instead of running its own indexer (which would have selected `[[0, -1], [0, 1], [1, 0], [2, 0]]` on its input). Layer 2 runs its indexer on its updated input and selects `[[0, -1], [1, 0], [0, 2], [0, 1]]`. If all three layers were `"full"`, the last two rows of the output would change (row 3 would start with `0.244022`).
 
 ## Constraints
 
-- $1 \le$ `dsa.n_layers` $\le 12$, $1 \le T \le 16$, `d_model` $\le 32$, $1 \le k \le 64$.
-- The output is compared with the kit's stack oracle: relative tolerance `1e-4`,
-  absolute tolerance `1e-5`.
-- `indexer_calls` is compared exactly, and the tests also check, from the indices
-  passed to `dsa.attend`, that each layer attended with the indices of its nearest
-  full layer. For the layer types of GLM-5.3's first 11 layers, that pattern is
-  compared with the one the shipped model executes.
-- In every test input, two index scores of one row that decide a selection are either
-  exactly equal or more than `1e-4` apart.
-- `indexer`, `attend`, and the sizes of `dsa` are the whole interface. Not allowed,
-  and rejected by the harness: the `*_ref` methods, `with_framework`, the counters,
-  private attributes, and setting an attribute on `dsa`.
+- $1 \le \text{dsa.n\_layers} \le 12$, $1 \le T \le 16$, `d_model` $\le 32$, and $1 \le k \le 64$.
+- Outputs are checked against the kit's stack oracle with relative tolerance `1e-4` and absolute tolerance `1e-5`.
+- `dsa.counters.indexer_calls` is checked exactly. The tests also verify from the indices passed to `dsa.attend` that each layer uses the selection of its nearest `"full"` layer. For the layer types of GLM-5.3's first 11 layers, that sharing pattern is compared directly against the shipped model's execution.
+- In every test input, any two index scores in the same row that decide a selection are either exactly equal or more than `1e-4` apart.
+- Use only `dsa.indexer`, `dsa.attend`, and the size attributes of `dsa`. The harness rejects all `*_ref` methods, `with_framework`, accessing counters or private attributes, and setting attributes on `dsa`.
 
 ## Why this matters
 
-The indexer is the part of sparse attention that is still quadratic in the context,
-and it runs in every layer. GLM-5.3 runs it in 21 of its 78 layers: the first three,
-then every fourth. The other 57 reuse the selection handed up from below. An engine
-that ports this has to carry the indices across layers as state. Recomputing them
-where the model was trained to reuse them gives a different model at a higher cost,
-and reusing the wrong layer's indices gives a different model at the right cost, which
-is harder to notice.
+The indexer is the part of sparse attention that remains quadratic in context length, and without sharing it runs at every layer. GLM-5.3 runs an indexer in only 21 of its 78 layers—the first three, then every fourth—while the other 57 reuse the selection passed up from below. An inference engine that implements this architecture must carry the selection indices across layers as state. Recomputing them where the model was trained to reuse them changes the model's outputs at a higher cost, and reusing the wrong layer's indices changes the outputs at the expected cost, which is much harder to notice.

@@ -1,8 +1,4 @@
-Implement a KV cache for a GPU decode loop in which nothing changes from one step to
-the next except numbers: every buffer is allocated once at full length, every write
-goes into that memory in place, and the position of the write is itself a tensor on
-the device. The model then sees tensors of the same shape, at the same address, at
-every step, and a mask has to stand in for the length the shapes no longer carry.
+Implement `StaticCache`, a fixed-shape key-value (KV) cache for a GPU decode loop. Every buffer is allocated once at full length, every write updates that memory in place using a device-side position tensor, and a boolean attention mask hides unused slots.
 
 ## Specification
 
@@ -14,73 +10,50 @@ class StaticCache:
     def reset(self): ...
 ```
 
-**The constructor** allocates, for each of the `n_layers` layers, one key buffer and
-one value buffer of shape `(batch, n_kv_heads, max_len, head_dim)`, zero-filled, of
-dtype `dtype`, on `device`. They are public: `cache.k` and `cache.v` are lists of
-`n_layers` tensors. Slot `j` along axis 2 belongs to the token at position `j`.
+**`__init__`** allocates one zero-filled key buffer and one zero-filled value buffer for each of the `n_layers` layers on `device` with dtype `dtype`. Expose them as public lists `cache.k` and `cache.v` of length `n_layers`. Slot `j` along axis 2 (the sequence axis) holds the token at sequence position `j`.
 
-**`update(layer, k, v, pos)`** stores the keys and values of `T` new tokens.
+**`update(layer, k, v, pos)`** writes `T` new tokens into layer `layer`.
 
-- `k`, `v`: tensors of shape `(batch, n_kv_heads, T, head_dim)`, of dtype `dtype`, on
-  `device`.
-- `pos`: a **0-d int64 tensor on `device`**: the slot of the first new token. The
-  caller guarantees $0 \le \text{pos}$ and $\text{pos} + T \le \text{max\_len}$.
-- Writes `k` into slots `pos` to `pos + T - 1` of `cache.k[layer]` and `v` into the
-  same slots of `cache.v[layer]`, and changes no other slot.
-- Returns the pair `(cache.k[layer], cache.v[layer])`: the full buffers, of shape
-  `(batch, n_kv_heads, max_len, head_dim)` whatever `pos` and `T` are.
+- `k` and `v` hold the new keys and values on `device` with dtype `dtype`.
+- `pos` is a 0-D `int64` tensor on `device` giving the starting slot of the first new token. The caller guarantees $0 \le \text{pos}$ and $\text{pos} + T \le \text{max\_len}$.
+- Write `k` into slots `pos` through `pos + T - 1` of `cache.k[layer]` and `v` into the same slots of `cache.v[layer]`, leaving all other slots unchanged.
+- Return `(cache.k[layer], cache.v[layer])` as full buffers of length `max_len`, regardless of `pos` and `T`.
 
-**`mask(pos, n_new)`** returns the attention mask for the `n_new` tokens written at
-`pos` (`n_new` is a Python int, `pos` as above): a bool tensor of shape
-`(n_new, max_len)` on `device` with
+**`mask(pos, n_new)`** returns a boolean attention mask on `device` for `n_new` tokens (a Python `int`) written starting at `pos`. Row $i$ corresponds to the query token in slot $\text{pos} + i$, which may attend to itself and every earlier cache slot $j$:
 
 $$
 \text{mask}[i, j] = (j \le \text{pos} + i).
 $$
 
-Row $i$ belongs to the query of the token in slot $\text{pos} + i$, which may attend
-to itself and to every earlier slot. The model applies it to the attention scores
-over all `max_len` slots, setting the scores where the mask is `False` to $-\infty$
-before the softmax.
+The model applies this mask to attention scores over all `max_len` slots, setting scores where the mask is `False` to $-\infty$ before softmax.
 
 ![A cache with `max_len = 8` after two tokens are written at `pos=3`, and the two mask rows. Only the mask keeps the unused slots out of attention.](assets/static-cache-mask.svg)
 
-**`reset()`** prepares the cache for the next request: it fills every buffer with
-zeros and returns `None`.
+**`reset()`** prepares the cache for the next request by filling every key and value buffer with zeros in place and returning `None`.
 
-Four rules make the cache static, and the judge checks each of them:
+Four rules keep the cache static, and the judge checks all four:
 
-1. **Shapes never change.** The tensors returned by `update` and `mask` have the
-   shapes above at every call.
-2. **Memory never changes.** The tensors allocated by the constructor stay the
-   buffers for the lifetime of the cache: `update` and `reset` write into them in
-   place. `cache.k[layer].data_ptr()` is the same before and after every call, and a
-   reference to a buffer taken earlier shows every later write.
-3. **Nothing is read on the host.** No method converts `pos` or any other tensor to
-   a Python number: no `int(pos)`, `pos.item()`, or `pos` as a slice bound.
-4. **Everything is created on `device`.** Every factory call (`torch.zeros`,
-   `torch.arange`, ...) passes `device=`.
+1. **Shapes never change.** `update` and `mask` always return tensors with the exact shapes in the table below.
+2. **Memory never changes.** `update` and `reset` write in place into the tensors created in `__init__`. Every buffer keeps the same `data_ptr()` across all calls, so an earlier reference to a buffer reflects all subsequent writes.
+3. **No host reads.** No method converts `pos` or any other tensor into a Python number. Do not call `int(pos)` or `pos.item()`, and do not use `pos` as a slice bound.
+4. **All allocations happen on `device`.** Every tensor factory call (`torch.zeros`, `torch.arange`, and so on) must pass `device=`.
 
 > [!WARNING]
-> The slots at and beyond the current length are not empty. They hold zeros after a
-> reset, and otherwise whatever an earlier request left there; the judge fills them
-> with large finite numbers. Attention through `mask` must be exactly what it would
-> be if those slots did not exist.
+> Slots at and beyond the current sequence length are not empty. They contain zeros after a reset, or leftover values from an earlier request. The judge fills unused slots with large finite numbers, and attention using `mask` must match what it would produce if those slots did not exist.
 
 ## Shapes
 
-| name | shape | dtype |
+| Name | Shape | Dtype |
 |---|---|---|
 | `cache.k[layer]`, `cache.v[layer]` | `(batch, n_kv_heads, max_len, head_dim)` | `dtype` |
 | `k`, `v` passed to `update` | `(batch, n_kv_heads, T, head_dim)` | `dtype` |
-| `pos` | `()` | int64 |
+| `pos` | `()` | `int64` |
 | result of `update` | two tensors `(batch, n_kv_heads, max_len, head_dim)` | `dtype` |
-| result of `mask` | `(n_new, max_len)` | bool |
+| result of `mask` | `(n_new, max_len)` | `bool` |
 
 ## Example
 
-One layer, one batch row, one head, `head_dim = 2`, four slots, and the three tokens
-of `preallocated-kv-cache`:
+Consider 1 layer, batch size 1, 1 head, `max_len = 4`, `head_dim = 2`, and the three tokens from `preallocated-kv-cache`:
 
 ```python
 k = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]  # shape (1, 1, 3, 2) once batched
@@ -100,46 +73,19 @@ cache.mask(torch.tensor(2), 1)
 # [[True, True, True, False]]
 ```
 
-`k_buf2` is the same memory as `k_buf`, and `k_buf`, obtained before the second call,
-now shows the third token as well. With the query $[1, 1]$ for the third token, the
-scores against the four slots are $[0.7071, 0.7071, 1.4142, 0]$; the mask turns the
-last one into $-\infty$, the weights are $[0.2483, 0.2483, 0.5035, 0]$, and the
-output is $[3.5105, 4.5105]$, the same as with a cache that holds three tokens.
-Without the mask, the zero key in slot 3 gets the weight $e^0$ and the output is
-$[3.1276, 4.0186]$.
+`k_buf2` points to the same memory as `k_buf`, so `k_buf` now reflects the third token as well. For the third token's query $[1, 1]$, the scaled dot-product scores against the four slots are $[0.7071, 0.7071, 1.4142, 0]$. The mask sets the last score to $-\infty$, giving weights $[0.2483, 0.2483, 0.5035, 0]$ and output $[3.5105, 4.5105]$, which matches a 3-token cache. Without the mask, the zero key in slot 3 receives unnormalized weight $e^0 = 1$, shifting the output to $[3.1276, 4.0186]$.
 
 ## Constraints
 
-- $1 \le \text{n\_layers} \le 4$, $1 \le \text{batch} \le 3$, $1 \le \text{n\_kv\_heads} \le 4$,
-  $4 \le \text{max\_len} \le 16$, $2 \le \text{head\_dim} \le 8$ in the CPU cases;
-  `dtype` is float32, float16, or bfloat16.
-- A request writes blocks of 1 to 7 tokens at consecutive positions starting at 0;
-  after `reset()` the next request starts at 0 again.
-- Buffer contents and masks are compared exactly. Attention over the full buffers
-  with your mask is compared with attention over a cache grown by concatenation, to
-  a relative tolerance of `1e-4` and an absolute tolerance of `1e-5`.
-- Unused slots hold finite numbers (a NaN in an unused value slot would reach the
-  output through $0 \cdot \text{NaN}$ whatever the mask says).
+- $1 \le \text{n\_layers} \le 4$, $1 \le \text{batch} \le 3$, $1 \le \text{n\_kv\_heads} \le 4$, $4 \le \text{max\_len} \le 16$, $2 \le \text{head\_dim} \le 8$ in the CPU cases. `dtype` is `float32`, `float16`, or `bfloat16`.
+- Each request writes blocks of 1 to 7 tokens at consecutive positions starting at 0. After `reset()`, the next request starts at 0 again.
+- Buffer contents and masks are compared exactly. Attention over the full buffers using your mask is compared against attention over a concatenation-grown cache with a relative tolerance of `1e-4` and an absolute tolerance of `1e-5`.
+- Unused slots always hold finite numbers (a `NaN` in an unused value slot would propagate through $0 \cdot \text{NaN}$ regardless of the mask).
 - No Python loop over tokens, heads, or batch rows is needed.
-- **What runs where.** The cases without a hardware mark run on the CPU. They watch
-  the factory functions and the host reads made by your file, compare `data_ptr()`
-  across calls, and one of them runs the cache on `torch.device("meta")`, whose
-  tensors have a shape and no data, so that any read of `pos` raises. Two cases run
-  only on a machine with an NVIDIA GPU: a request on the CUDA device in float32 and
-  float16, and 256 decode steps during which `torch.cuda.memory_reserved()` may grow
-  by at most 2 MiB. The GPU cases were written from the PyTorch 2.15 documentation
-  and could not be run when the problem was authored.
+- **What runs where.** Cases without a hardware mark run on the CPU. They monitor factory calls and host reads in your file, compare `data_ptr()` across calls, and run one check on `torch.device("meta")` (where tensors have shapes but no data, so any read of `pos` raises). Two cases run only on a machine with an NVIDIA GPU: a CUDA request in `float32` and `float16`, and 256 decode steps during which `torch.cuda.memory_reserved()` may grow by at most 2 MiB. The GPU cases were written from the PyTorch 2.15 documentation and could not be run when the problem was authored.
 
 ## Why this matters
 
-A cache that grows with `torch.cat` allocates two new tensors per layer per token and
-copies everything cached so far into them: quadratic copying, a stream of
-differently sized blocks through the allocator, and a new shape at every step. The
-new shape is what rules out the two big optimizations of a GPU decode loop.
-`torch.compile` specializes on shapes and recompiles or falls back when they move,
-and a CUDA graph replays recorded kernels on recorded addresses, so it needs the same
-memory every time. A static cache gives both what they need, provided the writes are
-in place (a rebound buffer is a new address) and the position never comes back to
-the host (an `int(pos)` stalls the pipeline once per token, and inside a captured
-graph it is an error). The price is the mask: get it wrong by one slot and the model
-attends to a token that was never written, or to the previous request's.
+A KV cache that grows with `torch.cat` allocates two new tensors per layer on every token and copies all prior keys and values into them. That causes quadratic copying, allocator churn, and a changing tensor shape at every step.
+
+Changing shapes block the two main optimizations for GPU decoding. `torch.compile` specializes on tensor shapes and recompiles or falls back when shapes vary, while a CUDA graph replays recorded kernels on fixed memory addresses. A static cache satisfies both as long as writes stay in place (rebinding a buffer changes its address) and the write position stays on the device (calling `int(pos)` stalls the GPU pipeline on every token and fails during CUDA graph capture). The tradeoff is that correctness depends on the mask. An off-by-one error lets the model attend to an unwritten slot or to a previous request.

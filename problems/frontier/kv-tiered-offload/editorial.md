@@ -1,45 +1,16 @@
 ## The idea
 
-A prefix cache on one tier has one decision, what to evict. With tiers below the
-GPU there are three, and the solution is one small mechanism for each.
+A single-tier prefix cache only decides which block to evict. A tiered store adds two more decisions, and each one maps to a small mechanism.
 
-**Where blocks go under pressure.** A block that must leave the GPU is still worth
-something, so it is moved down rather than deleted, and if the tier below is full,
-that tier's least valuable block is moved down first. "Place" is this recursion:
-make room below, then move. The disk is the only tier that deletes.
+**Demoting blocks under pressure.** When a block must leave the GPU, it still has value, so the policy moves it down a tier rather than deleting it. If the target tier is full, that tier's least valuable block is moved down first. The `place` routine expresses this as a recursion: free a slot in the tier below, then move the block in. Only pushing a block below `"disk"` deletes it.
 
-Which block is least valuable is recency, with one refinement that matters for
-prefix blocks. All blocks of a prompt are used by the same call, so they tie, and
-the tie must go to the **deepest** block. A block is only usable when every block
-before it is available, so the tail of a chain is worth less than its head, and a
-parent that was demoted before its child would leave the child stranded in a hot
-tier. Deepest-first gives an invariant: along any chain the tiers only get colder
-with depth. Everything else leans on it. The reused part of a prompt is a run of
-GPU blocks, then host blocks, then disk blocks; one transfer per tier brings them
-back; and each transfer finds the parents of its blocks already on the GPU.
+Value is ordered by recency, with one tie-breaker specific to prefix chains. Every block in a prompt is used by the same `serve` call, so all blocks of that prompt share the same timestamp. Breaking ties in favor of the **deepest** block reflects dependency order. Because a block is usable only if every earlier block is present, the tail of a chain is less valuable than its head. Demoting a parent before its child would leave the child stranded in a hotter tier. Deepest-first eviction maintains a key invariant: along any prefix chain, tiers only get colder with depth. As a result, the reused prefix of a prompt always consists of GPU blocks, followed by host blocks, followed by disk blocks. One batched load per tier brings them back, and every block's parent is already on the GPU when it arrives.
 
-**What a request reuses.** An engine can skip the *prefix* of a prefill and nothing
-else: the keys and values of a position are only useful when all earlier positions
-are present. So the choice is a single cut $c$: reuse blocks before it, compute
-from it on. The search stops at the first block that is stored nowhere, because
-nothing behind it can be reached, whatever is still lying in a cold tier.
+**Choosing the reusable prefix.** An engine can only skip a contiguous *prefix* of prefill because attention at each position depends on all earlier tokens. For a prompt of $m$ full blocks, the policy picks a single cut $c$, reusing blocks $0, \ldots, c - 1$ and computing blocks $c, \ldots, m - 1$. The search stops at the first missing block $p$, since nothing behind a gap can be reused even if later blocks still sit in a colder tier.
 
-**Load or recompute.** Reusing a block on the GPU is free. Reusing a block from a
-lower tier costs a share of a transfer, and a transfer has a fixed part (a request
-to another process or device, a file to open) and a part per block. Computing costs
-a fixed time per block. So the answer depends on how many blocks a tier would
-deliver: with the example's disk costs, two blocks are not worth fetching
-($0.75$ s against $0.5$ s) and six are ($1.25$ s against $1.5$ s). The decision
-cannot be made run by run, either: a host run that does not pay for itself may
-still be worth loading because it gives access to a long disk run behind it.
-Evaluating $t(c)$ for every cut and taking the minimum handles all of this in a
-few lines.
+**Deciding whether to load or recompute.** Reusing a block on the GPU is free. Reusing blocks from host or disk incurs a fixed transfer setup cost plus a per-block cost, while recomputing costs a fixed time per block. Whether loading wins depends on how many blocks come from that tier. With the example's disk costs, loading 2 blocks takes $0.75$ s versus $0.5$ s to compute, whereas loading 6 blocks takes $1.25$ s versus $1.5$ s to compute. You also cannot decide one tier at a time, because a short host run that loses on its own may unlock a long disk run behind it. Evaluating the total time $t(c)$ for every cut $c \in \{0, \ldots, p\}$ and taking the minimum handles all combinations directly.
 
-**Pinning.** While a request is served, its own blocks must not be chosen as
-victims, in any tier: on the GPU they are about to be attended to, and in the lower
-tiers they are about to be loaded. A consequence is the third branch of "place":
-when a tier is full of pinned blocks, the block being placed passes through to the
-next tier.
+**Pinning active blocks.** While a request is being served, none of its blocks may be evicted from any tier. Its GPU blocks are about to be reused, and its lower-tier blocks are about to be loaded. Pinning introduces the third branch of `place`: when a target tier is full of pinned blocks, the block being demoted skips that tier and is placed in the next tier down.
 
 ## Reference solution (Python)
 
@@ -152,90 +123,38 @@ class TieredKV:
         return True
 ```
 
-The index is updated in the same breath as each store call, so `_free` and
-`_victim` always describe the store as it is. The linear scans are fine at these
-sizes; a production index keeps one recency list per tier.
+The index is updated right alongside every store operation so `_free` and `_victim` always reflect the exact state of the store. Linear scans over `self.blocks` are fast enough at these capacities. A production cache maintains a recency structure per tier.
 
 ## Common mistakes
 
-- **Evicting instead of demoting.** Dropping the GPU victim is the one-tier policy.
-  It passes every test of a plain prefix cache and makes the lower tiers
-  decoration: every returning prompt is prefilled from scratch.
-- **Always loading.** "A stored block is a hit" ignores that a transfer can be
-  slower than the prefill it replaces. The requests that suffer are the short
-  ones, which then wait on a disk for something the GPU computes faster.
-- **Deciding run by run.** Loading the host run only if it pays for itself, then
-  the disk run only if it does, gives up a long disk run whenever a short host run
-  in front of it is not worth its base cost alone. The comparison is between
-  totals.
-- **The wrong side of a tie.** With `<` the smaller cut wins; the statement gives
-  ties to reuse.
-- **Loading past a missing block.** Counting every stored block of the chain as
-  reusable loads a block whose ancestor is gone. Its keys and values were computed
-  after tokens the GPU no longer has; the store refuses the load.
-- **A key without the parent.** The same tokens after another prefix are another
-  block (the mistake of `block-hash-prefix-cache`, with the same consequence:
-  one conversation is served another's keys and values).
-- **Shallowest first.** Demoting the head of a chain before its tail breaks the
-  ordering of tiers along a chain, and the next request for that prompt finds its
-  first block on the slowest tier.
-- **Not pinning.** Without it, making room for a request can push down the blocks
-  the same request is about to load, or the ones it just counted as GPU hits.
-- **No cascade.** Sending the GPU victim straight to disk when the host tier is
-  full leaves old blocks in fast memory and puts recent ones on the slow tier.
-- **Not refreshing on a hit.** If only loaded and computed blocks get a new stamp,
-  the policy is first-in-first-out, and a system prompt that every request reuses
-  on the GPU is the first thing to be demoted.
-- **One transfer per block.** The base cost is paid once per transfer; loading
-  block by block pays it every time.
+- **Evicting instead of demoting.** Dropping GPU victims directly reduces the policy to a single-tier cache, leaving host and disk unused and forcing returning prompts to prefill from scratch.
+- **Always loading stored blocks.** Treating every stored block as a hit ignores transfer overhead and slows down short prompts when recomputing is faster than loading from disk.
+- **Deciding tier by tier.** Checking whether the host run pays for itself independently of the disk run misses cases where loading a short host run unlocks a profitable disk run behind it.
+- **Breaking ties toward recomputation.** Using `<` instead of `<=` picks the smaller cut on a tie, violating the rule that ties favor reuse.
+- **Loading past a missing block.** Reusing stored blocks after a gap tries to load a block whose ancestor is missing from the GPU, which the store rejects.
+- **Hashing a block without its parent.** Identical tokens after different prefixes produce different KV states. Ignoring the prefix serves one conversation another's cache.
+- **Demoting shallowest first.** Moving the head of a chain before its tail breaks tier ordering along the chain, placing the earliest blocks on the slowest tier.
+- **Forgetting to pin active blocks.** Without pinning, making room on the GPU can demote blocks that the current request is about to load or reuse on the GPU.
+- **Skipping the cascade.** Sending a GPU victim straight to disk when `"host"` is full keeps stale blocks in fast host memory while pushing fresher blocks to slow disk.
+- **Not updating recency on GPU hits.** Refreshing timestamps only for loaded and computed blocks turns GPU eviction into FIFO, demoting a frequently reused system prompt first.
+- **Loading one block per call.** Issuing one `store.load` per block pays the tier's fixed base latency repeatedly instead of once per tier.
 
 ## Complexity
 
-Per call: $O(m)$ key computations, $O(m)$ cuts to evaluate ($O(m^2)$ as written,
-with the counts recomputed for each cut), and a scan of the index per victim. Store
-time is what the cut minimizes. Bytes moved are one block per block loaded and one
-per demotion; a block that travels GPU to host to disk and back to the GPU is moved
-three times.
+Each `serve` call computes $O(m)$ block keys, evaluates $O(m)$ candidate cuts ($O(m^2)$ as written because counts are recomputed per cut), and scans the block index for each victim. The chosen cut minimizes simulated store time. Total bytes moved equals `store.block_bytes` times the number of loads and demotions. For example, a block that moves from GPU to host to disk and back to GPU is counted three times.
 
 ## In the wild
 
-What is established, from the projects' own material:
+What is established in production systems:
 
-- **LMCache** (documentation, "Architecture Overview"; and the paper "LMCache: An
-  Efficient KV Cache Layer for Enterprise-Scale LLM Inference", arXiv 2510.09665)
-  describes this hierarchy for engines such as vLLM: GPU memory holds the active
-  working set; CPU memory is a hot cache of recently used KV chunks, in pinned
-  memory for fast GPU transfers; local storage is a larger tier; remote storage is
-  persistent and slower. Its documented flows are the ones modeled here: overflow
-  is offloaded from the GPU to CPU memory, written on from CPU memory to disk or
-  remote storage under an LRU policy, and moved back to the GPU on demand. Its
-  cache index cuts token sequences into chunks (256 tokens by default) and hashes
-  them.
-- **NVIDIA Dynamo's KV block manager** (KVBM design document) names the tiers G1
-  (GPU device pool), G2 (host pool, pinned CPU memory), G3 (disk pool, local NVMe),
-  and G4 (remote storage), and uses the verbs *offload* (device to host, host to
-  disk) and *onboard* (host to device, and disk to device directly, without passing
-  through the host). The direct disk-to-GPU load of this problem follows that.
-- **vLLM**'s automatic prefix caching supplies the key scheme (a hash per full
-  block chained to its parent), as in the prerequisite.
+- **LMCache** (architecture documentation and "LMCache: An Efficient KV Cache Layer for Enterprise-Scale LLM Inference", arXiv 2510.09665) implements this storage hierarchy for engines like vLLM. GPU memory holds the active working set, pinned CPU memory acts as a hot cache for fast transfers, local storage provides a larger tier, and remote storage offers slower persistent capacity. Overflow offloads from GPU to CPU and then to disk or remote storage under LRU eviction, and chunks (256 tokens by default) are indexed by hash and loaded back on demand.
+- **NVIDIA Dynamo's KV block manager (KVBM)** defines tiers G1 (GPU device pool), G2 (pinned host CPU pool), G3 (local NVMe disk pool), and G4 (remote storage). It distinguishes *offload* (device to host, host to disk) from *onboard* (host to device, or disk directly to device without staging through host memory). The direct disk-to-GPU load in this problem follows that model.
+- **vLLM**'s automatic prefix caching uses parent-chained block hashes for block identity, as in `block-hash-prefix-cache`.
 
-What is this problem's own simplification or choice:
+What this problem simplifies or chooses:
 
-- **A block lives in one tier.** Real stores usually keep the copy in the lower
-  tier when a block is loaded, so demoting it again is free and a load does not
-  empty a tier. Exclusive tiers make "bytes moved" a clean count and are why a
-  full host tier of pinned blocks can occur at all.
-- **Demotions take no time.** Writes to the lower tiers are asynchronous in real
-  systems and off the request path; here they cost bytes and not latency. Loads
-  and computations are serialized on one clock, and one request is served at a
-  time.
-- **The cost model and the cut rule.** `base + per_block * n` per transfer against
-  a fixed time per computed block is a stand-in for bandwidth and prefill speed.
-  The rule "minimize $t(c)$" is this problem's statement of the load-or-recompute
-  trade; it is not a description of how LMCache or Dynamo decide.
-- **The victim rule.** Least recently used with ties to the deepest block is a
-  policy chosen here for its invariant; the projects above document LRU eviction
-  between tiers but not this tie-break.
-- **`discard`** stands in for anything that removes a block out of order (expiry,
-  an administrator, a failed disk), which is the only way a stored block can end up
-  behind a missing one under this policy.
+- **Exclusive tiers.** Real stores often retain a lower-tier copy when loading a block to the GPU, making subsequent demotion free. Exclusive tiers keep `bytes_moved` unambiguous and allow a host tier full of pinned blocks to occur.
+- **Zero-latency demotions and serial execution.** Production systems offload asynchronously off the critical path. Here demotions charge bytes rather than time, and loads and computations execute serially for one request at a time.
+- **Linear cost model and cut rule.** Modeling transfer time as `base + per_block * n` against a fixed `compute_s` per block abstracts bandwidth and prefill speed. Minimizing $t(c)$ is this problem's formalization of the load-versus-recompute tradeoff rather than a literal description of LMCache or Dynamo.
+- **Deepest-first tie-breaking.** Production systems document LRU eviction across tiers, whereas breaking same-call ties deepest-first is chosen here to preserve monotonic tier ordering along chains.
+- **`discard` for out-of-order removal.** `discard` models expiry, manual invalidation, or storage loss, which is the only way a stored block can sit behind a missing ancestor under this policy.

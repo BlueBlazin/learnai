@@ -1,40 +1,23 @@
 ## The idea
 
-Dequantization is embarrassingly parallel: every output weight depends on one code,
-one scale, and one bias, and on nothing any other weight computes. So the kernel is
-one thread per weight, and the design question is only how a thread finds its three
-inputs from its position.
+Dequantization is embarrassingly parallel because every output weight depends only on its own code, scale, and bias. Assigning one GPU thread per output weight reduces the problem to mapping each thread's grid coordinates to its three input addresses.
 
-Launch a two-dimensional grid, `grid=(n_in, n_out, 1)`. Thread
-$(x, y) = (\text{col}, \text{row})$ then needs four integers:
+For a matrix with `n_out` rows and `n_in` columns (`n_words` packed words and `n_groups` groups per row), launch a 2D grid with `grid=(n_in, n_out, 1)` so that `col = thread_position_in_grid.x` and `row = thread_position_in_grid.y`. Let `per_word = 32 / bits` be the number of codes per word. Each thread computes four indices:
 
-| what | value | why |
+| quantity | formula | reason |
 |---|---|---|
-| word | `row * n_words + col / per_word` | `per_word = 32 / bits` codes per word; rows are stored one after another |
-| shift | `bits * (col % per_word)` | code 0 of a word is in the lowest bits |
-| group | `row * n_groups + col / group_size` | scales and biases are `(out, groups)`, row-major |
-| output | `row * n_in + col` | the output is row-major too |
+| word index | `row * n_words + col / per_word` | `per_word` codes per word, stored row-major |
+| bit shift | `bits * (col % per_word)` | code 0 sits in the lowest bits of each word |
+| group index | `row * n_groups + col / group_size` | `scales` and `biases` have shape `(n_out, n_groups)` in row-major order |
+| output index | `row * n_in + col` | the output matrix is row-major |
 
-and one line of arithmetic, `code * scale + bias`.
+With those indices in hand, each thread evaluates `code * scale + bias`.
 
-Three details make it exact and fast.
+Three implementation details ensure exact results and high throughput:
 
-- **Unsigned everything.** `word >> shift` on a `uint` shifts in zeros. On an `int`
-  it copies the sign bit, which goes unnoticed as long as a mask follows, and breaks
-  the moment someone isolates the field with two shifts (`(word << a) >> b`), the
-  idiom from signed bit-field code: every code with its top bit set comes out
-  negative.
-- **`bits` as a template int.** `template=[("BITS", bits)]` makes `32 / BITS` and
-  the mask compile-time constants, so the divisions and modulos by `per_word` become
-  shifts and masks in the compiled kernel. Passing `bits` as a 0-d array input would
-  work, and would do real integer divisions in every thread.
-- **Compute in `float`, convert once.** The output type `T` is float16, bfloat16, or
-  float32. `fma(float(code), float(scale), float(bias))` rounds once in float32 and
-  `T(...)` rounds once more to the output type. This is bit for bit what
-  `mx.dequantize` returns for all three dtypes on this machine. Computing in `T`
-  would not compile for bfloat16 (MLX's Metal type for it is a storage type with
-  conversions, not arithmetic) and would round the product of a 255-valued code and
-  a scale to 11 bits in half precision before the bias is added.
+- **Use unsigned integers everywhere.** Right-shifting a `uint` fills the high bits with zeros. Right-shifting a signed `int` replicates the sign bit. That bug hides if you mask afterward, but breaks immediately if you extract bit fields with two shifts (`(word << a) >> b`), turning every code whose top bit is 1 into a negative number.
+- **Pass `bits` as a template integer.** Setting `template=[("BITS", bits)]` makes `32 / BITS` and the bitmask compile-time constants. The Metal compiler lowers divisions and modulos by `per_word` into bit shifts and masks instead of emitting integer division instructions in every thread.
+- **Compute in `float` and convert once.** The output type `T` can be float16, bfloat16, or float32. Calling `fma(float(code), float(scale), float(bias))` rounds once in float32, and `T(...)` rounds once more to the output dtype. This matches `mx.dequantize` bit for bit across all three dtypes on Apple Silicon. Computing directly in `T` fails to compile for bfloat16 (MLX's Metal bfloat16 type supports storage and conversion, not arithmetic) and loses precision in float16 when multiplying an 8-bit code (up to 255) by a scale before adding the bias.
 
 ## Reference solution (MLX)
 
@@ -76,22 +59,15 @@ def metal_dequantize(words, scales, biases, group_size, bits):
     )[0]
 ```
 
-The kernel reads the row widths from `words_shape` and `scales_shape`, which MLX adds
-to the signature because the body mentions them, so one compiled kernel per
-`(dtype, bits)` serves every layer of a model. The largest flat index is
-`out * in`, 16.8 million for a `4096 x 4096` layer and 257 million for the
-`100352 x 2560` embedding of a 3B model, both inside a `uint`.
+Reading row widths from `words_shape` and `scales_shape` lets one compiled kernel per `(dtype, bits)` pair handle every layer shape in a model. The largest flat index is `out * in`, which is 16.8 million for a `4096 x 4096` layer and 257 million for a `100352 x 2560` embedding table, both well within 32-bit `uint` range.
 
-`ensure_row_contiguous` stays at its default: a strided input is copied before the
-kernel runs, and the flat indices are right. The packed weights of a checkpoint are
-always contiguous, so nothing is copied in the case that matters.
+Leaving `ensure_row_contiguous` at its default (`True`) automatically copies any strided input into a contiguous buffer before launch, keeping flat row-major indexing valid. Packed checkpoint weights are already contiguous, so no extra copy occurs in normal inference.
 
 ## What the alternatives cost
 
-Measured on this machine (M1 Max, MLX 0.32.4), a `4096 x 4096` layer at 4 bits in
-groups of 64 (8 MiB of words, a 64 MiB float32 result), steady state:
+Measured in steady state on an M1 Max (MLX 0.32.4) for a `4096 x 4096` layer at 4 bits with `group_size=64` (8 MiB of packed words and a 64 MiB float32 output):
 
-| implementation | time per call | peak memory above the inputs |
+| implementation | time per call | peak memory above inputs |
 |---|---|---|
 | this kernel, one thread per weight | 0.50 ms | 64 MiB |
 | `mx.dequantize` | 0.43 ms | 64 MiB |
@@ -99,51 +75,26 @@ groups of 64 (8 MiB of words, a 64 MiB float32 result), steady state:
 | a kernel with one thread per row, looping over columns | 3.7 ms | 64 MiB |
 | the row kernel called from a Python loop, 4096 launches | 39 ms | 128 MiB |
 
-The hand-written kernel matches MLX's own. The composition of built-in operations is
-five times slower and holds three matrices at its peak, because every step
-materializes a full-size temporary: the unpacked codes as uint32, the codes as
-floats, the repeated scales. This is where a custom kernel earns its keep, unlike the
-elementwise chain of the previous problem.
+The custom kernel matches MLX's built-in implementation. Composing standard MLX ops is more than 5x slower and triples peak memory because each step materializes a full-size intermediate array (unpacked uint32 codes, float codes, and repeated scales). Unlike simple elementwise chains, dequantization genuinely benefits from a fused custom kernel.
 
-The threadgroup shape hardly matters here: `(32, 8, 1)`, `(16, 16, 1)`, `(256, 1,
-1)`, and `(1024, 1, 1)` all measure 0.50 ms. What matters is that the work is spread
-over 16.8 million short threads and not 4096 long ones.
+The exact threadgroup shape has little effect here. `(32, 8, 1)`, `(16, 16, 1)`, `(256, 1, 1)`, and `(1024, 1, 1)` all measure 0.50 ms. The decisive factor is spreading the work across 16.8 million short threads rather than 4096 long ones.
 
 ## Common mistakes
 
-- **Codes read from the high bits down.** `shift = bits * (per_word - 1 - col %
-  per_word)` is the big-endian reading of the word. Every group of eight weights is
-  reversed; a model loaded this way produces noise.
-- **A group index without the row** (`col / group_size`). Every row uses the scales
-  and biases of row 0. Right for a one-row test.
-- **A one-dimensional grid of `in` threads** with a body that reads
-  `thread_position_in_grid.y`. The y coordinate is always 0, so only row 0 is
-  written and the other rows hold whatever was in the buffer.
-- **A signed shift** (`int`, two shifts). Codes of 8 and above at 4 bits, 128 and
-  above at 8 bits, come out negative.
-- **A hard-coded mask** (`& 0xF`). Right for 4 bits; 8-bit codes lose their upper
-  half and 2-bit codes pick up their neighbor.
-- **Always writing float32.** A layer stored with bfloat16 scales comes back at twice
-  the size the model's dtype calls for.
-- **Turning off `ensure_row_contiguous`** and keeping row-major indices. Wrong as
-  soon as an input is a strided view.
-- **One thread per row**, or one kernel launch per row from Python. Correct, and 7
-  and 80 times slower than one thread per weight.
-- **MLX operations, or `mx.dequantize`.** Right numbers, no kernel; the first also
-  triples the peak memory.
+- **Reading codes from the high bits down.** Using `shift = bits * (per_word - 1 - col % per_word)` reverses every group of `per_word` weights, causing a loaded model to output nonsense.
+- **Omitting the row from the group index.** Indexing scales and biases with `col / group_size` makes every row reuse row 0's parameters. This bug passes single-row tests.
+- **Launching a 1D grid of `in` threads while reading `thread_position_in_grid.y`.** The y coordinate stays 0, so only row 0 is written and all other rows retain uninitialized buffer memory.
+- **Using signed shifts (`int`).** Extracting codes with two signed shifts turns codes of 8 or higher at 4 bits (and 128 or higher at 8 bits) negative.
+- **Hard-coding a 4-bit mask (`& 0xF`).** This works for 4 bits, truncates the upper half of 8-bit codes, and leaks neighboring bits into 2-bit codes.
+- **Always outputting float32.** Ignoring `scales.dtype` doubles the memory footprint of a float16 or bfloat16 layer.
+- **Disabling `ensure_row_contiguous` while using row-major flat indexing.** This breaks as soon as any input is a strided view.
+- **Using one thread per row or one kernel launch per row.** Both produce correct values but run roughly 7x and 80x slower than one thread per weight.
+- **Using standard MLX operations or `mx.dequantize`.** Both violate the single-custom-kernel rule, and the pure-MLX composition triples peak memory.
 
 ## Complexity
 
-`out * in` threads, each with three reads and one write. The output is the only
-allocation.
+The kernel dispatches `out * in` threads, each performing three reads and one write. The output array is the only allocation.
 
 ## In the wild
 
-`mx.quantized_matmul` never builds this matrix: it unpacks codes inside the
-multiplication, which is why a quantized model runs in the memory of its packed
-weights. The float matrix is needed when weights are edited rather than used: merging
-an adapter, re-quantizing to another bit width, inspecting a layer. Other formats
-differ in exactly the lines you wrote: GGUF's `Q4_K` packs 4-bit codes in blocks of
-32 with 6-bit scales per sub-block, and bitsandbytes stores 4-bit indices into a
-16-entry table. The thread-per-weight structure is the same; only the index
-arithmetic changes.
+During inference, `mx.quantized_matmul` never materializes the dequantized float matrix. It unpacks codes on the fly inside the matrix multiplication so the model stays within its packed memory footprint. Full dequantization is used when weights must be modified or inspected, such as merging LoRA adapters, re-quantizing to another bit width, or debugging a layer. Other quantization formats keep the same thread-per-weight structure and change only the index arithmetic. For example, GGUF's `Q4_K` packs 4-bit codes in blocks of 32 with 6-bit sub-block scales, while bitsandbytes stores 4-bit indices into a 16-entry lookup table.

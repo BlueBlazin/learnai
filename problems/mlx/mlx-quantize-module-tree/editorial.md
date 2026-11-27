@@ -1,30 +1,16 @@
 ## The idea
 
-An `nn.Module` is a dict. Its entries are arrays (parameters), other modules, and
-lists and dicts of either, nested as deep as the author liked. A transformer keeps its
-blocks in a list, so almost all of its weights are behind a container, and any walk
-that only follows attributes that are modules sees the embedding, the head, and
-nothing in between.
+An `nn.Module` stores its parameters, child modules, and arbitrarily nested lists or dicts of either. Because a transformer keeps its blocks inside a list, almost all of its weights sit behind a container. A walk that only inspects direct module attributes finds the embedding and output head and misses every block in between.
 
-MLX gives you the walk in three pieces:
+MLX provides three helpers that handle arbitrary nesting for you:
 
-- `model.leaf_modules()` returns the modules without children as a nested structure
-  that mirrors the tree: `{"embed": Embedding, "layers": [{"q_proj": Linear, ...}, ...]}`.
-  Linear and embedding layers have no children, so every one of them is a leaf.
-- `tree_map_with_path(fn, tree, is_leaf=nn.Module.is_module)` calls `fn(path, leaf)`
-  for every leaf, where `path` joins the dict keys and list indices with dots, and
-  returns the same structure built from the results.
-- `model.update_modules(tree)` writes such a structure back into the model, replacing
-  each module it names.
+- `model.leaf_modules()` returns all modules that have no children, arranged in a nested dict-and-list structure that mirrors the model tree (for example, `{"embed": Embedding, "layers": [{"q_proj": Linear, ...}, ...]}`). Because `nn.Linear` and `nn.Embedding` have no child modules, every one of them is a leaf.
+- `tree_map_with_path(fn, tree, is_leaf=nn.Module.is_module)` calls `fn(path, leaf)` on each leaf, where `path` joins dict keys and list indices with dots, and returns a new tree with the same structure holding the return values.
+- `model.update_modules(tree)` writes that structure back into `model`, replacing each named module in place.
 
-Quantizing a model is then one function from module to module, applied at every leaf.
+With those three helpers, quantization reduces to a single leaf-level mapping function.
 
-The last line matters as much as the walk. `to_quantized` calls `mx.quantize`, which
-returns three lazy arrays: nodes whose pending computation references the float
-weight. After `update_modules` the float layers are gone from the tree, but not from
-memory: the graph keeps every one of them alive until the codes are computed.
-`mx.eval(model.parameters())` computes them, the graph is dropped, and the float
-weights are freed.
+Evaluating the result is just as important as the tree walk. Calling `to_quantized` runs `mx.quantize`, which returns three lazy arrays whose graph nodes still reference the original float weight. After `update_modules`, the float layers are no longer attached to the model, but the pending graph keeps every float weight alive in memory until the quantized arrays are computed. Calling `mx.eval(model.parameters())` materializes the quantized arrays, drops the graph, and frees the float weights.
 
 ## Reference solution (MLX)
 
@@ -59,15 +45,11 @@ def bits_per_weight(model):
     return 8 * stored_bytes / weights
 ```
 
-`nn.QuantizedLinear` is not a subclass of `nn.Linear`, so the `isinstance` test also
-keeps the walk away from layers that are already quantized. `convert` returns the
-module itself for everything it does not replace, which is why untouched layers stay
-the very same objects.
+`nn.QuantizedLinear` is not a subclass of `nn.Linear` (and `nn.QuantizedEmbedding` is not a subclass of `nn.Embedding`), so the `isinstance` check automatically skips layers that are already quantized. Returning `module` unchanged for every unquantized leaf guarantees that untouched layers remain the exact same objects.
 
 ## What the numbers are
 
-Measured on this machine (M1 Max, MLX 0.32.4) on an `MLXTinyLM` of width 512 with two
-layers and a vocabulary of 1024: 6.3 million weights, 24.0 MiB in float32.
+Measured on an M1 Max with MLX 0.32.4 on an `MLXTinyLM` of width 512, 2 layers, and vocabulary size 1024 (6.3 million weights, 24.0 MiB in float32):
 
 | recipe | bits per weight | parameter bytes | relative error of the logits |
 |---|---|---|---|
@@ -78,68 +60,26 @@ layers and a vocabulary of 1024: 6.3 million weights, 24.0 MiB in float32.
 | 4 bits, groups of 32 | 6.01 | 4.51 MiB | 0.30 |
 | 2 bits, groups of 64 | 3.01 | 2.26 MiB | 0.90 |
 
-Three things to read from it. The overhead is real: with float32 scales and biases, a
-"4-bit" layer costs $4 + 2 \cdot 32 / 64 = 5$ bits per weight and an "8-bit" layer 9.
-Checkpoints written by `mlx_lm.convert` keep scales and biases in 16-bit floats, which
-gives the familiar 4.5 and 8.5. The numbers end in `.01` because the norm gains stay
-in float32. And the error column is this model's, a random-weight toy whose weights
-are far harder to quantize than a trained model's; it is there to show the direction
-of each trade, not its size.
+Three patterns stand out. First, scale and bias overhead is substantial. With float32 scales and biases, a 4-bit layer costs $4 + 2 \cdot 32 / 64 = 5$ bits per weight and an 8-bit layer costs 9. Checkpoints written by `mlx_lm.convert` store scales and biases in 16-bit floats, giving the familiar 4.5 and 8.5 bits per weight. Second, the `.01` tail comes from the norm gains staying in float32. Third, the logit error column is from a random-weight toy model whose weights are much harder to quantize than a trained model's, so it illustrates the direction of each trade-off rather than typical production accuracy.
 
-Left lazy, the 4-bit model holds 24.0 MiB when `quantize_model` returns, not 3.8: the
-whole float model, kept alive by sixteen pending `Quantize` nodes.
+If the model is left lazy, the 4-bit model still holds 24.0 MiB when `quantize_model` returns instead of 3.8 MiB, because sixteen pending `Quantize` nodes keep the float weights alive.
 
 ## Common mistakes
 
-- **Skipping children inside lists and dicts.** `for name, child in
-  module.children().items(): if isinstance(child, nn.Module): ...` follows attributes
-  and nothing else. On a transformer it reaches two layers out of sixteen, and the
-  model is 14 percent smaller where it should be 84.
-- **Forgetting the embedding.** Testing only for `nn.Linear` leaves the embedding in
-  float32. In a small model that is a large share of the weights, and a recipe that
-  asked for 8 bits there was silently ignored.
-- **Treating the recipe's answer as yes or no.** `if recipe(path, module):
-  module.to_quantized()` quantizes the right layers with the default 4 bits in groups
-  of 64, whatever the dict said. A mixed recipe becomes a uniform one.
-- **Quantizing what the recipe declined.** `recipe(path, module) or defaults` turns
-  `None`, which means "leave this layer alone", into "use the defaults". The layers
-  that were excluded on purpose, because they are the sensitive ones, get the
-  coarsest setting.
-- **Passing the leaf's name and not its path.** With `"q_proj"` for
-  `"layers.0.q_proj"`, a recipe keyed on paths matches nothing, or matches the same
-  layer of every block at once, and the returned record cannot be used to rebuild the
-  tree.
-- **Leaving the result lazy.** Everything looks right and the model is as large as
-  before. The first forward pass then pays for the quantization of every layer it
-  touches.
-- **Bits per weight without the scales and biases.** Counting only the packed codes
-  gives 4.0 where the model occupies 5.0: off by a fifth, in the direction that makes
-  a model look as if it fits.
-- **Dividing by stored elements.** `sum(p.size for p in parameters)` counts a uint32
-  word as one weight when it holds eight, and counts scales and biases as weights.
-  Every stored element is then four bytes, so a 4-bit model reports exactly 32 bits
-  per weight, the same as the float model.
-- **Calling `nn.quantize`.** It is this function, minus the record and the
-  evaluation; see below.
+- **Skipping children inside lists and dicts.** Iterating over `module.children().items()` and checking `isinstance(child, nn.Module)` only follows direct attributes. On a transformer, it visits 2 layers out of 16 and shrinks the model by 14 percent instead of 84 percent.
+- **Forgetting the embedding.** Checking only for `nn.Linear` leaves `nn.Embedding` in float32. In small models the embedding is a large fraction of the weights, and any recipe asking for 8-bit embeddings is silently ignored.
+- **Treating the recipe's return value as a boolean.** Running `if recipe(path, module): module.to_quantized()` quantizes the right layers using the default 4 bits and group size 64, ignoring the dict values and turning a mixed recipe into a uniform one.
+- **Quantizing layers the recipe declined.** Writing `recipe(path, module) or defaults` turns `None` into the default quantization settings, quantizing the sensitive layers that were intentionally excluded.
+- **Passing the leaf name instead of its full path.** Passing `"q_proj"` instead of `"layers.0.q_proj"` breaks path-keyed recipes and produces a returned dict that cannot rebuild the module tree.
+- **Leaving the result lazy.** Without `mx.eval(model.parameters())`, the model stays as large as the float model in memory, and the first forward pass pays the cost of quantizing every layer it touches.
+- **Omitting scales and biases from bits per weight.** Counting only the packed codes reports 4.0 bits per weight when the model actually uses 5.0, understating memory usage by 20 percent.
+- **Dividing by stored elements.** Using `sum(p.size for p in parameters)` counts each 4-byte `uint32` word as one weight instead of `32 / bits` weights and counts scales and biases as weights. Every stored element is then 4 bytes, so a 4-bit model reports 32.0 bits per weight.
+- **Calling `nn.quantize`.** That built-in performs this exact walk (without recording the dict or evaluating), and is forbidden by the problem rules.
 
 ## Complexity
 
-One visit per module and one call of the recipe per linear or embedding layer.
-Quantization is a pass over each selected weight. The peak memory of the call is the
-float model plus the quantized one, because all layers are evaluated together;
-evaluating layer by layer (`mx.eval` on each new layer's parameters as it is made)
-keeps the peak near the float model plus one layer, at the price of one evaluation
-per layer.
+The walk visits each module once and calls `recipe` once per linear or embedding layer. Quantization makes a single pass over each selected weight tensor. Evaluating all parameters together gives a peak memory of roughly the float model plus the quantized model. Evaluating each newly quantized layer immediately with `mx.eval` lowers peak memory to roughly the float model plus one layer, at the cost of one evaluation per layer.
 
 ## In the wild
 
-`nn.quantize(model, group_size, bits, class_predicate=...)` is the same walk: the
-predicate receives `(path, module)` for every leaf module and returns `False`, `True`,
-or a dict of arguments for `to_quantized`. `mlx_lm.utils.quantize_model` wraps it with
-a predicate that skips layers whose width is not a multiple of the group size and
-writes each dict answer into `config["quantization"][path]`; when a quantized model is
-loaded, that record is turned back into a predicate so that the empty tree has the
-right layer types before `load_weights` runs. `mlx_lm.utils.compute_bits_per_weight`
-is the bits-per-weight count of this problem, with one difference: it counts weights
-over leaf modules only, so a parameter that sits directly on a container module is
-counted in the bytes and not in the weights.
+`nn.quantize(model, group_size, bits, class_predicate=...)` uses this exact traversal. Its predicate receives `(path, module)` for each leaf module and returns `False`, `True`, or a dict of arguments for `to_quantized`. `mlx_lm.utils.quantize_model` wraps `nn.quantize` with a predicate that skips layers whose width is not divisible by `group_size` and writes each dict result into `config["quantization"][path]`. When loading a quantized checkpoint, that record is converted back into a predicate so the empty model tree gets the matching quantized layer types before `load_weights` runs. `mlx_lm.utils.compute_bits_per_weight` computes the same metric as `bits_per_weight`, except it sums logical weights over leaf modules only, so a parameter attached directly to a container module is counted in `bytes` but not in `weights`.

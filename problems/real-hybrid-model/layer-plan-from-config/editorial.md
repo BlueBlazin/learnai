@@ -1,57 +1,20 @@
 ## The idea
 
-A configuration file is a compressed program. The reference implementation expands it
-once, when the model object is built, into one decision per layer, and from then on
-only the expansion exists. Porting a model means reproducing that expansion, and it is
-short enough to read: `__post_init__` of `Qwen3_5TextConfig` and `GlmMoeDsaConfig`,
-and `__post_init__` plus the property `kv_sharing_modes` of `Gemma4TextConfig`, in
-Hugging Face Transformers 5.23.
+A model's `config.json` is a compact specification. When a model is instantiated, the reference configuration class expands it once into a concrete per-layer schedule, and the rest of the runtime consumes only that expanded plan. Porting a model accurately means reproducing that expansion. In Hugging Face Transformers 5.23, the logic lives in `__post_init__` of `Qwen3_5TextConfig` and `GlmMoeDsaConfig`, and in `__post_init__` plus `kv_sharing_modes` of `Gemma4TextConfig`.
 
-Three things recur across the families.
+Three patterns appear across all three families.
 
-**A list beats a rule, and the rule is the fallback.** Each family has a per-layer
-list (`layer_types`, `mlp_layer_types`, `indexer_types`) and a few numbers the list
-can be generated from. The classes fill the list in only when it is `None`. The three
-published files carry both, and they agree, so an implementation that reads only the
-numbers passes on every real file and fails on the first one whose list was edited by
-hand. GLM has three levels: the list, then `index_topk_pattern` (a string such as
-`"FSSF"`), then frequency and offset.
+**Explicit lists take priority over rules.** Each family pairs a per-layer list (`layer_types`, `mlp_layer_types`, `indexer_types`) with scalar parameters that can generate it. The reference classes compute the fallback list only when the explicit list is `None`. Because the three published checkpoints include both the explicit list and matching scalars, an implementation that ignores the list passes on every published file and fails on the first hand-edited config. GLM adds a middle tier: `indexer_types`, then `index_topk_pattern` (such as `"FSSF"`), and finally the frequency-and-offset formula.
 
-**The rules count differently.** Qwen3.5 counts layers from 1: layer $i$ attends when
-$(i + 1) \bmod n = 0$, so with $n = 4$ the attention layers are 3, 7, 11, .... GLM's
-indexer rule is $\max(i - o + 1, 0) \bmod q = 0$. The clamp is the point: every layer
-up to $o - 1$ maps to 0 and runs its own indexer, and from there on every $q$-th layer
-does. With $o = 3$, $q = 4$: full at 0, 1, 2, then 6, 10, 14, .... Without the clamp
-layer 0 gives $-2 \bmod 4 = 2$ in Python and becomes "shared", with no earlier layer
-to share with. A frequency of 0 is clamped to 1 (every layer full) instead of dividing
-by zero.
+**Indexing and clamping rules differ by family.** Qwen3.5 counts layers from 1, placing `"full_attention"` at $(i + 1) \bmod n = 0$ where $n$ is `full_attention_interval`. With $n = 4$, full attention lands on layers 3, 7, 11, and so on. GLM's indexer rule uses $\max(i - o + 1, 0) \bmod \max(q, 1) = 0$, where $o$ is `index_skip_topk_offset` and $q$ is `index_topk_freq`. The lower clamp at 0 ensures that layers $0, \dots, o - 1$ all evaluate to 0 and run their own `"full"` indexer, followed by every $q$-th layer after that. With $o = 3$ and $q = 4$, full indexers land on layers 0, 1, 2, 6, 10, 14, and so on. Without the clamp, layer 0 would evaluate $-2 \bmod 4 = 2$ in Python and become `"shared"` with no earlier layer to share from. Clamping $q$ to at least 1 prevents division by zero and makes every layer `"full"` when $q = 0$.
 
-**Defaults belong to the family, not to the concept.** A missing
-`partial_rotary_factor` means 0.25 in Qwen3.5 (its class sets the default itself,
-under the comment `# assign default for BC`) and 1.0 in the generic proportional RoPE
-that Gemma 4 uses. A
-missing `index_skip_topk_offset` is 2, while the published GLM-5.3 says 3. A missing
-`global_head_dim` is 512.
+**Defaults belong to the family, not to the parameter name.** A missing `partial_rotary_factor` defaults to `0.25` in Qwen3.5 (set explicitly in its config class under `# assign default for BC`), whereas Gemma 4's proportional RoPE defaults to `1.0`. A missing `index_skip_topk_offset` defaults to `2`, even though GLM-5.3 sets it to `3`. A missing `global_head_dim` defaults to `512`.
 
-Gemma 4's key-value sharing is the one rule that is not a schedule. The last $s$
-layers compute no keys and values; each attends over the ones stored by an earlier
-layer of its own type. So there is one producer per *type*: the last sliding layer and
-the last full-attention layer before the shared block. In the E2B model those are
-layers 13 and 14. They cannot be merged, because the two types differ in head width
-(256 and 512) and in RoPE (default with base $10^4$, proportional with base $10^6$).
+Gemma 4's KV sharing is a cross-layer dependency rather than a periodic schedule. When `num_kv_shared_layers` ($s$) is greater than 0, the last $s$ layers compute no keys or values. Instead, each reuses the KV tensors stored by the latest unshared layer of its own mixer type. That requires one `"store"` producer per distinct type. In Gemma-4-E2B-it, layer 13 stores for `"sliding_attention"` and layer 14 stores for `"full_attention"`. A single producer cannot serve both types because they use different head widths (`256` vs. `512`) and different RoPE settings (`"default"` with $\theta = 10^4$ vs. `"proportional"` with $\theta = 10^6$).
 
-Head width and rotating channels also come from three places: Qwen3.5 has one
-`head_dim` and rotates `int(head_dim * f)` channels of it; GLM builds a head from a
-part without positions and a rotating part, and its file's `head_dim` key holds
-neither their sum nor, in general, the rotating part (192, 192 + 64, and 64 in
-GLM-5.3; the class overwrites `head_dim` with the rotating width when it loads);
-Gemma 4 keeps a second head width for full-attention layers.
+Head widths and rotated dimensions also follow three different conventions. Qwen3.5 has one `head_dim` and rotates `int(head_dim * f)` channels, where $f$ is `partial_rotary_factor`. GLM splits each head into a non-rotary part (`qk_nope_head_dim`) and a rotary part (`qk_rope_head_dim`), so the full query head width is their sum. GLM-5.3's top-level `head_dim` field is `192`, which is neither the sum (`256`) nor the rotary width (`64`). The config class overwrites `head_dim` with the rotary width on load. Gemma 4 uses `global_head_dim` for full-attention layers and `head_dim` for sliding-attention layers.
 
-One input class is left out of the tests on purpose. When `int(head_dim * f)` is odd
-in a Qwen3.5 file, the library still builds one frequency per started pair
-(`arange(0, dim, 2)`), so it rotates one channel more than the formula says: a head of
-100 with the default factor gives `int(25.0) = 25` and a table of 13 frequencies, 26
-channels. Every test keeps the value even, as every published file does.
+One edge case is intentionally excluded from the test suite. If `int(head_dim * f)` is odd in a Qwen3.5 config, Transformers still builds frequencies with `arange(0, dim, 2)`, which rotates one extra channel (for example, `head_dim = 100` and `f = 0.25` gives `int(25.0) = 25`, producing 13 frequencies and 26 rotated channels). All tests and published configs keep this value even.
 
 ## Reference solution (Python)
 
@@ -126,57 +89,30 @@ def _gemma(text):
     return plan
 ```
 
-`_entry` and `_rope` build the two dicts. Linear-attention layers of Qwen3.5 get
-`rope: None` because `Qwen3_5DecoderLayer` passes the position embeddings to its
-attention sublayer only; a Gated DeltaNet layer learns order from its recurrence.
+`_entry` and `_rope` construct the two output dictionaries. Qwen3.5's linear-attention layers get `rope = None` because `Qwen3_5DecoderLayer` passes rotary embeddings only to its full-attention sublayer. A Gated DeltaNet layer tracks token order through its recurrence.
 
 ## Common mistakes
 
-- **Counting from 0** (`i % interval == 0`): attention at 0, 4, 8, ... instead of 3,
-  7, 11, .... Loud with real weights (the loader looks for `self_attn` tensors where
-  the file has `linear_attn` ones), silent in anything built from the config alone,
-  such as a cache or memory plan.
-- **Ignoring the explicit list**, or letting the pattern override it. Right on every
-  published file.
-- **Ignoring `index_topk_pattern`.** GLM-5.3 ships it as `null`, so the branch looks
-  dead until a checkpoint sets it.
-- **Dropping the clamp**, `(i - offset + 1) % freq`: layers before `offset - 1` are no
-  longer all full. **`i - offset`** instead of `i - offset + 1` shifts every later
-  full layer by one.
-- **Offset default 0.** The class's default is 2.
-- **Rotary factor default 1.0 for Qwen3.5.** The generic default is "rotate
-  everything"; this family's is a quarter.
-- **GLM's head width from `head_dim`.** The file's value is the width of the part
-  without positions.
-- **One `store` layer.** The layer right before the shared block stores, and the last
-  layer of the *other* type does too.
-- **`store` with nothing shared.** `kv_sharing_modes` returns all `None` when
-  `num_kv_shared_layers` is 0.
-- **One RoPE entry or one head width for every Gemma 4 layer**: the sliding layers'
-  parameters for full-attention layers, or `head_dim` where `global_head_dim` applies.
-- **`int(f * head_dim)` for the proportional type.** The library counts rotating
-  *pairs*, `int(f * head_dim // 2)`, so an odd product rounds down to an even number
-  of channels: 4 of 20 at $f = 0.25$, not 5.
-- **RoPE on Qwen3.5's linear-attention layers.**
-- **Importing the configuration classes.** That is the lookup this problem asks you to
-  be able to do without.
+- **Counting Qwen3.5 layers from 0 (`i % interval == 0`).** This puts full attention at layers 0, 4, 8, ... instead of 3, 7, 11, .... Loading real weights fails loudly because `self_attn` and `linear_attn` keys mismatch, but config-only tools such as memory planners fail silently.
+- **Ignoring the explicit per-layer list** or letting a pattern override it. This passes on every published file because the explicit lists and scalar rules agree there.
+- **Ignoring `index_topk_pattern`.** GLM-5.3 sets this field to `null`, so the branch appears unused until a config populates it.
+- **Dropping the clamp in GLM's indexer rule** (`(i - offset + 1) % freq`) or omitting the `+ 1` (`i - offset`). Dropping the clamp stops layers `0..offset - 1` from all being `"full"`. Omitting `+ 1` shifts every subsequent `"full"` layer by one.
+- **Using `0` as the default for `index_skip_topk_offset`.** The reference default is `2`.
+- **Using `1.0` as the default `partial_rotary_factor` for Qwen3.5.** While generic RoPE rotates all channels by default, Qwen3.5 defaults to `0.25`.
+- **Reading GLM's `head_dim` directly.** In GLM configs, `head_dim` is only the non-rotary width, not `qk_nope_head_dim + qk_rope_head_dim`.
+- **Marking only one `"store"` layer in Gemma 4.** Both the last unshared sliding-attention layer and the last unshared full-attention layer must be marked `"store"`.
+- **Marking `"store"` layers when `num_kv_shared_layers == 0`.** When nothing is shared, `kv_sharing_modes` returns `None` for every layer.
+- **Using one RoPE entry or one head width for all Gemma 4 layers.** Full-attention layers use `rope_parameters["full_attention"]` and `global_head_dim`, not the sliding-attention settings.
+- **Using `int(f * head_dim)` for Gemma 4's proportional RoPE.** The reference implementation counts rotated pairs with `int(f * head_dim // 2)` and multiplies by 2, rounding odd products down to an even channel count (for example, `4` of `20` at `f = 0.25`, not `5`).
+- **Attaching RoPE to Qwen3.5 linear-attention layers.** Those layers must have `rope = None`.
+- **Importing `transformers` config classes.** The goal is to implement the expansion logic directly.
 
 ## Complexity
 
-$O(L)$ time and memory; $O(L \cdot \text{types})$ for the scan that places `store`,
-with two types.
+Time and space complexity are $O(L)$. Scanning for `"store"` layers in Gemma 4 takes $O(L \cdot |\text{types}|)$, where there are at most two mixer types.
 
 ## In the wild
 
-The fixture of this problem was made by building `Qwen3_5TextConfig`,
-`GlmMoeDsaConfig`, and `Gemma4TextConfig` from each test configuration and reading the
-resolved lists, `kv_sharing_modes`, the per-layer head widths, and the frequency tables
-of the three rotary-embedding modules (Transformers 5.23.0). Two facts from that code
-that the plan does not carry: a Gemma 4 layer in `reuse` mode also gets an MLP twice
-as wide when `use_double_wide_mlp` is set, and GLM's shared layers receive the top-k
-indices of the nearest preceding full layer, passed up the stack by the model's
-forward loop. The cross-layer reuse of indices is described in "IndexCache:
-Accelerating Sparse Attention via Cross-Layer Index Reuse" (arXiv 2603.12201), of
-which only the abstract was read for this curriculum. The next two problems run the
-Qwen3.5 plan on real weights: `real-gdn-block` for one linear-attention layer and
-`real-hybrid-logits` for all 24.
+The test fixtures were generated by instantiating `Qwen3_5TextConfig`, `GlmMoeDsaConfig`, and `Gemma4TextConfig` in Transformers 5.23.0 and reading their resolved schedules, `kv_sharing_modes`, per-layer head widths, and rotary-embedding frequency tables.
+
+Two model behaviors are outside the scope of this plan. In Gemma 4, layers in `"reuse"` mode double their MLP width when `use_double_wide_mlp` is enabled. In GLM, the forward loop passes the top-$k$ indices from each `"full"` layer up the stack to subsequent `"shared"` layers, a cross-layer reuse technique described in "IndexCache: Accelerating Sparse Attention via Cross-Layer Index Reuse" (arXiv 2603.12201, abstract reviewed for this curriculum). The next two problems execute the Qwen3.5 plan on real weights. `real-gdn-block` runs one linear-attention layer, and `real-hybrid-logits` runs all 24 layers.

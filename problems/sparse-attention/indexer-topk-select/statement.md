@@ -1,7 +1,4 @@
-Implement the two halves of the indexer that decides which earlier tokens a sparse
-attention layer attends to: a score for every query and key, and the selection of the
-`k` best visible keys per query. The scores are never normalized, and the selection
-has to say what happens to equal scores and to entries a query may not see.
+Implement the two halves of a sparse-attention indexer. The first function scores every query-key pair without normalizing the scores. The second function selects up to `k` visible keys with the highest scores for each query, using deterministic tie-breaking.
 
 ![This problem is the indexer's scores and its top-k, which choose the tokens each query attends to.](assets/map.svg)
 
@@ -12,41 +9,25 @@ def index_scores(q_idx, k_idx, w): ...  # -> float32 (T, S)
 def topk_mask(scores, visible, k): ...  # -> bool (T, S)
 ```
 
-**`index_scores`.** The indexer has $H$ heads of width $D$. Query token $t$ has one
-indexer query per head, $q_{t,h} \in \mathbb{R}^D$, and one weight per head,
-$w_{t,h} \in \mathbb{R}$. Key token $s$ has a single indexer key $k_s \in \mathbb{R}^D$
-that all heads share. The score of key $s$ for query $t$ is
+**`index_scores`.** Suppose there are $T$ query tokens, $S$ key tokens, and $H$ indexer heads of width $D$. Query token $t$ has one query vector per head, $q_{t,h} \in \mathbb{R}^D$, and one scalar weight per head, $w_{t,h} \in \mathbb{R}$. Key token $s$ has a single key vector $k_s \in \mathbb{R}^D$ shared across all heads.
+
+Each head computes a scaled dot product between its query and the shared key, applies ReLU, and multiplies by $w_{t,h} / \sqrt{H}$. Summing over all heads gives the score $I_{t,s}$ of key $s$ for query $t$:
 
 $$
 I_{t,s} \;=\; \sum_{h=0}^{H-1} \frac{w_{t,h}}{\sqrt{H}}\;
 \operatorname{relu}\!\left(\frac{q_{t,h} \cdot k_s}{\sqrt{D}}\right).
 $$
 
-The ReLU acts on each head's dot product, before the sum. The weights are used as
-given: they may be negative, and a head with a negative weight lowers the score.
-`index_scores` returns $I$ for every pair; it applies no mask.
+The ReLU runs on each head's scaled dot product before the weighted sum. Head weights are used as given and may be negative, so a head with a negative weight lowers the score. `index_scores` returns $I$ for every query-key pair and applies no mask.
 
-**`topk_mask`.** Let $n_t$ be the number of True entries in row $t$ of `visible`. The
-result is True at the $\min(k, n_t)$ visible entries of row $t$ with the highest
-scores, and False everywhere else:
+**`topk_mask`.** Given a score matrix `scores`, a boolean mask `visible`, and a Python integer $k \ge 1$ (which may exceed $S$), `topk_mask` returns a boolean mask selecting the highest-scoring visible keys for each query. In a causal attention layer, `visible[t, s]` indicates that key `s` is not after query `t`, though `visible` may have any boolean pattern.
 
-- An invisible entry is never selected and never takes the place of a visible one,
-  whatever its score.
-- Among equal scores the lower index is selected first. `0.0` and `-0.0` are equal.
-  Scores that differ are not equal, however close they are, and equal scores are
-  equal at any magnitude.
-- A row with $n_t \le k$ selects exactly its visible entries; a row with $n_t = 0$
-  selects nothing.
+Let $n_t$ be the number of `True` entries in row $t$ of `visible`. Row $t$ of the output is `True` at the $\min(k, n_t)$ visible entries with the highest scores, and `False` everywhere else:
 
-Arguments:
-
-- `q_idx`: float32, shape `(T, H, D)`. `k_idx`: float32, shape `(S, D)`. `w`: float32,
-  shape `(T, H)`.
-- `scores`: float32, shape `(T, S)`, every entry finite (also the invisible ones).
-- `visible`: bool, shape `(T, S)`, any pattern. In a causal layer, `visible[t, s]` says
-  that key `s` is not after query `t`.
-- `k`: a Python int, $k \ge 1$. It may exceed $S$.
-- The tensors passed in are not modified.
+- An invisible entry is never selected and never takes a slot from a visible entry, regardless of its score.
+- Ties break toward the lower key index. `0.0` and `-0.0` are equal. Scores that differ are never treated as equal, no matter how close they are, and equal scores remain equal at any magnitude.
+- If $n_t \le k$, row $t$ selects every visible entry. If $n_t = 0$, row $t$ is all `False`.
+- Do not modify any input tensor in place.
 
 ## Shapes
 
@@ -60,7 +41,7 @@ Arguments:
 
 ## Example
 
-Two queries, three keys, $H = 2$ heads of width $D = 4$:
+Consider two queries, three keys, and $H = 2$ heads of width $D = 4$.
 
 ```python
 q_idx = [
@@ -79,37 +60,22 @@ topk_mask(scores, visible, 1)  # [[False, True, False], [True, False, False]]
 topk_mask(scores, visible, 3)  # [[True, True, False], [True, True, True]]
 ```
 
-Query 0: the dot products of head 0 are $(2, -2, 4)$, scaled by $1/\sqrt{4}$ to
-$(1, -1, 2)$, and the ReLU gives $(1, 0, 2)$; head 1 gives $(1, 3, 0)$. Both weights
-are $1/\sqrt{2}$, so the scores are $(2, 3, 2)/\sqrt{2}$. Without the ReLU, key 1 would
-score $2/\sqrt{2}$.
+For query 0, head 0 has raw dot products $(2, -2, 4)$, which scale by $1/\sqrt{4}$ to $(1, -1, 2)$ and become $(1, 0, 2)$ after ReLU. Head 1 produces $(1, 3, 0)$. Both head weights are $1/\sqrt{2}$, so the final scores are $(2, 3, 2)/\sqrt{2}$. Without the ReLU, key 1 would score $2/\sqrt{2}$.
 
-Query 1: head 0 gives $(2, 2, 2)$ with weight $2/\sqrt{2}$, and head 1 gives
-$(0, 0, 1)$ with weight $-1/\sqrt{2}$: the scores are $(4, 4, 3)/\sqrt{2}$. The negative
-weight costs key 2 its tie with the others.
+For query 1, head 0 produces $(2, 2, 2)$ with weight $2/\sqrt{2}$, and head 1 produces $(0, 0, 1)$ with weight $-1/\sqrt{2}$. Summing them gives $(4, 4, 3)/\sqrt{2}$, so the negative weight costs key 2 its tie with keys 0 and 1.
 
-With $k = 1$, query 0 selects key 1. Key 2 is invisible to it. Query 1 has two equal
-best scores and selects the lower index, key 0. With $k = 3$, query 0 has only two
-visible keys and selects both.
+With $k = 1$, query 0 selects key 1, its highest-scoring visible key. Query 1 has two tied best scores and picks the lower index, key 0. With $k = 3$, query 0 has only two visible keys (key 2 is invisible) and selects both.
 
 ## Constraints
 
-- $1 \le T, S \le 64$, $1 \le H \le 32$, $1 \le D \le 128$, $1 \le k \le 4096$.
-- Every input value is finite, with $|\texttt{scores}| \le 10^4$.
-- `index_scores` is compared with the reference, and for one input with the scores
-  computed by `GlmMoeDsaIndexer` of Hugging Face Transformers: relative tolerance
-  `1e-4`, absolute tolerance `1e-5`.
-- `topk_mask` is compared exactly. Its scores are an input, so its result does not
-  depend on rounding. It must return a boolean tensor.
-- With `k` at least the largest $n_t$, the result equals `visible`.
+- $1 \le T, S \le 64$, $1 \le H \le 32$, $1 \le D \le 128$, and $1 \le k \le 4096$.
+- Every input value is finite, including invisible entries in `scores`, with $|\texttt{scores}| \le 10^4$.
+- `index_scores` is checked against the reference implementation and, on one input, against `GlmMoeDsaIndexer` from Hugging Face Transformers (relative tolerance `1e-4`, absolute tolerance `1e-5`).
+- `topk_mask` is checked for exact equality and must return a boolean tensor. Because `scores` is passed directly as an input, the expected mask does not depend on floating-point rounding.
+- When `k` is at least the largest $n_t$, the result of `topk_mask` equals `visible`.
 
 ## Why this matters
 
-DeepSeek Sparse Attention (DeepSeek-V3.2, GLM-5.3) runs this indexer in front of every
-attention layer that has one: GLM-5.3 scores with 32 heads of width 128 and keeps 2048
-tokens per query, however long the context is. The layer then attends over the
-selected tokens only, so a selection that is wrong by one token changes the output
-with no error anywhere. A top-k taken before the future is masked, an indexer that
-normalizes or rectifies the wrong quantity, and a tie resolved differently in two
-engines all produce a model that runs and answers slightly differently from the one
-that was trained.
+DeepSeek Sparse Attention (used in DeepSeek-V3.2 and GLM-5.3) runs this indexer in front of every sparse attention layer. GLM-5.3 scores keys with 32 heads of width 128 and keeps 2048 tokens per query regardless of context length.
+
+Because the attention layer attends only to the selected tokens, a selection that is off by even one token silently changes the output without raising an error. Running top-k before masking future tokens, normalizing or applying ReLU to the wrong quantity, or breaking ties differently across inference engines all produce a model that runs cleanly while diverging from the trained weights.

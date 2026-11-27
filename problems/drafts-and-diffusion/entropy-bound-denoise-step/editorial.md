@@ -1,40 +1,15 @@
 ## The idea
 
-A text-diffusion model predicts every position of a canvas in one pass, but its
-prediction is a product of independent per-position distributions. Sampling all
-positions at once from that product ignores how they depend on each other: two
-positions that are each "either *New York* or *Los Angeles*" can come out as *New
-Angeles*. Sampling one position per pass is safe and no faster than an autoregressive
-model.
+A text-diffusion model predicts every position of a canvas in a single forward pass, but its output is a product of independent per-position distributions. Sampling every position at once from that product ignores dependencies between tokens. For example, two positions that are each "either *New York* or *Los Angeles*" can sample as *New Angeles*. Sampling only one position per pass avoids that error, but loses the speed advantage over autoregressive decoding.
 
-Entropy-bounded acceptance sits in between. A position with entropy near zero is
-already determined, so nothing is lost by fixing it together with others. The sampler
-takes positions in order of increasing entropy and stops when the entropies of the
-ones already taken add up to more than a budget. The sum that is compared with the
-bound for a position is the entropy of everything accepted **before** it, which has
-two consequences:
+Entropy-bounded acceptance sits between these two extremes. Positions with near-zero entropy are already determined, so sampling them together loses little joint accuracy. The sampler orders positions by increasing entropy and stops once the entropies of the already-accepted positions exceed a budget. Comparing each position against the sum of entropies accepted **before** it has two important effects:
 
-- the first position in rank is compared with 0 and is always accepted, so every step
-  makes progress, even when the most certain position is still quite uncertain;
-- the position that crosses the budget is itself accepted. In the library's words the
-  rule accepts the $k$ lowest-entropy tokens with
-  $\sum_{i \le k} H_i - \max_{i \le k} H_i \le \texttt{entropy\_bound}$: the sum
-  without the largest term, which in ascending order is the last one.
+- The first-ranked position is compared against 0 and is always accepted, guaranteeing that every step makes progress even when every position is still uncertain.
+- The position that crosses the budget is itself accepted. Equivalently, the rule accepts the $k$ lowest-entropy positions satisfying $\sum_{i \le k} H_i - \max_{i \le k} H_i \le \texttt{entropy\_bound}$, which is the cumulative sum minus its largest (last) term.
 
-What happens to the rest is what separates this sampler from masked diffusion. The
-canvas starts as uniformly random tokens, there is no mask token, and a rejected
-position is **renoised**: it gets a new uniformly random token, not its old one.
-Acceptance is recomputed from the new logits at every step. A position accepted at one
-step can be rejected and renoised at the next. The token ids of `current` reach the new
-canvas only through the logits the denoiser computed from them, which is why `current`
-is an argument that a correct solution never reads.
+How rejected positions are handled separates this sampler from masked diffusion. The canvas starts as uniformly random tokens with no mask token, and every rejected position is **renoised** with a fresh uniform random token rather than keeping its old token. Acceptance is recomputed from scratch on the new logits at every step, so a position accepted on one step can be rejected and renoised on the next. The tokens in `current` influence the new canvas only through the logits the denoiser produced from them, which is why a correct `denoise_step` never reads `current`.
 
-The temperature falls linearly from $t_\text{max}$ to almost $t_\text{min}$ as the
-steps run out. It is applied before both the sampling and the entropy, so a lower
-temperature also makes more positions pass the bound. `argmax_canvas` is the running
-draft: the library streams it, tests it for convergence, and appends it (not the
-sampled canvas) to the text when the canvas is finished. Dividing by a positive
-temperature does not change an argmax.
+The temperature anneals linearly from $t_\text{max}$ down toward $t_\text{min}$ as the remaining step count `n` decreases. Because temperature scaling happens before both sampling and entropy computation, lower temperatures also reduce entropies and allow more positions to pass the bound. Finally, `argmax_canvas` is the running greedy draft that the library streams, checks for convergence, and appends to the output when the canvas finishes. Dividing by a positive temperature does not change an argmax.
 
 ## Reference solution (PyTorch)
 
@@ -63,121 +38,53 @@ def denoise_step(current, logits, temperature, entropy_bound, u_sample, u_noise)
     return canvas, accepted, torch.argmax(logits, dim=-1)
 ```
 
-`argsort(order)` is the inverse permutation: `order[r]` is the position at rank `r`,
-and `argsort(order)[i]` is the rank of position `i`.
+`argsort(order)` computes the inverse permutation. Because `order[r]` is the position at rank `r`, `argsort(order)[i]` is the rank of position `i`.
 
 ## Numerics
 
-- **Zero probabilities.** At temperature 0.4, a logit gap of 42 is a gap of 105 after
-  the division, and `exp(-105)` is 0 in float32. `log_softmax` stays finite there, so
-  `p * log_p` is `0 * (-105) = 0`. Taking `log(p)` instead gives `0 * -inf = NaN`, the
-  NaN poisons the row's entropy, and the most settled positions of the canvas are the
-  ones that get rejected.
-- **The noise token.** $\lfloor u V \rfloor < V$ needs $uV < V$ after rounding. The
-  largest float32 below 1 is $1 - 2^{-24}$, and $V(1 - 2^{-24})$ rounds to a float32
-  below $V$ for every $V$ that was tried (all up to 70000, and $2^{18}$, $2^{24}$), so
-  no clamp is needed, and the tests check that end. For a vocabulary that is not a
-  power of two, the float32 product can round up to an integer that the exact product
-  is just below (3 of 2 million random uniforms at $V = 40$); the statement defines
-  the float32 product, and the tests stay away from those values so that a float64
-  product is accepted too.
-- **Exact comparisons.** Tokens and masks cannot be compared "within tolerance", so
-  the tests keep every decision away from rounding, as listed in the statement. One
-  thing is therefore not tested: whether a sum exactly equal to the bound is accepted
-  ($\le$, as specified and as in the library) or not.
+- **Zero probabilities.** At temperature 0.4, a logit gap of 42 becomes 105 after scaling, and `exp(-105)` underflows to 0 in float32. `log_softmax` remains finite at `-105`, so `p * log_p` evaluates cleanly to `0 * (-105) = 0`. Computing `torch.log(p)` instead yields `0 * -inf = NaN`, poisoning the row's entropy and rejecting the most settled positions on the canvas.
+- **Noise token range.** Ensuring $\lfloor u V \rfloor < V$ requires $u V < V$ after float32 rounding. For the largest float32 below 1 ($1 - 2^{-24}$), the product $V(1 - 2^{-24})$ rounds below $V$ for all tested vocabularies (every $V$ up to 70,000, plus $2^{18}$ and $2^{24}$), so no clamp is needed. When $V$ is not a power of two, a float32 product can occasionally round up to an integer that the exact product sits just below (3 out of 2 million random uniforms at $V = 40$). The specification defines the product in float32, and the tests stay away from those boundary values so float64 products also match.
+- **Exact comparisons.** Discrete tokens and boolean masks cannot be compared with a numeric tolerance, so the tests keep all decision thresholds away from rounding boundaries. One edge case is therefore untested: whether a prefix sum exactly equal to `entropy_bound` is accepted ($\le$, as specified and implemented in the library) or rejected.
 
 ## Common mistakes
 
-- **The position's own entropy in the sum** (`cumsum(ranked) <= bound`). The most
-  certain position is then rejected whenever its entropy alone exceeds the bound, and
-  a step can accept nothing.
-- **Each entropy against the bound,** with no running sum. That is a per-position
-  confidence threshold: with a thousand positions of entropy 0.09 it accepts all of
-  them at a bound of 0.1, where the rule accepts two.
-- **Descending order,** which accepts the least certain positions.
-- **Keeping the current token where a position is rejected.** That is how a masked
-  sampler behaves. Here the rejected positions are renoised.
-- **Entropy of the unscaled logits.** The entropy must be that of the distribution the
-  candidates were drawn from; and the reverse, sampling at temperature 1.
-- **The schedule reversed.** `n` counts steps remaining: hot first.
-- **An unstable sort.** `torch.sort` without `stable=True` is what the library calls,
-  and it returns equal keys in index order only for short inputs (with torch 2.15 on
-  this machine, 16 elements kept their order in 200 of 200 trials and 32 elements in
-  none). The case with 100
-  identical rows among 256 positions exists for this: with three bounds that admit 1,
-  37, and 99 of them, any order other than by index is caught.
-- **Ties to the higher index.**
-- **An index offset as the tie-break,** `entropy + index * eps`. It is wrong in two
-  different ways, depending on `eps`. Too large, and it reorders entropies that are
-  not equal: the tests have two entropies $2.4 \cdot 10^{-5}$ apart, 255 positions
-  apart, the smaller one last, so any `eps` above about $10^{-7}$ ranks them
-  the wrong way round. Too small, and it disappears: float32 values near 1 are
-  $1.2 \cdot 10^{-7}$ apart, so `eps = 3e-8` leaves neighboring equal entropies
-  equal, and the order is again whatever the sort does. A small offset *on top of a
-  stable sort* changes nothing on inputs that keep distinct entropies $10^{-5}$ apart,
-  as the statement promises, and is accepted; it is also unnecessary.
-- **Entropy in bits.** The bound is in nats.
-- **`round` for the noise token,** or reusing `u_sample` for it.
-- **`cdf < threshold`** in the count: with `u = 0` it returns token 0 even when its
-  probability is 0.
-- **The argmax canvas confused with the sampled canvas,** or updated only where a
-  position was accepted.
-- **Writing the result into `current`.**
-- **Calling `ops.eb_accept`** from the kit, which is this problem's steps 3 and 4.
+- **Including the position's own entropy in the sum** (`cumsum(ranked) <= bound`). Whenever the lowest entropy alone exceeds the bound, zero positions are accepted.
+- **Comparing each entropy individually against the bound** without a running sum. That implements a per-position threshold. At a bound of 0.1, it would accept a thousand positions of entropy 0.09, whereas the entropy-bounded rule accepts only two.
+- **Sorting in descending order**, which accepts the least certain positions first.
+- **Keeping `current` at rejected positions** instead of renoising them. That matches masked diffusion, not DiffusionGemma.
+- **Computing entropy on unscaled logits** (or sampling at temperature 1). Both sampling and entropy must use `logits / temperature`.
+- **Reversing the temperature schedule.** `n` counts remaining steps, so the schedule starts hot at `n = n_max` and cools down.
+- **Using an unstable sort.** `torch.sort` without `stable=True` (which the library uses) happens to preserve index order on short arrays but scrambles ties on longer ones (on torch 2.15 on this machine, 16 elements preserved order in 200 of 200 trials, while 32 elements did so in 0 of 200). A test with 100 identical rows among 256 positions and bounds admitting 1, 37, and 99 of them catches any unstable sort.
+- **Breaking ties toward the higher index.**
+- **Adding a small index offset as a tie-breaker** (`entropy + index * eps`). This fails for both large and small `eps`. If `eps` is too large (above roughly $10^{-7}$), it flips distinct entropies in the test where two entropies $2.4 \cdot 10^{-5}$ apart sit 255 positions apart with the smaller one last. If `eps` is too small (such as `3e-8`), float32 spacing near 1 is $1.2 \cdot 10^{-7}$, so adjacent equal entropies stay equal and fall back to the sort's tie behavior. Adding a tiny offset on top of an already stable sort is unnecessary.
+- **Using base-2 entropy (bits).** The bound is in natural log units (nats).
+- **Using `round` for the noise token** or reusing `u_sample` instead of `u_noise`.
+- **Using strict `<` in `(cdf < threshold).sum(dim=-1)`.** When `u_sample` is 0, that returns token 0 even if its probability is 0.
+- **Confusing `argmax_canvas` with `canvas`**, or updating `argmax_canvas` only at accepted positions.
+- **Writing results into `current` in place.**
+- **Calling `ops.eb_accept`** from `learnai.kit`, which implements steps 3 and 4 and is forbidden.
 
 ## Complexity
 
-$O(LV)$ for the softmax, the cumulative sums, and the entropies, and $O(L \log L)$ for
-the sort. The denoiser's forward pass dominates by far; what the step buys is fewer of
-those passes.
+Softmax, cumulative sums, and entropies take $O(LV)$ time, and sorting takes $O(L \log L)$ time. The denoiser's forward pass dominates runtime, and this step reduces the total number of forward passes needed.
 
 ## In the wild
 
-Checked on 2026-11-21 against
-`models/diffusion_gemma/generation_diffusion_gemma.py` of `transformers` 5.23.0, by
-reading it and by running it, and against the files of
-`google/diffusiongemma-26B-A4B-it` on the Hugging Face Hub.
+Checked on 2026-11-21 against `models/diffusion_gemma/generation_diffusion_gemma.py` in `transformers` 5.23.0 (both by reading the source and by running it) and against `google/diffusiongemma-26B-A4B-it` on the Hugging Face Hub.
 
-- **`LinearTemperatureScheduleLogitsProcessor`** returns
-  `scores / (t_min + (t_max - t_min) * (cur_step / max_denoising_steps))`, and
-  `generate` iterates `cur_step` over `reversed(range(1, max_denoising_steps + 1))`.
-- **`_denoising_step`** applies the processor, takes the softmax, samples one token per
-  position with `torch.multinomial`, takes the argmax of the processed logits, and
-  calls the sampler.
-- **`EntropyBoundSampler.accept_canvas`** computes
-  `Categorical(logits=logits).entropy()`, sorts ascending, and accepts where
-  `cumsum(sorted) - sorted <= entropy_bound`; **`renoise_canvas`** replaces every
-  position that was not accepted with `torch.randint(0, vocab_size)`.
-- **Values.** `generation_config.json`: `max_denoising_steps` 48, `t_min` 0.4, `t_max`
-  0.8, `entropy_bound` 0.1 (also the library's defaults). `config.json`:
-  `canvas_length` 256, vocabulary 262144.
+- **`LinearTemperatureScheduleLogitsProcessor`** computes `scores / (t_min + (t_max - t_min) * (cur_step / max_denoising_steps))`, with `generate` iterating `cur_step` over `reversed(range(1, max_denoising_steps + 1))`.
+- **`_denoising_step`** applies the logits processor, takes the softmax, samples one token per position via `torch.multinomial`, computes the argmax of the processed logits, and invokes the sampler.
+- **`EntropyBoundSampler.accept_canvas`** computes `Categorical(logits=logits).entropy()`, sorts ascending, and accepts positions where `cumsum(sorted) - sorted <= entropy_bound`. **`renoise_canvas`** replaces every rejected position with `torch.randint(0, vocab_size)`.
+- **Default hyperparameters.** In `generation_config.json`, `max_denoising_steps` is 48, `t_min` is 0.4, `t_max` is 0.8, and `entropy_bound` is 0.1. In `config.json`, `canvas_length` is 256 and `vocab_size` is 262144.
 
-The public tests compare with `_denoising_step` itself, called with fixed logits
-(`fixtures/make.py`). Two of its random draws are replaced there, because a library
-generator cannot be matched across frameworks: `torch.multinomial` by the inverse-CDF
-rule of step 2 applied to the probabilities the step passes it, and the sampler's
-`initialize_canvas` by $\lfloor u V \rfloor$. Everything else in the expected arrays is
-the library's arithmetic.
+Public tests compare directly against `_denoising_step` called on fixed logits (`fixtures/make.py`). Because random number generators differ across frameworks, two random draws are replaced in the fixture script: `torch.multinomial` is replaced by the inverse-CDF rule of step 2 on the same probabilities, and `initialize_canvas` is replaced by $\lfloor u V \rfloor$. All other expected values come directly from the library's arithmetic.
 
-Differences from the shipped code, all of them:
+Differences from the shipped code:
 
-- **Random draws** come from supplied uniforms, as just described. The distributions
-  are the same (categorical with the softmax probabilities; uniform over the
-  vocabulary).
-- **Ties.** `torch.sort` is called without `stable=True`, so the library does not
-  promise an order among equal entropies. "Lowest index first" is this problem's rule.
-  The MLX reference ranks by comparing every pair instead of sorting, so that it does
-  not rest on what `mx.argsort` does with equal keys.
-- **The temperature** is a Python float here; the library computes it in float32.
-- **One canvas.** The library works on a batch and keeps finished batch items
-  unchanged; the stopping rule and the self-conditioning logits it returns belong to
-  `block-diffusion-decode`.
-- **The entropy bound must be a positive float** in the library's configuration
-  class; this problem assumes it.
+- **Deterministic randomness.** Uniforms are passed as inputs rather than drawn from an RNG, preserving the same categorical and uniform distributions.
+- **Tie-breaking.** The library calls `torch.sort` without `stable=True`, so its tie order is unspecified. This problem specifies lowest index first. The MLX reference ranks positions via pairwise comparison so it does not rely on `mx.argsort` stability.
+- **Temperature dtype.** `step_temperature` returns a Python `float`, whereas the library computes it in float32.
+- **Single canvas.** The library operates on a batch and leaves finished sequences unchanged. The stopping rule and self-conditioning logits appear in `block-diffusion-decode`.
+- **Positive entropy bound.** The library's config requires a positive float, which this problem assumes.
 
-The sampler's docstring credits "Accelerated Sampling from Masked Diffusion Models via
-Entropy Bounded Unmasking" (arXiv 2505.24857). Only its abstract was read for this
-problem: it proposes the EB-Sampler for masked diffusion models, which unmasks several
-tokens per function evaluation under an error tolerance. Nothing else here is taken
-from the paper; the rule above is the library's, applied to uniform noise instead of
-masks.
+The sampler's docstring credits *Accelerated Sampling from Masked Diffusion Models via Entropy Bounded Unmasking* (arXiv 2505.24857). Only its abstract was consulted for this problem. That paper introduces the EB-Sampler for unmasking multiple tokens per step under an error tolerance, while the rule implemented here is the library's adaptation to uniform renoising instead of masks.

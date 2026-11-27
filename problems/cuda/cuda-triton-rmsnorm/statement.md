@@ -1,7 +1,14 @@
-Write RMSNorm as a GPU kernel in Triton, the language PyTorch's own compiler generates
-its CUDA kernels in. One program normalizes one row, reading it in fixed-size blocks.
-The formula is the one from `rmsnorm`; the work is in the last block of each row,
-which hangs over the end of the row and must neither read nor write what is there.
+Implement RMSNorm as a GPU kernel in Triton (`rmsnorm_kernel`) along with a PyTorch wrapper (`rms_norm`). Each Triton program normalizes one row of the input by stepping through its columns in fixed-size blocks and masking out-of-bounds positions in the final block.
+
+## Background
+
+A Triton kernel is a Python function compiled to run on a GPU. Launching `kernel[(n,)](args...)` starts `n` concurrent *programs* on a grid of size `n`. Every program runs the same code and queries its own index with `tl.program_id(0)`.
+
+- Tensor arguments arrive as pointers to their first element. The kernel does not know their shapes or strides, and `ptr + k` advances the pointer by `k` elements.
+- `tl.arange(0, BLOCK)` creates a 1D block of integers from `0` to `BLOCK - 1`. `BLOCK` must be a power of two passed by keyword as a compile-time constant (`tl.constexpr`). Arithmetic on blocks is elementwise.
+- `tl.load(ptr + offsets, mask=m, other=v)` reads a block of elements from memory. Where `m` is `False`, no memory is read and the lane takes the value `v` (omitting `other` leaves it undefined).
+- `tl.store(ptr + offsets, values, mask=m)` writes where `m` is `True` and converts `values` to the element type of `ptr`.
+- This kernel also uses `tl.zeros((BLOCK,), tl.float32)`, `block.to(tl.float32)`, `tl.sum(block, axis=0)`, `tl.sqrt(...)`, and `for start in range(0, n, BLOCK):`. Python `int` and `float` launch arguments arrive as `int32` and `float32` scalars.
 
 ## Specification
 
@@ -16,66 +23,45 @@ def rmsnorm_kernel(x_ptr, w_ptr, out_ptr, n_cols, eps, BLOCK: tl.constexpr): ...
 def rms_norm(x, weight, eps=1e-5, block=64): ...
 ```
 
-**The language.** A Triton kernel is a Python function that is compiled, not run. It
-is launched on a *grid*: `kernel[(n,)](args...)` starts `n` *programs*, all running
-the same code concurrently, each told which one it is by `tl.program_id(0)`.
+### `rmsnorm_kernel`
 
-- A tensor argument arrives as a **pointer** to its first element; the kernel knows
-  neither its shape nor its strides. `ptr + k` points `k` elements further.
-- `tl.arange(0, BLOCK)` is a block of the integers `0` to `BLOCK - 1`; `BLOCK` must
-  be a compile-time constant (a parameter annotated `tl.constexpr`, passed by
-  keyword) and a power of two. Arithmetic on blocks is elementwise.
-- `tl.load(ptr + offsets, mask=m, other=v)` reads a block of elements. Where `m` is
-  false nothing is read and the value is `v`; without `other` it is undefined.
-  `tl.store(ptr + offsets, values, mask=m)` writes where `m` is true and converts
-  `values` to the element type behind the pointer.
-- `tl.zeros((BLOCK,), tl.float32)`, `block.to(tl.float32)`, `tl.sum(block, axis=0)`,
-  `tl.sqrt(...)`, and `for start in range(0, n_cols, BLOCK):` are what else this
-  kernel needs. Python integers and floats passed at launch (`n_cols`, `eps`) arrive
-  as int32 and float32 scalars.
+Launch `rmsnorm_kernel` on a 1D grid of `(n_rows,)` programs, where `n_rows` is the number of rows and `n_cols` is the number of columns. `x_ptr` and `out_ptr` point to contiguous row-major buffers of `n_rows * n_cols` elements (element `[r, c]` is at offset `r * n_cols + c`), and `w_ptr` points to `n_cols` gain values.
 
-**`rmsnorm_kernel`** is launched on a grid of `(n_rows,)`. `x_ptr` and `out_ptr`
-point to `n_rows * n_cols` elements in row-major order (element `[r, c]` is at offset
-`r * n_cols + c`), and `w_ptr` to `n_cols` gains. Program `r` computes, for every
-column `c` of its row,
+Program `r = tl.program_id(0)` normalizes row `r`. For every column `c` from `0` to `n_cols - 1`, it computes:
 
 $$
-\text{out}_{r,c} = \frac{x_{r,c}}{\sqrt{\frac{1}{\text{n\_cols}} \sum_{j=0}^{\text{n\_cols}-1} x_{r,j}^2 + \varepsilon}} \; w_c .
+\text{out}_{r,c} = \frac{x_{r,c}}{\sqrt{\frac{1}{\text{n\_cols}} \sum_{j=0}^{\text{n\_cols}-1} x_{r,j}^2 + \varepsilon}} \; w_c
 $$
 
-- The three tensors have the same element type, **float32 or float16**. The squares,
-  their sum, the root, and the quotient are computed in **float32**, and the result
-  is converted once, by the store.
-- The row is processed in blocks of `BLOCK` columns. `n_cols` is any positive
-  integer: it need not be a multiple of `BLOCK`, and may be smaller.
-- The kernel reads `x` and the gains, and writes each of the `n_cols` elements of its
-  own output row exactly once. It touches no element outside the three tensors and
-  no element of another row's output.
+where $\varepsilon$ is `eps` and $w_c$ is the gain at `w_ptr + c`.
+
+- **Precision.** All three buffers share the same dtype (`float32` or `float16`). Compute the squares, their sum, the square root, and the division in `float32`, then let `tl.store` convert the final result back to the output dtype.
+- **Blocking and masking.** Process each row in blocks of `BLOCK` columns. `n_cols` can be any positive integer, so it does not have to be a multiple of `BLOCK` and may even be smaller than `BLOCK`.
+- **Memory safety.** Each program reads only from `x` and `w`, writes each of the `n_cols` elements of its own output row exactly once, and never reads or writes outside the three buffers or into another row's output.
 
 ![Two rows of five elements, read in blocks of four. The mask keeps each program's second block from touching the three elements past its row.](assets/tail-mask.svg)
 
-**`rms_norm(x, weight, eps, block)`** applies the kernel to a tensor.
+### `rms_norm`
 
-- `x`: float32 or float16, shape `(..., d)` with one to four dimensions; `weight`:
-  shape `(d,)`, the dtype of `x`. Either may be a strided view (every second column
-  of a larger tensor, a transposed batch).
-- It launches `rmsnorm_kernel` **once**, with one program per vector along the last
-  axis and `BLOCK=block`, and returns a new tensor with the shape, dtype, and device
-  of `x`. `x` is not modified.
+`rms_norm(x, weight, eps=1e-5, block=64)` applies `rmsnorm_kernel` along the last axis of `x`.
+
+- `x` has shape `(..., d)` with one to four dimensions, and `weight` has shape `(d,)` with the same dtype as `x`. Either tensor may be a non-contiguous strided view (such as a slice or transpose).
+- Launch `rmsnorm_kernel` **once**, with one program per row along the last axis and `BLOCK=block`.
+- Return a new tensor with the same shape, dtype, and device as `x`. Do not modify `x` in place.
 
 ## Shapes
 
 | name | shape | dtype |
 |---|---|---|
-| memory behind `x_ptr`, `out_ptr` | `n_rows * n_cols` elements, row-major | float32 or float16 |
-| memory behind `w_ptr` | `n_cols` elements | the same |
-| `x` | `(..., d)`, one to four dimensions | float32 or float16 |
-| `weight` | `(d,)` | the dtype of `x` |
-| result of `rms_norm` | the shape of `x` | the dtype of `x` |
+| memory behind `x_ptr`, `out_ptr` | `n_rows * n_cols` elements, row-major | `float32` or `float16` |
+| memory behind `w_ptr` | `n_cols` elements | same as `x_ptr` |
+| `x` | `(..., d)`, 1 to 4 dimensions | `float32` or `float16` |
+| `weight` | `(d,)` | same as `x` |
+| result of `rms_norm` | same as `x` | same as `x` |
 
 ## Example
 
-Two rows of five columns, launched with `BLOCK=4` and `eps = 1e-5`:
+Consider two rows of five columns launched with `BLOCK=4` and `eps=1e-5`:
 
 ```python
 x = [[3.0, 4.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0, 1.0]]
@@ -86,56 +72,21 @@ rmsnorm_kernel[(2,)](x, w, out, 5, 1e-5, BLOCK=4)
 #        [0.999995, 0.499998, 0.999995, 0.999995, 1.999990]]
 ```
 
-Program 0 reads its row in two blocks. The first covers columns 0 to 3. The second
-covers columns 4 to 7, of which only column 4 exists in the row: the mask is
-`[True, False, False, False]`, the three masked values count as 0, and the sum of
-squares is $9 + 16 = 25$. The mean is $25 / 5 = 5$ (five columns, not eight), the
-root of $5 + 10^{-5}$ is $2.236070$, and the row becomes
-$[3, 4, 0, 0, 0] / 2.236070 \cdot w$.
+Program 0 processes row 0 in two blocks. The first block covers columns 0 through 3. The second block covers columns 4 through 7, where only column 4 is valid. Its mask is `[True, False, False, False]`, so the three masked-off lanes take `0.0` and the sum of squares is $9 + 16 = 25$. Dividing by `n_cols = 5` (not 8) gives a mean of 5, and the square root of $5 + 10^{-5}$ is $2.236070$. Dividing row 0 by $2.236070$ and scaling by `w` yields $[3, 4, 0, 0, 0] / 2.236070 \cdot w$.
 
-Without the mask, program 0's second block would read `x[1, 0]`, `x[1, 1]`, and
-`x[1, 2]` into its sum, and program 1's second block would read three elements past
-the end of the tensor (Figure 1). Loading the masked elements as 1 instead of 0
-would make the sum $25 + 3$.
+Without the mask, program 0's second block would read `x[1, 0]`, `x[1, 1]`, and `x[1, 2]` into its sum, and program 1's second block would read three elements past the end of the tensor (Figure 1). Using `other=1.0` instead of `other=0.0` would add 3 to the sum of squares, producing $25 + 3 = 28$.
 
 ## Constraints
 
-- $1 \le \text{n\_rows} \le 64$, $1 \le \text{n\_cols} \le 256$; `BLOCK` is a power of
-  two from 1 to 128; $10^{-6} \le \varepsilon \le 10^{-2}$.
-- Entries of float32 inputs have magnitude at most $10^{4}$; float16 inputs at most
-  2000 (whose square, $4 \times 10^{6}$, is not representable in float16). Gains are
-  between 0.5 and 1.5.
-- The result is compared with the formula evaluated in float64 from the values the
-  kernel was given, to a relative tolerance of `1e-4` and an absolute tolerance of
-  `1e-6` for float32, and `2e-3` and `1e-3` for float16.
-- Limits per launch: exactly `n_rows` programs; exactly `n_rows * n_cols` elements
-  stored; at most `3 * n_rows * n_cols` elements loaded (`x` in each of two passes,
-  the gain once).
-- Stay inside the part of Triton shown above, plus `tl.where`, `tl.rsqrt`, `tl.full`,
-  comparisons, and arithmetic. No Python lists, NumPy, or torch inside the kernel.
-- **What runs where.** The cases without a hardware mark run on the CPU, where
-  `tl` is the kit's `tritonshim`: it executes the kernel's source in NumPy, one
-  program after another, and is strict where a GPU is silent. An unmasked access
-  outside a tensor raises `tl.OutOfBounds`, a masked-off value loaded without
-  `other=` is NaN, two programs storing to one element raise `tl.DataRace`, and a
-  non-contiguous tensor argument is refused. Two cases run only on a machine with an
-  NVIDIA GPU: there `rms_norm` receives CUDA tensors, and the launch hands the same
-  kernel source to the real Triton compiler. That path, and the shim's agreement
-  with Triton, could not be tested when the problem was authored; the kernel in the
-  reference solution follows the layer-norm tutorial of Triton's documentation
-  construct by construct.
+- $1 \le \text{n\_rows} \le 64$, $1 \le \text{n\_cols} \le 256$, and $10^{-6} \le \varepsilon \le 10^{-2}$. `BLOCK` is a power of two from 1 to 128.
+- Float32 input entries have magnitude at most $10^4$. Float16 input entries have magnitude at most 2000 (whose square, $4 \times 10^6$, overflows `float16`). Gains are between 0.5 and 1.5.
+- Outputs are compared against the formula evaluated in `float64` from the given input values. Tolerances are `rtol=1e-4`, `atol=1e-6` for `float32`, and `rtol=2e-3`, `atol=1e-3` for `float16`.
+- Resource limits per launch: exactly `n_rows` programs, exactly `n_rows * n_cols` elements stored, and at most `3 * n_rows * n_cols` elements loaded (`x` across two passes plus `w` once).
+- Use only the Triton primitives listed above, plus `tl.where`, `tl.rsqrt`, `tl.full`, comparisons, and arithmetic. Do not use Python lists, NumPy, or PyTorch inside the kernel.
+- **CPU and GPU execution.** Standard test cases run on the CPU using `tritonshim`, which interprets the kernel in NumPy one program at a time and enforces strict checks that a real GPU omits. Unmasked out-of-bounds accesses raise `tl.OutOfBounds`, masked loads without `other=` produce NaN, concurrent writes to the same element raise `tl.DataRace`, and non-contiguous tensor arguments are rejected. Two hardware-marked cases run only on machines with an NVIDIA GPU, passing CUDA tensors and compiling the same kernel source with the real Triton compiler. (That GPU path and the shim's exact parity with Triton could not be tested during authoring, so the reference kernel follows Triton's official layer-norm tutorial construct by construct.)
 
 ## Why this matters
 
-When a model needs an operation that no library kernel does well (a normalization
-fused with its neighbors, a quantized matmul, a sampler that never leaves the
-device), the options are a chain of PyTorch operations that each make a pass over
-memory, or one kernel. Triton is how that kernel gets written today: `torch.compile`
-emits it, and inference stacks ship hand-written Triton for exactly the layers this
-track covers. Almost every such kernel has the shape of this one (one program per
-row, a loop over blocks, a masked tail), and the tail is where they break. A missing
-mask does not crash on a GPU. It folds a few elements of the next row into this
-row's statistics, or reads whatever follows the tensor in the allocator's pool, and
-the output is wrong by an amount that depends on the batch. An accumulator left in
-float16 is the other classic: the squares overflow at 256, the norm becomes
-infinite, and the layer outputs zeros for exactly the activations that were large.
+When a model needs an operation that standard library kernels do not fuse well, such as a normalization fused with neighboring layers or a custom quantized matmul, chaining PyTorch ops forces multiple passes over GPU memory. Triton solves this by compiling a single fused kernel, which is why `torch.compile` emits Triton and modern inference engines ship hand-written Triton kernels for normalization layers.
+
+Most row-wise Triton kernels share this exact structure of one program per row, a loop over fixed-size blocks, and a masked tail. Both common bugs are silent on real GPUs. A missing mask does not crash. Instead, it folds elements from the next row into the current row's statistics or reads adjacent allocator memory, creating batch-dependent errors. Leaving the accumulator in `float16` overflows when squaring any value above 255, turning the norm infinite and zeroing out the largest activations.

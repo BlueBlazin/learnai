@@ -1,14 +1,8 @@
 ## The idea
 
-Standard attention caches a key and a value per head and token: $2 H d_h$ numbers.
-MLA makes both a linear function of one latent $c_t = W^{DKV} x_t$ of width $d_c$:
-$k^C_t = W^{UK} c_t$ and $v_t = W^{UV} c_t$. Caching $c_t$ is enough to recover
-them. But recovering them on every step means up-projecting all $S$ cached latents
-to width $H d_h$ again and again, which gives back in compute and transient memory
-what the cache saved. The better move uses the fact that everything in sight is
-linear.
+Standard multi-head attention caches one key and one value per head and token, totaling $2 H d_h$ numbers per token. MLA compresses both into linear functions of a single latent $c_t = W^{DKV} x_t$ of width $d_c$, with $k^C_t = W^{UK} c_t$ and $v_t = W^{UV} c_t$. Caching $c_t$ is enough to reconstruct both. However, up-projecting all $S$ cached latents back to width $H d_h$ on every decode step burns compute and temporary memory, undoing much of the win. Because every projection on the content path is linear, we can fold them into the query and output sides instead.
 
-**Keys into the query.** For head $h$,
+**Absorbing keys into the query.** For head $h$, the content attention score between query $t$ and key $j$ is:
 
 $$
 q^C_{t,h} \cdot k^C_{j,h}
@@ -16,37 +10,20 @@ q^C_{t,h} \cdot k^C_{j,h}
 = \big(\underbrace{(W^{UK}_h)^\top W^{UQ}_h}_{W^{QK}_h}\, c^Q_t\big) \cdot c_j .
 $$
 
-The matrix $W^{QK}_h$ is fixed, so the query can be mapped once into the latent
-space and scored directly against the cached latents.
+Because $W^{QK}_h$ is constant, we precompute it once when loading the model. At inference time, we map only the new query latent into the key-value latent space and take dot products directly against the cached latents.
 
-**Values into the output.** The softmax weights are scalars, so
+**Absorbing values into the output.** Because the attention probabilities $a_{t,h,j}$ are scalars, they commute with linear projections:
 
 $$
 W^O_h\, o_{t,h} = W^O_h \sum_j a_{t,h,j} W^{UV}_h c_j
 = \underbrace{W^O_h W^{UV}_h}_{W^{OV}_h} \sum_j a_{t,h,j}\, c_j .
 $$
 
-Each head mixes the *latents* and one fixed matrix per head maps the mix to the
-output. In this form MLA looks like multi-query attention with a single shared key
-and value of width $d_c$ and $H$ different queries, except that each head reads
-the shared vector through its own matrices, which is where the capacity of $H$
-full heads comes from.
+Each head computes a weighted sum of the cached *latents*, and one fixed matrix $W^{OV}_h$ per head projects that mix directly to the output space. In this absorbed form, MLA behaves like multi-query attention over a single shared vector of width $d_c$ with $H$ distinct queries, while each head's private $W^{QK}_h$ and $W^{OV}_h$ preserve the expressiveness of $H$ full heads.
 
-**Why RoPE is kept apart.** RoPE multiplies a key by a rotation $R_j$ that depends
-on its position. If it were applied to the up-projected key, the score would be
-$(W^{UQ}_h c^Q_t)^\top R_{j-t}\, W^{UK}_h c_j$: a position-dependent matrix sits
-between the two up-projections, the product $(W^{UK}_h)^\top R_{j-t} W^{UQ}_h$ is
-different for every pair of positions, and nothing can be precomputed. So MLA
-splits queries and keys into a content part, which is compressed and carries no
-position, and a small RoPE part of width $d_r$, which is rotated and is not
-compressed. The RoPE key is computed from $x_t$ directly and shared by all heads,
-so it costs $d_r$ numbers per token, and it is cached already rotated: the rotation
-of a key depends only on the key's own position.
+**Why RoPE is decoupled.** RoPE multiplies keys and queries by position-dependent rotation matrices. If RoPE were applied to the up-projected content key, the dot product would become $(W^{UQ}_h c^Q_t)^\top R_{j-t}\, W^{UK}_h c_j$. The relative rotation $R_{j-t}$ sits between $W^{UQ}_h$ and $W^{UK}_h$, so $(W^{UK}_h)^\top R_{j-t} W^{UQ}_h$ changes for every pair of positions and cannot be precomputed. MLA avoids this by splitting queries and keys into a compressed content part with no position encoding and a small uncompressed RoPE part of width $d_r$. The RoPE key is projected directly from $x_t$ and shared across all heads, adding only $d_r$ floats per token. Because a key's rotation depends only on its own position, we cache $k^R_j$ already rotated.
 
-**The scale.** The model's queries and keys are $d_h + d_r$ wide, and the scores
-are divided by $\sqrt{d_h + d_r}$. Absorption rearranges how the same score is
-computed; it does not change the score. After absorption $d_h$ appears in no
-tensor shape, which is why it is passed as a number.
+**Attention scaling.** In the explicit definition, each head's concatenated query and key have width $d_h + d_r$, so scores are divided by $\sqrt{d_h + d_r}$. Matrix absorption changes how the dot product is factored, not its value. Because $d_h$ no longer appears in any absorbed tensor shape, it must be passed explicitly in `weights`.
 
 ## Reference solution (PyTorch)
 
@@ -90,80 +67,27 @@ def mla_step(x_new, weights, cache):
     return out, (c, k_rope)
 ```
 
-`c.transpose(1, 2)[:, None]` is `(B, 1, d_c, S + T)`: the head axis of size one is
-what "shared by all heads" means in code. The JAX and MLX references are the same
-lines with `jnp` and `mx`.
+Adding the singleton axis in `c.transpose(1, 2)[:, None]` gives shape `(B, 1, d_c, S + T)`, which broadcasts the single cached latent across all $H$ heads. The JAX and MLX references use the exact same structure with `jnp` and `mx`.
 
 ## Common mistakes
 
-- **The product in the wrong order.** $(W^{UQ}_h)^\top W^{UK}_h$ is the transpose
-  of $W^{QK}_h$. It maps a key latent toward the query latent space, and applied to
-  $c^Q$ it is a shape error unless $d_c = d_q$, in which case it is a silent one.
-- **Absorbing across heads.** $(W^{UK})^\top W^{UQ}$ with the full matrices is the
-  sum over heads of the per-head products. It would be right if the softmax were
-  linear. Each head has its own softmax, so each needs its own matrix.
-- **Splitting $W^O$ on the wrong axis.** Heads are *columns* of the output
-  projection (it consumes the concatenated head outputs) and *rows* of the
-  up-projections (they produce them). Reshaping `w_o` as if heads were rows gives a
-  tensor of the right shape with scrambled entries.
-- **RoPE on the content part.** Rotating the absorbed query latent and the cached
-  latent "because queries and keys get RoPE" is the very coupling the design
-  removes: $W^{QK}_h$ was computed with no rotation between its factors.
-- **RoPE before the head split.** The RoPE query is $H$ vectors of width $d_r$.
-  Rotating it as one vector of width $H d_r$ uses frequencies
-  $10000^{-2i/(H d_r)}$, which do not match the shared key's.
-- **Positions that restart.** In a decode step the new token is at position $S$,
-  not 0. The prefill is right and generation is wrong.
-- **Caching the key before rotation.** The current call uses the rotated key and
-  looks right; every later call scores against cached keys without position.
-- **The wrong scale.** $\sqrt{d_h}$ forgets that the RoPE part widened queries and
-  keys. $\sqrt{d_c + d_r}$, the width of what is cached (and what a generic
-  attention kernel applied to the concatenation $[c; k^R]$ would divide by),
-  changes the temperature of every head.
-- **Caching more than the latent.** Caching the layer input and projecting it down
-  on each step, or storing the shared RoPE key once per head, gives correct
-  outputs and a cache of $d$ or $d_c + H d_r$ numbers per token.
-- **The mask.** As in `kv-cache-append`: with a cache the mask is not square, and a
-  chunk of several new tokens still needs it.
+- **Multiplying factors in the wrong order.** Computing $(W^{UQ}_h)^\top W^{UK}_h$ produces the transpose of $W^{QK}_h$. Applying it to $c^Q$ raises a shape error unless $d_c = d_q$, in which case it fails silently.
+- **Absorbing across heads.** Multiplying the full matrices $(W^{UK})^\top W^{UQ}$ sums the per-head products together. Because each head applies its own nonlinear softmax, each head must keep its own $W^{QK}_h$ and $W^{OV}_h$.
+- **Splitting $W^O$ on the wrong axis.** Up-projections produce concatenated head vectors, so heads partition their *rows*. The output projection $W^O$ consumes concatenated head vectors, so heads partition its *columns*. Reshaping `w_o` along rows yields the expected shape with scrambled weights.
+- **Applying RoPE to the content path.** Rotating the absorbed query latent and cached latent breaks the absorption identity because $W^{QK}_h$ was formed assuming no rotation sits between $W^{UK}_h$ and $W^{UQ}_h$.
+- **Applying RoPE before splitting heads.** The rotary query consists of $H$ vectors of width $d_r$. Rotating it as a single vector of width $H d_r$ uses frequencies $10000^{-2i/(H d_r)}$, which do not match the shared key's frequencies.
+- **Resetting positions to zero.** On a cached step, new tokens start at position $S$, not 0. Using `0..T-1` passes prefill tests but breaks incremental decoding.
+- **Caching unrotated RoPE keys.** If `k_rope` is cached before rotation, the current step looks correct when using the rotated local copy, while every later step attends to unrotated keys.
+- **Using the wrong scale factor.** Dividing by $\sqrt{d_h}$ ignores the RoPE dimensions. Dividing by $\sqrt{d_c + d_r}$—which happens if you feed `[c; k_rope]` into a generic attention kernel—distorts the softmax temperature of every head.
+- **Caching more than the latent.** Caching the raw input $x_t$ or replicating $k^R_t$ across all $H$ heads yields the right outputs while inflating the cache to $d$ or $d_c + H d_r$ floats per token.
+- **Using a square causal mask.** Just as in `kv-cache-append`, the attention score matrix has shape `(T, S + T)`, and multi-token chunks still need causal masking among the new tokens.
 
 ## Complexity
 
-Cache: $d_c + d_r$ numbers per token and layer, against $2 H d_h$. Per step and
-head, scoring a query against $S$ cached tokens costs $S (d_c + d_r)$
-multiply-adds and mixing costs $S\,d_c$. The explicit route costs
-$S (d_h + d_r)$ and $S\,d_h$ per head, after an up-projection of all cached
-latents that costs $2 S \cdot H d_h \cdot d_c$ on every step, or a cache as large as
-standard attention's if the up-projected tensors are kept. Absorption itself is
-done once per layer when the model is loaded.
+The cache holds $d_c + d_r$ floats per token and layer, compared to $2 H d_h$ for standard MHA. Per decode step and head, scoring against $S$ cached tokens takes $S (d_c + d_r)$ multiply-adds, and mixing latents takes $S\,d_c$. By contrast, the explicit path requires $S (d_h + d_r)$ and $S\,d_h$ per head *plus* up-projecting all cached latents on every step for $2 S \cdot H d_h \cdot d_c$ extra operations (or keeping the up-projected tensors in memory at full MHA cache size). Weight absorption itself runs once per layer at model load time.
 
 ## In the wild
 
-- **The source** is "DeepSeek-V2: A Strong, Economical, and Efficient
-  Mixture-of-Experts Language Model" (arXiv 2405.04434), section 2.1 and Appendix
-  C, "Full Formulas of MLA". Established there, and reproduced in this problem's
-  definition: the low-rank joint compression of keys and values; the query
-  compression; the decoupled RoPE with a shared key $k^R_t =
-  \operatorname{RoPE}(W^{KR} h_t)$; the scale $\sqrt{d_h + d_h^R}$; that only
-  $c^{KV}_t$ and $k^R_t$ need to be cached, $(d_c + d_h^R)\,l$ elements per token
-  for $l$ layers against $2 n_h d_h l$; and that $W^{UK}$ can be merged into the
-  query up-projection and $W^{UV}$ into $W^O$ so that keys and values need not be
-  computed. The paper gives the argument for decoupling used above: with RoPE on
-  the compressed keys, $W^{UK}$ could no longer be absorbed, because a rotation
-  tied to the current position would sit between the matrices and matrix
-  multiplication does not commute. Its sizes are $n_h = 128$, $d_h = 128$,
-  $d_c = 512$, $d_h^R = 64$, and a query latent of 1536.
-- **Notation.** The paper's $W^{DKV}, W^{UK}, W^{UV}, W^{DQ}, W^{UQ}, W^{QR},
-  W^{KR}, W^O$ are this problem's `w_dkv`, `w_uk`, `w_uv`, `w_dq`, `w_uq`, `w_qr`,
-  `w_kr`, `w_o`, with the same shapes; its $d_c'$ is `d_cq`.
-- **What this problem simplifies or adds.** The paper states that the absorption
-  is possible and does not write the absorbed matrices down; $W^{QK}_h$ and
-  $W^{OV}_h$, their per-head layout, and the einsum formulation are this problem's
-  way of making it concrete. The paper does not specify how RoPE treats the
-  $n_h d_h^R$ numbers of the query's RoPE part; this problem rotates each head's
-  $d_h^R$ numbers on its own, the reading under which each head's RoPE query
-  matches the shared key, and uses the interleaved pairing and base 10000 of the
-  `rope` problem. The weights here are small random matrices, there is one layer,
-  and normalization, the residual stream, and the MLP are left out. Whether a
-  production engine attends in absorbed form, or up-projects the cached latents and
-  reuses its standard attention kernel, is an implementation choice that this
-  problem does not describe; the cache layout is the same either way.
+- **DeepSeek-V2 paper.** MLA was introduced in "DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model" (arXiv 2405.04434), Section 2.1 and Appendix C ("Full Formulas of MLA"). That paper defines the low-rank joint KV compression, query compression, decoupled RoPE with a shared key $k^R_t = \operatorname{RoPE}(W^{KR} h_t)$, the $\sqrt{d_h + d_h^R}$ scaling factor, and the cache size of $(d_c + d_h^R)\,l$ elements per token across $l$ layers versus $2 n_h d_h l$. It also gives the non-commutativity argument for decoupling RoPE so that $W^{UK}$ can merge into the query projection and $W^{UV}$ into $W^O$. DeepSeek-V2 uses $n_h = 128$, $d_h = 128$, $d_c = 512$, $d_h^R = 64$, and a query latent width of 1536.
+- **Notation mapping.** The paper's matrices $W^{DKV}, W^{UK}, W^{UV}, W^{DQ}, W^{UQ}, W^{QR}, W^{KR}, W^O$ map directly to `w_dkv`, `w_uk`, `w_uv`, `w_dq`, `w_uq`, `w_qr`, `w_kr`, and `w_o` with identical shapes. The paper's $d_c'$ corresponds to `d_cq`.
+- **Simplifications in this problem.** The paper states that weight absorption is possible without writing out the explicit per-head matrices. Here `w_qk`, `w_ov`, and the einsum layout make that absorption concrete. The paper also leaves the per-head RoPE layout of the $n_h d_h^R$ query entries implicit. Here each head's $d_h^R$ slice is rotated independently to match the shared key, using the adjacent-pair layout and base 10000 from `rope`. This problem isolates a single layer with small random weights, omitting normalization, residual connections, and the MLP. Production serving engines may attend in absorbed form during decoding and up-project during long prefills, while keeping the exact same latent cache layout.

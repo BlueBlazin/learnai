@@ -1,39 +1,16 @@
 ## The idea
 
-`torch.OutOfMemoryError` is raised from deep inside the model, in the middle of a
-forward pass, with activations of the oversized batch alive in the frames of every
-layer that was running. Python keeps those frames after the error: an exception
-carries its traceback, and a traceback is a chain of references to the frames it
-passed through, local variables included. As long as the exception is being handled,
-that is, until the `except` block ends, all of that memory is still occupied by
-tensors. PyTorch's FAQ ("My out of memory exception handler can't allocate memory")
-describes exactly this and gives the fix used here: note the failure inside the
-handler, recover outside it.
+When `torch.OutOfMemoryError` is raised inside a forward pass, intermediate activations from the oversized batch are still alive in the stack frames of the active layers. Python preserves those frames after the exception is raised because an exception carries its traceback, and a traceback holds references to every frame it passed through along with their local variables. Until the `except` block exits, all of those tensors stay allocated. PyTorch's FAQ ("My out of memory exception handler can't allocate memory") explains this mechanism and gives the standard fix: record the failure inside the `except` block, then recover after the `except` block ends.
 
-`torch.cuda.empty_cache()` has a narrow meaning. It returns to the driver the blocks
-that the caching allocator holds and no tensor occupies; it cannot free a tensor.
-Called inside the handler, it finds the failed attempt's blocks occupied and returns
-nothing. Called after the handler, with no reference left, it returns the large
-blocks of the attempt, so that the smaller retry is not served from a pool
-fragmented by them. It is not a way to make more memory available to PyTorch in
-general (the documentation says so explicitly, and the allocator already flushes its
-cache and retries once before it raises), which is why calling it after every batch
-only costs time: the next batch has to obtain its blocks from the driver again.
+`torch.cuda.empty_cache()` only returns unused blocks held by PyTorch's caching allocator back to the CUDA driver. It cannot free live tensors. If you call it inside the `except` block, the failed attempt's blocks are still occupied and nothing is released. Calling it after the `except` block, once no references remain, releases those large blocks so the smaller retry does not run in a fragmented pool. Calling `empty_cache()` after every successful batch only hurts performance because PyTorch's allocator already flushes its cache and retries once before raising an OOM, so extra calls just force the next batch to request fresh memory from the driver.
 
-The rest is a retry policy with exact rules:
+The retry policy follows five rules:
 
-- **Halve what failed**, not the setting. A last slice of 3 items that fails at
-  `size = 8` should be retried with 1 item, not with 4 (which is the same 3).
-- **Retry in place.** `start` moves only on success, so no row is produced twice and
-  the outputs stay in order.
-- **One row is the floor.** If a single item does not fit, nothing this function can
-  do will help, and the caller must see the error.
-- **Remember.** Without `grow_after`, the reduced size is kept: the limit that was
-  just discovered is a property of the model and the device, and rediscovering it on
-  every slice costs a failed forward pass each time.
-- **Or probe.** With `grow_after`, the size doubles after a run of successes, and the
-  run restarts at every failure. That recovers from a transient failure in a
-  long-running server.
+- **Halve the batch that failed, not `size`.** If a final slice of 3 items fails when `size = 8`, the next attempt should use $\lfloor 3 / 2 \rfloor = 1$ item, not 4 (which would retry the exact same 3 items).
+- **Retry in place.** Advance `start` only after a batch succeeds so every row is computed once and outputs stay in order.
+- **Stop at one row.** If a single item does not fit, halving cannot help, so re-raise the error.
+- **Keep the reduced size when `grow_after` is `None`.** The limit discovered by halving reflects the model and device, so resetting to `batch_size` on every slice would waste a failed forward pass each time.
+- **Probe upward when `grow_after` is set.** Doubling `size` after a streak of successes, and resetting the streak on any OOM, lets a long-running server recover after a transient memory spike.
 
 ## Reference solution (PyTorch)
 
@@ -67,58 +44,28 @@ def run_batched(model, items, batch_size, empty_cache, grow_after=None):
     return torch.cat(outputs, dim=0)
 ```
 
-The slice `items[start:end]` is an argument expression, not a variable, so when the
-call raises, the function itself holds no reference to the batch. `except
-torch.OutOfMemoryError:` without `as exc` binds nothing; with `as exc`, Python
-deletes the name at the end of the block, which works as well. A bare `raise` inside
-the handler re-raises the same exception object with its original traceback.
+Passing `items[start:end]` directly as an argument avoids binding the slice to a local variable, so the function holds no reference to the failed batch once the call raises. Using `except torch.OutOfMemoryError:` without `as exc` binds no exception variable (Python also clears an `as exc` target when the block exits). A bare `raise` re-raises the original exception with its original traceback.
 
 ## Common mistakes
 
-- **Recovering inside the `except` block.** `empty_cache()` there releases nothing,
-  and a retry there runs with the failed attempt still in memory.
-- **A variable that names the batch** (`batch = items[start:end]` before the `try`)
-  and is still bound when `empty_cache()` runs. Use the expression directly, or
-  `del batch` first. In a real pipeline the batch is typically a fresh device tensor
-  (`batch.to(device)`), and it is exactly the memory that must go.
-- **No `empty_cache()` between the failure and the retry**, and the opposite,
-  **`empty_cache()` after every batch**.
-- **`except RuntimeError`.** `OutOfMemoryError` is a subclass of `RuntimeError`, and
-  so are shape mismatches, device mismatches, and CUDA device-side assertions. They
-  are bugs, they fail at every batch size, and the loop answers them by halving.
-- **Retrying at the same size.** Nothing changed, so nothing changes.
-- **Halving past one.** `1 // 2` is 0, the empty batch succeeds, and the position
-  never advances.
-- **Restarting at the first item** after a failure while keeping the outputs so far.
-- **Forgetting the reduced size**: resetting to `batch_size` for the next slice, so
-  that every slice fails first.
-- **Ignoring `grow_after`**, **growing past `batch_size`**, and **not resetting the
-  success count at a failure**.
-- **Halving the size setting** instead of the batch that failed.
-- **Putting the failed slice aside** and retrying it after the other items. Every
-  row is computed once, and the result is in the wrong order.
+- **Recovering inside the `except` block.** Calling `empty_cache()` there releases nothing, and retrying there runs while the failed attempt is still in memory.
+- **Binding the batch to a local variable.** Writing `batch = items[start:end]` before `try` keeps `batch` alive when `empty_cache()` runs unless you `del batch` first. In real pipelines the batch is often a fresh GPU copy (`batch.to(device)`), which must be freed before retrying.
+- **Calling `empty_cache()` at the wrong times.** Skipping `empty_cache()` before retrying leaves fragmented blocks, while calling it after every batch wastes time on driver allocations.
+- **Catching `RuntimeError`.** `OutOfMemoryError` inherits from `RuntimeError`, as do shape mismatches, device mismatches, and CUDA device-side assertions. Catching `RuntimeError` treats real bugs as OOMs and repeatedly halves the batch.
+- **Retrying at the same batch size.** Running the exact same slice again fails the same way.
+- **Halving past 1.** Computing `1 // 2` gives `0`, so an empty slice succeeds without advancing `start` and loops forever.
+- **Restarting at index 0 after a failure.** Keeping earlier outputs while resetting `start = 0` duplicates rows.
+- **Resetting `size` to `batch_size` on the next slice.** Every subsequent slice pays for a failed attempt before shrinking again.
+- **Broken `grow_after` tracking.** Ignoring `grow_after`, allowing `size` to exceed `batch_size`, or forgetting to reset the success count on an OOM all produce the wrong batch sequence.
+- **Halving `size` instead of the failed batch size.** On a short trailing slice, `size // 2` can still be larger than or equal to the slice that just failed.
+- **Deferring the failed slice to the end.** Processing later items first computes every row once, but returns rows in the wrong order.
 
 ## Complexity
 
-With a fixed limit of $m$ rows and no growth, there are at most
-$\lceil \log_2(\text{batch\_size} / m) \rceil$ failed calls, all on the first slice,
-and about $N / m'$ successful ones, where $m'$ is the size the halving arrives at
-(between $m / 2$ and $m$). With `grow_after = g` against a fixed limit, one in every
-$g + 1$ calls is a failed probe.
+Let $m$ be a fixed maximum number of rows that fit in memory, and let $m'$ be the batch size that halving settles on (between $m / 2$ and $m$). Without `grow_after`, there are at most $\lceil \log_2(\text{batch\_size} / m) \rceil$ failed calls, all on the first slice, and about $N / m'$ successful calls. With `grow_after = g` against a fixed limit, one in every $g + 1$ calls is a failed probe.
 
 ## In the wild
 
-Hugging Face Accelerate's `find_executable_batch_size` decorator reruns a function
-with a smaller batch size after an out-of-memory error, collecting garbage and
-emptying the cache between attempts, and never grows back. Serving engines mostly avoid the situation by reserving
-memory up front (a KV cache sized at startup, a cap on batched tokens), and keep a
-handler of this kind as the last line of defense. The CUDA notes also describe
-allocator options for the same purpose, such as a per-process memory fraction that
-turns "the device is full" into a catchable `OutOfMemoryError` earlier.
+Hugging Face Accelerate provides the `find_executable_batch_size` decorator, which catches out-of-memory errors, halves the batch size, runs garbage collection and `empty_cache()`, and retries without growing back. Production serving engines usually prevent OOMs up front by preallocating a fixed KV cache and capping batched tokens, while keeping an OOM backoff handler as a fallback. PyTorch's CUDA allocator also exposes a per-process memory fraction setting to trigger a catchable `OutOfMemoryError` before the device runs completely dry.
 
-What was verified where: `torch.OutOfMemoryError` exists in torch 2.15, is a
-subclass of `RuntimeError`, and is the same class as `torch.cuda.OutOfMemoryError`;
-the lifetime of a failed batch inside and outside the handler was observed on the
-CPU with weak references. That a real allocation failure raises this class and that
-`empty_cache()` then releases the attempt's blocks is taken from the documentation
-(the FAQ and the CUDA notes); the GPU case has not been run.
+Verification note: on PyTorch 2.15, `torch.OutOfMemoryError` is a subclass of `RuntimeError` and aliases `torch.cuda.OutOfMemoryError`. The failed batch lifetime inside and outside the `except` block was verified on CPU with weak references. Real CUDA allocation failures and `empty_cache()` block release follow the PyTorch FAQ and CUDA documentation. The GPU case has not been run on hardware.

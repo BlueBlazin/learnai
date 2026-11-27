@@ -1,21 +1,15 @@
-A replay runs no Python and takes no arguments. So how can it compute something
-different each time, and where does its result go? Think of the graph as a list of
-"run this kernel on address A, write to address B": what are the only two things you
-can do from outside to give it a new input and to keep an old output?
+A graph replay runs no Python and takes no arguments. Think of the recorded graph as a fixed sequence of commands that read from address A and write to address B. From outside the graph, what are the only two memory operations you can perform to supply a new input before replay and preserve an output after replay?
 
 ---
 
-In the constructor: `self.static_inputs = tuple(x.clone() for x in example_inputs)`
-(before the capture, never inside it), then `warmup` plain calls
-`step_fn(*self.static_inputs)` inside `with side_stream(device):`, then
+In the constructor, first allocate placeholders outside capture with `self.static_inputs = tuple(x.clone() for x in example_inputs)`. Next, run `step_fn(*self.static_inputs)` `warmup` times inside `with side_stream(device):`. Finally, capture once with nothing else in the block:
 
 ```python
 with torch.cuda.graph(graph):
     self.static_outputs = step_fn(*self.static_inputs)
 ```
 
-with nothing else in the block. Keep `graph`, the static inputs, and the static
-outputs on `self`; you do not need `step_fn` after the constructor.
+Store `graph`, `self.static_inputs`, and `self.static_outputs` on `self`. You do not need to keep `step_fn` after the constructor finishes.
 
 ---
 
@@ -30,5 +24,4 @@ def __call__(self, *inputs):
     return tuple(out.clone() for out in self.static_outputs)
 ```
 
-Compare shapes yourself: `copy_` broadcasts, so a `(1, n)` input would silently fill
-every row of an `(m, n)` placeholder.
+Check shapes yourself before copying. Otherwise, `copy_` silently broadcasts a `(1, n)` input across every row of an `(m, n)` placeholder.

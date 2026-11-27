@@ -1,30 +1,13 @@
 ## The idea
 
-`moe-sparse-dispatch` had one list of assignments, (token, expert, weight), and one
-question: which rows does each expert get? With experts on several devices every
-assignment has two more attributes, the device the token is on and the device the
-expert is on, and there are two groupings instead of one.
+In `moe-sparse-dispatch`, every routing assignment `(token, expert, weight)` only needed to be grouped by expert. When experts are sharded across devices, each assignment also has a source device (`home[t]`) and a destination device (`placement[e]`), creating two distinct groupings.
 
-- **Messages are grouped by device pair.** What crosses from $s$ to $d$ is the set
-  of *tokens* on $s$ with at least one expert on $d$. It is a set of tokens, not of
-  assignments: a row is the same bytes whichever of the experts on $d$ will read
-  it, so it crosses once.
-- **Expert calls are grouped by expert.** Once the rows are on $d$, where they came
-  from no longer matters. An expert runs once, on its local and received rows
-  together, which is the reason to pool tokens from many devices at all: bigger
-  batches per expert.
+- **Group messages by device pair.** The payload sent from device $s$ to device $d$ is the set of *tokens* on $s$ that need at least one expert on $d$. Deduplicating by token matters because a token's input row is identical regardless of how many experts on $d$ will read it, so it should cross the interconnect only once.
+- **Group expert calls by expert.** Once rows arrive on device $d$, their origin no longer matters. Each active expert runs once on all local and received rows routed to it, which gives each expert the largest possible batch size.
 
-The way back mirrors the way out. Device $d$ could return every expert output and
-let the home device weight and sum them, but the weights are known wherever the
-row is, so $d$ can do the weighting and the sum over its own experts and return one
-row per row it received: $p_{t,d} = \sum_{e \text{ on } d} w_{t,e} f_e(x_t)$. The
-home device only adds. The exchange is then symmetric: the same pairs, the same row
-counts, the same order in both directions, which is what lets a real system reuse
-the dispatch layout as a handle for the combine.
+The combine phase mirrors dispatch. Device $d$ could send back every raw expert output and let the home device weight and sum them, but device $d$ already knows the routing weights for every row it holds. Weighting and summing over its local experts yields one partial row $p_{t,d} = \sum_{e \text{ on } d} w_{t,e} f_e(x_t)$ per received row, leaving the home device with a simple addition. This keeps the exchange symmetric, with the same device pairs, row counts, and token order in both directions. That symmetry lets real libraries reuse the dispatch layout as a handle for combine.
 
-Correctness is linearity: $y_t = \sum_{e \in S_t} w_{t,e} f_e(x_t)$ is a sum over
-experts, and any partition of the experts (here: by device) gives partial sums
-that add up to it.
+Correctness follows from linearity. Because $y_t = \sum_{e \in S_t} w_{t,e} f_e(x_t)$ is a sum over selected experts, partitioning those experts by device produces partial sums that add up to the exact output.
 
 ## Reference solution (PyTorch)
 
@@ -71,79 +54,29 @@ def ep_forward(x, home, w_router, experts, placement, devs, k):
     return y
 ```
 
-`(target == dst).any(axis=1)` is the deduplication: a token is selected once
-however many of its `k` experts are on `dst`. `routes[tokens] == expert` is then
-evaluated on the rows that are on `dst`, so `at` indexes those rows directly. The
-JAX and MLX references are the same with `.at[...].add(...)`.
+The mask `(target == dst).any(axis=1)` deduplicates tokens so each token is selected once no matter how many of its $k$ experts live on `dst`. Evaluating `routes[tokens] == expert` against the rows already on `dst` makes `at` index directly into `rows`. The JAX and MLX solutions follow the same structure using `.at[...].add(...)`.
 
 ## Common mistakes
 
-- **One message per token.** The bytes are the same and the number of messages is
-  the number of rows. On a real interconnect every message has a fixed cost, and
-  the kernels exist to batch.
-- **Broadcasting.** Sending all tokens everywhere and letting each device pick is
-  the simplest thing that works. It moves `n_devices - 1` copies of every row.
-- **A row per (token, expert).** Flattening to assignments first, as in the sparse
-  dispatch, and grouping those by device sends a token twice when two of its
-  experts share a device, and returns two rows for it.
-- **Overwriting instead of accumulating.** `partial[at] = w * out` is right as long
-  as every row on a device is used by one expert there. A token with two experts
-  on the device keeps only the second contribution. The bug is invisible with
-  $k = 1$ or one expert per device.
-- **Weights applied at home.** Returning raw expert outputs works, costs more
-  bytes back than out, and leaves the combine with more bookkeeping than a sum.
-- **Results in the wrong order.** The results of a pair must line up with the rows
-  that were sent. Returning them in the order the experts produced them (grouped
-  by expert) scatters them onto the wrong tokens.
-- **No way back.** Adding the results into `y` on the expert's device forgets that
-  `y_t` is needed at home; in a simulation the numbers are right and half of the
-  communication is missing from the ledger.
-- **A call per sender.** Processing each incoming message on its own gives an
-  expert as many calls as it has senders, and smaller batches.
-- **Every local expert on the whole inbox.** Running all experts of a device on
-  all rows that arrived, with weight zero where a row was not routed, is the dense
-  evaluation again, per device.
-- **Empty messages.** A fixed all-to-all pattern sends zero-row messages between
-  pairs that share no token.
-- **Following only the first expert.** Sending a token to the device of its top
-  expert and evaluating its other experts there assumes weights that are not on
-  that device.
-- **Not distributing at all.** Evaluating the layer in one place gives the right
-  output and no messages. Padding the ledger with tensors of the right sizes does
-  not help: the tests look at what the messages carry.
+- **One message per token.** This transfers the same total bytes but increases the message count to the number of rows. Real interconnects pay a fixed latency per message, which is why transfers must be batched per device pair.
+- **Broadcasting.** Sending every token to every device is simple to write, but it moves `n_devices - 1` copies of every row needlessly.
+- **Sending a row per `(token, expert)`.** Flattening to assignments first and grouping by device sends a token twice whenever two of its experts live on the same device, and returns two rows for it.
+- **Overwriting instead of accumulating.** Writing `partial[at] = w * out` works only when each token uses at most one expert on a device. When two experts on the same device serve the same token, overwriting silently drops the first expert's contribution. This bug stays hidden when $k = 1$ or when there is one expert per device.
+- **Applying weights at home.** Returning unweighted expert outputs sends more rows back than went out and complicates the combine step.
+- **Returning results in the wrong order.** Combine payloads must align with the dispatched token order for each pair. Returning outputs grouped by expert scatters values onto the wrong tokens.
+- **Forgetting the combine transfer.** Accumulating results straight into `y` on the expert's device omits the return message. In simulation the numbers match, but half the communication is missing from the ledger.
+- **Calling an expert once per sender.** Processing each incoming batch independently calls each expert once per sender device, shrinking batch sizes.
+- **Running every local expert on the full inbox.** Evaluating all local experts on every arrived row and zeroing unrouted entries reverts to dense evaluation on each device.
+- **Sending empty messages.** Running a fixed all-to-all loop without skipping empty pairs sends zero-row messages between devices that share no tokens.
+- **Routing only to the top expert's device.** Sending a token to its top-1 expert's device and evaluating its other experts there assumes weights exist on a device that does not hold them.
+- **Not distributing at all.** Evaluating the layer in one place produces zero messages, and faking the ledger with dummy tensors fails because the tests verify every message payload.
 
 ## Complexity
 
-With $R = \sum_{s \ne d} |U_{s \to d}|$ routed row-crossings: $2M \le 2\,n(n-1)$
-messages and $8DR$ bytes, where $R \le N \cdot \min(k, n - 1)$. Expert work is that
-of the sparse dispatch, $k \cdot N$ rows in one call per active expert. Placement
-decides $R$: experts that are selected together are cheap to serve from one
-device, because their tokens cross once.
+Let $n$ be `devs.n_devices`, $M$ the number of active remote device pairs, and $R = \sum_{s \ne d} |U_{s \to d}|$ the total number of remote token crossings. Communication requires $2M \le 2n(n - 1)$ messages and $8DR$ bytes (4 bytes per float32 element, sent out and returned), where $R \le N \cdot \min(k, n - 1)$. Expert computation matches `moe-sparse-dispatch`, processing $k \cdot N$ rows in one call per active expert. Placement directly controls $R$. Co-locating experts that are frequently selected together reduces crossings because shared tokens travel only once.
 
 ## In the wild
 
-- **DeepEP** (the `deepseek-ai/DeepEP` repository) is a communication library for
-  exactly this exchange. Its README describes expert-parallel all-to-all GPU
-  kernels for MoE *dispatch* and *combine*: dispatch routes tokens to their experts
-  across all ranks, and combine reduces expert outputs back to their original
-  ranks. Its dispatch call takes the rows with their top-k indices and weights and
-  returns, on the receiving side, the rows together with the received indices and
-  weights and a handle that the combine call takes. That is why this problem lets
-  the routing bookkeeping travel with the rows, and applies the weights where the
-  experts are.
-- **Deployment at scale** is described in the "DeepSeek-V3 Technical Report"
-  (arXiv 2412.19437), section 3.4. For prefill, the MoE part runs with 32-way
-  expert parallelism on a unit of 4 nodes and 32 GPUs, chosen so that each expert
-  gets a large enough batch; each GPU hosts 8 experts plus a redundant copy of a
-  heavily loaded one, and placement is rebalanced from load statistics. For
-  decoding, 320-way expert parallelism puts one expert on each GPU and the
-  all-to-all transfers go point to point over InfiniBand. The same report trains
-  with 64-way expert parallelism.
-- **What this problem simplifies.** Everything happens in one process and the
-  devices are a ledger: nothing is concurrent, and a message costs its bytes and a
-  count. Real systems overlap the exchange with computation, quantize the rows in
-  transit, replicate hot experts, and send the indices and weights as metered
-  payload too. The rule "one row per token and destination device" and the exact
-  message layout checked here are this problem's protocol; they follow the shape of
-  dispatch and combine in the sources above without reproducing any library's wire
-  format.
+- **DeepEP.** The `deepseek-ai/DeepEP` library implements expert-parallel all-to-all GPU kernels for MoE *dispatch* and *combine*. Its dispatch kernel routes tokens along with their top-$k$ indices and weights across ranks, returning the received rows, routing metadata, and a layout handle that the combine kernel reuses to reduce expert outputs back to their home ranks. That design is why this problem treats routing bookkeeping as riding along with the rows and applies weights on the expert device.
+- **Deployment at scale.** Section 3.4 of the "DeepSeek-V3 Technical Report" (arXiv 2412.19437) describes expert parallelism in production. During prefill, the MoE layers use 32-way expert parallelism across 4 nodes (32 GPUs) to keep per-expert batches large, with each GPU holding 8 experts plus a redundant copy of a heavily loaded expert rebalanced from load statistics. During decoding, 320-way expert parallelism places one expert per GPU with point-to-point all-to-all transfers over InfiniBand. Training uses 64-way expert parallelism.
+- **Simplifications.** Everything here runs in a single process with `SimDevices` acting as a ledger rather than concurrent hardware. Production systems overlap communication with computation, quantize activations in transit, replicate hot experts, and count routing indices and weights in the wire payload. The exact message layout checked here captures the structure of dispatch and combine without replicating any specific library's wire format.

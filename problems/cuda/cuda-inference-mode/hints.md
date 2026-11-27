@@ -1,20 +1,10 @@
-`model.eval()` changes what dropout and batch normalization compute; it does not stop
-autograd from recording. `torch.inference_mode()` stops the recording; it does not
-change what any layer computes. Which of the two can you undo with a context manager,
-and which one do you have to undo yourself?
+`model.eval()` changes what dropout and batch normalization compute, but it does not stop autograd from recording. `torch.inference_mode()` stops autograd recording, but it does not change what any layer computes. Which of the two can you restore with a context manager, and which one must you restore yourself?
 
 ---
 
-For `predict`: before touching the model, save the `training` flag of every module in
-`model.modules()`, not only the root's, because `model.train(flag)` writes one value
-into all of them. Call `model.eval()`, run the forward pass inside
-`with torch.inference_mode():`, and put the flags back in a `finally` block so that
-they are restored when the model raises. Move `x` with `x.to(device)`.
+For `predict`, save the `training` flag of every module in `model.modules()` before modifying the model. Saving only the root flag fails because `model.train(flag)` overwrites every submodule with one value. Call `model.eval()`, move `x` with `x.to(device)`, run the forward pass inside `with torch.inference_mode():`, and restore the saved flags inside a `finally` block so they are restored even if `model` raises.
 
-For `as_inference`: calling a generator function runs none of its body, it only
-creates the generator. A wrapper of the form `with mode: return fn(...)` therefore
-leaves the mode before the first step runs, and `with mode: yield from fn(...)` keeps
-it on while the caller's code runs between steps.
+For `as_inference`, calling a generator function does not execute its body. It only creates the generator object. A wrapper like `with mode: return fn(...)` exits the mode before the first step runs, while `with mode: yield from fn(...)` keeps the mode active while the caller runs between steps.
 
 ---
 
@@ -29,6 +19,4 @@ finally:
         m.training = training
 ```
 
-`torch.inference_mode()` is also a decorator, and as a decorator it handles generator
-functions correctly: it enters the mode each time the generator resumes and leaves it
-at each `yield`. So `as_inference(fn)` can be `torch.inference_mode()(fn)`.
+`torch.inference_mode()` also works as a decorator and handles generator functions automatically. It enters inference mode each time the generator resumes and exits at each `yield`, so `as_inference(fn)` can simply return `torch.inference_mode()(fn)`.

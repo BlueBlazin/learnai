@@ -1,61 +1,18 @@
 ## The idea
 
-A runtime is a pipeline of representations, and each stage of this capstone is one
-change of representation: bytes on disk to tensors, text to ids, ids to logits,
-logits to a token, tokens to text. None of the five is hard. What makes the whole
-thing a capstone is that every stage is correct only *relative to a reference*:
-nothing crashes when it is wrong. So the method is the same at each step: fix the
-representation at the boundary, and compare it with something independent before
-building on it.
+An inference runtime is a chain of representation changes: disk bytes to tensors, text to token ids, ids to logits, logits to a sampled token, and tokens back to text. Because almost every bug in this pipeline fails silently rather than crashing, the right strategy is to verify each stage's boundary output against the spec before moving to the next.
 
 ![Three files go in and streamed text comes out. Each box is labeled with its stage.](assets/architecture.svg)
 
-**Stage 1** is `safetensors-parse` and `mmap-lazy-loader` in one function. Read 8
-bytes, read the header, and from then on touch only the byte ranges of the tensors
-that were asked for; `np.frombuffer` over a slice of the map is a view, so the only
-copy is the one that turns 16-bit patterns into float32. That conversion is exact:
-bfloat16 *is* the upper half of a float32, so shifting the pattern left by 16 bits
-gives the value, and nothing is rounded. The two classic errors are both silent.
-Offsets counted from byte 0 instead of from the end of the header return tensors of
-the right shape filled with JSON text and the tail of the previous tensor. And
-bfloat16 read as IEEE float16 returns plausible small numbers, because the two
-formats agree on the sign bit and differ in where the exponent ends.
+**Stage 1** combines `safetensors-parse` and `mmap-lazy-loader`. Read the 8-byte header length, parse the JSON header, validate every requested name, and then slice only the byte ranges of the requested tensors. Wrapping each slice with `np.frombuffer` avoids reading untouched pages, so the only copy is widening 16-bit floats to `float32`. Because `BF16` is the upper 16 bits of IEEE `float32`, shifting each `uint16` left by 16 bits and viewing as `float32` is exact. Both common loader bugs fail silently. Counting `data_offsets` from byte 0 reads header JSON into tensors, and interpreting `BF16` as `F16` produces plausible small numbers because both formats share the sign bit position.
 
-**Stage 2** is `tokenizer-json-load` plus the template of `real-model-chat-turn`.
-The order of operations in `encode` is the content: added tokens are cut out of the
-raw text first (which is why `<|start_of_role|>` written in a prompt is one id), the
-pre-tokenizer then decides where merges may not cross, and only then does BPE run,
-per word, by rank. The class keeps what stage 5 needs: a table from id to bytes and
-the set of special ids.
+**Stage 2** combines `tokenizer-json-load` with Granite's chat template from `real-model-chat-turn`. Operation order in `encode` is critical. First, split out added tokens from raw text so markers like `<|start_of_role|>` become single ids. Next, apply the pre-tokenizer regex so BPE merges never cross word boundaries. Finally, map UTF-8 bytes to characters and run rank-ordered BPE per word. Store both an id-to-bytes lookup table and the set of special token ids on the `Tokenizer` instance for stage 5.
 
-**Stage 3** is `real-model-logits` reading `config.json` itself. Everything unusual
-about Granite is a number in that file or a shape in the checkpoint: the embedding
-multiplier, the residual multiplier on *both* branches, the attention multiplier
-(`1 / head_dim` in the real model, not `1 / sqrt(head_dim)`), the logits divisor,
-the fused SwiGLU input matrix with the gate rows first, the tied head. The tiny
-model has other values in every field, so a constant copied from the real config
-fails there and a constant copied from the tiny one fails on the real model.
+**Stage 3** runs Granite's forward pass driven entirely by `config.json`. Granite differs from a textbook Llama block in several config-controlled ways: `embedding_multiplier`, `residual_multiplier` on both branches, `attention_multiplier` (`1 / head_dim` on the real model rather than `1 / sqrt(head_dim)`), `logits_scaling`, a fused SwiGLU input matrix with gate rows first, and tied embeddings. Because the tiny model changes every config value, hardcoding any constant fails on one of the two models.
 
-**Stage 4** gives the forward pass a memory. Write one function that runs "these
-tokens after this cache": positions continue at `cache["length"]`, each new key is
-rotated for its own position and stored rotated, keys and values are kept at the
-width of the key/value heads and expanded to the query heads only for the matrix
-product, and the mask lets position `p` see slots `0..p`. `forward` is that function
-with no cache and the head on every row; `prefill` and `decode_step` take the last
-row. Because `decode_step` receives one token and a cache, it cannot recompute
-anything: if the cache is wrong, the logits are wrong. The sampler is the chain of
-`sampler-chain`: penalties on raw logits, three truncation filters that each see
-what the previous one left, temperature last, one draw by inverse CDF with a
-supplied uniform number. With randomness as an input, sampled generation is as
-reproducible as greedy decoding.
+**Stage 4** adds a KV cache and deterministic sampling. Share one helper function that runs a sequence of tokens after an optional cache. Positions start at `cache["length"]`, new keys are rotated for their absolute positions and stored rotated at key/value-head width, and the causal mask lets position `p` attend to slots `0..p`. `forward` calls this helper with `cache=None` and projects all rows to logits, while `prefill` and `decode_step` project only the last row. `sample_token` applies penalties on raw logits, runs top-k, top-p, and min-p sequentially, scales by temperature last, and draws with an inverse CDF over the caller's uniform `u`.
 
-**Stage 5** is two small state machines in a row. The incremental UTF-8 decoder
-holds back the bytes of an unfinished character; the stop filter holds back the
-longest suffix of the text that could still grow into a stop string. Both exist for
-the same reason: what has been yielded cannot be taken back. Keeping the whole
-decoded text and an index `shown` makes the rules one function: where does the
-visible text end? At the start of the first match to complete, or at the end minus
-the held suffix, or, when the reply is over, at the very end.
+**Stage 5** chains two streaming state machines. Python's incremental UTF-8 decoder holds back trailing incomplete multi-byte characters, while the stop-string filter holds back the longest suffix that is a proper prefix of any stop string. Keeping the full decoded string `text` alongside an index `shown` reduces the visibility rule to one helper: cut at the first match to complete, or hold back the matching prefix suffix, or release everything when generation finishes.
 
 ## Reference solution (PyTorch)
 
@@ -161,65 +118,24 @@ def stream_chat(weights, config, tokenizer, messages, max_new_tokens, sampler, u
         yield text[shown:end]
 ```
 
-`_tokens` is the generator in the last hint; `_visible(text, stops, final)` returns
-the end of the visible text and whether a stop string completed. The tokenizer and
-the template are those of the two prerequisites. The JAX reference differs in one
-place: it pads prompts and caches to multiples of 32 slots and masks the unused
-ones, so that JAX compiles a handful of shapes instead of one per length.
+`_tokens` is the generator shown in the third hint, and `_visible(text, stops, final)` returns `(end, stopped)`. The tokenizer and chat template follow the two prerequisite problems. The JAX reference differs in one place: it pads prompts and caches to multiples of 32 slots and masks unused positions so JAX compiles only a few fixed shapes.
 
 ## Common mistakes
 
-- **Offsets from the start of the file** (`offsets_from_file_start`), **bfloat16
-  read as float16** (`bf16_as_float16`), **reading the whole file to return three
-  tensors** (`reads_whole_file`).
-- **Skipping the pre-tokenizer** (`ignores_pretokenizer`): merges then cross word
-  boundaries, and ids differ wherever two spaces or more than three digits meet.
-- **The wrong template**: ChatML (`chatml_template`), or no system turn when the
-  conversation has none (`default_system_missing`).
-- **Textbook constants instead of the config's**: `1 / sqrt(head_dim)`
-  (`attention_scale_sqrt`), interleaved RoPE pairs (`rope_interleaved`), the
-  residual multiplier on one branch only (`mlp_residual_unscaled`), the fused MLP
-  matrix split the wrong way round (`up_rows_first`).
-- **Positions that restart at zero in a decode step** (`new_token_position_zero`).
-  With a cache you built yourself this still produces text; with a cache built
-  elsewhere it is caught at the first step.
-- **A cache at query-head width** (`cache_at_query_width`): four times the memory in
-  the real model. **A cache that is a shared, mutable buffer**
-  (`cache_shared_buffer`): fast, and wrong the first time two continuations start
-  from one prefix.
-- **Temperature before the filters** (`temperature_first`), **penalties that count
-  the prompt** (`history_includes_prompt`), **returning the end-of-sequence token**
-  (`eos_returned`).
-- **Decoding tokens one at a time** (`decodes_tokens_alone`), **showing special
-  tokens** (`special_tokens_shown`), **looking for a stop string only inside the
-  newest token** (`stop_within_piece`), **showing text that may be the beginning of
-  a stop string** (`stop_prefix_shown`), **forgetting to release held text at the
-  end** (`held_text_dropped`).
-- **Borrowing the kit's tokenizer** (`uses_kit_tokenizer`): the point is that
-  nothing in the file is somebody else's.
+- **Safetensors loader bugs.** Counting offsets from byte 0 (`offsets_from_file_start`), reading `BF16` as IEEE `F16` (`bf16_as_float16`), or reading the whole file when only a few tensors are requested (`reads_whole_file`).
+- **Skipping pre-tokenization** (`ignores_pretokenizer`). Merges cross word boundaries, causing ids to diverge around repeated spaces or digit runs longer than three.
+- **Wrong chat template.** Using ChatML (`chatml_template`) or omitting the default system turn when the conversation has no system message (`default_system_missing`).
+- **Hardcoding textbook transformer math.** Using `1 / sqrt(head_dim)` (`attention_scale_sqrt`), pairing interleaved RoPE dimensions instead of half-split (`rope_interleaved`), skipping `residual_multiplier` on the MLP branch (`mlp_residual_unscaled`), or splitting the fused MLP matrix with `up` before `gate` (`up_rows_first`).
+- **Restarting decode positions at zero** (`new_token_position_zero`). This may still produce readable text with your own cache, but fails immediately against a test-provided cache.
+- **Wrong cache layout or aliasing.** Expanding cached keys and values to query-head width (`cache_at_query_width`, 4x memory on the real model), or mutating a shared buffer across calls (`cache_shared_buffer`), which corrupts branched continuations.
+- **Sampling and loop bugs.** Applying temperature before the filters (`temperature_first`), including `prompt_ids` in `history` (`history_includes_prompt`), or returning `eos_token_id` in the output list (`eos_returned`).
+- **Streaming bugs.** Decoding each token independently instead of incrementally (`decodes_tokens_alone`), emitting bytes for special tokens (`special_tokens_shown`), checking for stop strings only inside the newest piece (`stop_within_piece`), yielding text that could start a stop string (`stop_prefix_shown`), or dropping held-back text when generation finishes (`held_text_dropped`).
+- **Using the kit's tokenizer** (`uses_kit_tokenizer`). Every stage must be your own implementation.
 
 ## Complexity
 
-Loading reads each requested tensor's bytes once: 705 MB for the real model, and
-the float32 copy is twice that, 1.4 GB. A prefill of $P$ tokens costs $P$ tokens
-through the layers and $O(P^2)$ attention scores per head; a decode step costs one
-token through the layers and $O(n)$ scores, independent of how the prompt was read.
-The cache holds $2 \cdot L \cdot H_{kv} \cdot \texttt{head\_dim}$ floats per token:
-14,336 for the real model, 57 kB per token in float32. The sampler is a sort of the
-vocabulary per token unless top-k comes first. The stop filter, as written, rescans
-the text per token, which is quadratic in the reply; a production filter keeps only
-the last `max(len(stop)) - 1` characters.
+Loading reads each requested tensor's bytes once: 705 MB on disk for the real model, expanding to 1.4 GB in `float32`. Prefill over $P$ tokens runs $P$ tokens through all layers with $O(P^2)$ attention scores per head. Each decode step runs one token through all layers with $O(n)$ attention scores against a cache of length $n$. The cache stores $2 \cdot L \cdot H_{kv} \cdot \texttt{head\_dim}$ floats per token (14,336 floats, or 57 kB in `float32` on the real model). Sampling costs a sort over the vocabulary unless `top_k` prunes it first. Rescanning the full decoded text for stop strings is quadratic in reply length; a production runtime only scans the last `max(len(s) for s in stop) - 1` characters plus the newly decoded text.
 
 ## In the wild
 
-The file format is documented at https://huggingface.co/docs/safetensors (the
-layout that stage 1 reads). The tokenizer pipeline
-(added tokens, pre-tokenizer, byte-level BPE) is that of the `tokenizers` library,
-and the chat layout is the Jinja template shipped with
-https://huggingface.co/ibm-granite/granite-4.0-350m ; the fixtures of this problem
-were checked against both and against `transformers`' implementation of the model.
-`mlx-lm` structures generation the same way, as a prompt pass followed by
-single-token steps over a per-layer key/value cache
-(https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/generate.py), and the order
-of the sampler stages is the default chain of llama.cpp
-(https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md).
+The safetensors binary layout is documented at https://huggingface.co/docs/safetensors. The tokenizer pipeline (added tokens, pre-tokenizer, byte-level BPE) matches Hugging Face `tokenizers`, and Granite's chat format comes from the Jinja template in https://huggingface.co/ibm-granite/granite-4.0-350m. `mlx-lm` structures generation the same way, with a prompt prefill followed by single-token decode steps over a per-layer KV cache (https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/generate.py). The sampler stage order matches the default chain in `llama.cpp` (https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md).

@@ -1,8 +1,6 @@
-Sample tokens from a language model in a loop that stays on the GPU: the sampling, the
-token buffer, and the end-of-sequence test all live on the device, and the host looks
-at a value only once every `check_every` tokens and once at the end. The obvious loop,
-with `.item()` and `if token == eos_id`, is correct and makes the host wait for the
-device at every token.
+Implement a token-sampling decode loop that runs on the GPU without synchronizing with the host on every token. The sampling step, output buffer, and end-of-sequence tracking must all stay on `device`, so the host reads from the device only once every `check_every` tokens and once at the end.
+
+A naive loop that calls `.item()` and checks `if token == eos_id` produces the right tokens, but it forces the CPU to wait for the GPU after every single token.
 
 ## Specification
 
@@ -10,74 +8,42 @@ device at every token.
 def decode(model, prompt, n, uniforms, device, eos_id, check_every): ...
 ```
 
-`model` is a small causal transformer with a KV cache, written in torch and already
-on `device` (the class `StepLM` in this problem's `tests.py`). It is called in two
-ways:
+`model` is a small causal transformer with a KV cache, already placed on `device` (the `StepLM` class in `tests.py`). You can call it in two ways:
 
 ```python
-logits, cache = model(tokens)  # no cache: `tokens` is the whole sequence so far
-logits, cache = model(tokens, cache)  # with a cache: `tokens` continue the cached prefix
+logits, cache = model(tokens)          # no cache: `tokens` is the full sequence so far
+logits, cache = model(tokens, cache)   # with cache: `tokens` extends the cached prefix
 ```
 
-- `tokens` must be a 1-D int64 **tensor on `device`** with at least one token. A
-  Python list or a tensor on another device is refused.
-- `logits` is a float32 tensor of shape `(T, V)` on `device`, one row per token of
-  this call; `logits[-1]` scores the next token. `cache` is opaque; the model never
-  modifies one and returns a new one from every call.
-- `model.counters.forward_calls` counts the calls and
-  `model.counters.tokens_processed` the tokens passed in.
+- `tokens` must be a 1-D int64 tensor on `device` with length $T \ge 1$. Python lists and tensors on other devices are rejected.
+- `logits` has shape `(T, V)` on `device`, where $V$ is the vocabulary size. Row `logits[-1]` contains the unnormalized scores for the next token.
+- `cache` is opaque. Each call returns a new cache without modifying the previous one.
+- `model.counters.forward_calls` counts calls to `model`, and `model.counters.tokens_processed` counts the total number of tokens passed in.
 
-The other arguments:
+The remaining arguments are:
 
-- `prompt`: an int64 tensor of shape `(P,)`, $P \ge 1$, on the CPU.
-- `n`: the maximum number of tokens to generate, $n \ge 1$.
-- `uniforms`: a float32 tensor of shape `(n,)` on the CPU, each in $[0, 1)$.
-  Randomness is an input: generated token $i$ (counting from 0) is sampled with
-  `uniforms[i]`.
-- `device`: the `torch.device` of the model.
-- `eos_id`: the end-of-sequence token id.
-- `check_every`: an int $\ge 1$, how often the host may look at the device.
+- `prompt`: initial token IDs of length $P \ge 1$, provided on the CPU.
+- `n`: maximum number of tokens to generate ($n \ge 1$).
+- `uniforms`: random draws in $[0, 1)$, one per step, provided on the CPU. Generated token $i$ (0-indexed) uses `uniforms[i]`.
+- `device`: the `torch.device` where `model` lives.
+- `eos_id`: the end-of-sequence (EOS) token ID.
+- `check_every`: an integer $\ge 1$ setting how often the host may read from `device`.
 
-**Sampling.** With $\ell$ the next-token logits, $p = \operatorname{softmax}(\ell)$,
-$c_k = \sum_{j \le k} p_j$, and $u$ the uniform number of this step, the token is
+**Sampling.** Let $\ell \in \mathbb{R}^V$ be the next-token logits `logits[-1]`, let $p = \operatorname{softmax}(\ell)$ be the token probabilities, and let $c_k = \sum_{j=0}^{k} p_j$ be their cumulative sum. Given the step's uniform draw $u = \texttt{uniforms}[i]$, select the first token index whose cumulative probability exceeds $u$ times the total probability (inverse-CDF sampling, as in `categorical-sample`):
 
 $$
-\text{token} = \min \{\, k : c_k > u \cdot c_{V-1} \,\},
+\text{token} = \min \{\, k : c_k > u \cdot c_{V-1} \,\}.
 $$
 
-the first index whose cumulative probability exceeds $u$ times the total (inverse-CDF
-sampling, as in `categorical-sample`).
+**End of sequence.** Generation ends once `eos_id` is sampled, and that first `eos_id` is included in the output. However, the host may check whether EOS has occurred only after generated tokens `check_every`, `2 * check_every`, and so on (1-indexed). If an EOS was sampled by a checkpoint, the loop stops there. Between an EOS and the next checkpoint, the loop continues for up to `check_every - 1` extra steps, and any tokens sampled during those extra steps must not appear in the result.
 
-**End of sequence.** Generation ends with the first sampled `eos_id`, which is part
-of the result. But the host learns about it late: the loop may read from the device
-only after generated tokens number `check_every`, `2 * check_every`, ... (counting
-from 1). At such a point, if an EOS has been sampled, the loop stops. So after an
-EOS the loop runs on until the next check, at most `check_every - 1` more tokens,
-and whatever those steps sample must not appear in the result.
+**Result.** Return an int64 tensor of shape `(n,)` on the CPU. It contains the sampled tokens up to and including the first `eos_id`, followed by `eos_id` in every remaining position. If EOS is never sampled, it contains all `n` sampled tokens. The output shape is always `(n,)`, regardless of when EOS occurs. Transfer the final tensor to the host with `.cpu()`.
 
-**Result.** An int64 tensor of shape `(n,)` **on the CPU**: the sampled tokens up to
-and including the first `eos_id`, and `eos_id` in every position after it. Without
-an EOS it holds all `n` sampled tokens. The shape never depends on where the EOS
-fell. Bring the result to the host with `.cpu()`.
+**Limits.** The judge enforces three exact limits on your code:
 
-**Limits.** The judge counts what the code in your file does:
-
-1. **Host synchronizations: at most $\lceil n / \texttt{check\_every} \rceil + 1$.**
-   Counted are every read of a tensor's value (`.item()`, `.tolist()`, `int(x)`,
-   `float(x)`, `bool(x)` and so `if x:`, `while x:`, `x and y`, printing, an
-   f-string), every transfer to the host (`.cpu()`, `.numpy()`, `np.asarray(x)`), and
-   every operation whose result has a data-dependent size (`nonzero`, `x[mask]` with
-   a boolean mask, `torch.where(cond)` with one argument, `unique`,
-   `masked_select`). One read of the flag per check and one `.cpu()` at the end fit;
-   one read per token does not.
-2. **Tensors are created on the device.** A factory call (`torch.zeros`,
-   `torch.full`, `torch.tensor`, `torch.arange`, ...) without `device=` fails the
-   case.
-3. **Model work.** Let $s$ be the number of tokens after which the loop stops:
-   $s = n$ without an EOS, and otherwise the smallest multiple of `check_every` that
-   is at least the position of the EOS (counting from 1), capped at $n$. Then
-   `forward_calls` $\le s$ (the prompt in one call, then one call per generated token
-   except the last) and `tokens_processed` $\le P + s - 1$.
+1. **Host synchronizations:** at most $\lceil n / \texttt{check\_every} \rceil + 1$. Every operation that reads a tensor value onto the host is counted, including `.item()`, `.tolist()`, `int(x)`, `float(x)`, `bool(x)` (such as `if x:`, `while x:`, `x and y`), printing, and f-strings. Transfers to the host (`.cpu()`, `.numpy()`, `np.asarray(x)`) and operations with data-dependent output shapes (`nonzero`, boolean-mask indexing `x[mask]`, single-argument `torch.where(cond)`, `unique`, `masked_select`) also count. Reading a scalar flag once per checkpoint plus one `.cpu()` at the end fits the budget, while reading once per token does not.
+2. **Device allocation:** every tensor factory call (`torch.zeros`, `torch.full`, `torch.tensor`, `torch.arange`, and similar) must pass `device=`. Omitting `device=` fails the test.
+3. **Model work:** let $s$ be the stopping step. If EOS is never sampled, $s = n$. Otherwise, $s$ is the smallest multiple of `check_every` greater than or equal to the 1-based position of the first EOS, capped at $n$. Your code must satisfy `forward_calls` $\le s$ (one call for the prompt, then one call per generated token before stopping) and `tokens_processed` $\le P + s - 1$.
 
 ## Shapes
 
@@ -104,42 +70,22 @@ decode(model, prompt, 8, uniforms, torch.device("cpu"), eos_id=1, check_every=4)
 | 1 | `[0, 7, 19, 4]` | 9 | 9 | |
 | 2 | `[9]` | 27 | 27 | |
 | 3 | `[27]` | 1 (EOS) | 1 | |
-| 4 | `[1]` | some token | 1 | the flag: an EOS was sampled, stop |
+| 4 | `[1]` | some token | 1 | reads flag: EOS seen, stop |
 
-Token 3 is the EOS, but the first check is after token 4, so the model is called
-once more and step 4 samples a token that nobody wants; position 4 of the result is
-`eos_id` all the same, and so are positions 5 to 8, which were never computed. In
-total: 4 model calls, 7 tokens processed, and 2 host synchronizations (one read of
-the flag, one `.cpu()`), within the limit of $\lceil 8 / 4 \rceil + 1 = 3$.
+Token 3 is `eos_id`, but the first checkpoint is after token 4. The loop therefore runs one extra step and samples a fourth token, which is masked out so position 4 still receives `eos_id`. Positions 5 through 8 are never computed and remain `eos_id`.
+
+In total, the loop makes 4 model calls, processes 7 tokens, and performs 2 host synchronizations (one flag read and one `.cpu()`), which is within the limit of $\lceil 8 / 4 \rceil + 1 = 3$.
 
 ## Constraints
 
-- $1 \le P \le 8$, $1 \le n \le 64$, $1 \le \texttt{check\_every} \le 16$; the
-  vocabulary has 32 tokens.
-- The tokens are compared exactly. The tests choose every `uniforms[i]` in the middle
-  of its token's interval, at least `2e-4` away from every cumulative sum, so
-  float32 rounding in your softmax or cumulative sum cannot change a sample.
-- The limits are exact counts. A solution that exceeds one fails even when its
-  tokens are right.
-- Moving a tensor with `.to(device)` is not counted, and is how `prompt` and
-  `uniforms` reach the device (once, before the loop). Do not use `.to("cpu")` to
-  bring results back: use `.cpu()`, once.
-- **What runs where.** The cases without a hardware mark run on the CPU, where a
-  host read costs nothing and the judge counts them instead. Two cases run only on a
-  machine with an NVIDIA GPU, with the model on the CUDA device, and apply the same
-  checks there. The GPU cases were written from the PyTorch 2.15 documentation and
-  could not be run when the problem was authored.
+- $1 \le P \le 8$, $1 \le n \le 64$, and $1 \le \texttt{check\_every} \le 16$. The vocabulary has $V = 32$ tokens.
+- Output tokens are compared exactly. Every test chooses `uniforms[i]` near the middle of its target token's interval, at least `2e-4` away from every cumulative sum, so float32 rounding in softmax or `cumsum` cannot change the sampled token.
+- All three limits are exact counts. Exceeding any limit fails the test even if the output tokens match.
+- Moving inputs to the device with `.to(device)` is not counted, and you should move `prompt` and `uniforms` once before the loop. Do not use `.to("cpu")` to return the result; use `.cpu()` once at the end.
+- **What runs where.** Standard test cases run on the CPU, where host reads are cheap and the judge counts them directly. Two hardware-marked cases run only on an NVIDIA GPU with the model on CUDA and enforce the same checks. The GPU cases were written from the PyTorch 2.15 documentation and could not be run when the problem was authored.
 
 ## Why this matters
 
-A GPU runs ahead of Python: each operation is queued and the host continues. Reading
-one value back (`.item()`, a tensor in an `if`) forces the host to wait until
-everything queued has finished and then to copy the value across. In a decode loop
-that happens once per token, per sequence: the device idles while Python handles the
-token, Python idles while the device computes, and the launch-ahead that makes small
-models fast is gone. The fix has a cost, which this problem makes explicit: checking
-for the end of the sequence only every few tokens means computing up to
-`check_every - 1` tokens that are thrown away, and a result of fixed shape padded
-with EOS. Serving stacks choose that trade deliberately, for instance by testing
-their stopping criteria every few steps, and compiled or graph-captured decode steps
-(the next problems of this track) cannot contain a host read at all.
+A GPU executes asynchronously ahead of Python. Each PyTorch op queues a kernel and returns immediately so the CPU can keep queuing work. Reading a single scalar back to Python (via `.item()` or a tensor in an `if` condition) breaks that pipeline. The CPU stalls until every queued kernel finishes and the value is copied over.
+
+In a decode loop, doing this on every token forces the GPU to idle while Python processes the token and forces Python to idle while the GPU computes the next step. Checking for EOS only every `check_every` tokens trades up to `check_every - 1` wasted steps and a fixed-shape padded output for uninterrupted GPU execution. Production serving engines make this exact tradeoff, and compiled or CUDA-graph-captured decode steps (covered next in this track) cannot contain host reads at all.

@@ -1,8 +1,4 @@
-Reuse earlier work for a model whose memory of a prefix is a fixed-size recurrent
-state instead of a KV cache. A KV cache can be cut back to any shorter prefix; a
-state cannot give tokens back. The only prefixes you can return to are the ones whose
-state you saved, so prefix reuse becomes a question of where to take checkpoints,
-which one to resume from, and which to keep when the store is full.
+Implement prefix reuse for a model whose memory of past tokens is a fixed-size recurrent state rather than a KV cache. Because a recurrent state cannot be truncated to an earlier prefix, you must decide where to save checkpoints, which checkpoint to resume from, and which checkpoints to keep when the store is full.
 
 ## Specification
 
@@ -10,94 +6,66 @@ which one to resume from, and which to keep when the store is full.
 def generate_with_checkpoints(lm, store, prompt, max_new_tokens, interval, max_checkpoints): ...
 ```
 
-`lm` is a [`RecurrentLM`](../../../python/src/learnai/kit/recurrent.py). It is
-called like the `TinyLM` of `prefix-cache-reuse`:
+`lm` is a [`RecurrentLM`](../../../python/src/learnai/kit/recurrent.py) model. You call it the same way as `TinyLM` in `prefix-cache-reuse`:
 
 ```python
 logits, state = lm(tokens)  # tokens are the whole sequence so far
 logits, state = lm(tokens, state)  # tokens continue the sequence that `state` has read
 ```
 
-A call needs at least one token, `logits[-1]` scores the next token, and the state
-passed in is never modified. A `RecurrentState` has the same size after 4 tokens as
-after 400 (`state.length` is the number of tokens it has read). It has no working
-`truncate`: the tokens are folded into it. A call returns the state after its
-**last** token only, so the state at a position is available only if a call ends
-there. Continuing from a saved state gives exactly the same bits as reading the whole
-sequence in one call.
+Each call requires at least one token, `logits[-1]` scores the next token, and the input `state` is never modified. A `RecurrentState` has the same byte size after 4 tokens as after 400, and `state.length` records how many tokens it has read. Tokens are folded into the state with no way to truncate it back. A call only returns the state after its **last** token, so a state at a given position is available only if a call ends there. Resuming from a saved state produces the exact same output as reading the full sequence in a single call.
 
-- `store`: a dict that maps a tuple of token ids to the state after exactly those
-  tokens (`store[key].length == len(key)`). Its **order is its recency**: Python
-  dicts keep insertion order, the first key is the least recently used checkpoint and
-  the last key the most recently used. It may be empty.
-- `prompt`: a list of $P \ge 1$ token ids.
-- `max_new_tokens`: an int $g \ge 1$; exactly $g$ tokens are generated (no stop
-  token).
-- `interval`: an int $n \ge 1$, the spacing of checkpoints.
-- `max_checkpoints`: an int $\ge 1$, the most entries the returned store may hold.
+Inputs:
 
-**The checkpoint to resume from.** A stored key is *usable* when it is a proper
-prefix of the prompt: `len(key) < P` and `key == tuple(prompt[:len(key)])`. Resume
-from the longest usable key; let $r$ be its length, or $r = 0$ when no key is usable
-(start from nothing). A key that shares its first tokens with the prompt and then
-continues differently is not usable, however many tokens it shares, and neither is
-the key of the whole prompt: one prompt token must be left to feed, because logits
-come only out of a model call.
+- `store`: a dict mapping a tuple of token IDs to the `RecurrentState` after reading those exact tokens (`store[key].length == len(key)`). Python dicts preserve insertion order, which tracks recency here. The first key is the least recently used checkpoint, and the last key is the most recently used. `store` may be empty.
+- `prompt`: a list of $P \ge 1$ token IDs.
+- `max_new_tokens`: an integer $g \ge 1$. Generate exactly $g$ tokens, with no stop token.
+- `interval`: an integer $n \ge 1$ giving the token spacing between checkpoints.
+- `max_checkpoints`: an integer $\ge 1$ giving the maximum number of entries allowed in the returned store.
 
-**Checkpoints to save.** Let the *sequence* be the prompt followed by the generated
-tokens. Save the state at every sequence length $c$ that the model passes through
-after resuming and that is a multiple of `interval`, and at the end of the prompt:
+**Choosing a checkpoint to resume from.** A stored key is *usable* if it is a proper prefix of `prompt`, meaning `len(key) < P` and `key == tuple(prompt[:len(key)])`. Resume from the longest usable key, and let $r$ be its length. If no key is usable, start from `None` with $r = 0$. A key that shares its opening tokens with `prompt` and then diverges is not usable, regardless of how many tokens it shares. The key equal to the entire `prompt` is also not usable because at least one prompt token must remain to feed into `lm` to obtain next-token logits.
+
+**Choosing checkpoints to save.** Let the *sequence* be `prompt` followed by the generated tokens. Save the state at every sequence length $c$ that the model reaches after resuming that is either a multiple of `interval` or the end of the prompt:
 
 $$
-c \in \{\, c : r < c \le P + g - 1,\ c \bmod n = 0 \,\} \;\cup\; \{P\},
+c \in \{\, c : r < c \le P + g - 1,\ c \bmod n = 0 \,\} \;\cup\; \{P\}.
 $$
 
-each under the key `tuple(sequence[:c])`. (The last generated token is never fed, so
-the model reaches length $P + g - 1$ at most.) Multiples of `interval` are counted
-from the start of the sequence, not from $r$.
+Store each checkpoint under the key `tuple(sequence[:c])`. Because the final generated token is never fed back into the model, the model reaches at most length $P + g - 1$. Multiples of `interval` are counted from the start of the sequence, not from $r$.
 
-**Calls.** The prompt tokens after the resumed checkpoint are fed in segments that
-end at exactly those lengths $c \le P$, one call per segment, in order. Generation is
-greedy, as in `prefix-cache-reuse`: each new token is the argmax of the next-token
-logits (the lower id on a tie), and each generated token except the last is fed in a
-call of its own.
+**Model calls.** Feed the remaining prompt tokens after the resumed checkpoint in segments ending at each target length $c \le P$, using one call per segment in order. Generation is greedy, matching `prefix-cache-reuse`. Each new token is the argmax of the next-token logits (choosing the lower ID on a tie), and each generated token except the last is fed in its own single-token call.
 
-**The returned store** is a new dict (do not modify `store`), built by these rules:
+**Building the returned store.** Return a new dict without modifying `store`, constructed in four steps:
 
-1. It starts as `store`, in the same order.
-2. The checkpoint that is resumed from becomes the most recent entry (it moves to
-   the end).
-3. Each checkpoint is saved in the order the model reaches it. Saving puts the key at
-   the end; a key that is already present is replaced and moved to the end.
-4. Finally, while the store holds more than `max_checkpoints` entries, the first
-   (least recently used) entry is removed.
+1. Copy `store` in its existing order.
+2. If you resumed from a checkpoint, move its key to the end so it becomes the most recently used entry.
+3. Save each new checkpoint in the order the model reaches it. Saving places the key at the end. If the key is already present, replace its value and move it to the end.
+4. While the store has more than `max_checkpoints` entries, remove the first (least recently used) entry.
 
-Entries of `store` that are neither resumed from, saved again, nor evicted keep
-their place and their state object.
+Entries in `store` that are not resumed, re-saved, or evicted keep their relative order and original state objects.
 
-Returns the tuple `(tokens, new_store)`; `tokens` is the list of the $g$ generated
-tokens as Python ints.
+Return the tuple `(tokens, new_store)`, where `tokens` is the list of $g$ generated tokens as Python `int` values.
 
-**Cost limits** for one call of `generate_with_checkpoints`:
+**Cost limits** per call to `generate_with_checkpoints`:
 
 | counter | limit | why |
 |---|---|---|
-| `lm.counters.tokens_processed` | $P - r + g - 1$ | the prompt tokens after the resumed checkpoint, and each generated token except the last |
-| `lm.counters.forward_calls` | $s + g - 1$ | $s$ is the number of prompt segments: the multiples of `interval` in $(r, P)$, plus one for the segment that ends at $P$ |
-| entries of `new_store` | `max_checkpoints` | the budget |
+| `lm.counters.tokens_processed` | $P - r + g - 1$ | prompt tokens after the resumed checkpoint, plus every generated token except the last |
+| `lm.counters.forward_calls` | $s + g - 1$ | $s$ is the number of prompt segments (multiples of `interval` in $(r, P)$, plus one for the segment ending at $P$) |
+| entries in `new_store` | `max_checkpoints` | store capacity |
 
 ## Shapes
 
 | name | shape | dtype |
 |---|---|---|
-| `store`, `new_store` | dict: tuple of ints to `RecurrentState` | |
+| `store`, `new_store` | dict mapping tuple of ints to `RecurrentState` | |
 | `prompt` | list of $P$ ints | Python `int` |
 | `logits` (from `lm`) | `(T, vocab_size)` for a call with `T` tokens | float32 |
 | `tokens` | list of $g$ ints | Python `int` |
 
 ## Example
 
-`interval = 4`, `max_checkpoints = 4`, on `RecurrentLM(seed=3)`:
+Using `interval = 4`, `max_checkpoints = 4`, and `RecurrentLM(seed=3)`:
 
 ```python
 a = [0, 17, 42, 5, 9, 33, 12, 60, 21, 7]  # P = 10
@@ -112,51 +80,27 @@ tokens, store = generate_with_checkpoints(lm, store, b, 3, 4, 4)
 # key lengths in store: [12, 4, 8, 9]
 ```
 
-**First request.** Nothing is stored, $r = 0$. The prompt is fed as `a[0:4]`,
-`a[4:8]`, `a[8:10]`, and the states after 4, 8, and 10 tokens are saved. Three of
-the four generated tokens are fed, which takes the sequence to lengths 11, 12, 13;
-length 12 is a multiple of 4, so the state after `a + [26, 6]` is saved too. That is
-$3 + 3 = 6$ calls and $10 + 3 = 13$ tokens.
+**First request.** The store is empty, so $r = 0$. The prompt is fed in three segments: `a[0:4]`, `a[4:8]`, and `a[8:10]`. States are saved at lengths 4, 8, and 10. Three of the four generated tokens are fed back in single-token calls, advancing the sequence to lengths 11, 12, and 13. Because 12 is a multiple of 4, the state for `a + [26, 6]` is also saved. In total, this takes $3 + 3 = 6$ calls and $10 + 3 = 13$ tokens.
 
-**Second request.** `b` agrees with `a` on six tokens. The stored keys of 8, 10, and
-12 tokens all contain `a[6]`, which `b` does not, so none is a prefix of `b`; the
-key of 4 tokens is. $r = 4$, and that entry moves to the end. The prompt is fed as
-`b[4:8]` and `b[8:9]`, saving states under `b[:8]` and `b`. Two generated tokens
-are fed (lengths 10 and 11, no multiple of 4). That is $2 + 2 = 4$ calls and
-$5 + 2 = 7$ tokens instead of $9 + 2 = 11$.
+**Second request.** Prompt `b` matches `a` for 6 tokens. The stored keys of lengths 8, 10, and 12 all include `a[6]`, which differs from `b[6]`, so none of them is a prefix of `b`. Only the 4-token key `a[:4]` is usable. Resuming from it gives $r = 4$ and moves `a[:4]` to the end of the store. The remaining prompt is fed as `b[4:8]` and `b[8:9]`, saving states under `b[:8]` and `b`. Two generated tokens are fed at lengths 10 and 11, neither of which is a multiple of 4. This takes $2 + 2 = 4$ calls and $5 + 2 = 7$ tokens instead of $9 + 2 = 11$.
 
 ![The prompt shares six tokens with the stored sequence. Only the state after 4 tokens is a prefix of it, so that one is resumed.](assets/checkpoint-resume.svg)
 
-The store now has six entries, in order: `a[:8]`, `a`, `a + [26, 6]`, `a[:4]`,
-`b[:8]`, `b`. The budget is 4, so the first two are removed.
+Before eviction, the store holds six entries in order: `a[:8]`, `a`, `a + [26, 6]`, `a[:4]`, `b[:8]`, and `b`. Because `max_checkpoints = 4`, the first two entries are removed.
 
-Note what a KV cache would have done: reuse 6 tokens by truncating. Here the two
-shared tokens after the checkpoint are computed again, and that is the price of the
-interval.
+A KV cache would have reused all 6 shared tokens by truncating. With checkpoints every 4 tokens, the 2 shared tokens after length 4 must be recomputed.
 
 ## Constraints
 
-- $1 \le P$, $1 \le g$, $P + g \le$ `lm.max_context` (256); $1 \le$ `interval`;
-  $1 \le$ `max_checkpoints`. The store has at most a few dozen entries, and its keys
-  are non-empty.
-- The generated tokens are compared exactly with greedy decoding of the whole
-  sequence without any saved state.
-- The keys of the returned store are compared exactly, **in order**. Every state in
-  it is compared bit for bit with the state of a fresh run over its key; states the
-  model returned for the right prefix pass.
-- The three limits above are checked per call, after the tokens and the store.
-  `tokens_processed` cannot be beaten with the checkpoints the store holds.
+- $1 \le P$, $1 \le g$, and $P + g \le$ `lm.max_context` (256).
+- $1 \le$ `interval` and $1 \le$ `max_checkpoints`.
+- `store` has at most a few dozen entries, and all its keys are non-empty.
+- Generated tokens are compared exactly against greedy decoding of the full sequence with no saved state.
+- Returned store keys are compared exactly and **in order**. Each stored state is compared bit for bit against a fresh run over its key.
+- All three cost limits are checked per call after verifying tokens and store contents. `tokens_processed` cannot be improved beyond the limit given the checkpoints in `store`.
 
 ## Why this matters
 
-State-space and linear-attention layers keep per-request memory constant and make
-prefill linear in the prompt length, and hybrid models that interleave them with
-attention layers are now served by the same engines as transformers. Prefix caching
-is the feature that breaks. An engine that treats the recurrent state like a KV
-cache and "truncates" to the shared prefix continues from a state that has read
-tokens the new prompt does not contain, and the model answers a prompt nobody sent,
-fluently. An engine that notices the problem and gives up re-reads the whole
-conversation on every turn, which shows up as a time to first token that grows with
-the chat. Checkpoints are the middle path, and they are a budget: each one is a full
-copy of the state, far larger than one token's keys and values, so how many to keep
-and which to drop is the tuning knob that such engines expose.
+State-space and linear-attention layers keep per-request memory constant and run prefill in linear time. Hybrid models that interleave these layers with standard attention are now served by the same inference engines as transformers, and prefix caching is where the two diverge.
+
+An engine that treats a recurrent state like a KV cache and tries to reuse a longer shared prefix will continue from a state that already absorbed mismatched tokens, causing the model to answer a different prompt fluently. An engine that disables prefix caching for recurrent layers instead re-reads the entire conversation on every turn, making time to first token grow with chat length. Checkpointing is the middle ground. Because each checkpoint copies an entire state—far larger than a single token's keys and values—deciding how often to save and which checkpoints to evict is a core memory-compute tradeoff exposed by hybrid serving engines.

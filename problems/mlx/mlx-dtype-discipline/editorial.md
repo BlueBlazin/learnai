@@ -1,32 +1,15 @@
 ## The idea
 
-MLX follows NumPy-style type promotion between *arrays* and treats Python scalars as
-weakly typed:
+MLX follows NumPy-style type promotion between arrays, while treating Python scalars as weakly typed.
 
-- float16 array with float32 array gives float32. There is no warning.
-- float16 array with a Python `float` or `int` gives float16. The scalar is converted
-  to the array's dtype.
+- Combining a `float16` array with a `float32` array produces `float32` without warning.
+- Combining a `float16` array with a Python `float` or `int` produces `float16` because the scalar adopts the array's dtype.
 
-So the dtype of a block is decided by how its constants enter the graph. Written as
-Python numbers, they adapt to whatever the weights are; the same code then serves a
-float16, a bfloat16, and a float32 checkpoint. Written as `mx.array(...)`, or produced
-by a constructor with a default dtype (`mx.zeros`, `mx.ones`, `mx.arange` with a float
-argument, `mx.linspace`, `mx.tri`, `mx.random.*`), they are float32 arrays and promote
-everything downstream of them.
+Whether a block stays in half precision depends on how its constants enter the graph. Written as plain Python numbers, constants adapt to the dtype of the weights, so the same code works for `float16`, `bfloat16`, and `float32` checkpoints. Wrapped in `mx.array(...)` or created by a default-dtype constructor (`mx.zeros`, `mx.ones`, `mx.arange` with a float argument, `mx.linspace`, `mx.tri`, `mx.random.*`), constants become `float32` arrays and promote everything downstream.
 
-One documented surprise in the other direction: NumPy scalars and NumPy arrays used
-directly as operands do *not* promote in MLX 0.32.4 (`x * np.float32(0.5)` and
-`x * np.ones(4, dtype=np.float32)` are float16 for a float16 `x`). They are converted
-to the dtype of the MLX operand. Wrapping them first, `mx.array(np.ones(4))`, gives a
-float32 array (a float64 NumPy array becomes float32, since the GPU has no float64),
-and that promotes.
+One detail works in the opposite direction in MLX 0.32.4. NumPy scalars and NumPy arrays used directly as operands do *not* promote `float16` (`x * np.float32(0.5)` and `x * np.ones(4, dtype=np.float32)` both stay `float16`). MLX converts them to the dtype of the MLX operand. Wrapping them in `mx.array(np.ones(4))` first creates a `float32` array (since the Apple GPU has no `float64`), and that does promote.
 
-The epsilon is the mirror image of the problem. Converted to float16, `1e-5` becomes
-`1.0014e-05` (a subnormal: float16's smallest normal number is `6.1e-05`, its
-smallest subnormal `6e-08`). `1e-6` and `1e-7` survive as `1.013e-06` and `1.19e-07`,
-with one or two significant bits. `1e-8` is below half the smallest subnormal and
-becomes exactly `0`. Model configurations written for float16 inference use `1e-5` or
-`1e-6` for this reason.
+The normalization epsilon poses the opposite risk. In `float16`, the smallest normal number is `6.1e-05` and the smallest subnormal is `6e-08`. Converting `1e-5` to `float16` gives `1.0014e-05`, which is subnormal but positive. Both `1e-6` and `1e-7` also survive (`1.013e-06` and `1.19e-07`, with one or two significant bits), whereas `1e-8` falls below half the smallest subnormal and rounds to `0`. For this reason, `float16` model configs typically set epsilon to `1e-5` or `1e-6`.
 
 ## Reference solution (MLX)
 
@@ -42,64 +25,35 @@ def forward_f16(params, x):
     return x + h @ params["w_out"].T
 ```
 
-Nothing in it names a dtype. `mx.fast.rms_norm(x, params["gain"], 1e-5)` and
-`mlx.nn.gelu_approx` compute the same two steps with fewer temporaries (a peak of 20
-MiB instead of 30 MiB on the first memory case) and are equally accepted.
+Nothing in this implementation hardcodes a dtype. Using `mx.fast.rms_norm(x, params["gain"], 1e-5)` and `mlx.nn.gelu_approx` computes the same operations with fewer temporaries (peaking at 20 MiB instead of 30 MiB on the first memory test) and is equally accepted.
 
 ## What the promotion costs
 
-Peak MLX memory above the inputs for $N = 4096$, $D = 256$, $H = 1024$, measured on
-this machine (the hidden activations are 8 MiB in float16):
+Peak MLX memory above the inputs for $N = 4096$, $D = 256$, $H = 1024$, where the `float16` hidden activations are 8 MiB:
 
 | version | result dtype | peak |
 |---|---|---|
-| reference | float16 | 30 MiB |
-| `eps = mx.array(1e-5)` | float32 | 64 MiB |
-| the same, then `.astype(mx.float16)` | float16 | 66 MiB |
-| `mx.sqrt(mx.array(2 / math.pi))` in the GELU, then `.astype` | float16 | 71 MiB |
-| parameters and input cast to float32, result cast back | float16 | 68 MiB |
+| reference | `float16` | 30 MiB |
+| `eps = mx.array(1e-5)` | `float32` | 64 MiB |
+| the same, then `.astype(mx.float16)` | `float16` | 66 MiB |
+| `mx.sqrt(mx.array(2 / math.pi))` in the GELU, then `.astype` | `float16` | 71 MiB |
+| parameters and input cast to `float32`, result cast back | `float16` | 68 MiB |
 
-The numbers repeat exactly from run to run: MLX's allocator is deterministic for a
-fixed graph, which is what makes a memory limit usable as a test. Note what the limit
-can and cannot see. It bounds the large activations; a promotion confined to the last
-addition costs 10 MiB here and passes. The dtype check on the result catches that one
-unless it is hidden by a cast, so in your own code the reliable tool is the one from
-the hints: assert the dtype where the large arrays are made.
+MLX's allocator is deterministic for a fixed graph, so these peak numbers repeat exactly across runs and make a memory limit reliable as a test. Keep in mind what a memory limit can and cannot detect. It catches promotion in the large hidden activations, whereas a promotion confined to the final residual addition only adds 10 MiB and stays under the limit. The output dtype check catches that final promotion unless a cast hides it, so the best habit in production code is to assert `.dtype` where large arrays are constructed.
 
 ## Common mistakes
 
-- **A constant made with `mx.array`.** `mx.array(1e-5)` is a float32 array. Added to
-  the mean of squares it makes the RMS float32, then the normalized input, then every
-  hidden activation and the output.
-- **A constant computed with MLX.** `mx.sqrt(mx.array(2 / math.pi))` is the same
-  mistake one step later; use `math.sqrt`. A mask built as
-  `mx.where(cond, 0.0, -math.inf)` is float32 for the same reason: neither branch has
-  a dtype to adopt.
-- **Hiding the promotion with a final `astype`.** The result is float16 and every
-  check on the output passes. The activations were float32 while they existed: twice
-  the peak memory, and twice the bytes through every operation.
-- **Computing in float32 "for accuracy" and casting back.** A deliberate version of
-  the same thing. If a step really needs float32 (MLX's fused attention kernel runs
-  its softmax in float32 internally for this reason), it should be that step, on a
-  small array, not the whole block.
-- **An epsilon that underflows.** `1e-8` is `0` in float16. For ordinary rows nothing
-  changes, which is why it survives testing; a zero row gives `0 / sqrt(0)`, and one
-  NaN in a residual stream spreads to every later position that attends to it.
-- **Normalizing by the RMS of the whole batch.** `mx.mean(x * x)` without an axis
-  couples rows that should be independent; it passes any test whose rows have similar
-  scales.
+- **Wrapping a constant in `mx.array`.** `mx.array(1e-5)` creates a `float32` array. Adding it to the mean of squares promotes the RMS, the normalized input, every hidden activation, and the final output to `float32`.
+- **Computing a scalar constant with MLX.** `mx.sqrt(mx.array(2 / math.pi))` causes the same promotion inside GELU. Use `math.sqrt` instead. Similarly, `mx.where(cond, 0.0, -math.inf)` produces `float32` because neither branch carries a `float16` dtype.
+- **Hiding promotion with a final `.astype`.** Casting the output to `float16` passes output dtype checks, but the intermediate activations still ran in `float32` at double the peak memory and bandwidth.
+- **Computing the whole block in `float32` for accuracy.** If a specific operation genuinely requires `float32` (as in MLX's fused attention kernel, which runs softmax internally in `float32`), confine the upcast to that small operation rather than the entire block.
+- **Using an epsilon that underflows.** `1e-8` rounds to `0` in `float16`. Ordinary rows are unaffected, so the bug passes basic tests, but a zero row computes `0 / sqrt(0)`. One `NaN` in the residual stream then spreads to every later position that attends to it.
+- **Normalizing across the entire batch.** Calling `mx.mean(x * x)` without `axis=-1` couples independent rows. This bug can slip past tests whose rows all have similar magnitudes.
 
 ## Complexity
 
-Two matrix products, $O(N D H)$ time. Peak memory is a small multiple of the hidden
-activations, $N \cdot H \cdot 2$ bytes each in float16.
+Two matrix multiplications take $O(N D H)$ time. Peak memory is a small constant multiple of the hidden activation size, which is $2 N H$ bytes in `float16`.
 
 ## In the wild
 
-`mlx-lm` model code does not name a float dtype in the ordinary forward pass, so the
-same code runs a float16, bfloat16, or float32 checkpoint; where a model computes
-something on the side (expert scores, a gate), it casts it to the dtype of the
-activations before combining them, as in `scores.astype(x.dtype)`. The check worth
-automating in your own loops is the dtype of the KV cache after the first step: it is
-the longest-lived array of a generation, and a promotion there is paid for on every
-token until the conversation ends.
+Model code in `mlx-lm` avoids hardcoding float dtypes in the forward pass so that one implementation serves `float16`, `bfloat16`, and `float32` checkpoints. Whenever a model computes an auxiliary tensor such as router scores or a gate, it casts that tensor to match the activations (`scores.astype(x.dtype)`) before combining them. In inference loops, the single most valuable automated check is asserting the dtype of the KV cache after the first step, because the cache persists across the entire generation.

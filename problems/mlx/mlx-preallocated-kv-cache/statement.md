@@ -1,9 +1,6 @@
-Implement the KV cache that `mlx-lm` uses: buffers that grow 256 slots at a time,
-filled by slice assignment, with only the filled part handed to attention. In MLX
-the reason for this design is not the one you would expect. Slice assignment does not
-write in place, so the cache copies its buffer on every token either way. What the
-steps buy is that the buffer keeps its *shape*, and with it MLX's allocator can reuse
-the memory it has just freed.
+Implement `KVCache`, the step-allocated key-value cache used by `mlx-lm`. The cache grows its buffers in fixed steps (256 tokens by default), writes new tokens with slice assignment, and returns only the filled prefix to attention.
+
+In MLX, slice assignment does not mutate memory in place, so the cache still copies its buffers on every token. Growing in fixed steps keeps the buffer shape constant between reallocations, which lets MLX's memory allocator reuse freed buffers instead of accumulating unused allocations.
 
 ## Specification
 
@@ -13,41 +10,27 @@ class KVCache:
     def update_and_fetch(self, keys, values): ...  # returns (keys, values)
 ```
 
-A cache holds the keys and values of one attention layer. It has four attributes:
+A `KVCache` instance stores the keys and values for one attention layer across batch size `B`, attention heads `H`, key head dimension `D_k`, and value head dimension `D_v`. It maintains four attributes:
 
-- `step`: the constructor argument, a positive int.
-- `offset`: the number of tokens stored, a Python int, `0` for a new cache.
-- `keys`, `values`: the **buffers**. Both are `None` for a new cache. After the first
-  update they are arrays of shape `(B, H, C, D_k)` and `(B, H, C, D_v)`, where `C` is
-  the **capacity**. Slots `0` to `offset - 1` along axis 2 hold the tokens stored so
-  far, oldest first. The contents of slots `offset` to `C - 1` are unspecified.
+- `step`: a positive Python `int` giving the allocation step size.
+- `offset`: a Python `int` counting how many tokens are currently stored (`0` for a new cache).
+- `keys`, `values`: the internal buffers. Both start as `None`. After the first update, they have shapes `(B, H, C, D_k)` and `(B, H, C, D_v)`, where `C` is the current token capacity along axis 2. Slots `0` through `offset - 1` hold the stored tokens in chronological order (oldest first). Slots `offset` through `C - 1` hold unspecified padding.
 
-**`update_and_fetch(keys, values)`** appends the keys and values of `T` new tokens,
-`keys` of shape `(B, H, T, D_k)` and `values` of shape `(B, H, T, D_v)` with
-$T \ge 1$, and returns everything stored so far.
+`update_and_fetch(keys, values)` appends `T` new tokens (with $T \ge 1$) of shapes `(B, H, T, D_k)` and `(B, H, T, D_v)` and returns all tokens stored so far. Each call performs three steps:
 
-1. **Growth.** If the cache has no buffers yet, or if $\text{offset} + T > C$, the
-   buffers are replaced by buffers of capacity
+1. **Growth.** If the buffers are still `None`, or if $\text{offset} + T > C$, replace them with buffers of capacity
 
    $$
    C' = \text{offset} + \left\lceil \frac{T}{\text{step}} \right\rceil \cdot \text{step},
    $$
 
-   whose slots `0` to `offset - 1` hold what the old ones held. Otherwise the buffers
-   **keep their shape**.
-2. **Write.** The new keys and values are stored in slots `offset` to
-   `offset + T - 1`, and `offset` becomes `offset + T`.
-3. **Fetch.** The result is the tuple `(keys, values)` of the first `offset` slots of
-   each buffer: shapes `(B, H, offset, D_k)` and `(B, H, offset, D_v)`. The unused
-   slots are never returned.
+   preserving slots `0` through `offset - 1` from the previous buffers. Otherwise, keep the existing buffer shapes unchanged.
+2. **Write.** Store the incoming `keys` and `values` into slots `offset` through `offset + T - 1` along axis 2, then set `offset` to `offset + T`.
+3. **Fetch.** Return the tuple `(keys, values)` sliced to the first `offset` slots along axis 2, with shapes `(B, H, offset, D_k)` and `(B, H, offset, D_v)`. Never return the unused tail slots.
 
-The buffers have the dtype of the arrays of the first update: a float16 cache stays
-float16. `B`, `H`, `D_k`, `D_v`, and the dtype are the same in every update of one
-cache.
+The buffers must preserve the dtype of the arrays from the first update (for example, a float16 cache stays float16). Across all updates to a single cache, `B`, `H`, `D_k`, `D_v`, and the dtype remain constant.
 
-`update_and_fetch` **evaluates nothing**: no `mx.eval`, no `.item()`, no conversion to
-numpy. It is called once per layer in the middle of a forward pass, and the result
-is evaluated with the rest of that pass.
+`update_and_fetch` must stay completely lazy and evaluate nothing. Do not call `mx.eval`, `.item()`, or convert arrays to NumPy. The cache runs once per layer inside a forward pass, and the caller evaluates the graph at the end of the pass.
 
 ![Buffer length as tokens are appended one at a time. Steps of 256 give three shapes on the way to 768 tokens, where concatenation gives 768.](assets/growth.svg)
 
@@ -56,15 +39,14 @@ is evaluated with the rest of that pass.
 | name | shape | dtype |
 |---|---|---|
 | `keys` (argument) | `(B, H, T, D_k)` | float32 or float16 |
-| `values` (argument) | `(B, H, T, D_v)` | as `keys` |
-| `cache.keys`, `cache.values` (buffers) | `(B, H, C, D_k)`, `(B, H, C, D_v)` | as the arguments |
-| `keys`, `values` (result) | `(B, H, offset, D_k)`, `(B, H, offset, D_v)` | as the arguments |
+| `values` (argument) | `(B, H, T, D_v)` | same as `keys` |
+| `cache.keys`, `cache.values` (buffers) | `(B, H, C, D_k)`, `(B, H, C, D_v)` | same as arguments |
+| `keys`, `values` (result) | `(B, H, offset, D_k)`, `(B, H, offset, D_v)` | same as arguments |
 | `cache.offset` | Python `int` | |
 
 ## Example
 
-`step = 4`, one batch row, one head, `D_k = D_v = 1`. Token $i$ has key $i$ and
-value $10 i$; the table shows axis 2 only.
+Consider a cache with `step = 4`, `B = 1`, `H = 1`, and `D_k = D_v = 1`. Suppose token $i$ has key $i$ and value $10i$. The table below shows only axis 2.
 
 ```python
 cache = KVCache(step=4)
@@ -77,37 +59,17 @@ cache = KVCache(step=4)
 | 3 | 5 | $4 + 1 > 4$ | $4 + 4 = 8$ | 5 | 1, 2, 3, 4, 5 |
 | 4 | 6, ..., 11 | $5 + 6 > 8$ | $5 + \lceil 6/4 \rceil \cdot 4 = 13$ | 11 | 1, 2, ..., 11 |
 
-The values returned are ten times the keys. After update 1 the buffer has four slots
-and the result has three: the fourth slot exists and is not returned. Update 2 changes
-no shape. In update 4 the capacity is counted from `offset` (5), not from the old
-capacity (8): the three unused slots of the old buffer are dropped, and room for two
-whole steps is added after the fifth token.
+Each returned `values` array is ten times the corresponding `keys` array. After update 1, the buffer holds four slots, while the returned slice contains only the first three. Update 2 fits in the remaining slot without changing the buffer shape. In update 4, the new capacity is computed from `offset` (5) rather than the old capacity (8). The three unused tail slots are discarded, and two full steps of 4 slots are appended after the fifth token.
 
 ## Constraints
 
-- $1 \le B \le 3$, $1 \le H \le 4$, head dimensions up to 64, `step` from 1 to 256, up
-  to 1,000 tokens per cache.
-- Returned keys and values, and the first `offset` slots of the buffers, are compared
-  **exactly** with what was written.
-- After every update the tests check that `offset` is a Python int with the right
-  value and that both buffers have exactly the capacity rule 1 gives. The number of
-  updates after which the buffers' shape differs from before is reported as
-  `reallocations`; for $n$ tokens appended one at a time to a new cache it is
-  $\lceil n / \text{step} \rceil$.
-- Memory limit (on the Apple GPU). 600 updates of one token each, with `B = 1`,
-  `H = 4`, `D_k = D_v = 64`, float32 (1 KiB per token and buffer), each followed by
-  `mx.eval` of the result. Afterwards the memory MLX's allocator holds, in use
-  (`mx.get_active_memory`) plus kept for reuse (`mx.get_cache_memory`), may be at
-  most **24 MiB** above what it held before. A step-allocated cache holds 9 MiB (1.5
-  MiB of buffers in use); a cache that changes shape on every update holds 70 MiB.
+- $1 \le B \le 3$, $1 \le H \le 4$, `D_k` and `D_v` up to 64, `step` from 1 to 256, and up to 1,000 tokens per cache.
+- Returned keys and values, as well as the first `offset` slots of the buffers, must match the written values **exactly**.
+- After every update, `offset` must be a Python `int` with the exact token count, and both buffers must have the exact capacity specified by rule 1. The test suite tracks `reallocations`, the number of updates that change the buffer shape. Appending $n$ tokens one at a time to a new cache must produce $\lceil n / \text{step} \rceil$ reallocations.
+- **Memory limit (Apple GPU).** The test runs 600 single-token updates with `B = 1`, `H = 4`, `D_k = D_v = 64`, and float32 (1 KiB per token per buffer), calling `mx.eval` on the result after each update. Afterward, total allocator memory — active (`mx.get_active_memory`) plus cached (`mx.get_cache_memory`) — must exceed the starting memory by at most **24 MiB**. A step-allocated cache uses about 9 MiB (1.5 MiB active), whereas a cache that changes shape on every update uses 70 MiB.
 
 ## Why this matters
 
-`mx.get_cache_memory` is real memory: freed buffers that MLX keeps, up to a limit of
-tens of gigabytes by default, because allocating from the system is slow and the next
-array of the same size can take one over. A cache that grows by concatenation never
-asks for the same size twice, so every buffer it frees is dead weight. At 4 KiB per
-token and buffer, 1,024 generated tokens leave 2.9 GiB in the allocator to hold 8 MiB
-of cache; with steps of 256 it is 52 MiB. That is the "MLX keeps eating memory while
-generating" report, and it is why `mlx-lm` grows its cache in steps and calls
-`mx.clear_cache()` every 256 tokens.
+`mx.get_cache_memory` tracks real physical memory that MLX keeps after freeing buffers so it can satisfy future allocations of the same size without asking the operating system. By default, this cache can grow to tens of gigabytes. A KV cache that appends via `mx.concatenate` on every token requests a brand-new buffer size on every step, so previously freed buffers are never reused and sit idle in the allocator cache.
+
+At 4 KiB per token per buffer, generating 1,024 tokens with per-step concatenation leaves 2.9 GiB trapped in the allocator just to hold 8 MiB of live cache. Growing in steps of 256 reduces that footprint to 52 MiB. This allocator behavior explains why naive MLX generation loops appear to leak memory, and why `mlx-lm` both allocates in 256-token steps and calls `mx.clear_cache()` every 256 tokens.

@@ -1,27 +1,14 @@
 ## The idea
 
-`mx.eval(x)` schedules the graph behind `x` and waits for it. `mx.async_eval(x)` only
-schedules: it returns while the GPU is still working, and `x` (with everything it
-depends on) is from then on a promise. Reading a promise, with `.item()` or anything
-else that needs the number, waits for that array and no longer.
+`mx.eval(x)` schedules the computation graph behind `x` and blocks until it finishes. `mx.async_eval(x)` only schedules the graph and returns immediately while the GPU works in the background. Reading `x` later (with `.item()` or any other operation that needs a concrete value) waits only for whatever work on `x` is still unfinished.
 
-That splits "evaluate" into two moments you can place separately: when the work
-starts, and when you wait for it. A generation loop wants them far apart. The value of
-token $t$ is needed by Python (to detokenize, to print, to test a stop condition). It
-is *not* needed to build step $t + 1$: the model takes the token as an array, and an
-array that is still being computed is a perfectly good input to a graph. So:
+Separating scheduling from waiting lets a generation loop overlap CPU and GPU work. Python needs the integer value of token $t$ to detokenize, print, or check stop conditions, but building step $t + 1$ does not. The model accepts token $t$ as an MLX array, and an array that is still computing on the GPU can be used directly as input to the next graph. Each iteration therefore runs in three phases:
 
-1. schedule step $t + 1$, built from the array of token $t$;
-2. now read token $t$. This waits until step $t$ is done, which it mostly is;
-3. detokenize, yield, let the consumer do its work. All of this time, step $t + 1$
-   is running.
+1. Build and schedule step $t + 1$ using the array for token $t$.
+2. Read token $t$ with `.item()`, waiting only for step $t$ to finish.
+3. Detokenize and yield token $t$ so the consumer can process it while step $t + 1$ runs on the GPU.
 
-When the loop comes back for token $t + 1$, it is usually ready, and the first thing
-the loop does is schedule step $t + 2$. The GPU's queue is never empty, and Python
-never waits for something it could have started earlier.
-
-Reverse steps 1 and 2 and every line still runs, every token is still right, and the
-GPU sits idle through step 3, once per token.
+When the consumer asks for token $t + 1$, it is usually already computed, and the loop immediately schedules step $t + 2$. Reversing phases 1 and 2 still produces the exact same tokens, but leaves the GPU idle during phase 3 on every token.
 
 ## Reference solution (MLX)
 
@@ -44,33 +31,17 @@ def stream_generate(model, prompt, n, detok):
             token, logprob = next_token, next_logprob
 ```
 
-Three details.
+Three details make this loop work cleanly.
 
-**What goes into `async_eval`.** Everything the consumer or the next step will touch
-that the token does not already depend on. The cache is an ancestor of the token (the
-logits read every key and value), so scheduling the token schedules the cache. The
-log-probability is a *descendant* of the token (`logprobs[token]`), so it must be
-named, or it is yielded as a two-operation graph that the consumer's first read
-evaluates synchronously, one extra round trip per token. This is the accumulator of
-`mlx-lazy-eval-placement` again: evaluating the main result does not evaluate what
-hangs off its side.
+**What to pass to `async_eval`.** Include every output the consumer or the next step will use that `token` does not already depend on. The KV cache is an ancestor of `token` because computing `logits` reads every key and value, so scheduling `token` schedules the cache automatically. By contrast, `logprob` (`logprobs[token]`) is a *descendant* of `token`. If you omit `logprob` from `mx.async_eval`, it is yielded as an unevaluated two-operation graph that forces a synchronous evaluation when the consumer reads it, just like the accumulator in `mlx-lazy-eval-placement`.
 
-**The last token.** There is no step $n$. The loop knows it is at the last token and
-schedules nothing more. A stop token is different: you cannot know that token $t$ is
-the end of the text until you have read it, and by then step $t + 1$ is in flight.
-That one wasted step is the price of the overlap, and every real loop pays it; what
-it must not do is pay it at a boundary it knew in advance.
+**Stopping at the last token.** Because the loop knows `n` in advance, it checks `index + 1 < n` and skips scheduling step $n$. Stop tokens behave differently in real systems because you cannot tell whether token $t$ is a stop token until you read it, by which time step $t + 1$ is already in flight. Paying one extra forward pass for a stop token is unavoidable with overlap, but paying it at a known length limit is not.
 
-**It is a generator.** The body does not run until the consumer asks for the first
-pair, and it pauses at every `yield`. The work the consumer does between two pairs is
-exactly the time the scheduled step uses.
+**Generator semantics.** Nothing runs until the consumer requests the first item, and execution pauses at every `yield`. Any work the consumer performs between iterations runs directly in parallel with the GPU step already in flight.
 
 ## What the overlap is worth
 
-Measured on this machine (M1 Max, MLX 0.32.4), 100 tokens from a 4-token prompt, best
-of four runs, milliseconds per token. "Larger" is an `MLXTinyLM` with 6 layers of
-width 256 and a vocabulary of 8192; "wide" has 8 layers of width 1024. The Python
-work per token is simulated by a `detok` that spins for the given time.
+Measured on an M1 Max with MLX 0.32.4, generating 100 tokens from a 4-token prompt (best of four runs, milliseconds per token). "Larger" is an `MLXTinyLM` with 6 layers of width 256 and vocabulary size 8192. "Wide" has 8 layers of width 1024. Per-token Python work is simulated by a `detok` function that spins for the listed duration.
 
 | model | Python work per token | `mx.eval`, then read | `mx.async_eval` of the next step, then read |
 |---|---|---|---|
@@ -81,53 +52,21 @@ work per token is simulated by a `detok` that spins for the given time.
 | wide | 0.5 ms | 4.36 | 2.25 |
 | wide | 2.0 ms | 5.82 | 3.74 |
 
-Two effects add up. Even with no Python work at all, the asynchronous loop is faster,
-because building the graph of step $t + 1$ (a few hundred microseconds of Python for
-these models) happens while the GPU computes step $t$, and not after it. And Python
-work up to the length of a step is free: the wide model takes 2.2 ms per token
-whether the detokenizer needs nothing or half a millisecond, where the blocking loop
-pays for it in full. Once the Python work is longer than a step (the last row), the
-loop is limited by Python and the step hides inside it.
+Two effects show up in the numbers. Even with zero Python work, the async loop is faster because building the graph for step $t + 1$ (a few hundred microseconds in Python) happens while the GPU computes step $t$. In addition, Python work up to the duration of a GPU step is hidden for free. The wide model takes about 2.2 ms per token whether detokenization takes 0 ms or 0.5 ms, whereas the blocking loop pays the full 0.5 ms on top. Once Python work exceeds a GPU step (the last row), Python becomes the bottleneck and the GPU step hides inside it.
 
 ## Common mistakes
 
-- **`mx.eval`, then read.** The loop of `mlx-lazy-eval-placement` with a `yield`
-  added. Correct and serial: the left column of the table.
-- **Scheduling after the read.** `async_eval` is there, in the wrong place: the token
-  is read and detokenized first, and only then is the next step built and scheduled.
-  Asynchronous evaluation of a step nobody overlaps with anything is a blocking
-  evaluation with extra steps. The same happens, less visibly, when the loop converts
-  the token to an int to feed it back (`mx.array([token.item()])`): the read is forced
-  before the next step can even be built.
-- **A step after the last token.** Unconditionally scheduling "the next step" builds
-  and computes a forward pass whose token is never yielded. With `async_eval` the work
-  is really done: it was handed to the GPU, not left in a graph.
-- **Scheduling the token and not the log-probability.** The token is evaluated in the
-  background and the log-probability is handed out lazy. Whoever reads it pays a
-  synchronous evaluation, and until then it keeps that step's logits alive.
-- **Collecting, then yielding.** A function that runs the whole loop and yields the
-  pairs from a list at the end has the right tokens, the right evaluation order, and
-  a time to first token equal to the time to last token.
-- **Advancing before yielding.** Moving to the next step first and yielding its token
-  drops the token chosen from the prompt: the stream starts with the second token.
+- **Using `mx.eval` before reading.** Adding `yield` to the blocking loop from `mlx-lazy-eval-placement` produces the right tokens serially and hits the slower left column of the benchmark table.
+- **Scheduling after reading.** Calling `mx.async_eval` only after reading and detokenizing token $t$ eliminates all overlap, turning asynchronous evaluation into blocking evaluation with extra overhead. Converting the token to a Python `int` before feeding it back (`mx.array([token.item()])`) causes the same bug by forcing a read before step $t + 1$ can be built.
+- **Scheduling a step after the last token.** Unconditionally scheduling the next step launches a forward pass whose token is never yielded. Because `mx.async_eval` submits work to the GPU immediately, that wasted step actually executes.
+- **Scheduling only the token and omitting `logprob`.** The token computes in the background while `logprob` is yielded lazy. Whoever reads `logprob` pays a synchronous evaluation, and until then the unevaluated graph keeps that step's logits alive.
+- **Collecting all pairs before yielding.** Running the entire loop into a list and yielding at the end produces the right tokens and evaluation order, but makes time to first token equal to time to last token.
+- **Advancing before yielding.** Overwriting `token` with `next_token` before `yield` drops the first token generated from the prompt, shifting the entire output by one position.
 
 ## Complexity
 
-$n$ scheduled evaluations, $n$ reads, $n$ forward calls, $P + n - 1$ tokens through
-the model. At most two steps exist at a time: the one being read and the one in
-flight.
+The loop performs $n$ scheduled evaluations, $n$ reads, $n$ forward passes, and processes $P + n - 1$ tokens in total. At most two steps exist in flight at any moment—the step being read and the next step computing on the GPU.
 
 ## In the wild
 
-`mlx_lm.generate.generate_step` is this loop with a sampler in place of the argmax and
-logits processors in front of it: it calls `mx.async_eval(next_y, next_logprobs)` and
-then yields `y.item()`. Its cache objects are updated in place by the model, so the
-cache state is part of what the token depends on, as here. It also treats the token
-limit the way it must treat a stop token: when the limit is reached, the step after
-the last token has already been scheduled, one forward pass more than this problem
-allows. `mx.async_eval` is marked
-experimental in the MLX documentation; the pattern around it is the stable part.
-`EvalSpy`, the kit object the judge uses to see the order of evaluations, cannot see
-an evaluation forced by `if x:` or by an f-string, so this problem also checks the
-overlap from the other side: the detokenizer it hands you notes how many times the
-model has been called each time it is asked for a piece of text.
+`mlx_lm.generate.generate_step` uses this exact loop structure with a sampler and logits processors in place of argmax, calling `mx.async_eval(next_y, next_logprobs)` before yielding `y.item()`. Its cache objects are mutated in place by the model, so the cache state is still an ancestor of the token. Unlike this problem, `mlx_lm` treats a token limit the same way as a stop token, so one extra forward pass is already scheduled when the limit is hit. Although `mx.async_eval` is marked experimental in the MLX documentation, this two-step prefetching pattern is standard across MLX inference loops. Because `EvalSpy` (the judge utility that records evaluation order) cannot intercept implicit evaluations triggered by `if x:` or f-strings, the test harness also verifies overlap by checking `model.counters.forward_calls` inside `detok` on every token.

@@ -1,40 +1,20 @@
-Do the six steps in order on the worked example by hand before coding the acceptance:
-write the four entropies, sort them, and write next to each the sum of the entropies
-*above it in the sorted list*. Which positions have a sum of at most 0.5? Why is the
-first one in the list accepted whatever the bound is?
+Work through the six steps on the example by hand before writing code. Compute the four entropies, sort them in ascending order, and write next to each position the sum of the entropies *strictly above it* in the sorted list. Which positions have a sum of at most 0.5? Why is the first position in the list always accepted regardless of the bound?
 
 ---
 
-Sampling and entropy read the same distribution, so compute the log-probabilities of
-`logits / temperature` once and exponentiate them. Think about what
-$-\sum_v p_v \ln p_v$ evaluates to in float32 when some $p_v$ is exactly 0: it depends
-on whether the logarithm you multiply by came from `log(p)` or from a `log_softmax`,
-which is finite there.
+Both sampling and entropy use the same temperature-scaled distribution, so compute `log_p = log_softmax(logits / temperature)` once and take `p = exp(log_p)`. Think carefully about $-\sum_v p_v \ln p_v$ in float32 when some $p_v$ underflows to 0. Multiplying `p * log(p)` produces `0 * -inf = NaN`, whereas multiplying `p * log_p` stays finite because `log_p` from `log_softmax` is finite.
 
-The candidates are the cumulative-sum-and-count of `categorical-sample`, one row per
-position.
+For the candidate tokens, apply the same cumulative-sum-and-count pattern from `categorical-sample` independently to each row.
 
 ---
 
-The acceptance needs, for every position, the total entropy of the positions ranked
-before it. Two ways to get it:
+Acceptance requires, for every position, the sum of entropies of all positions ranked before it. There are two clean ways to compute this:
 
-- sort the entropies ascending, take a cumulative sum in rank order, remove each
-  position's own entropy from its entry, and carry the comparison with the bound back
-  from rank order to position order (the inverse of a permutation is its `argsort`);
-- or compare every pair of positions: $j$ ranks before $i$ when $H_j < H_i$, or
-  $H_j = H_i$ and $j < i$, and the sum over those $j$ is an $L \times L$ masked sum.
+- Sort the entropies in ascending order, take their cumulative sum, subtract each position's own entropy from its cumulative sum, compare against `entropy_bound`, and map the boolean mask back to original position order using the inverse permutation (`argsort(order)`).
+- Compare every pair of positions directly: position $j$ ranks before position $i$ if $H_j < H_i$, or if $H_j = H_i$ and $j < i$. Summing $H_j$ over those $j$ is an $L \times L$ masked sum.
 
-With a sort, the tie rule is the sort's stability. `torch.sort` and `torch.argsort`
-are stable only with `stable=True` (without it, short inputs happen to come back in
-index order and long ones do not); `jnp.argsort` is stable by default. If you are not
-sure what your framework's sort does with equal keys, the pairwise form does not
-depend on it.
+If you sort, tie-breaking depends on sort stability. `torch.sort` and `torch.argsort` are stable only when you pass `stable=True` (without it, short arrays happen to keep index order while longer ones do not). `jnp.argsort` is stable by default. If you are unsure whether your framework's sort is stable, the pairwise comparison avoids sorting altogether.
 
 ---
 
-Check your three results against the example's second call (`entropy_bound = 0.3`):
-exactly one position is accepted although no entropy is below 0.3, the rejected
-positions hold `floor(u_noise * V)` and not their old tokens, and `argmax_canvas` is
-the same as in the first call. Nothing you return depends on `current`, and nothing
-should be written into it.
+Check all three outputs against the example's second call (`entropy_bound = 0.3`). Exactly one position should be accepted even though every position has entropy above 0.3, rejected positions should contain `floor(u_noise * V)` rather than their old tokens, and `argmax_canvas` should match the first call. None of the outputs depend on `current`, and `current` must not be modified.

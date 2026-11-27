@@ -1,26 +1,18 @@
-The float weights exist only inside `quantize_checkpoint`. For every later stage,
-ask what you can compute from three tensors per matrix: a row of bytes, and one
-scale and one bias per group. Which two helper functions, written once, would let
-the forward pass of `decoder-forward` run almost unchanged?
+The float weights exist only inside `quantize_checkpoint`. Every later stage has access only to three tensors per matrix: packed uint8 bytes, per-group scales, and per-group biases. Which two helper functions, written once against those three tensors, let the `decoder-forward` pass run almost unchanged?
 
 ---
 
-Write four helpers. `quantize_groups(w, bits, group_size)` from `groupwise-4bit`;
-`pack` and `unpack` (for 4 bits: `low + 16 * high`, and back with `% 16` and
-`// 16`, interleaved with a `stack` and a `reshape`); `qlinear(ckpt, name, x,
-group_size)`, which reads `name`, `...scales`, `...biases`, derives the bits from
-the shapes, unpacks, and applies the identity of `quantized-matmul`; and `embed`,
-which indexes the three tensors with the token ids first and dequantizes only those
-rows. Then make `step_q` the one real forward pass (`forward_q` is `step_q` with
-`cache=None`): positions are `S + arange(T)`, the mask is `arange(S + T)[None, :]
-<= positions[:, None]`, keys are rotated before they are concatenated to the cache.
-`generate_q` calls `step_q` with the whole prompt once and then with one token at a
-time. For stage 4, pass a function from name to bits into the quantizer instead of
-a single number, and count bits from what the checkpoint holds.
+Build four small helpers:
+1. `quantize_groups(w, bits, group_size)` from `groupwise-4bit`.
+2. `pack` and `unpack` (for 4 bits, pack `low + 16 * high`, and unpack with `% 16` and `// 16`, then stack and reshape).
+3. `qlinear(ckpt, name, x, group_size)`, which loads `name`, `...scales`, and `...biases`, infers `bits` from their shapes, unpacks the codes, and applies the `quantized-matmul` identity.
+4. `embed`, which indexes the three tensors by `tokens` first and dequantizes only the selected rows.
+
+Make `step_q` the single real forward pass (`forward_q` calls `step_q` with `cache=None`). Use `positions = S + arange(T)`, mask with `arange(S + T)[None, :] <= positions[:, None]`, and apply RoPE to keys before concatenating them to the cache. Have `generate_q` call `step_q` once for the full prompt and then once per generated token. For stage 4, generalize the quantizer to take a per-tensor bit width and sum the stored bits directly from the checkpoint tensors.
 
 ---
 
-The core of each stage:
+The core operations of each stage:
 
 ```python
 # stage 1, per matrix

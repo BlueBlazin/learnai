@@ -1,8 +1,10 @@
-Answer four questions about GPU memory from the numbers PyTorch's CUDA allocator
-reports: how much a set of tensors will occupy, how much of what the process holds is
-merely cached, how many bytes are left for a KV cache, and how much a function needs
-at its peak. Each answer is a line of arithmetic, and each has a number next to the
-right one that is easy to take instead.
+Implement four functions that interpret PyTorch's CUDA caching allocator statistics: predicting allocated bytes for a list of tensor shapes, measuring memory fragmentation, computing a KV cache memory budget, and measuring a function's peak memory usage.
+
+## Background
+
+PyTorch does not ask the GPU driver for memory one tensor at a time. Instead, its caching allocator **reserves** large memory segments from the driver and carves out smaller blocks for individual tensors. Memory currently held by live tensors is **allocated**. When a tensor is freed, its block remains reserved in the allocator's cache so future allocations can reuse it without calling the driver.
+
+![Reserved memory is the allocated part plus cache. `empty_cache()` returns whole free segments, but not a free block that shares its segment with a tensor.](assets/allocated-reserved.svg)
 
 ## Specification
 
@@ -13,50 +15,39 @@ def kv_budget(stats, total_bytes, safety): ...  # int
 def measure_peak(fn, mem): ...  # int
 ```
 
-PyTorch does not ask the GPU driver for memory tensor by tensor. Its caching
-allocator **reserves** large segments from the driver and carves the blocks that
-tensors occupy out of them; memory occupied by tensors is **allocated**. When a
-tensor is freed its block stays reserved, as cache, and is handed out again.
+**`predicted_allocated(shapes, dtype)`** predicts the total allocated bytes the CUDA allocator reports for a list of tensors of the given `dtype`. `shapes` is a list of shape tuples containing non-negative integers. The empty tuple `()` represents a scalar with 1 element, and any shape containing `0` has 0 elements.
 
-![Reserved memory is the allocated part plus cache. `empty_cache()` returns whole free segments, but not a free block that shares its segment with a tensor.](assets/allocated-reserved.svg)
-
-**`predicted_allocated(shapes, dtype)`** predicts what the allocator will report as
-allocated for a list of tensors. The allocator hands out memory in multiples of 512
-bytes, so a tensor of $n$ elements of `dtype` occupies
+A tensor with $n$ elements holds $n \cdot \text{itemsize}$ raw bytes, where $\text{itemsize}$ is `dtype.itemsize`. Because the allocator hands out memory in 512-byte blocks, each non-empty tensor occupies
 
 $$
 512 \cdot \left\lceil \frac{n \cdot \text{itemsize}}{512} \right\rceil \text{ bytes},
 $$
 
-and a tensor without elements occupies nothing. `shapes` is a list of shapes, each a
-tuple of non-negative ints; the empty tuple `()` is a scalar with one element, and a
-shape containing a `0` has no elements. `dtype` is a torch dtype. Return the sum over
-all shapes as a Python `int` (`0` for an empty list).
+while a tensor with 0 elements occupies 0 bytes. Return the sum across all shapes as a Python `int` (`0` for an empty list).
 
-**`fragmentation(stats)`** summarizes a dict of the form `torch.cuda.memory_stats()`
-returns. It uses three of its keys, and a missing key counts as `0` (on a machine
-without CUDA the dict is empty):
+**`fragmentation(stats)`** summarizes a dictionary matching the format of `torch.cuda.memory_stats()`. Missing keys default to `0` (on machines without CUDA, `memory_stats()` returns an empty dict). Read these three keys:
 
 | key | meaning |
 |---|---|
-| `"allocated_bytes.all.current"` | bytes occupied by tensors now, $A$ |
-| `"reserved_bytes.all.current"` | bytes the allocator holds now, $R$ |
-| `"inactive_split_bytes.all.current"` | free bytes inside segments that also hold a tensor, $S$ |
+| `"allocated_bytes.all.current"` | bytes currently occupied by live tensors, $A$ |
+| `"reserved_bytes.all.current"` | bytes currently held by the allocator, $R$ |
+| `"inactive_split_bytes.all.current"` | free bytes inside segments that also hold a live tensor, $S$ |
 
-It returns a dict with exactly these keys:
+Return a dictionary with these exact keys:
 
 | key | value | type |
 |---|---|---|
-| `"cached_bytes"` | $R - A$: held by the allocator, occupied by no tensor | `int` |
-| `"releasable_bytes"` | $R - A - S$: what `empty_cache()` can return to the device | `int` |
-| `"non_releasable_fraction"` | $S / R$, and `0.0` when $R = 0$ | `float` |
+| `"cached_bytes"` | $R - A$, bytes held by the allocator and unused by tensors | `int` |
+| `"releasable_bytes"` | $R - A - S$, bytes that `empty_cache()` can return to the device | `int` |
+| `"non_releasable_fraction"` | $S / R$, or `0.0` when $R = 0$ | `float` |
 
-**`kv_budget(stats, total_bytes, safety)`** returns the number of bytes a KV cache may
-take. `stats` is a `memory_stats()` dict read after the weights were loaded and one
-warm-up request was served; `total_bytes` is the memory this process may use on the
-device; `safety`, $0 \le \text{safety} < 1$, is the fraction of the *free* memory to
-leave unassigned. With $P$ = `stats["allocated_bytes.all.peak"]` (`0` if missing), the
-high-water mark of tensor memory:
+**`kv_budget(stats, total_bytes, safety)`** computes how many bytes remain available for a KV cache.
+
+- `stats` is a `memory_stats()` dictionary recorded after loading model weights and running one warm-up request.
+- `total_bytes` is the total GPU memory available to this process.
+- `safety` ($0 \le \text{safety} < 1$) is the fraction of *free* memory to leave unassigned.
+
+Let $P$ be `stats["allocated_bytes.all.peak"]` (`0` if missing), the peak tensor memory observed so far. Subtract $P$ from `total_bytes` to find free memory, set aside the `safety` fraction, round down to an integer, and clamp at 0:
 
 $$
 \text{free} = \text{total\_bytes} - P,
@@ -64,24 +55,17 @@ $$
 \text{budget} = \max\bigl(0,\ \lfloor \text{free} \cdot (1 - \text{safety}) \rfloor\bigr).
 $$
 
-Return a Python `int`.
+Return the budget as a Python `int`.
 
-**`measure_peak(fn, mem)`** returns how many bytes of tensor memory `fn` needs at its
-worst moment, over and above what was allocated when it started. `mem` is an object
-with the functions of `torch.cuda` of the same names (on a GPU, pass the module
-itself):
+**`measure_peak(fn, mem)`** measures how many additional bytes of tensor memory `fn` requires at its peak above what was already allocated before `fn` ran. `mem` is an object exposing three `torch.cuda` methods (on a GPU, you pass `torch.cuda` itself):
 
-- `mem.memory_allocated()`: bytes occupied by tensors now;
-- `mem.max_memory_allocated()`: the largest value `memory_allocated()` has had since
-  the peak statistics were last reset (or since the process started);
-- `mem.reset_peak_memory_stats()`: resets that peak to the current value.
+- `mem.memory_allocated()` returns the bytes currently occupied by tensors.
+- `mem.max_memory_allocated()` returns the highest value `memory_allocated()` has reached since peak statistics were last reset (or since process startup).
+- `mem.reset_peak_memory_stats()` resets that peak counter to the current allocated value.
 
-Call `fn()` exactly once (its return value is discarded) and return, as a Python
-`int`, the peak of allocated memory during the call minus the allocated memory just
-before it. Peaks reached before the call do not count; memory that `fn` allocates and
-frees again does.
+Call `fn()` exactly once, discard its return value, and return the peak allocated bytes during the call minus the allocated bytes just before the call as a Python `int`. Peaks from before `measure_peak` must not affect the result, while temporary memory allocated and freed inside `fn()` must be included.
 
-The functions do not modify their arguments.
+None of the four functions may modify their input arguments.
 
 ## Example
 
@@ -89,74 +73,46 @@ The functions do not modify their arguments.
 predicted_allocated([(1,), (1000,), (2, 3, 4096)], torch.float16)  # 51712
 ```
 
-The three float16 tensors hold 2, 2000, and 49152 bytes. They occupy 512, 2048, and
-49152 bytes (the last is already $96 \cdot 512$): 51712 in total, not the 51154 of
-their data.
+These three `float16` tensors contain 2, 2000, and 49152 raw bytes (51154 bytes total). Rounding each up to a multiple of 512 bytes gives 512, 2048, and 49152 bytes (since $49152 = 96 \cdot 512$), for a total of 51712 bytes.
 
-A 24 GiB GPU, after loading a model and serving one request (1 GiB = $2^{30}$ bytes):
+Now consider a 24 GiB GPU ($1\text{ GiB} = 2^{30}$ bytes) after loading model weights and serving one warm-up request:
 
 ```python
 stats = {
-    "allocated_bytes.all.current": 7516192768,  # 7 GiB: the weights
-    "allocated_bytes.all.peak": 9663676416,  # 9 GiB: weights and activations
+    "allocated_bytes.all.current": 7516192768,  # 7 GiB: weights
+    "allocated_bytes.all.peak": 9663676416,  # 9 GiB: weights + activations
     "reserved_bytes.all.current": 10737418240,  # 10 GiB
     "inactive_split_bytes.all.current": 536870912,  # 0.5 GiB
-    ...  # about a hundred other keys
+    ...  # roughly a hundred other keys
 }
 
 fragmentation(stats)
-# {"cached_bytes": 3221225472,         3 GiB held and unused
-#  "releasable_bytes": 2684354560,     2.5 GiB of it in whole free segments
-#  "non_releasable_fraction": 0.05}    0.5 GiB of the 10 GiB reserved
+# {"cached_bytes": 3221225472,         # 3 GiB held and unused
+#  "releasable_bytes": 2684354560,     # 2.5 GiB in whole free segments
+#  "non_releasable_fraction": 0.05}    # 0.5 GiB of 10 GiB reserved
 
 kv_budget(stats, 24 * 2**30, 0.125)  # 14092861440
 ```
 
-The process needs 9 GiB at its peak, which leaves 15 GiB; seven eighths of that is
-13.125 GiB. At the 81,920 bytes per token of Granite 4.2 3B in bfloat16
-(`kv-cache-bytes`) that is 172,032 cached tokens. Subtracting the 10 GiB that are
-reserved instead would give 12.25 GiB, and taking the margin from the total,
-$24 \cdot 0.875 - 9$, would give 12 GiB.
+Peak tensor memory is 9 GiB, leaving 15 GiB free. Keeping seven eighths of that yields 13.125 GiB (`14092861440` bytes). At 81,920 bytes per token for Granite 4.2 3B in `bfloat16` (see `kv-cache-bytes`), that fits 172,032 cached tokens. Subtracting the 10 GiB of reserved memory instead would give 12.25 GiB, and taking the safety margin from the total memory ($24 \cdot 0.875 - 9$) would give 12 GiB.
 
-For `measure_peak`, suppose 100 MiB are allocated, the peak since the process started
-is 400 MiB, and `fn` allocates a 64 MiB temporary, then a 32 MiB result, then frees
-the temporary:
+For `measure_peak`, suppose 100 MiB are currently allocated and the historical peak since process startup is 400 MiB. Inside `fn`, the code allocates a 64 MiB temporary tensor, allocates a 32 MiB result tensor, and then frees the 64 MiB temporary:
 
 ```python
 measure_peak(fn, mem)  # 100663296 = 96 MiB
 ```
 
-Allocated memory rises to 196 MiB during the call. Without a reset the old peak of
-400 MiB hides it (the answer would be 300 MiB); comparing the allocated memory after
-the call with the memory before it gives 32 MiB.
+Allocated memory peaks at 196 MiB during `fn`, which is 96 MiB above the 100 MiB baseline. Without resetting peak stats first, the stale 400 MiB peak would give 300 MiB. Comparing allocated memory before and after the call would miss the temporary and give only 32 MiB.
 
 ## Constraints
 
-- Up to 100 shapes of up to 5 dimensions; all byte counts are below $2^{50}$.
-- In the tests `safety` is a multiple of $1/64$, so that `free * (1 - safety)` is exact
-  in floating point however it is written.
-- All integer results are compared exactly and must be Python `int`s;
-  `non_releasable_fraction` is compared to a relative tolerance of `1e-9`.
-- **What runs where.** The cases without a hardware mark run on the CPU:
-  `predicted_allocated` against the rounding rule, `fragmentation` and `kv_budget` on
-  dicts that have the keys of `torch.cuda.memory_stats()` and consistent values, and
-  `measure_peak` against a simulated allocator. Those dicts were built by hand from
-  the documented key names; they were not captured from a GPU. Three cases run only
-  on a machine with an NVIDIA GPU: the prediction must be within 2 percent of what
-  `torch.cuda.memory_allocated()` reports for real tensors (each below 1 MiB),
-  `measure_peak(fn, torch.cuda)` must see a 64 MiB temporary, and `fragmentation` and
-  `kv_budget` must agree with `torch.cuda`'s own counters. The GPU cases were written
-  from the PyTorch 2.15 documentation and could not be run when the problem was
-  authored.
+- `shapes` contains up to 100 shapes with up to 5 dimensions each. All byte counts are below $2^{50}$.
+- In all tests, `safety` is a multiple of $1/64$, so `free * (1 - safety)` is exact in floating point.
+- All integer outputs are compared exactly and must be Python `int`s. `non_releasable_fraction` is compared with a relative tolerance of `1e-9`.
+- **Execution environment.** Standard test cases run on the CPU. They check `predicted_allocated` against the 512-byte rounding rule, `fragmentation` and `kv_budget` against hand-constructed dictionaries using documented `torch.cuda.memory_stats()` keys, and `measure_peak` against a simulated allocator. Three additional cases run only on machines with an NVIDIA GPU. They verify that `predicted_allocated` is within 2 percent of `torch.cuda.memory_allocated()` for real tensors under 1 MiB, that `measure_peak(fn, torch.cuda)` detects a 64 MiB temporary, and that `fragmentation` and `kv_budget` agree with `torch.cuda`'s own counters. The GPU cases were written from the PyTorch 2.15 documentation and could not be executed when the problem was authored.
 
 ## Why this matters
 
-An inference server decides at startup how much memory its KV cache gets, and that
-decision is its concurrency limit. The three wrong numbers are all on the screen at
-the same time. `nvidia-smi` shows reserved memory (plus the CUDA context), which
-makes a process look fuller than it is and tempts people into calling
-`empty_cache()` in a loop. `memory_allocated()` read while the server is idle shows
-the weights and none of the activations a request needs. And a peak that was never
-reset reports the largest allocation since the process started, usually from model
-loading. Sizing the cache from any of them either wastes gigabytes or produces an
-out-of-memory error on the first long prompt under load.
+An inference server decides at startup how much GPU memory to give its KV cache, and that budget sets its concurrency limit. Reading the wrong allocator counter leads directly to wasted capacity or crashes.
+
+`nvidia-smi` reports reserved memory (plus the CUDA context), which makes a process look fuller than it is and tempts engineers into calling `empty_cache()` in a loop. Reading `memory_allocated()` while the server is idle captures model weights but misses request activations. Reading a peak counter that was never reset reflects the highest spike since startup, often from model loading. Sizing the KV cache from any of those numbers either wastes gigabytes of VRAM or triggers an out-of-memory error on the first long prompt under load.

@@ -1,9 +1,4 @@
-Build the policy of a tiered KV store: prefix blocks live on the GPU, in host
-memory, or on disk, each tier larger and slower than the one above. Memory pressure
-pushes blocks down instead of throwing them away, and a request that needs them
-brings them back up, unless computing them again is faster than the transfer. The
-store that holds the blocks is given; you write the index that decides what moves
-where, on a simulated clock that charges for every load and every computation.
+Implement the placement and eviction policy for a tiered KV cache across GPU memory, host memory, and disk. When GPU memory fills up, your policy demotes prefix blocks to colder tiers instead of discarding them. When a later request needs cached blocks, your policy decides whether to load them back or recompute them using a provided block store and simulated clock.
 
 ## Specification
 
@@ -14,98 +9,56 @@ class TieredKV:
     def discard(self, tokens): ...  # -> bool
 ```
 
-**Blocks and keys**, as in `block-hash-prefix-cache`. With $B$ = `block_size`, block
-$k$ of a prompt is `tokens[k*B : (k+1)*B]`; only full blocks count, and the tokens
-after the last full block are ignored. Two blocks are the same block exactly when
-they have the same index and their prompts agree on all tokens up to the end of the
-block. You choose a hashable **key** for every block that respects this identity
-(the chained hash of the prerequisite, or the prefix itself).
+**Blocks and keys.** Let $B = \texttt{block\_size}$. As in `block-hash-prefix-cache`, block $k$ of a prompt is `tokens[k*B : (k+1)*B]`. Only full blocks of length $B$ count, and trailing tokens after the last full block are ignored. Two blocks are identical if and only if they have the same index $k$ and their prompts agree on all tokens up through the end of block $k$. Choose any hashable key per block that preserves this identity (such as a chained hash or the prefix tuple itself).
 
-**The store** has three tiers, `"gpu"`, `"host"`, and `"disk"`, from hot to cold. A
-stored block is in exactly one tier. The store does what it is told and keeps no
-policy; your class keeps its own record of where each block is and how recently it
-was used.
+**The store.** The provided `store` manages three tiers ordered from hot to cold: `"gpu"`, `"host"`, and `"disk"`. Each stored block resides in exactly one tier. The store executes operations and keeps no policy state, so `TieredKV` must track where each block lives and how recently it was used.
 
 | member | effect |
 |---|---|
-| `store.capacity` | dict: slots per tier, in blocks, e.g. `{"gpu": 4, "host": 2, "disk": 4}` |
-| `store.costs` | dict of seconds: `compute_s`, `host_base_s`, `host_block_s`, `disk_base_s`, `disk_block_s` |
-| `await store.compute(key, parent, tokens)` | Computes one block on the GPU; takes `compute_s`. `tokens` are the block's own $B$ tokens; `parent` is the key of the block before it (`None` for block 0) and must be on the GPU. `key` must not be stored anywhere. Needs a free GPU slot. |
-| `await store.load(keys)` | One transfer of $n \ge 1$ blocks to the GPU, all from the host tier or all from the disk tier; takes `base_s + block_s * n` of that tier. Needs $n$ free GPU slots. Each block's parent must be on the GPU or earlier in `keys`. |
-| `store.demote(key, tier)` | Moves a block down, GPU to `"host"`, GPU to `"disk"`, or host to `"disk"`. Instant. Needs a free slot in `tier`. |
-| `store.drop(key)` | Deletes a stored block. Instant. |
+| `store.capacity` | Dict of tier capacities in blocks, e.g. `{"gpu": 4, "host": 2, "disk": 4}`. |
+| `store.costs` | Dict of operation times in seconds: `compute_s`, `host_base_s`, `host_block_s`, `disk_base_s`, `disk_block_s`. |
+| `await store.compute(key, parent, tokens)` | Computes one block on the GPU in `compute_s` seconds. `tokens` are the block's $B$ tokens, and `parent` is the key of block $k - 1$ (`None` for block 0), which must already be on the GPU. `key` must not be stored anywhere, and the GPU must have a free slot. |
+| `await store.load(keys)` | Transfers $n \ge 1$ blocks to the GPU in one batch, all from `"host"` or all from `"disk"`, taking `base_s + block_s * n` seconds for that tier. Needs $n$ free GPU slots. Each block's parent must already be on the GPU or appear earlier in `keys`. |
+| `store.demote(key, tier)` | Instantly moves a block to a colder tier (`"gpu"` to `"host"`, `"gpu"` to `"disk"`, or `"host"` to `"disk"`). Needs a free slot in `tier`. |
+| `store.drop(key)` | Instantly deletes a stored block from its current tier. |
 
-Loads and demotions move `store.block_bytes` bytes per block; computing and dropping
-move none. A call the store cannot carry out raises an error and is recorded; a
-solution that causes one fails, whether or not it catches the error. Only one
-`compute` or `load` may be in flight at a time.
+Loads and demotions move `store.block_bytes` bytes per block. Computing and dropping move zero bytes. Any invalid store call raises an error and is recorded by the harness, which fails the test even if you catch the exception. Only one `compute` or `load` may be in flight at a time.
 
-**`await serve(tokens)`** brings every full block of the prompt onto the GPU and
-returns what it did. Let the prompt have $m$ full blocks, $k = 0, \ldots, m - 1$.
-The store operations of one call are made in exactly this order:
+**Pinning, victims, and placement.** While `serve(tokens)` runs, all full blocks of `tokens` are *pinned* in every tier for the duration of the call.
 
-1. **Find.** $p$ is the number of **leading** blocks that are stored in some tier:
-   blocks $0, \ldots, p - 1$ are stored and block $p$ is not (or $p = m$). A stored
-   block behind a missing one is not reachable.
-2. **Choose the cut** $c \in \{0, \ldots, p\}$: blocks before $c$ are *reused* (left
-   on the GPU, or loaded), blocks from $c$ on are *computed*. If the reused blocks
-   include $h$ on the host tier and $d$ on the disk tier, the cut costs
+- **Victim.** The victim of a tier is the unpinned block in that tier that was used least recently (by the earliest `serve` call). Among blocks last used by the same `serve` call, pick the **deepest** block (largest block index). A tier whose blocks are all pinned has no victim.
+- **Place** a block $b$ into a target tier:
+  - If the tier has a free slot, call `demote(b, tier)`.
+  - Otherwise, if the tier has a victim $v$, first place $v$ into the next tier down, then call `demote(b, tier)` into the freed slot.
+  - Otherwise (the tier is full and every block in it is pinned), place $b$ into the next tier down instead.
+  - Placing a block below `"disk"` calls `drop` on it.
+
+**`await serve(tokens)`** brings every full block of `tokens` onto the GPU and returns a dict of counts. Let the prompt have $m$ full blocks, indexed $k = 0, \ldots, m - 1$. If $m = 0$, perform no store operations and return `{"gpu": 0, "host": 0, "disk": 0, "computed": 0}`. Otherwise, execute store operations in this exact order:
+
+1. **Find the stored prefix.** Let $p \in \{0, \ldots, m\}$ be the number of **leading** blocks currently stored in any tier, so blocks $0, \ldots, p - 1$ are stored and either $p = m$ or block $p$ is missing. Any stored block behind a missing block is unreachable.
+2. **Choose the cut.** Choose $c \in \{0, \ldots, p\}$. Blocks $0, \ldots, c - 1$ are *reused* (kept on the GPU or loaded), and blocks $c, \ldots, m - 1$ are *computed*. Let $h$ and $d$ be the counts of reused blocks on `"host"` and `"disk"`. Using $[x > 0]$ to denote 1 when $x > 0$ and 0 otherwise, the time cost of cut $c$ is
 
    $$
    t(c) = [h > 0]\,(\texttt{host\_base\_s} + h \cdot \texttt{host\_block\_s}) + [d > 0]\,(\texttt{disk\_base\_s} + d \cdot \texttt{disk\_block\_s}) + (m - c) \cdot \texttt{compute\_s}.
    $$
 
-   Take the $c$ with the smallest $t(c)$, and the **largest** such $c$ on a tie.
-3. **Drop** every stored block with index $\ge c$, in index order, whatever tier it
-   is in: it will be computed again.
-4. **Make room.** The blocks that are about to arrive on the GPU are the $m$ blocks
-   minus the reused ones already there. While the GPU has fewer free slots than
-   that, take the GPU's *victim* and *place* it in the host tier (both defined
-   below).
-5. **Load.** If $h > 0$, one `load` of the reused host blocks, in index order. Then,
-   if $d > 0$, one `load` of the reused disk blocks, in index order.
-6. **Compute** blocks $c, \ldots, m - 1$, in order, one `compute` each.
-7. All $m$ blocks are now *used by this call*. Return
-   `{"gpu": g, "host": h, "disk": d, "computed": m - c}`, where $g$ is the number of
-   reused blocks that were already on the GPU. (A prompt without a full block
-   causes no operation and returns four zeros.)
+   Pick the $c$ with the smallest $t(c)$, breaking ties in favor of the **largest** $c$.
+3. **Drop recomputed blocks.** For every block with index $k \ge c$ (in increasing index order) that is currently stored in any tier, call `store.drop` on it because it will be recomputed.
+4. **Make room on the GPU.** Let $g$ be the number of reused blocks already on `"gpu"`. The call needs $m - g$ free GPU slots for the blocks it will load or compute. While `"gpu"` has fewer than $m - g$ free slots, select the GPU's victim and place it in `"host"`.
+5. **Load.** If $h > 0$, call `await store.load` once with the reused `"host"` blocks in increasing index order. Then, if $d > 0$, call `await store.load` once with the reused `"disk"` blocks in increasing index order.
+6. **Compute.** For $k = c, \ldots, m - 1$ in order, call `await store.compute` for block $k$.
+7. **Update recency and return.** Mark all $m$ blocks as used by this `serve` call, and return `{"gpu": g, "host": h, "disk": d, "computed": m - c}`.
 
-**Victim.** The blocks of the prompt being served are *pinned* in every tier for
-the duration of the call. The victim of a tier is, among its blocks that are not
-pinned, the one used least recently, that is, by the earliest `serve` call; among
-blocks last used by the same call, the **deepest** (largest index). A tier whose
-blocks are all pinned has no victim.
+**`discard(tokens)`** removes one block from the store (for example, upon expiry). It drops the **last** full block of `tokens` from whichever tier holds it and returns `True`. If that block is not stored or `tokens` has no full block, it does nothing and returns `False`. Any blocks behind a discarded block remain in place, unreachable, until they are dropped as victims or in step 3.
 
-**Place** a block $b$ in a tier:
-
-- If the tier has a free slot, `demote` $b$ there.
-- Otherwise, if the tier has a victim $v$: first place $v$ in the next tier down,
-  then `demote` $b$ into the slot.
-- Otherwise (full, and everything in it pinned): place $b$ in the next tier down
-  instead.
-- Placing a block below the disk tier means `drop` it.
-
-**`discard(tokens)`** removes one block from the store, for example because it
-expired: the **last** full block of `tokens` is dropped from whatever tier holds it,
-and the method returns `True`. If that block is not stored, or `tokens` has no full
-block, nothing happens and it returns `False`. Blocks behind a discarded block stay
-where they are, unreachable, until they are dropped as victims or in step 3.
-
-`serve` is never called while another `serve` is running. `tokens` is a list of
-ints; do not modify it. Use `asyncio` only through the store: its two awaitable
-calls are where time passes.
+`serve` is never called while another `serve` is running. `tokens` is a list of ints and must not be modified. Use `asyncio` only through the store's two awaitable calls, which are where simulated time advances.
 
 > [!NOTE]
-> Deepest-first is what keeps a chain ordered: a block is never in a hotter tier
-> than its parent, so the reused blocks of a prompt are GPU blocks, then host
-> blocks, then disk blocks, and loading the host run before the disk run always
-> finds every parent in place.
+> Breaking ties deepest-first keeps every chain ordered by tier. A block is never in a hotter tier than its parent, so the reused prefix of any prompt consists of GPU blocks, then host blocks, then disk blocks. Loading the host run before the disk run therefore always finds every parent already on the GPU.
 
 ## Example
 
-`block_size = 2`, capacity `{"gpu": 4, "host": 2, "disk": 4}`, and costs
-`compute_s = 0.25`, host `0.125 + 0.0625 n`, disk `0.5 + 0.125 n`. `A` and `B` are
-prompts of three blocks each, `A0 A1 A2` and `B0 B1 B2`.
+Suppose `block_size = 2`, capacity is `{"gpu": 4, "host": 2, "disk": 4}`, and costs are `compute_s = 0.25`, host `0.125 + 0.0625 n`, and disk `0.5 + 0.125 n`. Prompts `A` and `B` each have three full blocks: `A0 A1 A2` and `B0 B1 B2`.
 
 | call | starts | store operations, in order | returns | ends |
 |---|---|---|---|---|
@@ -114,48 +67,24 @@ prompts of three blocks each, `A0 A1 A2` and `B0 B1 B2`.
 | `serve(A)` | 2 | demote `B2` to disk, `B1` to disk; load `[A1, A2]` from host | `gpu: 1, host: 2` | 2.25 |
 | `serve(B)` | 3 | drop `B1`, `B2`; demote `A2` to host, `A1` to host; compute `B1`, `B2` | `gpu: 1, computed: 2` | 3.5 |
 
-(Counts that are 0 are left out of the table; the dict always has all four keys.)
+(Zero-valued counts are omitted from the table for readability; the returned dict always contains all four keys.)
 
-- **Second call.** Three blocks must arrive and one slot is free. All of `A` was
-  last used by the first call, so the victims are its deepest blocks first: `A2`,
-  then `A1`. `A0` stays on the GPU.
-- **Third call.** `A0` is on the GPU and `A1`, `A2` on the host. Loading both takes
-  $0.125 + 2 \cdot 0.0625 = 0.25$ s; computing them would take $0.5$ s, so $c = 3$.
-  Two slots are needed. The victim is `B2`, but the host tier is full and both its
-  blocks are pinned (they belong to this prompt), so `B2` is placed one tier
-  further down, and `B1` after it. Then one transfer brings `A1` and `A2` back.
-- **Fourth call.** `B0` is on the GPU and `B1`, `B2` on disk. A disk transfer of two
-  blocks takes $0.5 + 0.25 = 0.75$ s; computing two blocks takes $0.5$ s. So
-  $c = 1$: the two disk copies are dropped, room is made, and the blocks are
-  computed.
+- **Second call.** Three blocks must arrive on the GPU and only one slot is free. All blocks of `A` were last used by the first call, so the victims are chosen deepest-first: `A2`, then `A1`. `A0` stays on the GPU.
+- **Third call.** `A0` is on the GPU while `A1` and `A2` are on the host. Loading both from host takes $0.125 + 2 \cdot 0.0625 = 0.25$ s, whereas computing them takes $0.5$ s, so $c = 3$. Two GPU slots are needed. The first GPU victim is `B2`, but the host tier is full and both of its blocks (`A1`, `A2`) are pinned by this call. `B2` therefore passes through to disk, followed by `B1`. One batched transfer then loads `A1` and `A2`.
+- **Fourth call.** `B0` is on the GPU while `B1` and `B2` are on disk. Loading two blocks from disk takes $0.5 + 0.25 = 0.75$ s, whereas computing them takes $0.5$ s. The cut is therefore $c = 1$. Both disk copies are dropped, room is made on the GPU by demoting `A2` and `A1` to host, and `B1` and `B2` are computed.
 
-In all, 8 blocks crossed a tier boundary (2, then 4, then 2), and the four calls
-took $0.75 + 0.75 + 0.25 + 0.5 = 2.25$ s of store time.
+In total, 8 blocks cross a tier boundary (2, then 4, then 2), and the four calls spend $0.75 + 0.75 + 0.25 + 0.5 = 2.25$ s of store time.
 
 ## Constraints
 
-- $1 \le$ `block_size` $\le 16$; capacities from 1 to 16 blocks per tier; a prompt
-  never has more full blocks than the GPU has slots; at most a few hundred calls.
-- All costs are positive multiples of $2^{-6}$ s, so every sum is exact and times
-  are compared with `==`. Simultaneous events do not occur: one call runs at a time.
-- For every call the tests compare, with the reference policy run on the same
-  script: the store operations of the call, in order; the returned value; and the
-  virtual time at which the call ends. Any store error fails the case.
-- **Cost.** Two totals are reported and must not exceed the policy's: `bytes_moved`
-  (bytes loaded or demoted) and `serve_time` (seconds of loads and computations).
-- Do not use the real clock or sleep yourself.
+- $1 \le \texttt{block\_size} \le 16$, tier capacities are between 1 and 16 blocks, a prompt never has more full blocks than the GPU has slots, and each test runs at most a few hundred calls.
+- All costs are positive multiples of $2^{-6}$ s, so every sum is exact in floating point and times are compared with `==`. Simultaneous events do not occur because only one call runs at a time.
+- For every call, tests compare your policy against the reference on the exact sequence of store operations, the returned dict, and the virtual end time. Any store error fails the test.
+- **Cost.** Two totals are tracked and must not exceed the reference policy's values: `bytes_moved` (total bytes loaded or demoted) and `serve_time` (total seconds spent in loads and computations).
+- Do not read the real wall clock or call `sleep`.
 
 ## Why this matters
 
-GPU memory holds the KV cache of the requests that are running and little else.
-Everything a prefix cache could reuse later (a long system prompt, a conversation
-whose user is typing, a document someone will ask about again) competes for the
-same memory, and a cache that can only evict loses it. Tiered stores keep it: host
-memory is larger than GPU memory, local disks are larger again, and bringing a
-prefix back is usually far cheaper than prefilling it again. Usually.
-A transfer has a fixed cost and a bandwidth, a prefill has a speed, and for a short
-prefix on a slow tier recomputing wins; a store that always loads makes those
-requests slower than no cache at all. The bookkeeping decides the rest: demote a
-parent before its children and the cold tiers fill with chains whose heads are
-missing; forget to pin the blocks of the request in flight and the store pushes
-down the very blocks it is about to load.
+GPU memory is mostly consumed by active requests, leaving little room for cached prefixes such as system prompts, multi-turn conversations, or shared documents. A single-tier cache must evict those blocks under pressure and lose them. Tiered KV stores offload them to larger, cheaper host memory and local disk so returning requests can reload prefixes instead of repeating prefill.
+
+Getting the policy right matters as much as having the tiers. Transfers have fixed latency and finite bandwidth, so recomputing beats loading for short prefixes on slow tiers. A policy that always loads makes short requests slower than having no cache at all. Eviction details are equally fragile. Demoting a parent before its children strands cold chains without their heads. Forgetting to pin the active request's blocks causes the store to demote the very blocks it is about to load.

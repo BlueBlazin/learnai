@@ -1,8 +1,4 @@
-Write the two tools every memory investigation on Apple silicon starts with: a
-prediction of how many bytes a set of arrays needs, and a measurement of how much MLX
-memory one function call really used. The arithmetic is trivial. The measurement is
-not, because MLX is lazy (a result that was never evaluated has allocated nothing)
-and because its counters are global to the process.
+Implement two MLX memory accounting functions. The first predicts how many bytes a list of array shapes requires, and the second measures the MLX memory actually used by a single function call. Because MLX evaluates operations lazily and tracks memory with process-wide counters, accurate measurement requires forcing evaluation and isolating the call from surrounding state.
 
 ## Specification
 
@@ -11,58 +7,44 @@ def predicted_bytes(shapes, dtype): ...
 def measure(fn, *args): ...
 ```
 
-**`predicted_bytes(shapes, dtype)`** returns the number of bytes needed to store
-arrays of the given shapes, all of dtype `dtype`:
+**`predicted_bytes(shapes, dtype)`** computes the total number of bytes required to store a list of arrays with the given shapes and common dtype `dtype`. Multiply the byte size of one element by the sum of element counts across all shapes:
 
 $$
 \text{bytes} = \text{itemsize}(\text{dtype}) \cdot \sum_{s \,\in\, \text{shapes}} \; \prod_{d \,\in\, s} d .
 $$
 
-- `shapes`: a list of shapes, each a tuple of non-negative ints. The empty tuple `()`
-  is a scalar (one element); a shape containing a 0 is an empty array (no elements);
-  the list may be empty.
-- `dtype`: an MLX dtype (`mx.float32`, `mx.float16`, `mx.bfloat16`, `mx.int8`,
-  `mx.bool_`, ...).
+- `shapes` is a list of tuples of non-negative integers. The empty tuple `()` is a scalar with 1 element, a shape containing `0` is an empty array with 0 elements, and `shapes` itself may be empty (returning `0`).
+- `dtype` is an MLX dtype (`mx.float32`, `mx.float16`, `mx.bfloat16`, `mx.int8`, `mx.bool_`, and so on).
 - Returns a Python `int`.
 
-**`measure(fn, *args)`** calls `fn(*args)`, makes sure the work is really done, and
-returns a dict with exactly these keys:
+**`measure(fn, *args)`** invokes `fn(*args)`, ensures all computation finishes, and returns a dictionary with exactly these four keys:
 
 | key | value |
 |---|---|
-| `"result"` | what `fn` returned (an array, or a tuple, list, or dict of arrays), **evaluated** |
-| `"peak_bytes"` | the most MLX memory in use at any one time during the call, minus what was in use just before it |
-| `"active_bytes"` | the MLX memory in use after the call, minus what was in use just before it: what the call left allocated, which is its result |
-| `"cache_bytes"` | the size of MLX's buffer cache after the call: buffers the call allocated and freed, which MLX keeps for reuse |
+| `"result"` | the evaluated return value of `fn` (an array, or a tuple, list, or dict of arrays) |
+| `"peak_bytes"` | maximum MLX memory in use at any point during the call, minus the memory in use just before the call |
+| `"active_bytes"` | MLX memory in use after the call, minus the memory in use just before the call (what the call left allocated) |
+| `"cache_bytes"` | size of MLX's buffer cache after the call (buffers allocated and freed by the call, then kept for reuse) |
 
-The three counts are Python `int`s. They must be attributable to `fn`:
+All three byte counts must be Python `int`s attributable solely to `fn`:
 
-- **The result is evaluated inside the measurement.** `fn` returns a lazy graph.
-  Until it is evaluated, nothing has been allocated and every counter reads as if
-  nothing happened.
-- **The arguments are not charged to `fn`.** Memory the arguments occupy is in use
-  before the call. An argument may itself be lazy; the memory needed to compute and
-  hold it is the caller's, not `fn`'s. Arguments that are not arrays (Python numbers)
-  are passed through.
-- **Earlier work is not charged to `fn`.** The process has a history: a high-water
-  mark from before, and freed buffers sitting in the cache. Neither may show up in the
-  report.
+- **Evaluate the result inside the measurement.** `fn` returns a lazy computation graph. Until it is evaluated, MLX allocates nothing and all counters read zero.
+- **Exclude the arguments.** Memory occupied by the arguments is already in use before the call. An argument may itself be lazy, and the memory needed to compute and hold it belongs to the caller rather than `fn`. Non-array arguments (such as Python numbers) pass through unchanged.
+- **Exclude earlier work.** The process may already have an earlier peak memory high-water mark and freed buffers sitting in the cache. Neither may appear in the reported counts.
 
-The MLX functions involved (MLX 0.32.4; all in `mlx.core`):
+The relevant functions in `mlx.core` (MLX 0.32.4) are:
 
 | function | what it does |
 |---|---|
-| `mx.get_active_memory()` | bytes in use by arrays that are alive; excludes the cache |
-| `mx.get_peak_memory()` | the largest value active memory has had since the last reset |
-| `mx.reset_peak_memory()` | resets that high-water mark |
+| `mx.get_active_memory()` | bytes currently used by live arrays, excluding the cache |
+| `mx.get_peak_memory()` | highest value active memory has reached since the last reset |
+| `mx.reset_peak_memory()` | resets the peak memory high-water mark |
 | `mx.get_cache_memory()` | bytes of freed buffers MLX is holding for reuse |
-| `mx.clear_cache()` | returns the cached buffers to the system |
-| `mx.synchronize()` | waits until the GPU has finished everything submitted so far |
+| `mx.clear_cache()` | returns cached buffers to the system |
+| `mx.synchronize()` | blocks until the GPU finishes all submitted work |
 
 > [!NOTE]
-> The buffers of a graph's temporaries are released when the GPU reports completion,
-> which can be a moment *after* `mx.eval` returns. Until then they still count as
-> active. Call `mx.synchronize()` after evaluating and before reading the counters.
+> Buffers for a graph's temporary arrays are released when the GPU reports completion, which can happen slightly *after* `mx.eval` returns. Until then, those buffers still count as active. Call `mx.synchronize()` after evaluating and before reading the counters.
 
 ## Shapes
 
@@ -104,33 +86,18 @@ measure(keeps_half, x)
 # cache_bytes  16_777_224     16 MiB: the temporary's buffer, freed and kept for reuse
 ```
 
-`x` is 16 MiB and in use throughout, and appears in none of the numbers. Without the
-evaluation inside `measure`, the first call would report 0 for all three.
+Although `x` occupies 16 MiB throughout, it does not appear in any of the reported counts. Without evaluating the result inside `measure`, the first call would report 0 for all three metrics.
 
 ## Constraints
 
-- `predicted_bytes` is compared exactly.
-- `"result"` is compared with a NumPy computation (relative tolerance `1e-4`,
-  absolute `1e-6`) and must have no pending operations.
-- Each byte count must be within **10 percent of the expected value plus 1 MiB**,
-  where the expected value is the size of the arrays the fixture allocates, as in the
-  example. The fixtures allocate between 8 and 32 MiB, so array sizes dominate any
-  allocator overhead. These cases need the Apple GPU.
-- Before each call of `measure`, the judge does unrelated MLX work: it allocates,
-  evaluates, and frees a 64 MiB array. Some cases call `measure` twice in a row.
-- `fn` may call `mx.eval` itself. `fn` and its arguments are not modified.
+- `predicted_bytes` must match the exact byte count.
+- `"result"` is compared against a NumPy reference (relative tolerance `1e-4`, absolute tolerance `1e-6`) and must have no pending operations.
+- Each byte count must fall within **10 percent of the expected value plus 1 MiB**, where the expected value is the size of the arrays allocated by the test fixture. Fixtures allocate between 8 and 32 MiB so array sizes dominate allocator overhead. These cases require an Apple GPU.
+- Before each call to `measure`, the judge allocates, evaluates, and frees an unrelated 64 MiB array. Some test cases call `measure` twice in a row.
+- `fn` may call `mx.eval` internally. Do not modify `fn` or its arguments.
 
 ## Why this matters
 
-On Apple silicon the GPU has no memory of its own: weights, the KV cache, and
-activations share the machine's RAM with everything else, and the first question
-about any model or optimization is whether it fits. The prediction side is how you
-size a KV cache before allocating it (layers × 2 × heads × tokens × head dimension ×
-itemsize). The measurement side is how you find out that the prediction was wrong,
-and both classic ways of fooling yourself are in this problem: timing or measuring a
-lazy graph that never ran, which makes every optimization look free, and reading
-process-wide counters without a baseline, which attributes the model's own 4 GB to
-whatever you measured after loading it. `active`, `cache`, and `peak` are also three
-different answers to "how much memory does it use": what your arrays hold, what MLX
-is keeping from the system on top of that, and the worst moment, which is the number
-that decides whether the machine starts swapping.
+On Apple silicon, the GPU shares system RAM with the CPU, so weights, the KV cache, and activations all compete for the same unified memory pool. Before running a model or an optimization, you first estimate whether it fits using `predicted_bytes` (for example, sizing a KV cache as `layers * 2 * heads * tokens * head_dim * itemsize`).
+
+Measurement tells you when reality disagrees with that estimate. Two classic mistakes invalidate MLX measurements: measuring a lazy graph that never executed (making every operation look free) and reading process-wide counters without a baseline (charging the model's own weights to a small helper function). Tracking `active`, `cache`, and `peak` separately also answers three distinct questions: what your live arrays hold, what MLX retains from the OS for reuse, and the worst-case spike that determines whether the machine starts swapping.

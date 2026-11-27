@@ -1,49 +1,16 @@
 ## The idea
 
-Four problems compose into one runner, and the composition has a single rule: after
-stage 1 the only source of truth is the checkpoint. Everything downstream is written
-against three tensors per matrix (bytes, scales, biases), so the design question is
-where the boundary between "format" and "model" runs. The answer that keeps every
-stage short is two small accessors, and a forward pass that never touches a key of
-the checkpoint except through them.
+After stage 1, the quantized checkpoint is the only source of truth. Every downstream function operates on three tensors per matrix (packed bytes, scales, and biases). The cleanest way to separate the storage format from the transformer architecture is to write two small accessors, `_qlinear` and `_embed`, so the decoder forward pass never inspects checkpoint keys directly.
 
 ![Left, the checkpoint that stages 1 and 4 write. Right, one step of stages 2 and 3, which reads only that checkpoint.](assets/runner.svg)
 
-**Stage 1** is `groupwise-4bit` per matrix plus `bit-packing` in bytes: reshape a row
-of codes to pairs and compute `low + 16 * high`. The result replaces the float
-matrix under its own name, which is how MLX checkpoints are laid out, and it is what
-makes "is the float matrix still there?" a question about bytes. Two sizes are worth
-checking by hand before moving on: a 4-bit row has `in / 2` bytes, and the whole
-checkpoint has `n * bits / 8 + 8 * n / group_size` bytes per matrix of `n` weights.
+**Stage 1** combines `groupwise-4bit` with `bit-packing`. For 4-bit weights, reshape each row of codes into pairs and pack them as `low + 16 * high`. Storing the packed uint8 array under the original `*.weight` key matches MLX's checkpoint layout and ensures no float weights remain behind. A 4-bit row uses `in / 2` bytes, and a matrix of $n$ weights uses `n * bits / 8 + 8 * n / group_size` bytes in total.
 
-**Stage 2** is `decoder-forward` with every `x @ W.T` replaced by one function,
-`qlinear(ckpt, name, x)`, which is `quantized-matmul` behind an unpack. The number of
-bits is read from the shapes at the point of use, per matrix; a runner that reads it
-once runs every uniform checkpoint and fails on the first mixed one, and mixed is
-what stage 4 produces. The embedding is the one place where a float row is needed.
-Index the bytes, the scales, and the biases with the token ids first, then
-dequantize: `B * T` rows instead of `vocab_size`. With tied embeddings the same
-codes are used twice, as a lookup at the bottom and as a `qlinear` at the top.
-`ops.swiglu` takes float matrices, so the MLP is written out: two `qlinear`s, a
-`silu`, a third `qlinear`.
+**Stage 2** adapts `decoder-forward` by replacing every linear projection `x @ W.T` with `_qlinear(ckpt, name, x, group_size)`. Derive `bits` from the tensor shapes inside the accessor for every matrix so mixed-precision checkpoints work automatically. For the embedding lookup, index `weight`, `scales`, and `biases` with `tokens` first and dequantize only those $B \cdot T$ rows instead of the whole vocabulary. When `cfg.tie_embeddings` is `True`, `model.embed_tokens.weight` serves as both the input embedding (via `_embed`) and the output head (via `_qlinear`). Because `ops.swiglu` expects float weight matrices, write the SwiGLU MLP explicitly using three `_qlinear` calls and `silu`.
 
-**Stage 3** is `kv-cache-append` inside each layer, with the two things that problem
-left out because it had no model around it. Positions: a new token's RoPE angle
-comes from its absolute position `S + i`, so positions are `S + arange(T)`, never
-`arange(T)`. Convention: the cache holds keys *after* rotation, so a cached key is
-never rotated again and a cache built by anyone who follows the convention can be
-continued by anyone else. That is what lets `generate_q` continue a prefix it has
-never seen, and it is why the layout of the cache is part of the specification and
-not an implementation detail. With `step_q` in place, `forward_q` is `step_q` with
-no cache, and generation is one call for the prompt and one per token.
+**Stage 3** embeds `kv-cache-append` inside each decoder layer and enforces two cache invariants. First, every new token uses its absolute position `S + i` for RoPE (`past + arange(T)`), never `arange(T)`. Second, the cache stores keys *after* RoPE rotation so cached keys are never rotated twice and any cache built under the spec can be continued by `step_q` or `generate_q`. Once `step_q` works, `forward_q` is just `step_q(..., cache=None)[0]`, and `generate_q` prefills the prompt in one call followed by single-token decode calls.
 
-**Stage 4** generalizes the quantizer from a number of bits to a function from name
-to bits, and adds the accounting. The recipe (8 bits for the embedding and the
-head, 4 elsewhere) is the cheapest effective move in this model: the embedding is 5
-percent of the weights and its error enters at every token and, tied, leaves through
-every logit. The accounting must count what is stored: codes, two float32 numbers
-per group, and the gains. Leave the metadata out and the recipe "fits" budgets it
-exceeds by a fifth of a bit per weight.
+**Stage 4** generalizes the quantizer to accept a per-tensor bit width and implements exact byte accounting. Keeping `model.embed_tokens.weight` (and `lm_head.weight` when untied) at 8 bits while quantizing everything else to 4 bits is the highest-leverage move in this model. The embedding accounts for only 5% of parameters, yet its quantization noise affects every input token and (when tied) every output logit. `bits_per_weight` must count every stored bit (packed codes, float32 scales and biases, and unquantized gains) so the budget check reflects true memory usage.
 
 ## Reference solution (PyTorch)
 
@@ -90,70 +57,32 @@ def step_q(ckpt, cfg, tokens, cache, group_size):
         ...
 ```
 
-The full file adds the quantizer and packer of stage 1, the greedy loop, and the two
-functions of stage 4. `torch.cat` builds new tensors, so the cache that was passed
-in is untouched and can be continued twice.
+The complete reference adds the stage 1 quantizer and packer, the greedy loop in `generate_q`, and the stage 4 accounting and mixed-precision functions. Because `torch.cat` allocates new tensors, the caller's input `cache` is never modified.
 
-Why the pieces agree: `_qlinear` computes exactly $x \hat W^\top$ (the identity of
-`quantized-matmul` is an equality, not an approximation), and `_embed` computes
-exactly rows of $\hat E$. So the runner *is* the float model with weights $\hat W$,
-which is what the tests compare it with, and the only approximation in the whole
-system is the rounding in stage 1.
+`_qlinear` computes $x\,\hat W^{\top}$ exactly (the grouped dot-product identity is algebraic, not approximate), and `_embed` reconstructs exact rows of $\hat E$. The quantized runner therefore matches the float decoder evaluated on $\hat W$, and the only approximation in the entire pipeline is the rounding in stage 1.
 
 ## Common mistakes
 
-- **A float matrix kept alongside the codes**, typically the embedding, "for the
-  lookup". The checkpoint is then larger than the format, and the forward pass
-  fails on any checkpoint somebody else wrote.
-- **Nibble order.** Packing the first code into the high half of the byte
-  round-trips with its own unpacker and is wrong for every other reader.
-- **Codes not packed**: 4-bit codes stored one per byte make a "4-bit" checkpoint
-  the size of an 8-bit one.
-- **A constant group** divided by its range of zero: NaN codes. Give it scale 1.
-- **One scale per row in the embedding lookup.** With a group size equal to
-  `d_model` there is one group per row and the bug is invisible; with two groups per
-  row the second half of every embedding is off.
-- **Each bias times the sum of the whole input row.** The bias of a group
-  multiplies the sum of *its* inputs.
-- **Bits assumed, or read once for the whole checkpoint.** They are a property of
-  each matrix.
-- **Positions restart at 0 in every step.** Decoding one token at a time then
-  gives every new token position 0.
-- **No causal mask inside a chunk** when a cache is present. Invisible with one
-  token per step; wrong when a prompt continues a cached prefix.
-- **Keys cached before rotation** and rotated again each step. Self-consistent, but
-  not the specified cache: it cannot continue a cache from another source, and it
-  rotates `S + T` keys per step instead of `T`.
-- **The cache bypassed**: recomputing the whole sequence for each token gives the
-  right tokens at quadratic cost, and cannot continue a prefix it has no tokens for.
-- **Metadata left out of the budget**, or **no budget check at all**: the recipe is
-  returned although it does not fit.
-- **The recipe ignored** (everything at 4 bits: under the budget, over the KL
-  limit), or **an untied head left at 4 bits**.
+- **Keeping a float copy of the embedding matrix.** Storing float weights alongside packed codes breaks the checkpoint size check and fails when the forward pass runs on a judge-built checkpoint.
+- **Wrong nibble order.** Packing the first code into the high nibble round-trips with your own unpacker but fails against any checkpoint produced by the spec.
+- **Storing 4-bit codes unpacked.** Saving one 4-bit code per uint8 byte doubles checkpoint size to match 8-bit storage.
+- **Dividing constant groups by zero.** A group where max equals min has zero range and produces NaN codes unless its scale is set to `1.0`.
+- **Using one scale per row in `_embed`.** This bug hides when `group_size == d_model` (one group per row) and corrupts embeddings whenever a row has multiple groups.
+- **Multiplying each group bias by the whole input row sum.** Each group's bias must multiply only the sum of the inputs belonging to that group.
+- **Hardcoding or caching a single bit width.** Bit width is a per-matrix property; reading it once breaks on mixed-precision checkpoints.
+- **Resetting RoPE positions to 0 on each step.** Decoding one token at a time with `positions = arange(T)` assigns position 0 to every generated token.
+- **Missing the causal mask inside a cached chunk.** Omitting the causal mask works for single-token decode steps ($T = 1$) but fails when a multi-token prompt continues an existing cache.
+- **Caching unrotated keys.** Rotating cached keys on every step breaks interoperability with external caches and wastes work rotating $S + T$ keys instead of $T$.
+- **Bypassing the KV cache in `generate_q`.** Recomputing the whole sequence on each token has quadratic attention cost and cannot continue a prefix whose tokens are only in `cache`.
+- **Omitting metadata from `bits_per_weight` or skipping the budget check.** Ignoring scales and biases understates size, and skipping the check returns checkpoints that exceed `max_bpw`.
+- **Ignoring the mixed recipe or leaving an untied `lm_head` at 4 bits.** Uniform 4-bit quantization stays under the size budget but exceeds the 0.14 nat KL divergence limit.
 
 ## Complexity
 
-Quantizing is $O(n)$ per matrix. A step over $T$ new tokens with $S$ cached costs
-$O(T \cdot n)$ in the linear layers (the codes are read once per token) and
-$O(T (S + T) d)$ per head in attention; generating $N$ tokens after a prompt of $P$
-processes $P + N - 1$ tokens in total, against $O(N (P + N))$ without the cache.
-Storage is `bits + 64 / group_size` bits per matrix weight with float32 metadata.
-This reference unpacks a matrix each time it is used, which keeps the code short; a
-kernel reads the packed bytes directly (the GPU kernel problems do that).
+Quantizing a matrix of $n$ weights takes $O(n)$ time. One step over $T$ new tokens with $S$ cached tokens takes $O(T \cdot n)$ time in linear layers and $O(T(S + T)d)$ per head in attention. Generating $N$ tokens after a $P$-token prompt processes $P + N - 1$ tokens in total, compared to $O(N(P + N))$ without a cache. Storage is `bits + 64 / group_size` bits per matrix weight with float32 metadata. This reference unpacks a matrix to float32 on each use for clarity, whereas production GPU kernels read packed bytes directly.
 
 ## In the wild
 
-- MLX stores a quantized `Linear` or `Embedding` as packed codes under `weight`
-  with `scales` and `biases` per group of 64 inputs, and multiplies with
-  `mx.quantized_matmul`; its metadata is float16 in a float16 model, which is why
-  "4-bit" is 4.5 bits per weight there and 5 here, where it is float32.
-  `problems/quantization/quantize-real-weights` measures that on a real model.
-- `mlx_lm.convert --quant-predicate` takes mixed recipes (`mixed_2_6`, `mixed_3_4`,
-  `mixed_3_6`, `mixed_4_6`): `lm_head` always gets the higher width, and so do
-  `v_proj` and `down_proj` in the first and last eighth of the layers and every
-  third layer between. llama.cpp's GGUF presets likewise mix quantization types
-  across tensors, and `mlx_lm`'s dynamic quantization chooses per-layer bits from
-  measured sensitivities under a bits-per-weight target; `bit-allocation` solves
-  that choice exactly.
-- Keeping rotated keys in the cache is what RoPE implementations do, because the
-  rotation of a key depends only on its own position.
+- MLX stores quantized `Linear` and `Embedding` layers as packed `weight` bytes with per-group `scales` and `biases` (default `group_size = 64`) and multiplies via `mx.quantized_matmul`. Because MLX uses float16 metadata in float16 models, 4-bit quantization costs 4.5 bits per weight there versus 5.0 (plus norms) here with float32 metadata (`problems/quantization/quantize-real-weights` measures this on real weights).
+- `mlx_lm.convert --quant-predicate` supports mixed recipes (`mixed_2_6`, `mixed_3_4`, `mixed_3_6`, `mixed_4_6`) that give `lm_head` the higher bit width along with `v_proj` and `down_proj` in sensitive layers. `llama.cpp` GGUF presets similarly mix quantization types across tensors, and `mlx_lm`'s dynamic quantization allocates per-layer bit widths from measured sensitivities under a target budget (solved exactly in `bit-allocation`).
+- Real RoPE serving stacks always cache post-rotation keys because a key's rotary embedding depends only on its own position.

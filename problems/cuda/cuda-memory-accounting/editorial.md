@@ -1,46 +1,22 @@
 ## The idea
 
-Asking the GPU driver for memory is slow, so PyTorch asks rarely. Its caching
-allocator reserves segments from the driver, cuts blocks out of them for tensors,
-and keeps a freed block for the next request instead of giving it back. That one
-design decision produces three different numbers for "how much memory is used":
+Requesting memory from the GPU driver is expensive, so PyTorch's caching allocator reserves large segments up front, carves blocks out of them for tensors, and keeps freed blocks cached for reuse. That design produces three distinct measurements of memory usage:
 
-- **allocated**: the blocks that tensors occupy now (`torch.cuda.memory_allocated()`);
-- **reserved**: every segment the allocator holds, occupied or not
-  (`torch.cuda.memory_reserved()`, and roughly what `nvidia-smi` shows for the
-  process, which also includes the CUDA context);
-- **peak allocated**: the largest value allocated has had since the peak statistics
-  were last reset (`torch.cuda.max_memory_allocated()`).
+- **Allocated** (`torch.cuda.memory_allocated()`): bytes currently occupied by live tensors.
+- **Reserved** (`torch.cuda.memory_reserved()`): bytes across all segments held by the allocator, whether occupied or cached. This is close to what `nvidia-smi` reports for the process, which also includes the CUDA context.
+- **Peak allocated** (`torch.cuda.max_memory_allocated()`): the maximum allocated bytes since peak statistics were last reset.
 
-In torch 2.15 the three functions are one-line lookups in the dict that
-`torch.cuda.memory_stats()` returns: `allocated_bytes.all.current`,
-`reserved_bytes.all.current`, and `allocated_bytes.all.peak`.
+In PyTorch 2.15, all three functions are single-key lookups into `torch.cuda.memory_stats()`: `allocated_bytes.all.current`, `reserved_bytes.all.current`, and `allocated_bytes.all.peak`.
 
-Each question of the problem is about one of them.
+Each function in this problem targets one of these quantities.
 
-*How much will these tensors occupy?* Allocated, and the allocator's unit is 512
-bytes: the CUDA notes say sizes "are rounded up in multiple of blocks size of 512".
-A one-element tensor occupies 512 bytes; a hundred of them occupy 51200. Rounding
-the sum instead of each term is the natural mistake.
+**Predicting allocated bytes.** The allocator rounds every allocation up to a multiple of 512 bytes. A 1-element tensor takes 512 bytes, and 100 of them take 51,200 bytes. Rounding must happen per tensor before summing, not once on the total.
 
-*How much of what the process holds is just cache?* Reserved minus allocated. Not all
-of it can be returned to the device: `empty_cache()` releases free segments, and a
-free block that shares its segment with a live tensor is stuck there. The allocator
-counts those bytes as `inactive_split_bytes`, documented as "inactive, non-releasable
-memory" (`torch.cuda.memory_summary()` prints the same number as "Non-releasable
-memory"). A large non-releasable share is what fragmentation looks like in these
-statistics.
+**Measuring fragmentation.** Cached memory is reserved minus allocated ($R - A$). However, `empty_cache()` can only return completely free segments to the driver. A free block that shares its segment with a live tensor cannot be released. The allocator tracks these stuck bytes as `inactive_split_bytes` ($S$, printed as "Non-releasable memory" by `torch.cuda.memory_summary()`). A high ratio $S / R$ indicates fragmentation.
 
-*How much is left for a cache?* The cache will be allocated through the same
-allocator, which satisfies requests from its own free blocks before reserving more.
-So cached memory is available, and what is unavailable is what tensors occupy at the
-worst moment of a request: the peak of allocated. The safety margin is a fraction of
-the free memory because it stands for what the measurement cannot see: fragmentation
-and allocations larger than those of the warm-up.
+**Sizing the KV cache.** Because the KV cache is allocated through the same caching allocator, cached free blocks are available to it. What is unavailable is the memory occupied by live tensors at the busiest moment of a request: `allocated_bytes.all.peak`. Applying the safety margin to the remaining free memory leaves headroom for fragmentation and requests larger than the warm-up.
 
-*How much does this function need?* Peak allocated during the call, minus allocated
-before it. The peak counter never decreases on its own, so it has to be reset first;
-and the difference of allocated before and after says nothing about temporaries.
+**Measuring a function's peak.** Peak allocated memory never decreases on its own, so you must reset peak stats before calling `fn`. Subtracting the baseline allocated memory from the new peak captures temporary allocations that were created and freed before `fn` returned.
 
 ## Reference solution (PyTorch)
 
@@ -80,66 +56,32 @@ def measure_peak(fn, mem):
     return mem.max_memory_allocated() - before
 ```
 
-`-(-n // 512) * 512` is integer ceiling division; it maps 0 to 0, which is the
-empty-tensor rule for free. `math.prod(())` is 1, which is the scalar rule.
+`-(-nbytes // 512) * 512` performs integer ceiling division and maps `0` to `0`, handling empty tensors automatically. `math.prod(())` evaluates to `1`, handling scalar shapes automatically.
 
 ## Common mistakes
 
-- **No rounding**, or **rounding the total once**. Both undercount, by up to 511
-  bytes per tensor; with many small tensors that is most of the memory.
-- **A block for an empty tensor.** A tensor with no elements allocates nothing.
-- **Four bytes per element** for every dtype.
-- **Reserved treated as in use** in the budget. The cache then never gets the memory
-  the allocator is holding for exactly such a request, and the number depends on the
-  history of the process (a large temporary at load time inflates reserved for good).
-- **Current instead of peak allocated.** The budget includes the memory that the
-  next request's activations need.
-- **The safety margin taken from the total.** With 9 of 24 GiB in use, an eighth of
-  the total is 3 GiB, a fifth of what is free; the two definitions diverge as the
-  model fills the device, and this one goes negative while memory is still free.
-- **A negative budget** when the peak exceeds the total.
-- **All cached memory reported as releasable.** `empty_cache()` then appears to
-  "leak": the split blocks stay reserved.
-- **Reading one pool.** The statistics exist per pool (`small_pool` for requests
-  below 1 MiB, `large_pool` for the rest) and summed (`all`).
-- **Indexing the dict.** `torch.cuda.memory_stats()` is empty on a machine without
-  CUDA; `torch.cuda.memory_allocated()` itself uses `.get(key, 0)`.
-- **No reset before measuring a peak**, **allocated-after minus allocated-before**,
-  **the absolute peak**, and **reserved instead of allocated**: the four ways to
-  measure something other than what the function needed.
+- **Skipping rounding or rounding only the total.** Both undercount by up to 511 bytes per tensor, which adds up rapidly with many small tensors.
+- **Charging 512 bytes for an empty tensor.** A tensor with 0 elements allocates 0 bytes.
+- **Assuming 4 bytes per element** instead of using `dtype.itemsize`.
+- **Subtracting reserved memory in `kv_budget`.** Cached memory is reusable by the same allocator, and reserved memory stays inflated after one-time load spikes.
+- **Subtracting current instead of peak allocated memory.** This forgets the activation memory required while serving a request.
+- **Taking the safety margin from `total_bytes`.** With 9 of 24 GiB used, an eighth of the total is 3 GiB (a fifth of free memory). The two formulas diverge as memory fills up, and subtracting from total can go negative while free memory remains.
+- **Returning a negative budget** when `peak > total_bytes`.
+- **Reporting all cached bytes as releasable.** Split free blocks remain held after `empty_cache()`, making it look like memory leaked.
+- **Reading a single allocator pool.** Stats exist for `small_pool` (requests under 1 MiB), `large_pool` (1 MiB and above), and their combined total `all`.
+- **Indexing `stats` directly with `[]`.** `torch.cuda.memory_stats()` returns `{}` when CUDA is unavailable. PyTorch's own `memory_allocated()` uses `.get(key, 0)`.
+- **Measuring the wrong counter in `measure_peak`.** Forgetting `reset_peak_memory_stats()`, subtracting allocated-before from allocated-after, returning the absolute peak without subtracting the baseline, or reading reserved memory instead of allocated memory all measure the wrong quantity.
 
 ## Complexity
 
-Linear in the number of shapes; constant for the other three, plus one call of `fn`.
+`predicted_allocated` runs in $O(k)$ time for $k$ shapes. `fragmentation` and `kv_budget` run in $O(1)$ time. `measure_peak` runs in $O(1)$ time plus one call to `fn`.
 
 ## What was verified, and what was not
 
-Verified on the CPU build of torch 2.15: the key names (from the docstring of
-`torch.cuda.memory_stats` and from `torch/cuda/memory.py`, where the four functions
-above are lookups of those keys), the empty dict without CUDA, and the allocator's
-constants in the header that ships with the wheel (`c10/core/AllocatorConfig.h`:
-"all sizes are rounded to at least 512 bytes", small allocations are those up to
-1 MiB and are packed into 2 MiB segments, requests of 10 MiB and more reserve
-segments rounded up to 2 MiB).
+Verified on the CPU build of PyTorch 2.15: the key names from `torch.cuda.memory_stats` and `torch/cuda/memory.py`, the empty-dict behavior without CUDA, and the allocator constants in `c10/core/AllocatorConfig.h` (512-byte minimum block rounding, 2 MiB segments for small allocations up to 1 MiB, and 2 MiB-aligned segments for requests of 10 MiB or more).
 
-Not verified, because it needs a GPU: the values of a real `memory_stats()` dict. The
-dicts in the tests were built by hand, and the identity
-`releasable = reserved - allocated - inactive_split` is derived from the documented
-meaning of the three statistics, not measured. The 512-byte rule is a lower bound in
-one respect: when the allocator reuses a cached block that is only slightly larger
-than the request, it may hand out the whole block without splitting it, and
-allocated then grows by the block's size. That is why the GPU case uses tensors
-below 1 MiB and allows 2 percent. The environment variable `PYTORCH_CUDA_ALLOC_CONF`
-(`roundup_power2_divisions`, `max_split_size_mb`) changes the rounding and splitting
-rules, and the `cudaMallocAsync` backend reports some statistics as zero.
+Not verified because it requires a GPU: live `memory_stats()` outputs. The test dicts were constructed by hand, and `releasable = reserved - allocated - inactive_split` is derived from the documented definitions rather than measured directly. The 512-byte rule is also a lower bound in one case: when the allocator reuses a slightly larger cached block without splitting it, `memory_allocated()` increases by the full block size. That is why the GPU test uses tensors under 1 MiB with a 2 percent tolerance. Settings in `PYTORCH_CUDA_ALLOC_CONF` (`roundup_power2_divisions`, `max_split_size_mb`) alter rounding and splitting behavior, and the `cudaMallocAsync` backend reports some counters as zero.
 
 ## In the wild
 
-vLLM sizes its KV cache at startup from a profiling run: it executes a dummy forward
-pass, measures the peak, and gives the cache what remains of
-`gpu_memory_utilization` times the device's memory. Its margin is a fraction of the
-total, a different convention from the one specified here; whichever is used, the
-quantity subtracted is a measured peak. The out-of-memory message of
-PyTorch itself prints allocated and "reserved but unallocated" memory and suggests
-allocator settings when the second number is large, which is the fragmentation
-figure of this problem. `torch.cuda.memory_summary()` prints the full table.
+vLLM sizes its KV cache at startup by running a dummy forward pass, measuring the peak memory usage, and assigning the cache whatever remains of `gpu_memory_utilization` times total device memory. Its margin is a fraction of total memory rather than free memory, but the subtracted baseline is still a measured peak. When PyTorch raises a CUDA out-of-memory error, the message prints both allocated memory and "reserved but unallocated" memory, suggesting allocator tuning flags when the second number is large. `torch.cuda.memory_summary()` displays the complete breakdown.

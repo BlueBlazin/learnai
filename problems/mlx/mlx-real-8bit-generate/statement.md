@@ -1,10 +1,4 @@
-Load a real 3-billion-parameter model, IBM's Granite 4.2 3B as an 8-bit MLX
-checkpoint, and generate text from it, in under 4 GiB where its float32 weights alone
-would take 13.6. Everything you built in this track meets here: a module tree that
-spells the checkpoint's names, linear layers that multiply straight from packed
-codes, the fused kernels, a KV cache, and a generation loop that schedules the next
-step before it reads the current token. The one thing that must never happen is the
-float weight matrix.
+Load IBM's Granite 4.2 3B from an 8-bit MLX checkpoint and run greedy generation with a KV cache and asynchronous evaluation. Keep weights packed end to end so the model runs in under 4 GiB instead of the 13.6 GiB required for `float32` weights.
 
 ## Specification
 
@@ -15,10 +9,9 @@ def generate(model, prompt_ids, max_new_tokens, eos_id=None): ...
 
 ### `load_model(path)`
 
-`path` is a directory with two files.
+`path` is a directory containing two files: `config.json` and `model.safetensors`.
 
-**`config.json`**, of `model_type` `"granite"`. `RealConfig.from_json(json.loads(text))`
-from the kit turns it into the fields of `mlx-real-model-forward`; for this model:
+**`config.json`** has `model_type` `"granite"`. Calling `RealConfig.from_json(json.loads(text))` from the kit produces the same architecture fields as in `mlx-real-model-forward`, plus `quantization = (bits, group_size)`. For Granite 4.2 3B:
 
 | field | Granite 4.2 3B | field | Granite 4.2 3B |
 |---|---|---|---|
@@ -28,19 +21,17 @@ from the kit turns it into the fields of `mlx-real-model-forward`; for this mode
 | `head_dim` | 64 | `logits_scaling` | 1.0 |
 | `d_ff` | 8192 | `rope_theta` | 1e7 |
 | `vocab_size` | 100352 | `norm_eps` | 1e-5 |
-| `quantization` | `(8, 64)`: `(bits, group_size)` | `tied_embeddings` | `False` |
+| `quantization` | `(8, 64)` (`bits, group_size`) | `tied_embeddings` | `False` |
 
-**`model.safetensors`**, in the layout `mlx_lm.convert -q` writes. Every linear layer
-and the embedding is stored as three tensors, and every RMSNorm gain as one:
+**`model.safetensors`** uses the layout written by `mlx_lm.convert -q`. Every linear layer and the embedding are stored as three tensors, and every RMSNorm gain is stored as one tensor. For a quantized weight matrix of logical shape `(out, in)` with bit width `bits` and group size $g = \texttt{group\_size}$:
 
 | tensor | dtype | shape |
 |---|---|---|
-| `<layer>.weight` | uint32 | `(out, in * bits / 32)`: the packed codes, lowest bits first |
-| `<layer>.scales`, `<layer>.biases` | bfloat16 | `(out, in / group_size)` |
-| `<norm>.weight` | bfloat16 | `(d_model,)` |
+| `<layer>.weight` | `uint32` | `(out, in * bits / 32)` (packed codes, lowest bits first) |
+| `<layer>.scales`, `<layer>.biases` | `bfloat16` | `(out, in / group_size)` |
+| `<norm>.weight` | `bfloat16` | `(d_model,)` |
 
-with $\hat W_{o,i} = \text{code}_{o,i} \cdot \text{scales}_{o,\lfloor i/g \rfloor} +
-\text{biases}_{o,\lfloor i/g \rfloor}$ the matrix a layer stands for. The layers are
+The dequantized matrix $\hat{W}$ has entries $\hat{W}_{o,i} = \text{code}_{o,i} \cdot \text{scales}_{o,\lfloor i/g \rfloor} + \text{biases}_{o,\lfloor i/g \rfloor}$ for output index $o$ and input index $i$. The checkpoint layers are:
 
 ```
 model.embed_tokens                                  (vocab_size, d_model)
@@ -53,95 +44,61 @@ model.norm                                          norm
 lm_head                                             (vocab_size, d_model)
 ```
 
-There are no biases of the linear layers themselves, and the head is always
-`lm_head`, never the embedding.
+Linear layers have no bias vectors, and the output head is always `lm_head` rather than a tied embedding.
 
-`load_model` returns an `mlx.nn.Module` with these properties:
+`load_model` returns an `mlx.nn.Module` satisfying three requirements:
 
-1. **Its parameters are the checkpoint's tensors**: `tree_flatten(model.parameters())`
-   has exactly the names of the file. Each `.weight` of a quantized layer is still the
-   uint32 array of packed codes with its stored shape.
-2. **Every floating parameter is float32** (scales, biases, norm gains are converted
-   from bfloat16), and all parameters are evaluated.
-3. **It is called** as
+1. **Exact parameter tree.** `tree_flatten(model.parameters())` matches the checkpoint's tensor names exactly. Each quantized layer's `.weight` remains a `uint32` array of packed codes with its stored shape.
+2. **Float32 floating parameters.** All floating parameters (`scales`, `biases`, and norm gains) are converted from `bfloat16` to `float32`, and all parameters are evaluated before `load_model` returns.
+3. **Cached call interface.** The returned module supports two call forms for an integer array `tokens` of shape `(1, T)` with $T \ge 1$:
 
    ```python
-   logits, cache = model(tokens)  # tokens: integer array of shape (1, T), T >= 1
-   logits, cache = model(tokens, cache)  # the tokens that follow the cached ones
+   logits, cache = model(tokens)          # fresh forward pass
+   logits, cache = model(tokens, cache)   # continue after cached tokens
    ```
 
-   `logits` is float32 of shape `(1, T, vocab_size)`. `cache` is an object of your
-   own design holding the keys and values of every layer; the model never modifies
-   one it was given. A call with a cache of $C$ tokens places its tokens at positions
-   $C, C + 1, \dots$, lets each attend to all cached tokens and to the new tokens up
-   to itself, and returns exactly the logits those positions get in one pass over the
-   whole sequence.
+   `logits` is `float32` with shape `(1, T, vocab_size)`. `cache` is an object of your design that stores keys and values for every layer, and calling `model(tokens, cache)` must not mutate the input `cache`. Given a `cache` holding $C$ prior tokens, the new tokens occupy positions $C, C + 1, \dots, C + T - 1$. Each new token attends to all $C$ cached tokens and to new tokens up to itself, producing the same logits those positions would get in a single pass over the full sequence.
 
-**The forward pass** is the one of `mlx-real-model-forward` (embedding times
-`embedding_multiplier`; pre-norm blocks with both branches times
-`residual_multiplier`; RoPE in the half-split layout with base `rope_theta` on
-queries and keys; scores times `attention_scale`; final norm; head; division by
-`logits_scaling`), with three differences:
+**Forward pass.** The computation matches `mlx-real-model-forward` (embedding scaled by `embedding_multiplier`, pre-norm blocks with both branches scaled by `residual_multiplier`, half-split RoPE with base `rope_theta` on queries and keys, attention scores scaled by `attention_scale`, final RMSNorm, and logits divided by `logits_scaling`), with three differences:
 
-- every linear layer computes $y = x\,\hat W^\top$ **from the packed codes**
-  (`mx.quantized_matmul`, or `nn.QuantizedLinear`, which calls it), and the embedding
-  returns rows of $\hat W_E$;
-- the MLP has separate matrices:
-  $\operatorname{down}\big(\operatorname{silu}(\operatorname{gate}(u)) \odot
-  \operatorname{up}(u)\big)$;
-- the head is `lm_head`.
+- Every linear layer computes $y = x\,\hat{W}^\top$ directly from packed codes (`mx.quantized_matmul` or `nn.QuantizedLinear`), and the embedding looks up rows of the dequantized embedding matrix $\hat{W}_E$.
+- For normalized input $u$, the MLP uses separate gate, up, and down projections: $\operatorname{down}\big(\operatorname{silu}(\operatorname{gate}(u)) \odot \operatorname{up}(u)\big)$.
+- The output head is `lm_head`.
 
-Every constant comes from the config, including `bits` and `group_size`.
+Read every constant from `config.json`, including `bits` and `group_size`.
 
-**The graph of a forward pass.** For an `n`-layer model, the lazy graph of
-`model(tokens)[0]` must contain `7n + 1` `QuantizedMatmul` operations (seven per layer
-and the head), `n` `ScaledDotProductAttention` operations, no `Matmul`, and at most
-one dequantization (the embedding rows of the given tokens).
+**Graph requirements.** For an `n`-layer model, the lazy graph of `model(tokens)[0]` must contain `7n + 1` `QuantizedMatmul` operations (7 per layer plus `lm_head`), `n` `ScaledDotProductAttention` operations, zero `Matmul` operations, and at most one dequantization (for the embedding rows of `tokens`).
 
 ### `generate(model, prompt_ids, max_new_tokens, eos_id=None)`
 
-Greedy decoding with the model above: the next token is the argmax of the logits of
-the last position.
+Run greedy decoding with `model`, choosing the argmax of the last position's logits at each step.
 
-- `prompt_ids`: a list of $P \ge 1$ ints. `max_new_tokens`: an int $\ge 1$.
-- `eos_id`: an int or `None`. Generation stops after generating `eos_id`, which is
-  the last element of the result. An `eos_id` in the prompt stops nothing.
-- Returns the generated tokens, a list of $1 \le g \le$ `max_new_tokens` Python ints.
+- `prompt_ids`: list of $P \ge 1$ Python `int`s.
+- `max_new_tokens`: integer $\ge 1$.
+- `eos_id`: `int` or `None`. When generated, `eos_id` is appended as the last element and generation stops. An `eos_id` inside `prompt_ids` does not stop generation.
+- Returns a list of $g$ Python `int`s with $1 \le g \le \texttt{max\_new\_tokens}$.
 
-The judge hands `generate` a wrapper that counts the calls, so use `model` only as
-documented, and it observes the evaluations (`EvalSpy`), as in
-`mlx-streaming-generate`:
+The judge wraps `model` to count calls and uses `EvalSpy` to inspect evaluations (as in `mlx-streaming-generate`), so call `model` only through its documented interface:
 
-1. The first call passes the whole prompt, shape `(1, P)`; every later call passes
-   one token, shape `(1, 1)`, and the cache.
-2. `mx.eval` is not called. Each step is scheduled with `mx.async_eval`, and each
-   token is read exactly once, with `.item()`.
-3. **Step $t + 1$ is scheduled before token $t$ is read**, for every $t$ below
-   `max_new_tokens - 1`. No step is built after the token that reaches the limit.
-4. The model is called at most $g$ times when the limit ends the generation, and at
-   most $g + 1$ times when an EOS ends it before the limit: the step that was
-   scheduled before the EOS was read is abandoned.
+1. Call `model` once with the full prompt of shape `(1, P)` and no cache, then pass one token of shape `(1, 1)` plus `cache` on every subsequent step.
+2. Do not call `mx.eval`. Schedule every step with `mx.async_eval` and read each generated token exactly once with `.item()`.
+3. Schedule step $t + 1$ before reading token $t$ for every $t < \texttt{max\_new\_tokens} - 1$. Do not schedule any step after the token that reaches `max_new_tokens`.
+4. Call `model` at most $g$ times when `max_new_tokens` ends generation, and at most $g + 1$ times when `eos_id` ends it early (the step already scheduled before reading `eos_id` is discarded).
 
-**Not allowed:** `mlx_lm`, `transformers`, and the kit's `RealLM` and `RealModel`.
-`nn.QuantizedLinear`, `nn.QuantizedEmbedding`, `nn.quantize`, `mx.quantized_matmul`,
-and `RealConfig` are what the solution is made of.
+**Forbidden.** Importing `mlx_lm` or `transformers`, or using `RealLM` or `RealModel` from the kit, is not allowed. Build the solution with `nn.QuantizedLinear`, `nn.QuantizedEmbedding`, `nn.quantize`, `mx.quantized_matmul`, and `RealConfig`.
 
 ## Shapes
 
 | name | shape | dtype |
 |---|---|---|
 | `tokens` | `(1, T)` | integer |
-| `logits` | `(1, T, vocab_size)` | float32 |
+| `logits` | `(1, T, vocab_size)` | `float32` |
 | `prompt_ids` | list of $P$ ints | Python `int` |
 | result of `generate` | list of $g$ ints | Python `int` |
 
 ## Example
 
-The first public case is a three-layer model in the same layout: vocabulary 256,
-`d_model = 128`, 2 query heads on 1 key/value head of width 64, `d_ff = 256`, the
-constants of the table above, 8 bits in groups of 64. Its checkpoint has 76 tensors:
-three for the embedding, 23 per layer (seven layers of three tensors and two norm
-gains), one final norm gain, and three for the head.
+The first public test uses a random three-layer model with the same layout: `vocab_size = 256`, `d_model = 128`, 2 query heads, 1 key/value head, `head_dim = 64`, `d_ff = 256`, the Granite 4.2 3B constants, and 8-bit quantization with group size 64. Its checkpoint has 76 tensors (3 for the embedding, 23 per layer for 7 quantized projections and 2 norm gains, 1 final norm gain, and 3 for `lm_head`).
 
 ```python
 model = load_model("tiny-a")
@@ -156,47 +113,21 @@ generate(model, [1, 17, 200, 45, 9, 130], 12)
 # [219, 154, 179, 99, 254, 82, 65, 155, 253, 192, 99, 209]
 ```
 
-The graph of the forward pass holds $7 \cdot 3 + 1 = 22$ `QuantizedMatmul`
-operations. `generate` calls the model 12 times: once with shape `(1, 6)`, then 11
-times with `(1, 1)`; the evaluations read
-`async_eval, async_eval, read, async_eval, read, ..., read, read`.
+The forward graph contains $7 \cdot 3 + 1 = 22$ `QuantizedMatmul` operations. `generate` calls `model` 12 times (once with `(1, 6)` and 11 times with `(1, 1)`), with the evaluation sequence `async_eval, async_eval, read, async_eval, read, ..., read, read`.
 
-On the real model, the 12 tokens of `"The capital of France is Paris. The capital of
-Japan is"` continue with `[27286, 13, 578, 6864, 315, 16327, 374, 62224]`:
-`" Tokyo. The capital of Brazil is Bras"`.
+On the real Granite 4.2 3B checkpoint, the 12 tokens of `"The capital of France is Paris. The capital of Japan is"` continue with `[27286, 13, 578, 6864, 315, 16327, 374, 62224]` (`" Tokyo. The capital of Brazil is Bras"`).
 
 ## Constraints
 
-- Logits are compared with `mlx-lm` running the same checkpoint with float32 scales,
-  biases, and gains, to a relative and an absolute tolerance of `1e-3`: on the small
-  models everywhere; on the real model, the next-token logits of each prompt at 64
-  fixed vocabulary columns and at the 8 largest. (`mlx-lm` by default runs the
-  checkpoint in bfloat16, which moves logits by up to about 0.4.)
-- Generated tokens are compared exactly. On the real model every stored greedy step
-  has a margin of at least 0.5 between the two largest logits.
-- The evaluation rules and call counts are exact.
-- **Memory**, on the Apple GPU: loading the real model and generating 8 tokens peaks
-  at no more than **6 GiB** above what was in use before. The reference peaks at
-  3.97 GiB (3.84 GiB of parameters); the dequantized weights are 13.6 GiB in float32
-  and 6.8 GiB in 16 bits.
-- The cases without a download use two random three-layer models: the one of the
-  example, and one with other multipliers, `rope_theta = 1e4`, `norm_eps = 1e-2`, and
-  4 bits in groups of 32. Real prompts are 12 to 22 tokens long and generate at most
-  8 tokens.
-- The time limit is 20 seconds per case on the small models and 120 seconds on the
-  real one, where the reference needs about 0.2 seconds to load (from the page
-  cache) and 0.2 seconds to generate.
+- Logits are compared against `mlx-lm` running the same checkpoint with `float32` scales, biases, and norm gains, with relative and absolute tolerance `1e-3`. All logits are checked on the small models. On the real model, the next-token logits of each prompt are checked at 64 fixed vocabulary columns and at the 8 largest logits. (By default `mlx-lm` runs the checkpoint in `bfloat16`, which shifts logits by up to about `0.4`.)
+- Generated tokens must match exactly. On the real model, every tested greedy step has a margin of at least `0.5` between the top two logits.
+- Evaluation order and model call counts are checked strictly.
+- **Peak memory.** On the Apple GPU, loading the real model and generating 8 tokens must peak at no more than **6 GiB** above baseline. The reference peaks at 3.97 GiB (3.84 GiB of parameters), whereas dequantized weights require 13.6 GiB in `float32` and 6.8 GiB in 16 bits.
+- The non-download tests use two random three-layer models: the example model above, and a second model with different multipliers, `rope_theta = 1e4`, `norm_eps = 1e-2`, and 4-bit quantization in groups of 32. Real prompts are 12 to 22 tokens long and generate at most 8 tokens.
+- The time limit is 20 seconds per case on the small models and 120 seconds on the real model, where the reference takes about 0.2 seconds to load from page cache and 0.2 seconds to generate.
 
 ## Why this matters
 
-This is what running a model locally means on a Mac. The reason a 3B model fits a
-laptop comfortably and a 30B model fits a workstation at all is that the weights stay
-quantized end to end: read from disk as packed words, held as packed words, and
-multiplied as packed words. Every layer you write that turns them back into floats,
-at load or on each call, gives the saving back, and on a machine where the GPU's
-memory is the system's memory there is no error to tell you: the model answers
-correctly, three times slower and at four times the footprint, until something else
-on the machine is swapped out. `mlx_lm.load` is the function you are writing, and
-`mlx_lm.generate_step` is the loop: build the tree from `config.json`, quantize the
-modules the config says are quantized, load strictly, then generate with a cache and
-`mx.async_eval`.
+Local inference on a Mac works because weights stay quantized from disk to matrix multiplication. They are read as packed words, stored as packed words, and multiplied directly in `mx.quantized_matmul`.
+
+On unified memory, where the GPU shares system RAM, dequantizing weights at load time or inside the forward pass does not raise an error. The model returns the right tokens while running three times slower and using four times the memory, quietly pushing other processes into swap. Writing `load_model` and `generate` here mirrors `mlx_lm.load` and `mlx_lm.generate_step`: build the quantized tree from `config.json`, load strictly, and decode with a KV cache and `mx.async_eval`.

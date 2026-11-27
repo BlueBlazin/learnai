@@ -1,16 +1,8 @@
-The function is called with one token at a time and no history. What is the least
-you need to remember between calls to know which tokens may come next? Try to name
-the situations a generation can be in, and what distinguishes two calls in the same
-situation (how many thinking tokens so far, how far into the end sequence).
+`budget_step` sees one token at a time and receives no token history. Ask yourself what minimal state you must carry between calls to decide which tokens are allowed next. Start by naming the distinct phases a generation can be in, then note what counter distinguishes two steps inside the same phase (how many thinking tokens have been used, or how many forced tokens have been emitted).
 
 ---
 
-Use a state `(phase, n)` with four phases: before the first token, thinking with
-`n` tokens used, forcing with `n` tokens of the end sequence emitted, and answer.
-Each call does two things in this order: move the state forward by `token`, then
-build the row for the phase you are now in. Check "is the budget used up?" after
-moving, as a separate step, so that it also fires right after the start token when
-the budget is 0.
+Store the state as `(phase, n)` with four phases: `"start"` before the first token, `"thinking"` with `n` thinking tokens used, `"forcing"` with `n` tokens of `forced` emitted, and `"answer"`. On every call, first advance `(phase, n)` using `token`, and then mask `logits` for the new phase. Check whether the thinking budget is exhausted right after the transition as its own step so it also triggers immediately after `start_id` when `budget == 0`.
 
 ---
 
@@ -29,5 +21,4 @@ otherwise:               return the raw logits
 return where(keep, logits, -inf)
 ```
 
-`where` leaves a kept logit as it is, which is what "forcing" means here: one entry
-survives with its own value, however low.
+Using `where` keeps each allowed logit at its original value. Forcing a token means masking every other entry to `-inf` while leaving the forced token's own logit untouched, no matter how low it is.

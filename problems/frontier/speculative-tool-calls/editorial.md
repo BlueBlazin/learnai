@@ -1,32 +1,14 @@
 ## The idea
 
-A turn that calls tools has two latencies in series: the model writes the call,
-then the tool runs. Speculation overlaps them. What makes it safe is to separate
-three questions that the non-speculative loop answers all at once, at the end of
-the turn.
+A turn with tool calls puts two latencies in series, since the model streams the call and then the tool runs. Speculation overlaps them. To keep that overlap safe, separate three questions that a non-speculative loop answers all at once at the end of the turn.
 
-**What will the call be?** Before the arguments are complete this is a guess, and
-the predictor supplies it. A guess costs nothing to make and something to act on,
-so it is acted on only where acting is free of consequences: a read-only tool.
+**What will the call be?** While arguments are still streaming, we only have a guess from the predictor. Because acting on a guess can be wrong, we only speculate on read-only tools where abandoning a run has no side effects.
 
-**What is the call?** When the next call's header or the finish piece arrives, the
-arguments are final. Now a speculative run is either the call the model made or it
-is not; there is no "close". If the dicts are equal, the run that is already under
-way *becomes* the real run and the time since it started is the gain. If not, it
-is canceled and the real call starts. And a read-only call that nobody predicted
-can still start now rather than at the end of the turn: with several calls in a
-turn, every call but the last is complete while the model is still writing the
-others.
+**What is the final call?** Once the next call's header or the finish piece arrives, the current call's arguments are final. At that point, any speculative run either matches the final dict exactly or does not. On an exact match, the in-flight speculative run becomes the real run and we save all the time since it started. On a mismatch, we cancel the speculative run and launch the real call. Even when no prediction was made, an unpredicted read-only call can start right at completion rather than waiting for the rest of the turn to stream.
 
-**Did the turn happen?** A turn can still be cut off after a call is complete: the
-token limit, a disconnect, a guardrail that rejects the message. For a read-only
-tool that does not matter. For a tool with side effects it is the whole question,
-so those calls wait for the finish piece, whatever is known earlier.
+**Did the turn complete?** Even after one call's arguments finish streaming, the turn can still be cut off by a token limit, a network disconnect, or a guardrail rejection. Read-only tools can ignore that risk, whereas tools with side effects must wait for the finish piece before starting.
 
-The implementation follows from keeping the tools off the reading path. Each run
-is a task; reading the stream never waits for a tool; and only when the stream
-has ended does the loop await the tasks, in call order, to build the tool
-messages.
+The implementation stays clean by keeping tool execution off the stream-reading path. Launch each tool as an asyncio task without awaiting it inside the stream loop. Only after the stream ends do you await the tasks in call order to assemble the tool messages.
 
 ## Reference solution (Python)
 
@@ -101,78 +83,27 @@ def discard(task):
         task.exception()
 ```
 
-`outcome_of` returns `call.error`, or awaits `call.task` and maps a result or an
-exception to a string as in `tool-call-loop`. Awaiting the tasks one after another
-does not serialize them: they have been running since they were created.
-`discard` retrieves the exception of a run that had already failed because asyncio
-reports a task whose exception nobody looked at; it is good hygiene, and the tests
-do not depend on it.
+`outcome_of` returns `call.error` when present, or awaits `call.task` and converts its result or exception into a string as in `tool-call-loop`. Awaiting the tasks sequentially after the loop does not serialize them because every task is already running. In `discard`, calling `task.exception()` on an already-finished task clears any unhandled exception warning from `asyncio`, which is good hygiene even though the tests do not require it.
 
 ## Common mistakes
 
-- **Not speculating, or speculating halfway.** The loop of `tool-call-loop` gives
-  the right transcript and all of the latency. Using predictions but starting
-  unpredicted read-only calls only at the end of the turn leaves the cheapest gain
-  on the table: those calls were certain, not guessed.
-- **Speculating on side effects.** Asking the predictor for every tool sends the
-  email at the first header. Canceling it later does not unsend it. The related
-  mistake is to treat "arguments complete" as "safe to run": for a tool with side
-  effects the line is the end of the turn.
-- **A near match counted as a match.** Same tool, or all predicted arguments
-  present in the final ones, is not the call the model made: `search(q)` returns
-  two results where `search(q, limit=1)` returns one, and the model receives an
-  answer to a question it did not ask.
-- **Comparing text.** `json.dumps(prediction) == text` rejects correct predictions
-  whenever the model spaces or orders its JSON differently; the speculation is
-  paid for and thrown away.
-- **Not canceling.** A discarded run that keeps going holds its backend, and when
-  the loop returns it is still running. The same happens when a call turns out to
-  have malformed arguments and its speculative run is forgotten rather than
-  discarded.
-- **Using a wrong guess because it has finished.** That the result is already
-  there does not make it the result of the call.
-- **Restarting a confirmed call.** Canceling the speculative run and starting the
-  same call again is correct and gains nothing.
-- **Asking the predictor again while a run is under way.** Every new answer starts
-  another run; a turn with long arguments starts a dozen.
-- **Results in completion order.** Speculation makes completion order even less
-  related to call order than in the plain loop. The tool messages follow the calls.
+- **Not speculating, or speculating halfway.** Using the plain `tool-call-loop` produces the right transcript with none of the latency reduction. Similarly, running predictions while delaying unpredicted read-only calls until the turn ends misses a guaranteed speedup because those calls are already complete.
+- **Speculating on side effects.** Calling the predictor for every tool can send an email as soon as the header arrives, and canceling the task later cannot undo it. Treating "arguments complete" as safe for side-effecting tools makes the same mistake, since those tools must wait for the turn to end.
+- **Accepting a near match.** Matching only the tool name or checking that predicted keys are a subset of the final arguments returns the wrong result. For example, `search(q)` may return two results when the model asked for `search(q, limit=1)`.
+- **Comparing raw JSON strings.** Checking `json.dumps(prediction) == text` rejects valid predictions whenever the model uses different whitespace or key ordering, wasting the speculative run.
+- **Not canceling discarded runs.** Leaving a mismatched speculative task running keeps its backend busy and violates the invariant that no runs remain active when `run_agent` returns. The same leak happens if a call's final arguments are malformed JSON and its speculative task is forgotten instead of canceled.
+- **Keeping a wrong guess because it already finished.** Having a completed result ready does not make it the result of the call the model actually made.
+- **Restarting a confirmed call.** Canceling a matching speculative run and starting an identical call again produces the right transcript but throws away the entire latency gain.
+- **Calling the predictor again while speculating.** Querying the predictor on subsequent fragments after a speculative run has started launches extra redundant runs.
+- **Returning results in completion order.** Speculation makes tool completion order even more decoupled from call order than in a plain concurrent loop. Tool messages must still be appended in call order.
 
 ## Complexity
 
-Per turn the work is linear in the number of pieces, with one predictor call per
-piece of a read-only call until its first prediction. Each call starts at most two
-runs (one speculative, one real). The latency of a turn is the later of the end of
-the stream and the last tool to finish, where a confirmed prediction moves a
-tool's start from the end of the turn to the instant of the prediction, and an
-unpredicted read-only call to the instant its arguments are complete. A wrong
-prediction costs one canceled run and no latency.
+Per turn, the loop does work linear in the number of streamed pieces, calling the predictor at most once per piece of a read-only call until its first prediction. Each call starts at most two tool runs (one speculative and one real). Turn latency is the later of the stream end and the slowest tool run. A confirmed prediction moves a tool's start time from the end of the turn to the prediction instant, and an unpredicted read-only call starts as soon as its arguments finish streaming. A wrong prediction costs one canceled run and adds no latency.
 
 ## In the wild
 
-- **This problem is a design exercise**, informed by the sources below; its rules
-  (the predictor's signature, asking it at the header and after each fragment,
-  one speculative run per call, exact equality for confirmation, read-only calls
-  starting at completion, side effects at the end of the turn) are this problem's
-  own and do not describe a particular system.
-- **Speculating on tool calls during generation** is the subject of "Parallelizing
-  Tool Execution and LLM Generation for Low-Latency Agent Serving" (arXiv
-  2603.18897), which presents a system called PASTE. Per its abstract, PASTE
-  predicts concrete future tool invocations from recurring agent patterns, executes
-  them ahead of time while the model is still generating, keeps speculative results
-  isolated until the model confirms them, and reports a 43.5 percent lower average
-  task completion time. The predictor here stands in for that pattern-based
-  prediction, and "use the result only if the model makes exactly that call" for
-  the confirmation. The abstract does not say how tools with side effects are
-  handled; the rule here is this problem's.
-- **Running the calls of a plan in parallel** rather than one model step at a time
-  is the idea of "An LLM Compiler for Parallel Function Calling" (arXiv 2312.04511,
-  ICML 2024), in which a planner emits a graph of calls and an executor dispatches
-  each as soon as its dependencies are met. Starting a call when its own arguments
-  are complete, without waiting for the rest of the turn, is the streaming-loop
-  version of that.
-- **What is simplified.** Real tools are rarely purely read-only or purely
-  writing: reads cost money, hit rate limits, and show up in audit logs, so a real
-  system needs a budget for speculation as well as a flag. Real predictors return
-  several candidates with confidences. And a turn here always ends normally; the
-  reason side effects wait for the finish piece is the turn that does not.
+- **Design scope.** This problem is a design exercise informed by the systems below. Its specific protocol (the predictor signature, querying at the header and each fragment, at most one speculative run per call, exact dict equality, starting read-only calls at completion, and holding side effects until turn end) is tailored to this problem rather than copied from a single production codebase.
+- **Speculative tool execution during generation.** "Parallelizing Tool Execution and LLM Generation for Low-Latency Agent Serving" (arXiv 2603.18897) introduces PASTE. According to its abstract, PASTE predicts concrete tool invocations from recurring agent patterns, executes them ahead of time while the model is generating, isolates speculative results until the model confirms them, and reduces average task completion time by 43.5 percent. The predictor here models that pattern-based prediction, and exact dict equality models confirmation. The abstract does not specify how side effects are handled, so the turn-end rule here is this problem's own.
+- **Parallel call dispatch.** "An LLM Compiler for Parallel Function Calling" (arXiv 2312.04511, ICML 2024) uses a planner to emit a dependency graph of tool calls and an executor to dispatch each call as soon as its dependencies are satisfied. Starting a read-only call as soon as its arguments finish streaming is the streaming-loop analogue of that idea.
+- **Simplifications.** Real tools are rarely purely read-only or purely mutating. Even read calls cost money, consume rate limits, and appear in audit logs, so production systems pair a side-effect flag with a speculation budget. Real predictors also return multiple ranked candidates with confidence scores. Finally, turns in these tests always finish cleanly, whereas real systems hold side effects until the finish piece precisely because a turn can abort mid-stream.

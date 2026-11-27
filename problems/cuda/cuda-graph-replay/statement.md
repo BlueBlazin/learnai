@@ -1,8 +1,4 @@
-Capture a step function into a CUDA graph once and replay it on every call. A CUDA
-graph records the kernels a piece of code launches together with the memory addresses
-they read and write, and a replay launches them again on those addresses without
-running a line of Python. Everything about using one correctly follows from that
-sentence: the graph does not know your variables, only memory.
+Capture a step function into a CUDA graph once and replay it on every subsequent call. A CUDA graph records the kernels launched by a block of code along with the exact memory addresses they read and write. Replaying the graph launches those same kernels on those same addresses without running any Python code, so you must move new inputs into the captured memory before replay and copy outputs out afterward.
 
 ## Specification
 
@@ -12,61 +8,42 @@ class GraphedStep:
     def __call__(self, *inputs): ...
 ```
 
-**The constructor** prepares the graph.
+**`__init__(self, step_fn, example_inputs, graph, warmup=3)`** prepares and captures the graph.
 
-- `step_fn(*tensors)`: the function to capture. It takes one or more tensors and
-  returns a tensor or a tuple of tensors. It may write into state of its own in place
-  (a KV cache). Its output shapes depend only on its input shapes.
-- `example_inputs`: a sequence of tensors, one per argument of `step_fn`. They fix
-  the shape, dtype, and device of each argument, and their values are valid inputs.
-- `graph`: an empty `torch.cuda.CUDAGraph`, or on the CPU the judge's stand-in with
-  the same methods.
-- `warmup`: a Python int $\ge 1$.
+- `step_fn(*tensors)` is the callable to capture. It takes one or more tensors and returns either a single tensor or a tuple of tensors. It may update its own state in place (such as a KV cache), and its output shapes depend only on its input shapes.
+- `example_inputs` is a sequence of valid input tensors, one per argument of `step_fn`. They fix the shape, dtype, and device for all future calls.
+- `graph` is an empty `torch.cuda.CUDAGraph` (or, on CPU, the judge's stand-in with the same methods).
+- `warmup` is a Python `int` with $\text{warmup} \ge 1$.
 
-It does three things, in this order:
+The constructor performs three steps in order:
 
-1. **Placeholders.** For each example it allocates a new tensor with the same shape,
-   dtype, device, and values (the *static inputs*). The caller's example tensors are
-   never written to and never passed to `step_fn`.
-2. **Warm-up.** It calls `step_fn` on the static inputs `warmup` times, outside any
-   capture.
-3. **Capture.** It calls `step_fn` on the static inputs exactly once more inside
-   `with torch.cuda.graph(graph):` and keeps what the call returns (the *static
-   outputs*). Nothing else happens inside the block: no allocation of placeholders,
-   and nothing that reads a tensor's value on the host (`.item()`, `bool(...)`,
-   `print`), which a capturing stream does not permit.
+1. **Allocate placeholders.** For each tensor in `example_inputs`, allocate a new tensor with the same shape, dtype, device, and values (the *static inputs*). Never modify the caller's `example_inputs` or pass them directly to `step_fn`.
+2. **Warm up.** Call `step_fn` on the static inputs `warmup` times outside any capture.
+3. **Capture.** Call `step_fn` on the static inputs once more inside `with torch.cuda.graph(graph):` and store its return value (the *static outputs*). Keep everything else out of the capture block. Do not allocate placeholders inside it, and do not read tensor values on the host (`.item()`, `bool(...)`, `print`), which a capturing stream forbids.
 
-`step_fn` therefore runs `warmup + 1` times in the constructor, each time for real
-(its in-place writes happen), and never again.
+In total, `step_fn` runs `warmup + 1` times in the constructor (executing its in-place writes each time) and never runs again afterward.
 
-**`step(*inputs)`** runs the step on new inputs:
+**`__call__(self, *inputs)`** runs the captured step on new inputs:
 
-1. If the number of inputs differs from the number of examples, or any input's shape
-   differs from its example's shape, it raises `ValueError` and replays nothing.
-2. It copies every input **into** its static input, in place.
-3. It calls `graph.replay()`.
-4. It returns **copies** of the static outputs: a tensor if `step_fn` returned a
-   tensor, a tuple of tensors if it returned a tuple. A result stays valid after any
-   number of later calls.
+1. If the number of inputs does not match `example_inputs`, or if any input's shape differs from its corresponding example's shape, raise `ValueError` without replaying the graph.
+2. Copy each input **into** its corresponding static input in place.
+3. Call `graph.replay()`.
+4. Return **copies** of the static outputs: a tensor if `step_fn` returned a tensor, or a tuple of tensors if it returned a tuple. Returned tensors must remain unchanged across any number of later calls.
 
-The inputs passed by the caller are not modified, and may be reused or overwritten
-by the caller between calls.
+Never modify the caller's `inputs`, and assume the caller may reuse or overwrite them between calls.
 
 ![One call of the graphed step. New values go into the static input with `copy_`, and results leave the static output with `clone`.](assets/capture-replay.svg)
 
 > [!NOTE]
-> The starter contains `side_stream(device)`, a context manager that runs its block
-> on a CUDA stream of its own and does nothing on other devices. PyTorch's CUDA notes
-> require the warm-up to run on a side stream, so wrap the warm-up calls in it. (The
-> capture gets a side stream from `torch.cuda.graph` itself.)
+> The starter code provides `side_stream(device)`, a context manager that runs its block on a dedicated CUDA stream and acts as a no-op on other devices. PyTorch's CUDA graph guidelines require warm-up runs to execute on a side stream, so wrap the warm-up loop in `side_stream(device)`. (`torch.cuda.graph` already creates a side stream for the capture itself.)
 
 ## Shapes
 
 | name | shape | dtype |
 |---|---|---|
 | `example_inputs[i]` | any, fixed for the lifetime of the object | any |
-| `inputs[i]` | the shape of `example_inputs[i]` | the dtype of `example_inputs[i]` |
-| result | the shapes `step_fn` returns for the examples | as returned by `step_fn` |
+| `inputs[i]` | same as `example_inputs[i]` | same as `example_inputs[i]` |
+| result | shapes returned by `step_fn` on `example_inputs` | dtypes returned by `step_fn` |
 
 ## Example
 
@@ -81,47 +58,21 @@ b = step(torch.tensor([0.0, 0.0, 1.0]))  # [1.0, 1.0, 3.0]
 a  # still [21.0, 41.0, 61.0]
 ```
 
-The first call copies `[10, 20, 30]` into the placeholder and replays; the two
-recorded kernels (a multiplication and an addition) write `[21, 41, 61]` into the
-static output, and `a` is a copy of it. The second call overwrites the static output
-with `[1, 1, 3]`.
+The first call copies `[10, 20, 30]` into the static input and replays the graph. The two recorded kernels (multiplication and addition) write `[21, 41, 61]` into the static output, and `a` receives a copy of that tensor. The second call overwrites the static output with `[1, 1, 3]`, leaving `a` intact.
 
-- Had the call rebound the placeholder (`self.static_input = x`) instead of copying
-  into it, both replays would have read `[1, 2, 3]` and returned `[3, 5, 7]`.
-- Had it returned the static output itself, `a` and `b` would be the same tensor,
-  and `a` would read `[1, 1, 3]` after the second call.
+- If `__call__` rebound the placeholder (`self.static_input = x`) instead of copying into it, both replays would still read `[1, 2, 3]` and return `[3, 5, 7]`.
+- If `__call__` returned the static output directly instead of cloning it, `a` and `b` would reference the same memory and `a` would change to `[1, 1, 3]` after the second call.
 
 ## Constraints
 
-- One to three inputs of up to four dimensions; float32 and int64 tensors, including
-  0-d tensors. $1 \le \text{warmup} \le 5$.
-- Floating-point outputs are compared with `step_fn` run eagerly on the same inputs
-  to a relative tolerance of `1e-4` and an absolute tolerance of `1e-6` (`1e-4` for
-  the logits of the decode step); integer outputs exactly. Every result is compared
-  again after all later calls.
-- The judge counts: calls of `step_fn` (exactly `warmup` before the capture, exactly
-  1 during it, 0 afterwards), captures (exactly 1), and replays (exactly 1 per
-  successful call, 0 for a call that raises).
-- **What runs where.** The cases without a hardware mark run on the CPU with the
-  kit's `FakeCudaGraph`, which records the tensor operations run between
-  `capture_begin()` and `capture_end()` and reruns them on the same tensor objects
-  at `replay()`; `torch.cuda.graph(graph)` accepts it while the judge runs your
-  code. It does not imitate streams or memory pools, so `side_stream` is not judged
-  there. Two cases run only on a machine with an NVIDIA GPU, with a real
-  `torch.cuda.CUDAGraph`: a two-layer network compared with the CPU, and a decode
-  step over a static KV cache. They were written from the PyTorch 2.15 documentation
-  and could not be run when the problem was authored.
+- 1 to 3 inputs, each with up to 4 dimensions, using `float32` and `int64` tensors (including 0-d tensors).
+- $1 \le \text{warmup} \le 5$.
+- Floating-point outputs are compared against running `step_fn` eagerly on the same inputs with `rtol = 1e-4` and `atol = 1e-6` (`atol = 1e-4` for decode-step logits). Integer outputs are compared exactly. Every returned output is checked again after all subsequent calls complete.
+- The judge verifies exact counts: `warmup` calls to `step_fn` before capture, 1 call during capture, 0 calls afterward, 1 capture total, 1 replay per valid call, and 0 replays when `ValueError` is raised.
+- **CPU and GPU tests.** Tests without a hardware mark run on CPU using the kit's `FakeCudaGraph`, which records tensor operations between `capture_begin()` and `capture_end()` and reruns them on the same tensor objects during `replay()`. While the judge runs your code, `torch.cuda.graph(graph)` accepts `FakeCudaGraph`. Because `FakeCudaGraph` does not simulate streams or memory pools, `side_stream` is not checked on CPU. Two hardware-marked tests run on an NVIDIA GPU with a real `torch.cuda.CUDAGraph`: a two-layer network compared against CPU and a decode step over a static KV cache. (Those GPU tests were written from the PyTorch 2.15 documentation and were not run when this problem was authored.)
 
 ## Why this matters
 
-A decode step of a small or medium model on a GPU is hundreds of tiny kernels, and
-for each one PyTorch spends tens of microseconds in Python, the dispatcher, and the
-driver before the GPU does a few microseconds of work. A CUDA graph submits the whole
-step with one call, which is where `torch.compile(mode="reduce-overhead")` and the
-graph modes of serving engines get their speedup at small batch sizes. The price is a
-contract with no safety net. A replay cannot fail on a wrong input, because it has
-no inputs: a tensor that was rebound instead of copied into gives the previous
-request's answer, at full speed. An output that was not copied changes after it was
-returned, typically one step later, inside someone else's sampling code. And a
-capture that includes first-call initialization, an allocation of its own inputs, or
-a host read either fails at capture time or, worse, replays the wrong thing forever.
+A decode step for a small or medium model launches hundreds of tiny GPU kernels. For each kernel, PyTorch spends tens of microseconds in Python, the dispatcher, and the CUDA driver before the GPU executes a few microseconds of math. Replaying a CUDA graph submits the entire step in one launch, which is where `torch.compile(mode="reduce-overhead")` and serving-engine graph modes get their low-batch speedup.
+
+The trade-off is a strict memory contract with no runtime guardrails. Because a replay takes no arguments, rebinding a Python variable instead of copying into the static buffer silently returns stale results at full speed. Returning a static output without copying lets the next replay overwrite it while downstream sampling code is still reading it. Capturing one-time initialization, input allocation, or a host read either crashes during capture or replays the wrong work on every call.

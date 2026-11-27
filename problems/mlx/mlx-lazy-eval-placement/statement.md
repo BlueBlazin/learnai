@@ -1,8 +1,4 @@
-Generate tokens greedily from a transformer language model written in MLX, and score
-them, with **exactly one `mx.eval` per generated token**. MLX computes nothing until
-something forces it, so the loop below is correct wherever the evaluation is placed;
-what changes is how often the GPU is asked to run, and how much unevaluated graph
-piles up between steps.
+Implement greedy token generation with log-probability scoring for a transformer language model in MLX, calling `mx.eval` **exactly once per generated token**. Because MLX uses lazy evaluation, where you place `mx.eval` controls both how often the GPU runs and how much unevaluated graph accumulates between steps.
 
 ## Specification
 
@@ -10,23 +6,18 @@ piles up between steps.
 def generate(model, prompt, n): ...
 ```
 
-`model` is an [`MLXTinyLM`](../../../python/src/learnai/kit/mlxlm.py), a small seeded
-decoder-only transformer built from `mlx.nn`. It is called in two ways, and both return
-**lazy** arrays: a graph of operations, with no numbers behind it yet.
+`model` is an [`MLXTinyLM`](../../../python/src/learnai/kit/mlxlm.py), a small seeded decoder-only transformer built with `mlx.nn`. Both ways of calling it return **lazy** arrays, which represent a graph of operations that have not been computed yet.
 
 ```python
-logits, cache = model(tokens)  # no cache: `tokens` is the whole sequence so far
-logits, cache = model(tokens, cache)  # with a cache: `tokens` continue the cached prefix
+logits, cache = model(tokens)         # no cache: tokens is the full sequence so far
+logits, cache = model(tokens, cache)  # with cache: tokens continue the cached prefix
 ```
 
-- `tokens` is a 1-D integer array with at least one token.
-- `logits` has shape `(T, vocab_size)`, one row per token passed in this call;
-  `logits[-1]` scores the next token of the sequence.
-- `cache` is a list with one `(keys, values)` pair of arrays per layer. The model never
-  modifies a cache; each call returns a new one.
+- `tokens` is a 1-D integer array of length $T \ge 1$.
+- `logits` contains one row of length `vocab_size` for each token passed in the call. The final row, `logits[-1]`, scores the next token in the sequence.
+- `cache` is a list with one `(keys, values)` pair of arrays per transformer layer. The model never mutates a cache in place and always returns a new one.
 
-Greedy decoding with a score repeats one step. Let $\ell$ be the next-token logits
-given everything before (the prompt, then the tokens generated so far):
+`generate` takes `model`, `prompt` (a list of $P \ge 1$ Python ints), and `n` (the number of tokens to generate, $n \ge 1$, with no stop token). Greedy decoding repeats a single step $n$ times. At each step, let $\ell$ be the next-token logits (`logits[-1]`) given the prompt and all tokens generated so far. Select the highest-scoring vocabulary index $v$ and compute its log-probability via log-softmax:
 
 $$
 \text{token} = \arg\max_v \ell_v ,
@@ -36,39 +27,26 @@ $$
 
 `generate` returns `(tokens, logprob)`:
 
-- `prompt`: a list of $P \ge 1$ Python ints.
-- `n`: the number of tokens to generate, $n \ge 1$. There is no stop token.
-- `tokens`: a Python list of `n` scalar (0-dimensional) integer arrays, the generated
-  tokens in order. Any integer dtype is accepted (`mx.argmax` returns uint32).
-- `logprob`: a scalar float32 array, the sum of $\log p(\text{token})$ over the `n`
-  generated tokens.
+- `tokens` is a Python list of $n$ scalar (0-dimensional) integer arrays in generation order. Any integer dtype is accepted (`mx.argmax` returns `uint32`).
+- `logprob` is a scalar float32 array equal to the sum of $\log p(\text{token})$ over the $n$ generated tokens.
 
-**Evaluation rules.** The judge observes where your code evaluates:
+**Evaluation rules.** The judge monitors how and where your code evaluates arrays:
 
-1. `mx.eval` is called exactly `n` times: once per generated token. `mx.async_eval`
-   is not used.
-2. Nothing is evaluated implicitly: no `.item()`, `.tolist()`, `int(x)`, `float(x)`,
-   `np.array(x)`, or `print(x)` on an array.
-3. No lazy graph crosses a step. Whenever `model` is called, at most 8 operations are
-   still pending behind its arguments (the token array and every array of the cache)
-   taken together. Reshaping an evaluated token is 1 pending operation; a step that
-   was never evaluated is several hundred.
-4. Everything returned is already evaluated: 0 pending operations behind the `n`
-   tokens and `logprob`. The caller can read them without triggering any work.
+1. Call `mx.eval` exactly $n$ times, once per generated token. Do not use `mx.async_eval`.
+2. Do not trigger implicit evaluations. Never call `.item()`, `.tolist()`, `int(x)`, `float(x)`, `np.array(x)`, or `print(x)` on an MLX array.
+3. No lazy graph may cross a step. Whenever `model` is called, at most 8 pending operations may sit behind its arguments (the token array and all arrays in the cache combined). Reshaping an evaluated token adds 1 pending operation, whereas an unevaluated step leaves several hundred.
+4. All returned arrays must already be evaluated, with 0 pending operations behind the $n$ tokens and `logprob`. The caller must be able to read them without triggering computation.
 
 ![Three steps of the loop. One `mx.eval` per token cuts the lazy graph at each dashed line, so only computed arrays cross into the next step.](assets/eval-cuts.svg)
 
-**Cost limits**, as in `cached-greedy-decode`: `model.counters.forward_calls` is at
-most $n$ (the prompt in one call, then one call per generated token except the last,
-which is returned but never fed), and `model.counters.tokens_processed` is at most
-$P + n - 1$.
+**Cost limits.** As in `cached-greedy-decode`, `model.counters.forward_calls` must be at most $n$ (one call for the prompt, then one call per generated token except the last, which is returned and never fed back). `model.counters.tokens_processed` must be at most $P + n - 1$.
 
 ## Shapes
 
 | name | shape | dtype |
 |---|---|---|
 | `prompt` | list of $P$ ints | Python `int` |
-| `logits` (from `model`) | `(T, vocab_size)` for a call with `T` tokens | float32 |
+| `logits` (from `model`) | `(T, vocab_size)` for a call with $T$ tokens | float32 |
 | `tokens` (result) | list of $n$ arrays of shape `()` | integer |
 | `logprob` (result) | `()` | float32 |
 
@@ -90,32 +68,18 @@ tokens, logprob = generate(model, [0, 17, 42, 5], 8)
 | ... | | | |
 | 8 | `[46]` | 5 | token 5, the final log-probability, a cache of 11 tokens |
 
-Step 8 passes token 46 (generated by step 7) and produces token 5, which is returned
-and never fed. At every call after the first, the model receives an evaluated cache
-and a one-element array made from an evaluated token: 1 pending operation.
+Step 8 feeds token 46 (generated in step 7) and produces token 5, which is returned without being fed back. On every call after the first, the model receives an evaluated cache and a 1-element array reshaped from an evaluated token, leaving 1 pending operation.
 
 ## Constraints
 
-- $1 \le P \le 64$, $1 \le n \le 64$.
-- The tokens are compared exactly with greedy decoding that uses no cache. The test
-  models keep the two largest logits more than `1e-3` apart, so the argmax does not
-  depend on how the calls are split. If two logits are equal, the argmax is the lower
-  token id (this does not occur in the tests).
-- `logprob` is compared with a float64 computation to a relative tolerance of `1e-4`
-  and an absolute tolerance of `1e-3`.
-- The evaluation rules and the cost limits are exact counts. A solution that breaks
-  one fails even when its tokens and score are right.
-- "Pending operations" are counted with `mx.export_to_dot`, which writes the
-  unevaluated part of the graph behind an array: an evaluated array has none.
+- $1 \le P \le 64$ and $1 \le n \le 64$.
+- Generated tokens are compared exactly against greedy decoding without a cache. The test models keep the two largest logits more than `1e-3` apart so the argmax does not depend on how calls are split. If two logits tie, the argmax is the lower token id (this does not occur in the tests).
+- `logprob` is compared against a float64 reference with relative tolerance `1e-4` and absolute tolerance `1e-3`.
+- The evaluation rules and cost limits are enforced as exact counts. A solution that violates any of them fails even if its tokens and score match.
+- Pending operations are counted with `mx.export_to_dot`, which exports the unevaluated graph behind an array. An evaluated array has 0 pending operations.
 
 ## Why this matters
 
-Every generation loop on Apple silicon has this shape, and `mlx-lm` evaluates exactly
-once per token for the same reasons. Evaluating less often lets the graph grow: an
-accumulator that is never forced (a log-probability sum, a repetition-penalty
-history, token statistics) silently becomes a chain through every step that keeps old
-logits alive, and a loop that defers everything cannot stream a token, test a stop
-condition, or bound its memory. Evaluating more often, or reading values with
-`.item()` in the middle of a step, pays the fixed cost of scheduling a graph and
-synchronizing with the GPU several times per token, which on small and medium models
-is a visible share of the time per token.
+Production generation loops on Apple silicon, including `mlx-lm`, evaluate exactly once per token for two competing reasons. Evaluating less often lets the computation graph grow across steps. An unevaluated accumulator (such as a running log-probability, repetition-penalty history, or token statistics) silently forms a chain across every step and keeps old logits alive in memory. Deferring all evaluation until the end also prevents token streaming, stop-token checks, and bounded memory usage.
+
+Evaluating more often, or calling `.item()` mid-step, has the opposite cost. Each extra evaluation schedules a new graph and synchronizes with the GPU, adding fixed overhead that takes up a noticeable share of per-token latency on small and medium models.

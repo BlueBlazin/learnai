@@ -1,7 +1,4 @@
-Expand the `config.json` of a decoder into its per-layer plan: which mixer each layer
-runs, which MLP, whether it scores the past itself, how its heads rotate, and whether it
-makes or borrows keys and values. Three model families write this down in three ways,
-and each fills what the file leaves out with defaults of its own.
+Expand a decoder's `config.json` into a per-layer execution plan. For each layer, determine its token mixer, MLP type, sparse-attention indexer mode, rotary position embedding (RoPE) settings, and key-value (KV) sharing mode. Each of the three supported model families encodes these choices differently and applies its own defaults when fields are omitted.
 
 ## Specification
 
@@ -9,76 +6,55 @@ and each fills what the file leaves out with defaults of its own.
 def layer_plan(config): ...  # -> list of dicts, one per layer
 ```
 
-`config` is the parsed file, a dict. The decoder's settings are `config["text_config"]`
-when `config` has that key (a multimodal file) and `config` itself otherwise; call that
-dict `c`, and let $L$ = `c["num_hidden_layers"]`. The family is `c["model_type"]`. The
-result has $L$ entries, layer 0 first, each a dict with exactly these keys:
+`config` is a parsed `config.json` dictionary. If `config` contains `"text_config"` (as in multimodal checkpoints), read the decoder settings from `config["text_config"]`. Otherwise read them from `config` directly. Call that settings dictionary `c`.
+
+Let $L$ be `c["num_hidden_layers"]`, and let $i \in \{0, \dots, L - 1\}$ be the 0-based layer index. The model family is `c["model_type"]`. Return a list of $L$ dictionaries ordered from layer `0` to layer `L - 1`. Each dictionary has these five keys:
 
 | key | value |
 |---|---|
-| `"mixer"` | a string: the kind of token mixer |
-| `"mlp"` | `"dense"` or `"sparse"` (a mixture of experts) |
-| `"indexer"` | `"full"` (the layer runs its own indexer), `"shared"` (it uses the indices of the nearest full layer before it), or `None` |
-| `"rope"` | `None`, or `{"type": ..., "theta": ..., "head_dim": ..., "rotary_dim": ...}`: the RoPE type, its base, the width of a query head, and how many channels of that head rotate |
-| `"kv"` | `"store"` (the layer's keys and values are kept for later layers), `"reuse"` (it attends over stored ones and makes none), or `None` |
+| `"mixer"` | A string naming the token mixer for the layer. |
+| `"mlp"` | `"dense"` or `"sparse"` (mixture of experts). |
+| `"indexer"` | `"full"` (the layer runs its own indexer), `"shared"` (it reuses indices from the nearest preceding full layer), or `None`. |
+| `"rope"` | `None`, or `{"type": ..., "theta": ..., "head_dim": ..., "rotary_dim": ...}` giving the RoPE type, base frequency `theta`, query head width `head_dim`, and number of rotated channels `rotary_dim`. |
+| `"kv"` | `"store"` (this layer saves its keys and values for later layers), `"reuse"` (it attends over stored keys and values without computing its own), or `None`. |
 
-Below, "missing" means the key is absent from `c`. For the four keys that hold a
-per-layer list or a pattern (`layer_types`, `mlp_layer_types`, `indexer_types`,
-`index_topk_pattern`), a value of `None` (JSON `null`) counts as missing too. An
-explicit list has $L$ entries and always wins over the rule that would replace it.
+In the family rules below, "missing" means the key is absent from `c`. For the four keys that hold a per-layer list or pattern (`layer_types`, `mlp_layer_types`, `indexer_types`, `index_topk_pattern`), a value of `None` (JSON `null`) also counts as missing. Whenever an explicit per-layer list is present, it has length $L$ and overrides any fallback rule.
 
-**`"qwen3_5_text"`** (Qwen3.5). `mlp` is `"dense"`, `indexer` and `kv` are `None`.
+### `"qwen3_5_text"` (Qwen3.5)
 
-- `mixer`: `c["layer_types"][i]`. If missing: `"full_attention"` when
-  $(i + 1) \bmod n = 0$, else `"linear_attention"`, with $n$ =
-  `c["full_attention_interval"]`, or 4 if that is missing.
-- `rope`: `None` for a `"linear_attention"` layer. For a `"full_attention"` layer, with
-  `r = c["rope_parameters"]`: `type` is `r["rope_type"]`, `theta` is `r["rope_theta"]`,
-  `head_dim` is `c["head_dim"]`, and `rotary_dim` is `int(head_dim * f)` with $f$ =
-  `r["partial_rotary_factor"]`, or **0.25** if that is missing.
+Every layer has `mlp = "dense"`, `indexer = None`, and `kv = None`.
 
-**`"glm_moe_dsa"`** (GLM with sparse attention). `mixer` is `"indexed_attention"`, `kv`
-is `None`.
+- **`mixer`**: Use `c["layer_types"][i]` when present. If `layer_types` is missing, let $n$ be `c["full_attention_interval"]` (default `4`). Layer $i$ uses `"full_attention"` when $(i + 1) \bmod n = 0$, and `"linear_attention"` otherwise.
+- **`rope`**: `None` for `"linear_attention"` layers. For `"full_attention"` layers, let `r = c["rope_parameters"]`, `head_dim = c["head_dim"]`, and $f$ be `r["partial_rotary_factor"]` (default `0.25`). Set `type = r["rope_type"]`, `theta = r["rope_theta"]`, `head_dim = head_dim`, and `rotary_dim = int(head_dim * f)`.
 
-- `mlp`: `c["mlp_layer_types"][i]`. If missing: `"dense"` for the first $k$ layers and
-  `"sparse"` after them, with $k$ = `c["first_k_dense_replace"]`, or 3 if missing.
-- `indexer`: `c["indexer_types"][i]`. If missing, `c["index_topk_pattern"]`: a string
-  of $L$ letters, `F` for `"full"` and `S` for `"shared"`, or a list of $L$ such
-  words. If that is missing too:
+### `"glm_moe_dsa"` (GLM with sparse attention)
+
+Every layer has `mixer = "indexed_attention"` and `kv = None`.
+
+- **`mlp`**: Use `c["mlp_layer_types"][i]` when present. If `mlp_layer_types` is missing, let $k$ be `c["first_k_dense_replace"]` (default `3`). The first $k$ layers ($i < k$) are `"dense"`, and the rest are `"sparse"`.
+- **`indexer`**: Use `c["indexer_types"][i]` when present. Otherwise check `c["index_topk_pattern"]`, which is either a string of $L$ characters (`"F"` for `"full"`, `"S"` for `"shared"`) or a list of $L$ `"full"`/`"shared"` strings. If both are missing, let $q$ be `c["index_topk_freq"]` (default `1`) and $o$ be `c["index_skip_topk_offset"]` (default `2`). Then layer $i$ is `"full"` if and only if
 
 $$
-\text{indexer}_i = \texttt{"full"} \iff \max(i - o + 1,\ 0) \bmod \max(q, 1) = 0,
+\max(i - o + 1,\ 0) \bmod \max(q, 1) = 0,
 $$
 
-  with $q$ = `c["index_topk_freq"]` (1 if missing) and $o$ =
-  `c["index_skip_topk_offset"]` (2 if missing).
-- `rope`, the same for every layer: `type` and `theta` from `c["rope_parameters"]` as
-  above, `head_dim` is `c["qk_nope_head_dim"] + c["qk_rope_head_dim"]`, and
-  `rotary_dim` is `c["qk_rope_head_dim"]`. The file's own `head_dim` key is not used.
+  and `"shared"` otherwise.
+- **`rope`**: Identical across all layers. Let `r = c["rope_parameters"]`. Set `type = r["rope_type"]`, `theta = r["rope_theta"]`, `head_dim = c["qk_nope_head_dim"] + c["qk_rope_head_dim"]`, and `rotary_dim = c["qk_rope_head_dim"]`. Ignore `c["head_dim"]`.
 
-**`"gemma4_text"`** (Gemma 4). `mixer` is `c["layer_types"][i]`, `"sliding_attention"`
-or `"full_attention"` (the list is always present). `mlp` is `"dense"`, `indexer` is
-`None`.
+### `"gemma4_text"` (Gemma 4)
 
-- `rope`, with `r = c["rope_parameters"][mixer]` (one entry per layer type): `type` is
-  `r["rope_type"]`, `theta` is `r["rope_theta"]`. `head_dim` is `c["global_head_dim"]`
-  for a full-attention layer (**512** if missing) and `c["head_dim"]` for a sliding
-  one. `rotary_dim` is `head_dim` when the type is `"default"`, and
-  `2 * int(f * head_dim // 2)` when it is `"proportional"`, with $f$ =
-  `r["partial_rotary_factor"]`, or 1.0 if missing.
-- `kv`, with $s$ = `c["num_kv_shared_layers"]` (0 if missing). If $s = 0$, every `kv`
-  is `None`. Otherwise layers $L - s, \dots, L - 1$ are `"reuse"`; for each layer type
-  that occurs in the model, the **last layer of that type before layer $L - s$** is
-  `"store"`; every other layer is `None`.
+Every layer has `mixer = c["layer_types"][i]` (always present, either `"sliding_attention"` or `"full_attention"`), `mlp = "dense"`, and `indexer = None`.
 
-Any other `model_type`, or none, raises `ValueError`. Expand the configuration
-yourself: importing `transformers` is not allowed.
+- **`rope`**: Look up `r = c["rope_parameters"][mixer]`, which stores separate parameters per mixer type. Set `type = r["rope_type"]` and `theta = r["rope_theta"]`. Set `head_dim` to `c["global_head_dim"]` (default `512`) for `"full_attention"` layers and to `c["head_dim"]` for `"sliding_attention"` layers. If `type == "default"`, set `rotary_dim = head_dim`. If `type == "proportional"`, let $f$ be `r["partial_rotary_factor"]` (default `1.0`) and set `rotary_dim = 2 * int(f * head_dim // 2)`.
+- **`kv`**: Let $s$ be `c["num_kv_shared_layers"]` (default `0`). If $s = 0$, every layer has `kv = None`. Otherwise, layers $L - s, \dots, L - 1$ have `kv = "reuse"`. For each distinct mixer type that appears in `c["layer_types"]`, the **last layer of that type before layer $L - s$** has `kv = "store"`. All other layers have `kv = None`.
+
+Raise `ValueError` if `model_type` is missing or not one of these three strings. Expand the configuration yourself. Importing `transformers` is not allowed.
 
 ![One cell per layer, layer 0 on the left. A filled cell is the less common kind of layer in its model; the plan also records what the brackets mark.](assets/layer-plans.svg)
 
 ## Example
 
-The first public case is the published file of `Qwen/Qwen3.5-0.8B`, reduced:
+The first public test case uses a reduced copy of `Qwen/Qwen3.5-0.8B`:
 
 ```python
 config = {
@@ -106,50 +82,24 @@ plan[3]    # {"mixer": "full_attention", "mlp": "dense", "indexer": None,
            #  "kv": None}
 ```
 
-Layers 3, 7, 11, 15, 19, and 23 look like `plan[3]`, the other 18 like `plan[0]`;
-`rotary_dim` is `int(256 * 0.25) = 64`. Without `layer_types` the rule gives the same
-list: $(3 + 1) \bmod 4 = 0$.
+Layers 3, 7, 11, 15, 19, and 23 match `plan[3]`, while the other 18 layers match `plan[0]`. On full-attention layers, `rotary_dim` is `int(256 * 0.25) = 64`. Omitting `layer_types` yields the same schedule because $(3 + 1) \bmod 4 = 0$.
 
-The other two families, on their published files (Figure 1):
+The other two families behave as follows on their published configs (shown in the figure above):
 
-- `zai-org/GLM-5.3`, 78 layers, `index_topk_freq` 4, `index_skip_topk_offset` 3. Layers
-  0, 1, 2 give $\max(i - 2, 0) = 0$, so they are full; layer 3 gives 1, shared; layer
-  6 gives 4, full; then every fourth layer. `first_k_dense_replace` is 3, so layers 0
-  to 2 are dense. The file says `"head_dim": 192`, `"qk_nope_head_dim": 192`,
-  `"qk_rope_head_dim": 64`: the plan's `head_dim` is 256 and its `rotary_dim` 64.
-- `google/gemma-4-E2B-it`, 35 layers, full attention at 4, 9, ..., 34,
-  `num_kv_shared_layers` 20. Layers 15 to 34 reuse. The last full-attention layer
-  before 15 is 14 and the last sliding one is 13: both store. A full layer has
-  `head_dim` 512 (`global_head_dim`), type `"proportional"`, and `rotary_dim`
-  `2 * int(0.25 * 512 // 2) = 128`; a sliding layer has `head_dim` 256, type
-  `"default"`, and `rotary_dim` 256.
+- **`zai-org/GLM-5.3`** has 78 layers, `index_topk_freq = 4`, and `index_skip_topk_offset = 3`. Layers 0, 1, and 2 give $\max(i - 2, 0) = 0$, so they are `"full"`. Layer 3 gives `1` (`"shared"`), layer 6 gives `4` (`"full"`), and every fourth layer after that is `"full"`. Because `first_k_dense_replace` is `3`, layers 0 through 2 have `mlp = "dense"`. Although the file sets `"head_dim": 192`, the plan uses `"qk_nope_head_dim": 192` and `"qk_rope_head_dim": 64` to get `head_dim = 256` and `rotary_dim = 64`.
+- **`google/gemma-4-E2B-it`** has 35 layers, `"full_attention"` at layers 4, 9, ..., 34, and `num_kv_shared_layers = 20`. Layers 15 through 34 have `kv = "reuse"`. Before layer 15, the last `"full_attention"` layer is 14 and the last `"sliding_attention"` layer is 13, so both have `kv = "store"`. A full-attention layer uses `global_head_dim = 512`, RoPE type `"proportional"`, and `rotary_dim = 2 * int(0.25 * 512 // 2) = 128`. A sliding-attention layer uses `head_dim = 256`, RoPE type `"default"`, and `rotary_dim = 256`.
 
 ## Constraints
 
-- The result is compared exactly with the plan that the configuration classes of
-  Hugging Face Transformers 5.23 resolve for the same file (`Qwen3_5TextConfig`,
-  `GlmMoeDsaConfig`, `Gemma4TextConfig`, and the models' rotary embeddings). `theta`
-  may be an int or a float, as the file has it.
-- $1 \le L \le 78$. Every key the rules read without a stated default is present.
-  Optional keys that are not lists or patterns are either missing or valid numbers.
-- In a Qwen3.5 file `int(head_dim * f)` is even (RoPE rotates pairs).
-- `full_attention_interval` $\ge 1$; `index_topk_freq`, `index_skip_topk_offset`, and
-  `first_k_dense_replace` are $\ge 0$ and may exceed $L$.
-- In a Gemma 4 file the last layer is `"full_attention"`, $0 \le s < L$, every layer
-  type of the model also occurs before layer $L - s$, and a `"default"` RoPE entry has
-  no `partial_rotary_factor`.
-- The three published files are reduced copies: the vision and audio towers, token
-  ids, dtypes, dropout and initializer settings, and GLM's `quantization_config` are
-  removed; every key a plan reads and the main sizes keep their published values.
-  The other tests are variations of them and short synthetic files.
+- Outputs are compared for exact equality against the plans resolved by Hugging Face Transformers 5.23 (`Qwen3_5TextConfig`, `GlmMoeDsaConfig`, `Gemma4TextConfig`, and their rotary-embedding modules). Preserve `theta` as an `int` or `float`, matching the input file.
+- $1 \le L \le 78$. Every key without a stated default is guaranteed to be present. Optional scalar keys are either missing or valid numbers.
+- In Qwen3.5 configs, `int(head_dim * f)` is even (RoPE rotates pairs of channels).
+- `full_attention_interval >= 1`. `index_topk_freq`, `index_skip_topk_offset`, and `first_k_dense_replace` are `>= 0` and may exceed $L$.
+- In Gemma 4 configs, the last layer is `"full_attention"`, $0 \le s < L$, every mixer type in the model appears at least once before layer $L - s$, and `"default"` RoPE entries have no `partial_rotary_factor`.
+- The three published configs are reduced copies with vision/audio towers, token IDs, dtypes, dropout, initializer settings, and GLM's `quantization_config` stripped out. All keys read by the plan and the main model dimensions keep their published values. Remaining test cases are variations of these configs and short synthetic configs.
 
 ## Why this matters
 
-A runtime does not execute `config.json`; it executes the plan the reference
-implementation derives from it, and the derivation lives in a few lines of each
-model's configuration class. A port that counts layers from 0 looks for attention
-weights in Qwen3.5 layers that hold recurrent ones. A port that lets GLM's layer 0 be "shared" has no index
-to share. A port that stores keys and values for the last unshared Gemma 4 layer only
-leaves the shared layers of the other type, whose heads have another width, with
-nothing to read. All three published files list their schedules explicitly, so a wrong
-rule goes unnoticed until a file arrives that leaves the list out.
+An inference runtime does not execute `config.json` directly. It executes the expanded per-layer plan derived by a few lines in each model's configuration class. Small mistakes in those rules cause silent or confusing failures during model porting.
+
+Counting Qwen3.5 layers from 0 looks for attention weights in layers that actually store recurrent weights. Allowing GLM layer 0 to be `"shared"` leaves it with no earlier indexer to read from. Storing KV tensors for only the single layer before Gemma 4's shared block leaves the other attention type—with a different head width—with nothing to attend over. Because all three published checkpoints ship their explicit per-layer lists, a buggy fallback rule passes on every flagship checkpoint and breaks only when a config omits the list.

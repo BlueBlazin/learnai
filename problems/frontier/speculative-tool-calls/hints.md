@@ -1,21 +1,8 @@
-Look at one call on a timeline: its header arrives, its argument fragments arrive,
-then the first piece that is not its own arrives, and later the turn ends. At
-which of these instants do you know the tool? A guess of the arguments? The
-arguments for certain? That the model really finished the turn? Now ask, for a
-tool that only reads and for a tool that writes, which of those certainties you
-need before you start it.
+Trace a single tool call along a timeline: its header arrives, its argument fragments arrive, the first piece not belonging to it arrives, and finally the turn ends. At each point, ask what you know: the tool name, a guess at the arguments, the exact final arguments, or that the turn actually finished. Then decide which level of certainty a read-only tool needs versus a tool with side effects.
 
 ---
 
-Keep one small record per call: its name, the argument text so far, the task of
-the run it will use (if one has been started), and the prediction that task was
-started with. Start tools with `asyncio.ensure_future(tool(**arguments))` so that
-they run while you keep reading the stream; do not `await` a tool inside the
-`async for`. Handle a piece in this order: if it is a header, first *complete* the
-previous call, then open the new one; add the fragment to the text; then
-*speculate* on the current call. On the finish piece, complete the last call and
-start everything you held back for the end of the turn. Only after the stream has
-ended, await the tasks in call order.
+Keep a small record per call storing its name, accumulated argument text, active task (if any), and the prediction used to start that task. Launch tools with `asyncio.ensure_future(tool(**arguments))` so they run concurrently while you keep reading the stream, and never `await` a tool inside the `async for` loop. For each incoming piece, process events in order. If it is a new call header, complete the previous call and open the new one. Append any argument fragment to the current call's text, then try speculating on it. When the finish piece arrives, complete the last call and start any side-effecting calls queued for turn end. Only after the stream finishes should you await the tasks in call order.
 
 ---
 
@@ -37,6 +24,4 @@ complete(call):
         else:                 call.task = ensure_future(tool(**final))
 ```
 
-The outcome of a call is its `error`, or the awaited `call.task` (a raised
-exception becomes the `tool failed` outcome). Compare dicts, not strings:
-`{"limit": 1, "q": "x"}` and `{"q":"x","limit":1}` are the same call.
+A call's outcome is its `error` if set, or the awaited `call.task` (converting any raised exception into the `tool failed` error payload). Compare parsed dicts rather than raw JSON strings so `{"limit": 1, "q": "x"}` and `{"q":"x","limit":1}` match.

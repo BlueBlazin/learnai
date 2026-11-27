@@ -1,31 +1,16 @@
 ## The idea
 
-In PyTorch a preallocated cache exists to avoid copying: `buffer[..., a:b, :] = new`
-writes into memory that is already there. MLX arrays do not work that way. An MLX
-array is a node in a graph, and
+In PyTorch, a preallocated KV cache avoids copying because `buffer[..., a:b, :] = new` mutates memory in place. MLX arrays work differently. Every MLX array is an immutable node in a computation graph, so
 
 ```python
 self.keys[..., a:b, :] = keys
 ```
 
-is shorthand for "let `self.keys` name a new array: the old one with this slice
-replaced". When it is evaluated, MLX allocates a buffer of the full capacity, copies
-the old contents, and writes the slice. Measured on this machine (M1 Max, MLX
-0.32.4): 200 single-slot writes into a 16 MiB buffer take 0.35 ms each, the cost of
-copying 16 MiB, and raise peak memory by two more buffers of that size. So the
-step-allocated cache copies its buffer on every token, exactly as concatenation
-does. It is not faster.
+binds `self.keys` to a new array representing the old buffer with that slice replaced. When evaluated, MLX allocates a full-capacity buffer, copies the old contents, and writes the new slice. Measured on an M1 Max (MLX 0.32.4), 200 single-slot writes into a 16 MiB buffer take 0.35 ms each (the cost of copying 16 MiB) and increase peak memory by two extra buffers of that size. Because it copies on every token, a step-allocated cache is no faster than concatenation.
 
-What differs is the *size* of the buffers that are allocated and freed. MLX does not
-return a freed buffer to the system; it keeps it in a cache (`mx.get_cache_memory`)
-and hands it to the next allocation that it fits. A cache whose capacity stays at 256
-for 256 tokens asks, at every token, for a buffer of the size it has just freed: a
-few buffers circulate and nothing new is allocated. A cache that grows by one slot
-per token asks for a size nobody has freed yet, every time. Each old buffer goes into
-the buffer cache and stays there.
+The real difference is the size of the buffers being allocated and freed. When MLX frees a buffer, it keeps the memory in an internal pool (`mx.get_cache_memory`) and hands it to the next allocation of a matching size. While capacity stays fixed at 256 for 256 tokens, every token requests the exact buffer size that was just freed. A few buffers circulate and no new system memory is claimed. By contrast, a cache that grows by one slot per token requests a never-before-seen size on every step, so every freed buffer sits unused in the pool.
 
-Measured here, one token per update, each update followed by `mx.eval` of the fetched
-arrays, memory relative to the start:
+Measured on one token per update with `mx.eval` called on the fetched arrays after each step (relative to starting memory):
 
 | cache | tokens | in use | peak | kept by the allocator afterwards |
 |---|---|---|---|---|
@@ -34,11 +19,7 @@ arrays, memory relative to the start:
 | steps of 256, 4 KiB per token and buffer | 1,024 | 8 MiB | 24 MiB | 52 MiB |
 | concatenation, same | 1,024 | 8 MiB | 24 MiB | 2.9 GiB |
 
-Memory in use and peak memory are the same for both designs (peak is three times the
-cache because of the copy). The last column is the difference, and it grows
-quadratically with the length of the generation: the sum of every buffer size the
-concatenating cache ever had. MLX stops keeping buffers only at its cache limit,
-which defaults to most of the machine's memory (60.8 GiB on this 64 GB machine).
+Active memory and peak memory are comparable for both designs (peak is three times the cache size because of the copy). The final column diverges dramatically and grows quadratically with sequence length for concatenation, summing every distinct buffer size ever allocated. MLX stops caching freed buffers only when it hits its cache limit, which defaults to most of the machine's RAM (60.8 GiB on a 64 GB system).
 
 ## Reference solution (MLX)
 
@@ -70,61 +51,29 @@ class KVCache:
         return self.keys[..., : self.offset, :], self.values[..., : self.offset, :]
 ```
 
-Growth drops the unused tail (`[..., :previous, :]`) before adding whole steps, so a
-long prompt followed by single tokens wastes at most `step - 1` slots, however the
-prompt length relates to the step. The returned slices are what keeps the tail out of
-attention: an unused slot holds zeros, a zero key scores $0$, not $-\infty$, and a
-softmax would give it weight (the subject of `preallocated-kv-cache`).
+When growing, the cache trims the unused tail (`[..., :previous, :]`) before concatenating the new steps. That guarantees a long prompt followed by single-token decoding wastes at most `step - 1` slots regardless of the prompt length. Returning only `[:self.offset]` keeps zero-filled padding out of attention. A zero key produces an attention logit of $0$ rather than $-\infty$, so softmax would assign non-zero weight to unused slots (as covered in `preallocated-kv-cache`).
 
-Everything here is lazy. The `mx.zeros`, the concatenation, and the slice updates
-become part of the graph of the forward pass, and the model's one evaluation per token
-(of the logits, which depend on the fetched slices, which depend on the buffers)
-computes them. A generation loop should still pass the cache state to `mx.eval`, as
-in `mlx-lazy-eval-placement`.
+Every operation here is lazy. `mx.zeros`, `mx.concatenate`, and the slice assignments simply extend the forward pass graph. When the model evaluates the logits at the end of the step, the buffers are materialized as part of that graph. A full generation loop should still include the cache state in its `mx.eval` call (as covered in `mlx-lazy-eval-placement`).
 
 ## Common mistakes
 
-- **Concatenating on every update.** Correct contents, a new shape per token, and the
-  allocator behavior in the table: 70 MiB held where 9 would do, in the test.
-- **Growing by exactly `T`.** The preallocated code path with none of its benefit:
-  the capacity equals the offset and every update reallocates.
-- **Returning the whole buffers.** After the first single-token update the caller
-  gets 256 "tokens", 255 of them zeros that attention will attend to.
-- **`mx.zeros(shape)` without a dtype.** The buffer is float32. Writing float16 keys
-  into it casts them, the fetched arrays are float32, and from then on the model
-  computes attention in float32 with a cache twice the size (see
-  `mlx-dtype-discipline`).
-- **Allocating one step whatever `T` is.** A 300-token prompt does not fit in 256
-  slots; the slice assignment fails.
-- **Forgetting the old contents when growing.** The first 256 tokens turn into zeros
-  at token 257: generation derails exactly at a multiple of the step, a bug that
-  short tests never see.
-- **Appending the new room to the whole old buffer** instead of to its used part.
-  After a 300-token prompt (capacity 512) and a second chunk of 300 tokens, the
-  capacity is 1,024 instead of 812, and the unused slots are carried along by every
-  later copy.
-- **Sizing the value buffer with the key's head dimension.** Keys and values have the
-  same width in most models, not in all.
-- **`offset += 1`.** Right for decoding, wrong for the prompt, which arrives as one
-  chunk of many tokens.
-- **Evaluating inside `update_and_fetch`.** One evaluation per layer per token, each a
-  round trip to the GPU, in the middle of a forward pass that would have been one
-  graph.
+- **Concatenating on every update.** This produces the right values, but changes buffer shape on every token and balloons allocator memory (70 MiB instead of 9 MiB in the memory test).
+- **Growing by exactly `T`.** This keeps capacity equal to `offset`, so every update reallocates and gives up the entire benefit of step allocation.
+- **Returning the full buffers.** After the first single-token update, attention receives 256 tokens, 255 of which are zeros that distort softmax weights.
+- **Calling `mx.zeros(shape)` without a dtype.** `mx.zeros` defaults to float32. Writing float16 keys into a float32 buffer upcasts them, causing attention to run in float32 with double the memory footprint (see `mlx-dtype-discipline`).
+- **Allocating only one `step` regardless of `T`.** A 300-token prompt overflows a 256-slot buffer and crashes the slice assignment.
+- **Dropping previous contents on growth.** If growth allocates a fresh buffer without copying `[:previous]`, the first 256 tokens become zeros on token 257. Generation silently derails at the first step boundary, which short unit tests miss.
+- **Appending new room to the entire old buffer instead of the used prefix.** After a 300-token prompt (capacity 512) and another 300-token chunk, capacity becomes 1,024 instead of 812, carrying dead padding through every subsequent copy.
+- **Using `keys.shape[3]` for the value buffer.** Keys and values have different head dimensions (`D_k != D_v`) in some architectures.
+- **Incrementing `offset += 1`.** This works for single-token decoding but fails on multi-token prompt prefill.
+- **Calling `mx.eval` inside `update_and_fetch`.** This forces a GPU synchronization per layer per token instead of evaluating one fused forward-pass graph.
 
 ## Complexity
 
-Appending $n$ tokens one at a time changes the buffers' shape
-$\lceil n / \text{step} \rceil$ times. Every update copies both buffers once when it
-is evaluated, $O(C)$, so generation is quadratic in the context length with either
-design; the constant is one `memcpy` per buffer per token. Memory held by the
-allocator stays within a small multiple of the cache size.
+Appending $n$ tokens one at a time changes the buffer shape $\lceil n / \text{step} \rceil$ times. Each evaluated update copies both buffers once in $O(C)$ time, where $C$ is the current buffer capacity, so total generation work is quadratic in context length for both designs with a constant factor of one copy per buffer per token. Total memory held by the allocator stays bounded by a small constant multiple of the live cache size.
 
 ## In the wild
 
-This is `mlx_lm.models.cache.KVCache`, with `step = 256` as a class attribute; its
-`trim(n)` simply lowers `offset`, which works because the fetch never looks past it.
-`mlx_lm.generate` adds the other half of the remedy: it calls `mx.clear_cache()`
-every 256 generated tokens, right when the cache has outgrown its buffers and the old
-sizes have become useless. When an MLX program's memory climbs while its arrays do
-not, compare `mx.get_active_memory()` with `mx.get_cache_memory()`: if the second one
-is growing, some array is changing shape in a loop.
+This implementation matches `mlx_lm.models.cache.KVCache`, which sets `step = 256` as a class attribute. Its `trim(n)` method simply subtracts `n` from `offset` because `update_and_fetch` never reads past `offset`.
+
+`mlx_lm.generate` pairs this with a periodic `mx.clear_cache()` every 256 generated tokens, right after the cache grows and older buffer sizes are no longer needed. When debugging an MLX program whose memory climbs even though live tensors stay small, compare `mx.get_active_memory()` and `mx.get_cache_memory()`. If cached memory is growing steadily, an array is changing shape inside a loop.

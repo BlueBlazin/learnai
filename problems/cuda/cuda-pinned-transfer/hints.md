@@ -1,22 +1,14 @@
-For the prefetcher: at the moment `next` is about to return batch 3, which copy
-should already be running so that it overlaps with the model's work on batch 3? Who
-has to start it, and when is the only moment before the first `next` at which
-anything can be started? For the results: after `to_host(x, non_blocking=True)`
-returns, what is in the tensor it gave you, and what has to happen before you may
-look?
+Think about timing in both directions. When `next` is about to return batch 3, which batch's copy should already be running so it overlaps with the model's work on batch 3? And when is the only moment before the first `next` call to start batch 0?
+
+For `fetch_results`, what does `to_host(x, non_blocking=True)` put in the returned tensor immediately, and what must happen before you read it?
 
 ---
 
-Keep one piece of state: the batch whose transfer is under way. A helper takes the
-next batch from `iter(batches)`, pins it, starts the transfer of the *pinned copy*
-with `non_blocking=True`, and stores the tensor that `to_device` returned; when the
-source is exhausted it records that instead. Call the helper once in the constructor.
-In `__next__`, set aside the stored tensor, call the helper again, and return what
-you set aside. `pin` returns a new tensor and leaves its argument alone, so use the
-return value, and call `pin` for every batch: a pinned buffer that is still being
-copied from must not be overwritten.
+Store one piece of state in `Prefetcher`: the batch whose transfer is currently in flight. Write a helper that pulls the next batch from `iter(batches)`, pins it, starts transferring the *pinned copy* with `non_blocking=True`, and stores the tensor returned by `to_device`. If the source is exhausted, record that the iterator is done instead.
 
-For `fetch_results`, start all the copies first, wait once, and only then read.
+Call that helper once in `__init__`. In `__next__`, save the current in-flight tensor, call the helper again to start the next transfer, and return the saved tensor. Always use the return value of `pin` (it does not modify its input) and call `pin` fresh for each batch so you never overwrite a buffer that is still being copied.
+
+In `fetch_results`, launch all non-blocking `to_host` copies first, call `sync()` once, and only then concatenate.
 
 ---
 
@@ -29,8 +21,7 @@ def __next__(self):
     return current
 ```
 
-Setting `self._done` only when the source is found empty *during* this call means the
-last batch, which was already in flight, is still returned. And
+Setting `self._done` only when `_start_next` finds the source empty ensures the last in-flight batch is still returned before `StopIteration` is raised on the next call.
 
 ```python
 staged = [to_host(out, non_blocking=True) for out in outputs]

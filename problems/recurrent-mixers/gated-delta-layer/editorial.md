@@ -1,37 +1,16 @@
 ## The idea
 
-The layer is a pipeline with two memories in it.
+A Gated DeltaNet layer carries two separate memories across calls.
 
-The first is short and exact. A depthwise convolution of kernel $K$ lets every
-channel of the projected input look at its own previous $K - 1$ values before the
-queries, keys, and values are formed. A call that continues a sequence therefore needs
-the last $K - 1$ rows of the *projected input* $P$. Not of `x`, because the projection
-would have to be repeated, and not of the convolution's output, because the next
-output is a function of earlier inputs, not of earlier outputs.
+The first memory is short and exact. A depthwise causal convolution of kernel size $K$ mixes each channel of the projected input $P$ with its previous $K - 1$ values before splitting out queries, keys, and values. Continuing a sequence therefore requires saving the last $K - 1$ rows of $P$. Saving raw `x` would force re-running the input projection, and saving the convolution's output would be wrong because each output depends on earlier inputs, not earlier outputs.
 
-The second is long and lossy: the matrix $S$ of the delta rule, one per value head,
-into which every earlier token has been written and partly overwritten.
+The second memory is long and lossy. It is the matrix $S$ of the gated delta rule, one per value head, which accumulates and overwrites associations across the entire prefix.
 
-Neither can be rebuilt from the other. $S$ is a fixed-size summary from which the
-last inputs cannot be read back, and the last three inputs say nothing about what the
-previous thousand tokens wrote. A serving system saves both, and a function with
-"state in, state out" makes the invariant testable: for every split of a sequence, the
-second call must receive exactly what the single call had in its hands at that
-position. That is $\tilde P_{[T:]}$ and $S$ after token $T - 1$.
+Neither state can be reconstructed from the other. $S$ is a fixed-size summary from which the last few inputs cannot be recovered, and the last $K - 1$ rows of $P$ know nothing about earlier tokens. Threading `(conv_state, S)` explicitly makes correctness directly testable. For any split of a sequence into two calls, the second call must receive the exact values a single call had at that boundary, namely $\tilde P_{[T:]}$ and $S$ after token $T - 1$.
 
-Taking the last $K - 1$ rows of the *concatenation* matters when a call is shorter
-than the window. With $K = 4$ and a one-token call, the new state is two old rows and
-one new row.
+Slicing the last $K - 1$ rows from the *concatenated* tensor $\tilde P$ is essential whenever a call is shorter than the kernel window. With $K = 4$ and a single-token decode step, the updated `conv_state` keeps two old rows from the previous state plus the one new row.
 
-Two details of step 3 are easy to misread. The normalization puts its epsilon inside
-the root, $u / \sqrt{\sum u^2 + 10^{-6}}$, which differs from the usual
-$u / \max(\lVert u \rVert, \epsilon)$ only for tiny vectors. And the factor $d_k^{-1/2}$
-on the query looks like it cannot matter, since $y = S q$ is linear in $q$ and the
-norm of step 6 divides any constant factor out. It does matter wherever the read is
-small against $\sqrt{\texttt{norm\_eps}} = 10^{-3}$, which is the case for the first
-tokens of every sequence, when the memory is nearly empty: there
-$y / \sqrt{\operatorname{mean}(y^2) + \epsilon} \approx y / \sqrt{\epsilon}$ and the
-factor passes straight through.
+Two details in step 3 are easy to miss. First, L2 normalization puts its epsilon inside the square root, $u / \sqrt{\sum u^2 + 10^{-6}}$, which differs from $u / \max(\lVert u \rVert, \epsilon)$ when vectors are very small. Second, scaling queries by $d_k^{-1/2}$ may look redundant because $y = S q$ is linear in $q$ and step 6 applies RMSNorm. However, whenever $y$ is small compared to $\sqrt{\texttt{norm\_eps}} = 10^{-3}$ (which happens on the early tokens of a sequence while $S$ is nearly empty), $y / \sqrt{\operatorname{mean}(y^2) + \epsilon} \approx y / \sqrt{\epsilon}$ and the $d_k^{-1/2}$ factor passes straight through.
 
 ## Reference solution (PyTorch)
 
@@ -75,73 +54,40 @@ def gdn_layer(params, cfg, x, state):
     return y.reshape(steps, cfg.value_dim) @ params["out_proj.weight"].T, (conv_state, S)
 ```
 
-`F.conv1d` with `groups=C` on the transposed `padded` computes the same sum; it is a
-cross-correlation, so no flip is needed. The number of key heads is not recoverable
-from the tensor shapes (`key_dim` could be split in several ways), which is why the
-function takes `cfg`.
+Calling `F.conv1d` with `groups=C` on the transposed `padded` tensor computes the same sum without flipping the kernel, since PyTorch's `conv1d` is a cross-correlation. The function takes `cfg` because `n_key_heads` cannot be inferred from the parameter shapes alone (`key_dim` can factor in multiple ways).
 
 ## Common mistakes
 
-- **Convolution state reset on each call.** Correct for any single call, wrong for the
-  first $K - 1$ tokens of every later one.
-- **Memory reset on each call.** The mirror image: the convolution continues and the
-  delta rule starts over.
-- **Saving the convolution's outputs.** The shapes agree, since input and output have
-  $C$ channels.
-- **Cutting the new state from the new rows only.** `P[-(K - 1):]`, padded with zeros
-  when the call is short, is right whenever $T \ge K - 1$ and loses saved rows when a
-  call has fewer tokens, which is every decoding step.
-- **Gate before norm.** $\operatorname{rms\_norm}(y \cdot \operatorname{silu}(z))$ is
-  the order of the Mamba-2 block (`mamba2-ssd-step`); this layer normalizes first.
-- **Tiling key heads.** `tile`/`repeat` gives 0, 1, 0, 1; the layer needs 0, 0, 1, 1.
-  Invisible when $H_k = 1$ or $H_k = H_v$.
-- **Dropping $d_k^{-1/2}$**, on the grounds that the norm cancels it. See above.
-- **One RMS over the whole value width.** The norm weight has $d_v$ entries because
-  the norm runs per head.
-- **`normalize` for `l2norm`**, and a hard-coded `1e-6` for `cfg.norm_eps`. Both
-  visible only on unusual inputs or configurations.
-- **Updating the state in place.** `S.mul_(g)` on the tensor the caller passed in
-  gives the right outputs and silently changes the caller's saved state, which breaks
-  every use that continues twice from one state (beams, retries, a shared prefix).
-- **Calling the kit's layer.** `ops.gated_delta_layer` is the answer; the statement
-  rules it out and the harness rejects the call.
-- **The layout of another library.** A port of the `transformers` code keeps the
-  memory as $(H_v, d_k, d_v)$; it is consistent with itself and exchanges state with
-  nothing else.
+- **Resetting `conv_state` on each call.** Passes every single-call test, then corrupts the first $K - 1$ tokens of every continuation call.
+- **Resetting `S` on each call.** The convolution continues cleanly across calls, but the delta-rule memory starts from zero on every continuation.
+- **Saving the convolution output instead of its input.** Both tensors have $C$ channels, so the shapes match, but the next step needs the pre-convolution rows of $P$.
+- **Slicing the new `conv_state` from `P` only.** Taking `P[-(K - 1):]` (with zero padding when short) works when $T \ge K - 1$, but drops saved history whenever $T < K - 1$, which includes every single-token decode step.
+- **Gating before normalizing.** Computing $\operatorname{rms\_norm}(y \cdot \operatorname{silu}(z))$ follows the Mamba-2 order (`mamba2-ssd-step`), whereas Gated DeltaNet normalizes first and gates second.
+- **Tiling key heads instead of repeating them.** `tile` or `repeat` produces head order `0, 1, 0, 1` instead of `0, 0, 1, 1`. This bug stays hidden when $H_k = 1$ or $H_k = H_v$.
+- **Dropping the $d_k^{-1/2}$ query scale.** Appears harmless under RMSNorm, but changes outputs whenever $y$ is small relative to $\sqrt{\texttt{norm\_eps}}$.
+- **Normalizing over the full value width.** `norm.weight` has length $d_v$ because RMSNorm runs independently per value head, not across all $H_v d_v$ channels.
+- **Using `F.normalize` or hardcoding `1e-6` for `norm_eps`.** `F.normalize` clamps the denominator outside the square root, and hardcoding `1e-6` ignores `cfg.norm_eps`. Both fail on small-norm inputs or custom configs.
+- **Mutating the input state in place.** Operations like `S.mul_(g)` produce the right outputs for one call while silently corrupting the caller's saved state, breaking beam search, retries, or shared-prefix branching.
+- **Calling `ops.gated_delta_layer`.** This helper is the reference implementation and is forbidden by the harness.
+- **Using another library's state layout.** Porting `transformers` directly stores `S` as `(H_v, d_k, d_v)` and `conv_state` as `(C, K)`, which is self-consistent but incompatible with this problem's state contract.
 
 ## Complexity
 
-$O(T \cdot H_v\,d_v\,d_k)$ time for the recurrence plus $O(T \cdot C \cdot (D + K))$
-for the projections and the convolution. The state is $(K - 1)\,C + H_v d_v d_k$
-numbers whatever the sequence length. For Qwen3.5-0.8B that is
-$3 \cdot 6144 + 16 \cdot 128 \cdot 128 = 280{,}576$ per layer.
+Let $D = \texttt{cfg.d\_model}$. The recurrence takes $O(T \cdot H_v d_v d_k)$ time, and the linear projections and depthwise convolution take $O(T \cdot C \cdot (D + K))$ time. The carried state uses $(K - 1) C + H_v d_v d_k$ floats regardless of sequence length. For Qwen3.5-0.8B, that is $3 \cdot 6144 + 16 \cdot 128 \cdot 128 = 280{,}576$ floats per layer.
 
 ## In the wild
 
-Checked on 2026-11-21 by reading and running `transformers` 5.23.0, reading `mlx-lm`
-0.32.2, and reading the `config.json` of `Qwen/Qwen3.5-0.8B` on the Hugging Face Hub.
+Verified on 2026-11-21 against `transformers` 5.23.0, `mlx-lm` 0.32.2, and the `config.json` of `Qwen/Qwen3.5-0.8B` on the Hugging Face Hub.
 
-- **The layer.** `Qwen3_5GatedDeltaNet.forward` in
-  `transformers/models/qwen3_5/modeling_qwen3_5.py` performs the six steps. Its
-  `l2norm` is `x * rsqrt((x * x).sum() + eps)`, its `Qwen3_5RMSNormGated` normalizes,
-  multiplies by the weight, and then by `silu(gate)` (its comment: "Norm before
-  gate"), and both delta-rule functions repeat key heads with `repeat_interleave`
-  and multiply the query by `head_dim ** -0.5`. The public test "the same layer in
-  Hugging Face Transformers" and a hidden one compare your function with that module
-  holding the kit's weights, without a cache and with one
-  (`fixtures/make.py` regenerates the arrays).
-- **Shipped sizes.** `Qwen/Qwen3.5-0.8B`: 16 key heads and 16 value heads of 128,
-  kernel 4, `rms_norm_eps` 1e-6, in 18 of 24 layers. The configuration class defaults
-  to 32 value heads for 16 key heads, the case $r = 2$ of the tests.
-- **State layouts.** `transformers` keeps the last $K$ projected inputs per layer,
-  one more than the next token's convolution reads, as `(C, K)`, and the memory as
-  `(Hv, dk, dv)`. `mlx-lm` keeps $K - 1$ rows and `(Hv, dv, dk)`, the layout used here.
-- **One token or many.** With a cache and a single token `transformers` runs the
-  per-token rule; every other call goes through the chunked form of
-  `gated-delta-chunked`. The fixture exercises both.
+- **Layer implementation.** `Qwen3_5GatedDeltaNet.forward` in `transformers/models/qwen3_5/modeling_qwen3_5.py` runs these six steps. Its `l2norm` computes `x * rsqrt((x * x).sum() + eps)`, `Qwen3_5RMSNormGated` normalizes before multiplying by `silu(gate)` ("Norm before gate"), and both delta-rule paths expand key heads with `repeat_interleave` and scale queries by `head_dim ** -0.5`. Public and hidden tests compare against this module both with and without cache (`fixtures/make.py` regenerates the arrays).
+- **Shipped sizes.** `Qwen/Qwen3.5-0.8B` uses 16 key heads and 16 value heads of dimension 128, kernel size 4, and `rms_norm_eps = 1e-6` in 18 of its 24 layers. The config class defaults to 32 value heads for 16 key heads, matching the $r = 2$ test cases.
+- **State layouts.** `transformers` keeps the last $K$ projected inputs as `(C, K)` (one extra slot beyond what the next token reads) and stores `S` as `(H_v, d_k, d_v)`. `mlx-lm` keeps $K - 1$ rows and `(H_v, d_v, d_k)`, which is the layout used here.
+- **Single token vs. chunks.** With a cache and $T = 1$, `transformers` runs the recurrent per-token rule. All other calls use the chunked form (`gated-delta-chunked`), and the test fixture exercises both.
 
-Deliberate simplifications: no batch axis; no attention mask for padding tokens (the
-library zeroes padded positions before the projection); float32 throughout (the
-library computes the recurrence in float32 even when the model is in a narrower
-type); the convolution has no bias, as shipped. The block around this sublayer (the
-pre-norm, the residual, the MLP) is the subject of `hybrid-decoder-forward`.
+This problem makes four deliberate simplifications compared to the full model:
+- No batch axis.
+- No padding mask (the library zeroes padded positions before projection).
+- Float32 throughout (the library runs the recurrence in float32 even when weights are in a narrower dtype).
+- No convolution bias, matching the shipped weights.
+
+The full block around this sublayer (pre-norm, residual connection, and MLP) is covered in `hybrid-decoder-forward`.

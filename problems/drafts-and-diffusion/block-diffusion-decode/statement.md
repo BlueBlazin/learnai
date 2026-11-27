@@ -1,8 +1,4 @@
-Implement the generation loop of a block text-diffusion model, the `generate` of
-DiffusionGemma for one sequence: the prompt is encoded once into a prefix cache, and the
-text then grows one canvas of $L$ tokens at a time, each canvas denoised from noise over
-several steps and added to the cache when it is finished. The judge compares exact
-tokens and counts the work asked of the encoder and the denoiser.
+Implement the single-sequence generation loop of a block text-diffusion model, matching DiffusionGemma's `generate`. Your function encodes a prompt once into a prefix cache, then extends the text one block (called a *canvas*) of $L$ tokens at a time by denoising from random tokens over several steps and encoding each finished canvas into the cache. The judge checks exact output tokens as well as exact encoder and denoiser call counts.
 
 ## Specification
 
@@ -10,79 +6,74 @@ tokens and counts the work asked of the encoder and the denoiser.
 def diffusion_generate(model, prompt, cfg, uniforms): ...  # -> list of ints
 ```
 
-`model` is a [`BlockDenoiser`](../../../python/src/learnai/kit/diffusion.py) from the
-kit, with a vocabulary of $V$ = `model.vocab_size` tokens:
+`model` is a [`BlockDenoiser`](../../../python/src/learnai/kit/diffusion.py) with vocabulary size $V = \texttt{model.vocab\_size}$ and special token IDs `model.eos_id` (end-of-sequence) and `model.pad_id` (padding). It exposes four call forms:
 
 ```python
-cache = model.encode(tokens)            # a new prefix: tokens is a list of ints or a 1-D tensor
-cache = model.encode(tokens, cache)     # the cached prefix followed by tokens
-logits = model.denoise(canvas, cache)             # float32 (L, V), for the L tokens after the prefix
-logits = model.denoise(canvas, cache, previous)   # the same, conditioned on float32 (L, V)
+cache = model.encode(tokens)                      # encode a new prefix (list of ints or 1-D tensor)
+cache = model.encode(tokens, cache)               # extend an existing prefix cache with tokens
+logits = model.denoise(canvas, cache)             # float32 (L, V) logits for the L tokens after cache
+logits = model.denoise(canvas, cache, previous)   # same, self-conditioned on float32 (L, V) logits
 ```
 
-Neither call changes the cache it is given. `canvas` is an integer tensor of shape
-`(L,)`. `cfg` is a dict with the keys `canvas_length` ($L$), `max_canvases`,
-`max_steps` ($N$), `t_min`, `t_max`, `entropy_bound`, `stability` ($s$), and
-`confidence`. Randomness is an input: `uniforms = (u_init, u_sample, u_noise)`.
+Neither `encode` nor `denoise` modifies the cache passed to it.
 
-**The text.** Encode the prompt, `cache = model.encode(prompt)`. Then, for canvas
-$c = 0, 1, \dots$, at most `max_canvases` of them:
+The remaining inputs are:
+- `prompt`: a non-empty list of $P \ge 1$ Python `int` token IDs.
+- `cfg`: a dictionary with keys `canvas_length` ($L$), `max_canvases`, `max_steps` ($N$), `t_min` ($t_{\min}$), `t_max` ($t_{\max}$), `entropy_bound`, `stability` ($s$), and `confidence`.
+- `uniforms`: a tuple `(u_init, u_sample, u_noise)` of three float32 tensors with entries in $[0, 1)$. All randomness comes from these tensors.
 
-1. **Noise.** The canvas starts as $x_i = \lfloor \texttt{u\_init}[c, i] \cdot V \rfloor$,
-   the product taken in float32.
-2. **Denoise** it with the steps below. They end with a *draft* $d$ of $L$ tokens.
-3. **Append.** If the draft contains `model.eos_id`, replace every token after its
-   first occurrence by `model.pad_id`, append the result to the text, and return. Only
-   the draft is searched: the token may occur in the prompt.
-4. Otherwise append the draft. If this was canvas `max_canvases - 1`, return.
-   Otherwise `cache = model.encode(d, cache)` and continue with the next canvas.
+### Outer loop (generating canvases)
 
-**The steps of one canvas**, $j = 0, 1, \dots$, at most $N$ of them:
+First, encode the prompt once with `cache = model.encode(prompt)` and initialize the output sequence with a copy of `prompt`. Then, for canvas index $c = 0, 1, \dots, \texttt{max\_canvases} - 1$:
 
-1. **Temperature.** $n = N - j$ steps remain, this one included, and
-   $t = t_\text{min} + (t_\text{max} - t_\text{min}) \cdot n / N$.
-2. **Predict.** $z = \texttt{model.denoise}(x, \texttt{cache}, z^\text{prev}) \,/\, t$,
-   where $z^\text{prev}$ is the $z$ of the previous step of this canvas. The first step
-   of every canvas passes no third argument.
-3. **Sample and accept**, as in `entropy-bound-denoise-step`, from
-   $p_i = \operatorname{softmax}(z_i)$. A candidate per position by inverse CDF:
-   $y_i = \min\{k : C_{i,k} > u \cdot C_{i,V-1}\}$ with $C_{i,k} = \sum_{v \le k} p_{i,v}$
-   and $u$ = `u_sample[c, j, i]`. The entropy $H_i = -\sum_v p_{i,v} \ln p_{i,v}$, where
-   a probability of 0 contributes 0. Position $i$ is accepted when the entropies ranked
-   strictly before it (ascending, equal ones by index) sum to at most `entropy_bound`;
-   this is `ops.eb_accept(z, entropy_bound)`. The next step's canvas is $x_i = y_i$ where
-   accepted and $\lfloor \texttt{u\_noise}[c, j, i] \cdot V \rfloor$ elsewhere.
-4. **Draft.** $d^{\,j}_i = \operatorname{argmax}_v z_{i,v}$, for every position.
-5. **Stop** after this step when both hold:
-   - *stable*: $j \ge s$ and $d^{\,j} = d^{\,j-1} = \dots = d^{\,j-s}$, drafts of this
-     canvas only. With $s = 0$ every step is stable.
-   - *confident*: $\tfrac{1}{L} \sum_i H_i <$ `confidence`.
+1. **Initialize from noise.** Create the starting canvas $x$ of length $L$ with
+   $$x_i = \lfloor \texttt{u\_init}[c, i] \cdot V \rfloor, \quad i \in \{0, \dots, L - 1\},$$
+   computing the product in float32.
+2. **Denoise.** Run the inner denoising loop below for up to $N$ steps. This produces a final *draft* $d$ of $L$ tokens.
+3. **Handle EOS and append.** Search only the draft $d$ (never `prompt`) for `model.eos_id`. If `model.eos_id` appears in $d$, replace every token strictly after its first occurrence with `model.pad_id`, append these $L$ tokens to the output, and return immediately without encoding this canvas.
+4. **Update cache or finish.** Otherwise, append $d$ to the output. If $c = \texttt{max\_canvases} - 1$, return. Otherwise, update `cache = model.encode(d, cache)` and continue to canvas $c + 1$.
 
-The draft of a canvas is the $d^{\,j}$ of the last step that ran, whether the canvas
-stopped or ran out of steps. It is not the canvas $x$ that the sampler left behind.
+### Inner loop (denoising steps for canvas $c$)
+
+For step $j = 0, 1, \dots, N - 1$:
+
+1. **Temperature.** Let $n = N - j$ be the number of steps remaining, including step $j$. Compute the linear temperature
+   $$t = t_{\min} + (t_{\max} - t_{\min}) \cdot \frac{n}{N}.$$
+2. **Predict and scale.** Compute the temperature-scaled logits
+   $$z = \frac{\texttt{model.denoise}(x, \texttt{cache}, z^{\text{prev}})}{t},$$
+   where $z^{\text{prev}}$ is the scaled logits $z$ from step $j - 1$ of the current canvas. On step $j = 0$ of every canvas, pass no third argument (or pass `None`).
+3. **Sample, accept, and renoise.** As in `entropy-bound-denoise-step`, compute $p_i = \operatorname{softmax}(z_i)$ for each position $i$:
+   - *Sample a candidate* $y_i$ per position by inverse-CDF sampling:
+     $$y_i = \min\{k : C_{i,k} > u \cdot C_{i,V-1}\}, \quad C_{i,k} = \sum_{v=0}^{k} p_{i,v}, \quad u = \texttt{u\_sample}[c, j, i].$$
+   - *Accept by entropy bound.* Compute the Shannon entropy $H_i = -\sum_{v=0}^{V-1} p_{i,v} \ln p_{i,v}$, where a probability of 0 contributes 0. Rank positions by ascending $H_i$, breaking ties by smaller index $i$. Position $i$ is accepted if the sum of entropies of all positions ranked strictly before $i$ is at most `entropy_bound`. This matches `ops.eb_accept(z, entropy_bound)`.
+   - *Update the canvas.* Set the next step's canvas to $x_i = y_i$ at accepted positions and $x_i = \lfloor \texttt{u\_noise}[c, j, i] \cdot V \rfloor$ (product in float32) at rejected positions.
+4. **Record draft.** Set step $j$'s draft to the greedy argmax $d^{(j)}_i = \operatorname{argmax}_v z_{i,v}$ for every position $i$.
+5. **Early stop.** Stop denoising this canvas after step $j$ if both conditions hold:
+   - *Stable:* $j \ge s$ and $d^{(j)} = d^{(j-1)} = \dots = d^{(j-s)}$, comparing only drafts from the current canvas. When $s = 0$, every step is stable.
+   - *Confident:* $\frac{1}{L} \sum_{i=0}^{L-1} H_i < \texttt{confidence}$.
+
+The final draft $d$ of a canvas is always $d^{(j)}$ from the last step that ran, whether the canvas stopped early or reached $N$ steps. It is never the updated canvas $x$ produced by the sampler.
 
 ![One call that generates three canvases. Every denoising step reads the prefix from the cache, and the last draft is never encoded.](assets/canvas-loop.svg)
 
-- `prompt`: a list of $P \ge 1$ ints. `uniforms`: three float32 tensors, $0 \le u < 1$.
-- Returns a list of Python ints: the prompt followed by $L$ tokens for every canvas
-  generated.
-- Nothing passed in is modified.
+### Return value and rules
 
-**Cost.** For a call that generates $g$ canvases, the model's counters must read
-exactly:
+- Return a list of Python `int` values containing `prompt` followed by $L$ tokens for each generated canvas.
+- Do not modify any input passed to `diffusion_generate`.
+- Do not draw random numbers yourself.
+- Read `model.eos_id` and `model.pad_id` from `model` rather than hardcoding `1` and `0`, since they vary across test models.
+- From `model`, use only `encode`, `denoise`, `vocab_size`, `eos_id`, and `pad_id`. Accessing counters, other settings, private attributes, `with_framework`, or copying `model` is forbidden. Pass only caches returned by `model.encode`.
+- You may use `ops.eb_accept`, `ops.softmax`, and `ops.log_softmax`.
+
+### Cost
+
+For a call that generates $g$ canvases, the model's counters must match these exact values:
 
 | counter | value | why |
 |---|---|---|
-| `encoder_calls` | $g$ | the prompt in one call, then each canvas that another canvas follows |
-| `encoder_tokens` | $P + (g - 1)\,L$ | no token is encoded twice, and the last canvas is never read again |
-| `denoise_calls` | the number of steps the rules above define | no step after the stop, and none repeated |
-
-Of the model, use `encode`, `denoise`, `vocab_size`, `eos_id`, and `pad_id`, and
-nothing else: its counters, its other settings, its private attributes,
-`with_framework`, and copies of it are off limits, and it takes only caches that it
-returned itself. The two special tokens differ between models (most tests have 1 and
-0), so read them. Do not draw random numbers yourself. `ops.eb_accept`, `ops.softmax`,
-and `ops.log_softmax` may be used.
+| `encoder_calls` | $g$ | one call for the prompt, plus one for each canvas followed by another canvas |
+| `encoder_tokens` | $P + (g - 1) L$ | every prefix token is encoded once, and the final canvas is never encoded |
+| `denoise_calls` | exact number of steps defined above | no steps after early stopping, and no repeated calls |
 
 ## Shapes
 
@@ -93,7 +84,7 @@ and `ops.log_softmax` may be used.
 | `u_sample`, `u_noise` | `(max_canvases, max_steps, L)` | float32 |
 | canvas, draft | `(L,)` | integer |
 | logits, $z$ | `(L, V)` | float32 |
-| result | list of $P + g\,L$ ints | Python `int` |
+| result | list of $P + g L$ ints | Python `int` |
 
 ## Example
 
@@ -120,44 +111,23 @@ diffusion_generate(model, [3, 6, 2], cfg, (u_init, u_sample, u_noise))
 | 1 | 1 | 0.6667 | `[6, 1, 1, 5]` | `[1, 1, 1, 4]` | all | `[1, 1, 1, 4]` | 0.1659 | yes | no |
 | 1 | 2 | 0.5333 | `[1, 1, 1, 4]` | `[4, 1, 1, 4]` | all | `[1, 1, 1, 4]` | 0.1680 | no | no |
 
-Canvas 0 starts as $\lfloor 8 \cdot (0.97, 0.44, 0.20, 0.69) \rfloor = (7, 3, 1, 5)$ and
-stops after its second step. Its draft `[4, 4, 4, 4]` is appended and encoded, and
-canvas 1 starts without self-conditioning. Canvas 1 is stable at step 1 but not
-confident, so it goes on, changes its draft, and runs out of steps. Its last draft is
-`[4, 1, 1, 4]` although the sampler's canvas is `[1, 1, 1, 4]`; the first token 1 ends
-the text and the two tokens after it become padding. The counters read 2 encoder calls,
-$3 + 4 = 7$ encoder tokens, and 5 denoise calls.
+Canvas 0 starts as $\lfloor 8 \cdot (0.97, 0.44, 0.20, 0.69) \rfloor = (7, 3, 1, 5)$ and stops early after step 1 because its draft repeats and its mean entropy is below `0.005`. Its draft `[4, 4, 4, 4]` is appended and encoded into the cache, and canvas 1 starts without self-conditioning. Canvas 1 is stable at step 1 but not confident, so it continues, changes its draft at step 2, and hits `max_steps`. Its final draft is `[4, 1, 1, 4]` even though the sampler's output canvas is `[1, 1, 1, 4]`. The first occurrence of `eos_id` (`1`) at index 1 ends generation, and the two positions after it become `pad_id` (`0`). The final counters read 2 encoder calls, $3 + 4 = 7$ encoder tokens, and 5 denoise calls.
 
-With `max_canvases = 1` and the first row of each uniform tensor, the same call returns
-`[3, 6, 2, 4, 4, 4, 4]` after 1 encoder call and 2 denoise calls.
+With `max_canvases = 1` and only the first row of each uniform tensor, the same call returns `[3, 6, 2, 4, 4, 4, 4]` after 1 encoder call and 2 denoise calls.
 
 ## Constraints
 
-- $1 \le P \le 9$, $1 \le L \le 8$, $V \in \{4, 8, 32\}$, at most 5 canvases and 12 steps,
-  $s \in \{0, 1, 2\}$, $0.2 \le t_\text{min} < t_\text{max} \le 1.5$,
-  $0.02 \le$ `entropy_bound` $\le 1$, $0.005 \le$ `confidence` $\le 3$.
-- Tokens are compared exactly, with the loop evaluated in float64 and with the output of
-  `DiffusionGemmaGenerationMixin.generate` of Hugging Face Transformers driving the same
-  model with the same uniforms. The uniforms are built so that float32 rounding decides
-  nothing. At every step the correct loop takes:
-  - every `u_sample` threshold $u \cdot C_{i,V-1}$ is at least $10^{-3}$ away from every
-    cumulative sum, and every $u \cdot V$ of `u_init` and `u_noise` at least $10^{-3}$
-    away from an integer;
-  - every sum of entropies that is compared with `entropy_bound` is 0 or at least
-    $10^{-3}$ away from it, and the entropies of the last accepted and the first rejected
-    position are at least $10^{-3}$ apart, so the tie rule never decides;
-  - the two largest entries of every row of $z$ are at least $10^{-3}$ apart;
-  - the mean entropy is away from `confidence` by at least $10^{-3}$, or by a tenth of
-    `confidence` where that is smaller.
-- The three counters are compared exactly (see Cost).
+- $1 \le P \le 9$, $1 \le L \le 8$, $V \in \{4, 8, 32\}$, `max_canvases` $\le 5$, `max_steps` $\le 12$, $s \in \{0, 1, 2\}$, $0.2 \le t_{\min} < t_{\max} \le 1.5$, $0.02 \le \texttt{entropy\_bound} \le 1$, and $0.005 \le \texttt{confidence} \le 3$.
+- Output tokens are compared exactly against a float64 reference evaluation and against Hugging Face Transformers' `DiffusionGemmaGenerationMixin.generate` driving the same model with the same uniforms.
+- Test uniforms are constructed so that float32 rounding never flips any discrete decision. At every step along the correct trajectory:
+  - Every `u_sample` threshold $u \cdot C_{i,V-1}$ is at least $10^{-3}$ away from every cumulative sum $C_{i,k}$, and every $u \cdot V$ from `u_init` and `u_noise` is at least $10^{-3}$ away from any integer.
+  - Every entropy prefix sum compared against `entropy_bound` is either 0 or at least $10^{-3}$ away from `entropy_bound`, and the entropies of the last accepted position and first rejected position differ by at least $10^{-3}$, so tie-breaking never changes acceptance.
+  - The top two entries in every row of $z$ differ by at least $10^{-3}$.
+  - The mean entropy differs from `confidence` by at least $\min(10^{-3}, 0.1 \cdot \texttt{confidence})$.
+- The three counters (`encoder_calls`, `encoder_tokens`, and `denoise_calls`) are compared exactly.
 
 ## Why this matters
 
-A text-diffusion model is still autoregressive, over blocks instead of tokens, and its
-prefix cache is an ordinary one: what goes into it is read by every later canvas. The
-loop has three tensors that look alike at the end of a canvas, the sampled canvas, the
-renoised canvas, and the argmax draft. They are equal when a canvas converges and
-different when it runs out of steps, so appending or encoding the wrong one passes every
-test on easy prompts and corrupts the hard ones. The stopping rule decides the cost: a
-canvas that stops on stability alone ships a guess, and one that never stops early pays
-for every one of its 48 passes on every canvas.
+Block text-diffusion models are still autoregressive across blocks, and their prefix cache works like a standard KV cache. Whatever tokens you encode into the cache are attended to by every later canvas. At the end of a canvas, three `(L,)` tensors look interchangeable: the sampled candidates, the renoised canvas, and the argmax draft. They match whenever a canvas converges cleanly, but they diverge when a canvas hits `max_steps`. Appending or encoding the wrong tensor passes tests on easy prompts while silently poisoning the cache on harder ones.
+
+The stopping rule controls both quality and latency. Stopping on stability alone emits low-confidence guesses, while failing to stop early forces the model to pay for all 48 denoising passes on every canvas in production.

@@ -1,16 +1,8 @@
-Which operations in this pipeline are large matrix products, where 16 bits are enough
-and the speed is won, and which are a handful of elementwise operations and sums over
-one row of logits? What dtype does `torch.log_softmax(z, dim=-1)` return when `z` is a
-bfloat16 tensor and no autocast region is active?
+Which operations in this pipeline are large matrix products that benefit from 16-bit speed, and which are elementwise ops and reductions over one row of logits? What dtype does `torch.log_softmax(z, dim=-1)` return when `z` is a bfloat16 tensor and no autocast region is active?
 
 ---
 
-Use `torch.autocast` as a context manager around the single call `model(x)`. It needs
-the *type* of the device as a string, which `device.type` gives you for a CPU and for
-a CUDA device alike, and the 16-bit type as `dtype=`. Leave the region before doing
-anything else. The logits are then a 16-bit tensor like any other: convert them with
-`.float()` first, and only then divide by the temperature, take the log-softmax, and
-sum for the entropy.
+Wrap the single call `model(x)` in a `torch.autocast` context manager. Pass `device_type=device.type` (which works for both CPU and CUDA devices) and `dtype=dtype`. Exit the `with` block before doing any post-processing. The returned `logits` are still 16-bit, so call `.float()` first, then divide by `temperature`, compute `log_softmax`, and sum for the entropy.
 
 ---
 
@@ -21,5 +13,4 @@ logits = logits.float() / temperature
 log_probs = torch.log_softmax(logits, dim=-1)
 ```
 
-The entropy is `-(log_probs.exp() * log_probs).sum(dim=-1)`. Where a probability
-underflows to 0 its log-probability is still a finite float32, and the product is 0.
+Compute the entropy as `-(log_probs.exp() * log_probs).sum(dim=-1)`. Even when a probability underflows to 0, its float32 log-probability remains finite, so the product is 0.

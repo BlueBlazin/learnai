@@ -1,17 +1,8 @@
-Compare `n_cached + T` with `S`. When they are equal, every slot holds a token: which
-of the kernel's built-in mask forms describes "token $i$ sees everything up to itself"
-in that layout, and which describes "every token sees everything"? When they are not
-equal, what is the set of slots a new token may read, written as a comparison between
-a slot index and a number that depends on $i$?
+Compare `n_cached + T` with `S`. When they are equal, every buffer slot holds a valid token. Which built-in mask (`None` or `"causal"`) lets each new token see everything up to itself, and which lets every token see all slots? When `n_cached + T < S`, how can you express the allowed slots for new token $i$ as a comparison on slot index $j$?
 
 ---
 
-A full buffer needs no mask array: `mask="causal"` when `causal` is true and there is
-more than one new token, `mask=None` otherwise. With unused capacity, build a boolean
-array that is `True` where slot $j$ may be read by new token $i$: `j <= n_cached + i`
-for the causal case, `j < n_cached + T` otherwise. A boolean mask means "may attend"
-and works for float16 and float32 inputs alike; an additive mask would have to be
-created in the dtype of `q`.
+A full buffer needs no mask array. Use `mask="causal"` when `causal` is `True` and `T > 1`, and `mask=None` otherwise. When the buffer has unused capacity, build a boolean mask that is `True` where new token $i$ may read slot $j$. Use `j <= n_cached + i` when `causal` is `True`, and `j < n_cached + T` when `causal` is `False`. A boolean mask means "may attend" and works for both `float16` and `float32` inputs without dtype promotion issues.
 
 Pass `k` and `v` unchanged even when they have fewer heads than `q`.
 
@@ -24,5 +15,4 @@ mask = mx.arange(slots)[None, :] <= last  # (T, S) or (1, S), True = may attend
 out = mx.fast.scaled_dot_product_attention(q, k, v, scale=q.shape[-1] ** -0.5, mask=mask)
 ```
 
-That mask is correct for every layout. Use it when `n_cached + steps < slots`, and
-the string or `None` when the buffer is full.
+This boolean mask is valid for every layout. Use it when `n_cached + steps < slots`, and fall back to `"causal"` or `None` when the buffer is full.

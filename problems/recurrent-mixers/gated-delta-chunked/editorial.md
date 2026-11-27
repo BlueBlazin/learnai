@@ -1,40 +1,37 @@
 ## The idea
 
-Follow one chunk of $C$ tokens from the memory $S_0$. Write $\delta_i$ for the vector
-that token $i$ writes along $k_i$, so the memory right after token $i$ is
+Consider one chunk of $C$ tokens starting from memory $S_0$. Let $\delta_i$ denote the vector that token $i$ writes along $k_i$. Immediately after token $i$, the memory holds the decayed starting state plus every write up to position $i$, each decayed from its own position to $i$:
 
 $$
-S^{(i)} = e^{c_i} S_0 + \sum_{j \le i} e^{c_i - c_j}\,\delta_j\,k_j^\top ,
+S^{(i)} = e^{c_i} S_0 + \sum_{j \le i} e^{c_i - c_j}\,\delta_j\,k_j^\top .
 $$
 
-the starting memory and every write so far, each decayed from where it happened to
-position $i$ ($c_i$ is the cumulative log-decay, so $e^{c_i - c_j} = g_{j+1} \cdots g_i$).
-The step rule defines $\delta_i = \beta_i\,(v_i - \bar S k_i)$ with $\bar S$ the memory
-just before the write, which is the same sum without the term $j = i$. Substituting:
+Here $c_i = \sum_{r \le i} \texttt{log\_g}_r$ is the cumulative log-decay, so $e^{c_i - c_j} = g_{j+1} \cdots g_i$.
+
+By the step rule, $\delta_i = \beta_i\,(v_i - \bar S k_i)$, where $\bar S$ is the decayed memory just before token $i$'s write. That matrix $\bar S$ is the same sum as $S^{(i)}$ without the $j = i$ term. Substituting $\bar S$ into the definition of $\delta_i$ and moving all $\delta_j$ terms to the left gives
 
 $$
 \delta_i + \sum_{j < i} \underbrace{\beta_i\,(k_i \cdot k_j)\,e^{c_i - c_j}}_{A_{ij}}\,\delta_j
 = \beta_i\,v_i - \beta_i\,e^{c_i}\,S_0\,k_i .
 $$
 
-In matrix form, with the $\delta_i$ as rows of $V'$:
-$(I + A)\,V' = \operatorname{diag}(\beta) V - \operatorname{diag}(\beta e^{c}) K S_0^\top$.
-$A$ is strictly lower triangular because a write depends only on earlier writes. The
-right-hand side is linear in $S_0$, so the solve splits into a part that knows nothing
-about $S_0$ and a coefficient of it: $V' = U - W S_0^\top$. That split is the whole
-trick. $U$ and $W$ can be computed for every chunk of the sequence in one batched
-solve before any memory is known, and what remains sequential is one read of the
-memory and one write per chunk. This problem makes that visible by handing the memory
-over as an object that counts its reads and writes.
+Stacking the $\delta_i$ vectors as rows of $V'$ puts this in matrix form:
 
-The reads and the new memory are the first formula again: $y_i = S^{(i)} q_i$ gives
-$Y = \operatorname{diag}(e^{c}) Q S_0^\top + R V'$ with
-$R_{ij} = (q_i \cdot k_j) e^{c_i - c_j}$ for $j \le i$, diagonal included because the
-read comes after the write; and $S^{(C-1)}$ is $S_1$.
+$$
+(I + A)\,V' = \operatorname{diag}(\beta)\,V - \operatorname{diag}(\beta e^{c})\,K S_0^\top .
+$$
 
-The paper calls $I + A$ the result of a "UT transform" and reaches the same system
-through a product of Householder-like factors $(I - \beta k k^\top)$; the derivation
-above is the direct one.
+Because a write depends only on earlier writes, $A$ is strictly lower triangular and $I + A$ is unit lower triangular. Crucially, the right-hand side is linear in $S_0$, so the solution splits into a term independent of $S_0$ and a linear coefficient multiplying $S_0^\top$:
+
+$$
+V' = U - W S_0^\top .
+$$
+
+Both $U$ and $W$ can be computed across all chunks in batched triangular solves before reading any memory. The only sequential work left is one `memory.read` and one `memory.update` per chunk, which the counting `memory` object enforces directly.
+
+The outputs and final state follow from the first equation. Evaluating $y_i = S^{(i)} q_i$ gives $Y = \operatorname{diag}(e^{c})\,Q S_0^\top + R V'$, where $R_{ij} = (q_i \cdot k_j)\,e^{c_i - c_j}$ for $j \le i$. The diagonal is included because each token reads after writing. Finally, the memory after the chunk is $S_1 = S^{(C-1)}$.
+
+The Gated DeltaNet paper calls $I + A$ a "UT transform" and derives the same system from a product of Householder-like matrices $(I - \beta k k^\top)$. Unrolling the recurrence directly leads to the same equations.
 
 ## Reference solution (PyTorch)
 
@@ -72,76 +69,36 @@ def gdn_chunked(q, k, v, log_g, beta, memory, chunk_size):
     return torch.cat(ys, dim=1)[:, :steps].transpose(0, 1), memory
 ```
 
-Padding the last chunk keeps every chunk the same shape. A padding row has a zero
-key and value, so $\delta = 0$ whatever $\beta$ is, and a log-decay of 0, so the
-memory passes it unchanged. JAX uses `jax.lax.linalg.triangular_solve`, which
-batches; MLX 0.32.4 runs `mx.linalg.solve_triangular` only with `stream=mx.cpu`
-(measured on this project's machine).
+Padding the last chunk with zeros keeps every chunk the same shape. A padding row has a zero key and zero value, so $\delta = 0$ regardless of $\beta$. It also has a log-decay of 0 (meaning a decay factor of 1), so the memory passes through the padded positions unchanged.
+
+In JAX, `jax.lax.linalg.triangular_solve` supports batched solves directly. In MLX 0.32.4, `mx.linalg.solve_triangular` must be called with `stream=mx.cpu` (verified on this project's machine).
 
 ## Common mistakes
 
-- **The per-token loop.** Correct numbers, one read and one write of the memory per
-  token. Compiling it changes its speed, not its shape: it is still $T$ dependent
-  steps, each waiting for the memory of the one before.
-- **Two reads per chunk,** one for $W$ and one for the queries. Stack the rows; the
-  limit is one read per chunk.
-- **Copying the memory out.** Reading with identity rows returns $S$ itself, after
-  which any loop can run on the copy. It needs $D_k$ rows in one call, which
-  `max_rows` refuses as soon as keys are wider than two chunks.
-- **No decay on the carried memory.** $S_1 = S_0 + \dots$ instead of
-  $e^{c_{C-1}} S_0 + \dots$: every chunk boundary forgets to forget.
-- **Writes not decayed to the end of the chunk.** $V'^\top K$ without
-  $e^{c_{C-1} - c}$ treats every write as if it happened at the last position.
-- **A strictly lower read.** Using the mask of $A$ for $R$ drops the diagonal, and no
-  token sees its own write.
-- **$S_0$ left out of the writes**, $V' = U$. Exact for an empty memory and a single
-  chunk, wrong from the second chunk on.
-- **$S_0$ read without decay**, $Q S_0^\top$ instead of $\operatorname{diag}(e^{c}) Q S_0^\top$.
-- **$\beta$ on the values only.** The system matrix needs $\beta_i$ on row $i$ too.
-- **Padding with a decay of 0.** A padding row needs a log-decay of 0. Padding with a
-  large negative log-decay (a decay of 0) leaves the outputs right and returns an
-  erased memory; padding with $-\infty$ itself also puts $\infty - \infty$ into the
-  decays between positions and returns NaN.
-- **Masking after the exponential.** `exp(c_i - c_j) * mask` computes $e^{+1000}$
-  above the diagonal for a fast-decaying head and turns it into NaN. Mask the
-  exponent, or zero the entries with `tril` or `where`.
+- **Running a per-token loop.** This produces the right numbers but makes one read and one write per token. Compiling it can speed up execution, yet it still performs $T$ sequential steps instead of $n$.
+- **Making two reads per chunk.** Reading $W$ and $\operatorname{diag}(e^c) Q$ in separate calls exceeds the limit of one read per chunk. Concatenate the rows into a single `(H, 2C, Dk)` tensor.
+- **Copying the memory out.** Reading with identity rows recovers $S$ directly, allowing an arbitrary local loop. That requires $D_k$ rows in one call, which `max_rows` rejects whenever $D_k > 2 \cdot \texttt{chunk\_size}$.
+- **Forgetting to decay the carried memory.** Computing $S_1 = S_0 + \dots$ instead of $e^{c_{C-1}} S_0 + \dots$ skips the decay across every chunk boundary.
+- **Forgetting to decay writes to the end of the chunk.** Using $V'^\top K$ without the factor $e^{c_{C-1} - c}$ treats every write as if it occurred at the final position of the chunk.
+- **Using a strictly lower-triangular read matrix.** Reusing the mask of $A$ for $R$ drops the diagonal, so tokens cannot see their own writes.
+- **Leaving $S_0$ out of the writes.** Setting $V' = U$ is exact for a single chunk starting from zero memory, but fails from the second chunk onward.
+- **Reading $S_0$ without decay.** Computing $Q S_0^\top$ instead of $\operatorname{diag}(e^{c})\,Q S_0^\top$ ignores how much the starting memory decayed before each token.
+- **Applying $\beta$ only to values.** Row $i$ of the system matrix $A$ also requires the factor $\beta_i$.
+- **Padding with a decay of 0 instead of a log-decay of 0.** Padding `log_g` with a large negative number leaves `Y` unaffected but erases the final memory. Padding with $-\infty$ puts $\infty - \infty$ into the pairwise differences and produces NaN.
+- **Masking after the exponential.** Computing `exp(c_i - c_j) * mask` evaluates $e^{+1000}$ above the diagonal for fast-decaying heads, turning $\infty \cdot 0$ into NaN. Always mask the exponent before calling `exp`.
 
 ## Complexity
 
-With $n = \lceil T / C \rceil$ chunks: $O(n\,C^2\,(D_k + D_v))$ arithmetic, all of it in
-batched matrix products and one batched triangular solve, and $n$ sequential steps
-instead of $T$. Larger chunks mean fewer sequential steps and quadratically larger
-systems; the library's default is 64. In float32 the result differs from the step
-loop by less than $10^{-5}$ for the inputs of this problem.
+With $n = \lceil T / C \rceil$ chunks, the algorithm performs $O(n\,C^2\,(D_k + D_v))$ arithmetic in batched matrix products and a batched triangular solve, with $n$ sequential steps instead of $T$. Larger chunks reduce the number of sequential steps while increasing the triangular system size quadratically. In production, the default chunk size is 64. For the inputs in this problem, float32 chunked execution differs from the float64 step loop by less than $10^{-5}$.
 
-Wall-clock time is not judged, because it measures the framework more than the
-algorithm. Measured on an Apple M1 Max at $T = 2048$, $H = 4$, widths 16, chunks of
-64, with the memory as a plain tensor: an uncompiled Python loop over tokens takes 15
-(PyTorch) to 80 (JAX) times as long as the chunked form, while the same loop under
-`jax.jit` with `jax.lax.scan` is faster than the uncompiled chunked form on a CPU.
-What the chunked form buys is parallel work per sequential step, which matters on
-hardware that is wide rather than fast per step.
+Wall-clock time is not judged because it reflects framework overhead more than the algorithm. Measured on an Apple M1 Max at $T = 2048$, $H = 4$, $D_k = D_v = 16$, and chunk size 64 with `memory` as a plain tensor, an uncompiled Python token loop is 15x slower in PyTorch and 80x slower in JAX than the chunked form. On CPU, the same token loop under `jax.jit` with `jax.lax.scan` is faster than the uncompiled chunked form. The chunked form pays off by exposing parallel matrix work per sequential step on wide accelerators.
 
 ## In the wild
 
 Checked on 2026-11-21 by reading and running `transformers` 5.23.0.
 
-- `torch_chunk_gated_delta_rule` in
-  `transformers/models/qwen3_5/modeling_qwen3_5.py` is this algorithm with the state
-  transposed: it pads with zeros, masks the pairwise decay to `-inf` before the
-  exponential, calls `torch.linalg.solve_triangular(..., unitriangular=True)` twice
-  (`new_values` and `k_cumdecay` are $U$ and $W$), and scans the chunks. When the
-  model is being exported it builds the inverse by forward substitution over chunk
-  positions instead, because not every export target has the solver. Two tests
-  compare your function with its outputs for chunks of 16 and 4 (`fixtures/make.py`
-  regenerates them).
-- `Qwen3_5GatedDeltaNet.forward` calls it for every input except a single token with
-  a cached state, so a prompt is prefilled in chunks and generation proceeds token by
-  token. The library function also L2-normalizes and scales the query; here the
-  inputs arrive already normalized.
-- The chunkwise form is section 3.3 of "Gated Delta Networks: Improving Mamba2 with
-  Delta Rule" (arXiv 2412.06464, ICLR 2025).
+- `torch_chunk_gated_delta_rule` in `transformers/models/qwen3_5/modeling_qwen3_5.py` implements this exact algorithm with the state transposed. It pads with zeros, masks the pairwise log-decay to `-inf` before calling `exp`, calls `torch.linalg.solve_triangular(..., unitriangular=True)` twice (`new_values` is $U$ and `k_cumdecay` is $W$), and scans over chunks. During model export, it builds the inverse via forward substitution over chunk positions instead, because not every export target supports triangular solves. Two tests compare your function against its outputs for chunk sizes 16 and 4 (`fixtures/make.py` regenerates them).
+- `Qwen3_5GatedDeltaNet.forward` calls the chunked form for every input except a single token with a cached state. Prompts are prefilled in chunks, and autoregressive decoding runs token by token. The library function also L2-normalizes keys and queries and scales queries, whereas here the inputs arrive already normalized.
+- The chunkwise derivation appears in section 3.3 of "Gated Delta Networks: Improving Mamba2 with Delta Rule" (arXiv 2412.06464, ICLR 2025).
 
-Deliberate simplifications: no batch axis; float32 inputs (the library casts to
-float32 inside the function); chunks of at most 16 in the tests; and the memory as a
-counting object, which the library does not have (there it is a tensor).
+Deliberate simplifications: there is no batch axis, inputs arrive in float32 (the library casts internally), test chunks have size at most 16, and the memory is wrapped in a counting object rather than passed as a plain tensor.

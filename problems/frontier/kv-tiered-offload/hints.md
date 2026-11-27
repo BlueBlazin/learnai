@@ -1,21 +1,12 @@
-Separate the three questions `serve` answers, because each has its own data. Which
-blocks can be reused at all? (Only a leading run of stored blocks.) How many of
-them are worth reusing? (A comparison of times, where a transfer's base cost is
-paid once per tier, not per block.) What has to leave the GPU to make room, and
-where does it go? (Recency, depth, and the free slots of the tiers below.) What
-does your index need to remember about a block to answer all three?
+Break `serve` into three separate questions, since each relies on different state. First, which blocks can be reused at all? (Only the leading contiguous run of stored blocks.) Second, how many of them are worth reusing? (Compare total times, remembering that a tier's base latency is paid once per tier, not once per block.) Third, which blocks leave the GPU and where do they go? (Track recency, block depth, and free slots in lower tiers.) What metadata does your index need per stored block to answer all three?
 
 ---
 
-Keep one record per stored block: its tier, its index in the chain (depth), and a
-stamp, the number of the last `serve` call that used it. Then:
+Store three fields for every cached block: its current tier, its block index (depth), and a `stamp` recording the number of the last `serve` call that used it. Then implement each piece directly:
 
-- the cut: for every `c` from 0 to `p`, count the host and disk blocks among the
-  first `c`, compute `t(c)`, and keep the best with `<=` so that later (larger)
-  cuts win ties;
-- the victim of a tier: the minimum of `(stamp, -depth)` over its unpinned blocks;
-- place: a short recursive function that first makes room in the target tier by
-  placing that tier's victim one tier further down.
+- **Cut selection:** For each `c` from `0` to `p`, count the host and disk blocks among the first `c` blocks, compute `t(c)`, and update the best cut with `<=` so larger cuts win ties.
+- **Victim selection:** Pick the unpinned block in the target tier that minimizes `(stamp, -depth)`.
+- **Placement:** Write a recursive helper that frees a slot in the target tier by placing that tier's victim one tier lower before demoting the incoming block.
 
 ---
 
@@ -42,5 +33,4 @@ place(key, tier):
     store.demote(key, tier); record the new tier
 ```
 
-Update your index at the same moment you call the store, so that `free` and
-`victim` always describe the store as it is.
+Update your index immediately with every store call so `free` and `victim` always reflect the current store state.

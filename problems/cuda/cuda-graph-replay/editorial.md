@@ -1,40 +1,18 @@
 ## The idea
 
-Between `capture_begin()` and `capture_end()` CUDA does not execute the kernels a
-stream is given; it records them: which kernel, with which arguments, and the
-arguments of a kernel are raw addresses. `replay()` submits the whole recording at
-once. No Python runs, no dispatcher, no allocator, no shape computation. That is the
-speedup, and it is also the complete list of things a replay cannot do:
+Between `capture_begin()` and `capture_end()`, CUDA does not execute kernels on the stream normally. Instead, it records each kernel launch together with its arguments, which are raw GPU memory addresses. Calling `replay()` submits that entire recorded sequence at once with no Python execution, no dispatcher overhead, no memory allocation, and no shape computation. That mechanism explains every constraint of using CUDA graphs:
 
-- It cannot take arguments. It reads whatever is, at that moment, in the memory the
-  captured kernels read. To give it new input you write into that memory:
-  `static_input.copy_(x)`. Assigning `static_input = x` changes a Python name; the
-  graph has never heard of it.
-- It cannot return anything. It writes to the memory the captured kernels wrote to,
-  the same memory at every replay. To keep a result past the next replay you copy it
-  out: `static_output.clone()`.
-- It cannot change shape, branch on data, or talk to the host. Kernels and addresses
-  were fixed at capture time; a `.item()` during capture is an error because there
-  is nothing executed yet to read.
+- **Inputs must be copied in place.** A replay takes no arguments and always reads from the exact addresses captured during recording. To feed new data into the graph, overwrite the captured memory with `static_input.copy_(x)`. Rebinding `static_input = x` only changes a Python reference that the graph never sees.
+- **Outputs must be cloned out.** Every replay writes into the same output memory addresses. To preserve a result past the next replay, copy it out with `static_output.clone()`.
+- **Shapes, control flow, and host syncs are frozen.** Because kernels and addresses are fixed at capture time, shapes cannot change and data-dependent branches cannot run. Calling `.item()` during capture raises an error because nothing has executed yet to produce a value.
 
-The constructor's order follows from the same picture.
+The constructor's three-step order follows directly from these rules.
 
-**Placeholders first, outside the capture.** If `x.clone()` runs inside the capture
-block, the copy kernel is part of the recording: every replay starts by copying the
-example values into the placeholder again, over whatever `copy_` just wrote there.
+**Allocate placeholders before capture.** If you clone `example_inputs` inside the capture block, the copy kernels themselves get recorded. Every replay then starts by overwriting the placeholders with the original example values, erasing whatever `copy_` just wrote.
 
-**Then warm-up.** The first run of anything on a GPU does work that later runs do
-not: lazy initialization of libraries, picking algorithms, growing the allocator's
-pools. Captured, that work would be replayed forever, or would fail the capture.
-A few eager runs on the placeholders flush it out. PyTorch's CUDA notes add that
-the warm-up must run on a side stream; `torch.cuda.graph` supplies one for the
-capture, and the provided `side_stream` does it for the warm-up.
+**Warm up before capture.** The first execution of GPU code performs one-time setup such as lazy library initialization, kernel autotuning, and allocator pool growth. Running `step_fn` eagerly `warmup` times flushes that work out so it does not fail capture or get replayed on every call. PyTorch's CUDA graph rules require warm-up to run on a side stream, which the provided `side_stream` context manager handles (`torch.cuda.graph` handles the side stream for capture).
 
-**Then one captured run.** It executes for real (the recording is made by running
-the function), so a stateful `step_fn` has now run `warmup + 1` times. With a KV
-cache that means the example token was written `warmup + 1` times into the example
-position; build the graphed step before the prefill, or with an example position
-that the real sequence overwrites.
+**Capture once.** Recording still executes `step_fn`, so a stateful function runs `warmup + 1` times during construction. When capturing a decode step over a KV cache, the example token is written `warmup + 1` times into the example slot, so you should build the graphed step before prefill or point it at a slot that real decoding will overwrite.
 
 ## Reference solution (PyTorch)
 
@@ -63,61 +41,29 @@ class GraphedStep:
         return tuple(out.clone() for out in self.static_outputs)
 ```
 
-The object does not keep `step_fn`: after the capture, the function's Python is
-dead weight. The shape check is done by hand and before any copy, because `copy_`
-broadcasts: a `(1, n)` input would fill every row of an `(m, n)` placeholder without
-a word.
+`GraphedStep` does not store `step_fn` because the Python function is never called again after capture. Checking shapes explicitly before calling `copy_` is essential because `copy_` broadcasts silently. Without that check, a `(1, n)` input would fill every row of an `(m, n)` placeholder instead of raising `ValueError`.
 
-`torch.cuda.graph(graph)` is preferred over calling `capture_begin()` and
-`capture_end()` yourself. PyTorch's notes say a raw capture must be on a non-default
-stream; the context manager sets one, and its source also synchronizes, collects
-garbage, and empties the allocator's cache before the capture begins.
+Using `with torch.cuda.graph(graph):` is safer than calling `capture_begin()` and `capture_end()` manually. Raw capture must occur on a non-default stream, and the context manager sets up that stream while synchronizing, running garbage collection, and emptying the allocator cache before capture starts.
 
 ## Common mistakes
 
-- **Rebinding the placeholder** (`self.static_inputs = tuple(inputs)`). Every replay
-  returns the result for the example inputs.
-- **Copying only some of the inputs.** The rest keep the previous call's values.
-- **Returning the static outputs.** Right until the caller keeps one across a call.
-- **Cloning before the replay.** Each call returns the previous call's result.
-- **No warm-up**, or the warm-up inside the capture block (the graph then contains
-  `warmup + 1` copies of the step and every replay runs them all), or a hard-coded
-  number of warm-up runs.
-- **Placeholders allocated inside the capture.** The fill is recorded, and replays
-  reset the inputs.
-- **Using the example tensors as placeholders.** Every call scribbles over the
-  caller's tensors, and the caller can change the graph's inputs behind its back.
-- **A host read inside the capture** (a NaN check, a `print`, an `assert` on a
-  tensor). `RuntimeError: CUDA error: operation not permitted when stream is
-  capturing`.
-- **Calling `step_fn` instead of `replay()`.** Correct, and exactly as slow as
-  before.
-- **No shape check.** `copy_` broadcasts a wrong shape instead of failing.
+- **Rebinding placeholders (`self.static_inputs = tuple(inputs)`).** The graph still reads the original placeholder addresses, so every replay returns the result for `example_inputs`.
+- **Copying only a subset of inputs.** The uncopied placeholders keep stale values from the previous call.
+- **Returning static outputs directly.** Results look right until the caller holds onto an output across a second call, at which point the next replay overwrites it.
+- **Cloning before calling `replay()`.** Each call returns the previous call's output instead of the current one.
+- **Skipping warm-up, putting warm-up inside capture, or hard-coding the warm-up count.** Putting warm-up inside capture records `warmup + 1` copies of `step_fn` into the graph, causing every replay to run all of them.
+- **Allocating placeholders inside capture.** The copy from `example_inputs` gets recorded, so every replay resets the inputs before running `step_fn`.
+- **Using `example_inputs` directly as placeholders.** Every call overwrites the caller's tensors, and the caller can mutate the graph's input memory unexpectedly.
+- **Reading a tensor on the host inside capture (such as a NaN check, `print`, or `assert`).** On CUDA, this fails with `RuntimeError: CUDA error: operation not permitted when stream is capturing`.
+- **Calling `step_fn` instead of `graph.replay()`.** This produces the right numbers but completely defeats the graph speedup.
+- **Omitting the shape check.** Because `copy_` broadcasts, a mismatched shape like `(1, n)` silently overwrites an `(m, n)` placeholder instead of raising `ValueError`.
 
 ## Complexity
 
-The constructor runs the step `warmup + 1` times. A call costs one copy per input,
-one graph launch, and one copy per output; the memory of the static inputs and
-outputs, and of every intermediate tensor of the captured run, stays allocated for
-as long as the graph lives.
+The constructor runs `step_fn` `warmup + 1` times. Each call to `GraphedStep` performs one in-place copy per input, one graph launch, and one clone per output. Memory for the static inputs, static outputs, and every intermediate tensor from the captured run stays allocated for the lifetime of the graph.
 
 ## In the wild
 
-`torch.cuda.make_graphed_callables` is this class with autograd support: it
-allocates static inputs, warms up (three iterations by default, on a side stream),
-captures, and returns a callable that copies, replays, and hands back the static
-outputs. `torch.compile(mode="reduce-overhead")` records a CUDA graph per compiled
-graph and input shape, and raises an error when code touches an output that a later
-run has overwritten, which is the missing-`clone` mistake caught at run time.
-A graphed decode step needs the static cache of `cuda-static-kv-cache` (a cache
-grown with `torch.cat` has a new address at every step) and positions passed as
-tensors, as in `cuda-compile-once`.
+`torch.cuda.make_graphed_callables` follows this exact pattern with autograd support. It allocates static inputs, runs three warm-up iterations on a side stream, captures the graph, and returns a callable that copies inputs in, replays, and returns the static outputs. `torch.compile(mode="reduce-overhead")` captures a CUDA graph per compiled graph and input shape, and it raises a runtime error if user code reads an output tensor after a later replay has overwritten it (catching the missing-`clone` bug automatically). Capturing a decode step also depends on the static KV cache from `cuda-static-kv-cache` (since `torch.cat` allocates a new address every step) and tensor positions from `cuda-compile-once`.
 
-What was verified where. On the CPU, with the kit's `FakeCudaGraph`: every
-consequence listed under "Common mistakes" except the two about warm-up, which the
-stand-in cannot produce and the judge checks by watching when `step_fn` is called.
-From the PyTorch 2.15 documentation, not run: that warm-up belongs on a side stream,
-that host reads and dynamic shapes are prohibited during capture, that replays use
-the same memory addresses, and the `torch.cuda.graph`, `torch.cuda.Stream`, and
-`torch.cuda.stream` calls used by the reference and by `side_stream`. The GPU cases
-have never been run.
+**Verification notes.** On CPU with the kit's `FakeCudaGraph`, we verified every failure mode in "Common mistakes" except the warm-up behaviors, which `FakeCudaGraph` cannot reproduce and the judge verifies by tracking when `step_fn` is called. From the PyTorch 2.15 documentation (not run on GPU): warm-up requires a side stream, host reads and dynamic shapes fail during capture, replays reuse fixed memory addresses, and `torch.cuda.graph`, `torch.cuda.Stream`, and `torch.cuda.stream` follow the API used by the reference and `side_stream`. The GPU tests have not been run.

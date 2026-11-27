@@ -1,9 +1,4 @@
-Implement the cached attention step of Multi-Head Latent Attention (MLA), the
-attention of DeepSeek-V2 and its successors. Keys and values are low-rank: both are
-up-projections of one small latent per token, so the cache keeps the latent, plus a
-short RoPE key shared by all heads. The step must then attend **without rebuilding
-the per-head keys and values**, by folding their up-projections into the query and
-output sides. Your `mla_step` is never given those up-projections.
+Implement the cached attention step of Multi-Head Latent Attention (MLA), the attention mechanism used in DeepSeek-V2 and its successors. Keys and values are low-rank up-projections of a single compact latent vector per token, so the cache stores only that latent plus a short RoPE key shared across all heads. To attend **without rebuilding per-head keys and values**, you fold the key and value up-projections into the query and output weights ahead of time. Your `mla_step` function never receives those up-projection matrices.
 
 ## Specification
 
@@ -12,13 +7,18 @@ def absorb(w_uq, w_uk, w_uv, w_o, n_heads): ...  # -> (w_qk, w_ov)
 def mla_step(x_new, weights, cache): ...  # -> (out, (c, k_rope))
 ```
 
-Weights are stored as `(out_features, in_features)` and applied to row vectors as
-`x @ w.T`. Sizes: $d$ = `d_model`, $H$ = `n_heads`, $d_h$ = `d_head`, $d_r$ =
-`d_rope` (even), $d_c$ the width of the key-value latent, $d_q$ = `d_cq` the width
-of the query latent.
+All weight matrices are stored with shape `(out_features, in_features)` and applied to row vectors as `x @ w.T`. The model dimensions are:
 
-**The definition (explicit form).** For the token at position $t$ with input
-$x_t \in \mathbb{R}^d$:
+- $d$ (`d_model`): model hidden width
+- $H$ (`n_heads`): number of attention heads
+- $d_h$ (`d_head`): content head dimension
+- $d_r$ (`d_rope`): RoPE dimension (even)
+- $d_c$: key-value latent width
+- $d_q$ (`d_cq`): query latent width
+
+Batch size is $B$, the number of previously cached tokens is $S$, and the number of new tokens in the current call is $T \ge 1$.
+
+**Explicit MLA definition.** For a token at position $t$ with input vector $x_t \in \mathbb{R}^d$, MLA projects into low-rank latents, up-projects content vectors, and computes separate rotary position components:
 
 $$
 \begin{aligned}
@@ -32,30 +32,21 @@ k^R_t &= \operatorname{RoPE}_t\!\big(W^{KR} x_t\big) \in \mathbb{R}^{d_r}, \\
 \end{aligned}
 $$
 
-A vector of $H d_h$ (or $H d_r$) numbers is the concatenation of $H$ head vectors:
-head $h$ owns entries $h\,d_h, \dots, (h+1)\,d_h - 1$. $k^R_t$ has no head index: it
-is one vector used by every head. Head $h$ of token $t$ attends to tokens $j \le t$
-with
+Any vector of length $H d_h$ (or $H d_r$) is the concatenation of $H$ head vectors, where head $h$ occupies indices $h\,d_h, \dots, (h+1)\,d_h - 1$. The rotary key $k^R_t$ has no head index and is shared by every head. Head $h$ of token $t$ attends causally to all positions $j \le t$:
 
 $$
 s_{t,h,j} = \frac{q^C_{t,h} \cdot k^C_{j,h} \;+\; q^R_{t,h} \cdot k^R_j}{\sqrt{d_h + d_r}},
 \qquad
 a_{t,h,\cdot} = \operatorname{softmax}_{j \le t}\, s_{t,h,j},
 \qquad
-o_{t,h} = \sum_{j \le t} a_{t,h,j}\, v_{j,h},
+o_{t,h} = \sum_{j \le t} a_{t,h,j}\, v_{j,h}.
 $$
 
-and the output is $u_t = W^O\,[o_{t,0}; \dots; o_{t,H-1}] \in \mathbb{R}^d$.
+The final layer output is $u_t = W^O\,[o_{t,0}; \dots; o_{t,H-1}] \in \mathbb{R}^d$.
 
-$\operatorname{RoPE}_t$ is the rotation of the `rope` problem for position $t$
-(adjacent pairs, $\theta_i = 10000^{-2i/d_r}$, counterclockwise), applied **to each
-head's $d_r$ numbers separately** for $q^R$ and to the $d_r$ numbers of $k^R$. It is
-`ops.rope(x, positions)` from the kit, which rotates the last axis of
-`(..., T, D)`. The content parts $q^C$, $k^C$ carry no position.
+Here $\operatorname{RoPE}_t$ is the same rotation as in the `rope` problem for position $t$ (adjacent pairs, $\theta_i = 10000^{-2i/d_r}$, counterclockwise). Apply it **to each head's $d_r$ entries separately** for $q^R$, and to the $d_r$ entries of $k^R$. This is provided as `ops.rope(x, positions)` in the kit, which rotates the last axis of `(..., T, D)`. The content vectors $q^C$ and $k^C$ are not rotated.
 
-**`absorb(w_uq, w_uk, w_uv, w_o, n_heads)`** returns two tensors, one matrix per
-head, with $W_h$ denoting head $h$'s rows of an up-projection and $W^O_h$ head $h$'s
-columns of $W^O$:
+**Weight absorption (`absorb`).** Given `w_uq`, `w_uk`, `w_uv`, `w_o`, and `n_heads`, return `(w_qk, w_ov)`, containing one absorbed matrix per head. Let $W^{UQ}_h$, $W^{UK}_h$, and $W^{UV}_h$ denote head $h$'s slice of rows from each up-projection, and let $W^O_h$ denote head $h$'s slice of columns from $W^O$:
 
 $$
 W^{QK}_h = (W^{UK}_h)^\top W^{UQ}_h \in \mathbb{R}^{d_c \times d_q},
@@ -63,28 +54,18 @@ W^{QK}_h = (W^{UK}_h)^\top W^{UQ}_h \in \mathbb{R}^{d_c \times d_q},
 W^{OV}_h = W^{O}_h\, W^{UV}_h \in \mathbb{R}^{d \times d_c}.
 $$
 
-They satisfy $q^C_{t,h} \cdot k^C_{j,h} = (W^{QK}_h c^Q_t) \cdot c_j$ and
-$u_t = \sum_h W^{OV}_h \big(\sum_j a_{t,h,j}\, c_j\big)$.
+These absorbed matrices satisfy $q^C_{t,h} \cdot k^C_{j,h} = (W^{QK}_h c^Q_t) \cdot c_j$ and $u_t = \sum_h W^{OV}_h \big(\sum_j a_{t,h,j}\, c_j\big)$, allowing attention to operate directly on cached latents.
 
-**`mla_step(x_new, weights, cache)`** processes `T` new tokens that follow `S`
-cached ones.
+**Cached attention step (`mla_step`).** Processes $T$ new tokens following $S$ cached tokens.
 
-- `x_new`: float32 `(B, T, d)`, $T \ge 1$. New token $i$ is at absolute position
-  $S + i$ and attends to all cached tokens, the new tokens before it, and itself.
-- `weights`: a dict with `"w_dq"`, `"w_qr"`, `"w_dkv"`, `"w_kr"` (the matrices
-  above), `"w_qk"` and `"w_ov"` (as returned by `absorb`), and the ints `"n_heads"`
-  and `"d_head"`. It does **not** contain $W^{UQ}$, $W^{UK}$, $W^{UV}$, or $W^O$.
-- `cache`: `None` ($S = 0$), or a tuple `(c, k_rope)`: the latents $c_j$, shape
-  `(B, S, d_c)`, and the **rotated** shared keys $k^R_j$, shape `(B, S, d_r)`,
-  oldest token first.
-- Returns `(out, (c, k_rope))`: `out` is $u$ for the new tokens, float32
-  `(B, T, d)`; the new cache covers $S + T$ tokens. The cache passed in is not
-  modified.
+- `x_new`: new token representations. New token $i$ sits at absolute position $S + i$ and attends to all $S$ cached tokens, all earlier new tokens, and itself.
+- `weights`: a dict containing `"w_dq"`, `"w_qr"`, `"w_dkv"`, `"w_kr"`, the absorbed `"w_qk"` and `"w_ov"` from `absorb`, and the integers `"n_heads"` and `"d_head"`. It does **not** contain $W^{UQ}$, $W^{UK}$, $W^{UV}$, or $W^O$.
+- `cache`: either `None` (when $S = 0$) or a tuple `(c, k_rope)` storing the cached latents $c_j$ and the **already rotated** shared keys $k^R_j$, oldest token first.
+- Returns `(out, (c, k_rope))`, where `out` contains $u_t$ for the $T$ new tokens and the returned cache covers all $S + T$ tokens. Do not modify the input `cache`.
 
 ![The cache holds only $c$ and $k^R$. The key and value up-projections are folded into $W^{QK}$ and $W^{OV}$ instead of being applied to the cache.](assets/mla-step.svg)
 
-The cache therefore holds exactly $d_c + d_r$ floats per token (per layer and
-sequence), whatever the number of heads.
+With this layout, the cache stores $d_c + d_r$ floats per token per layer and sequence, regardless of the number of heads.
 
 ## Shapes
 
@@ -105,8 +86,7 @@ sequence), whatever the number of heads.
 
 ## Example
 
-$d = 2$, $H = 2$, $d_h = 1$, $d_r = 2$, $d_c = d_q = 2$, with
-$W^{DQ} = W^{DKV} = W^{UQ} = W^{UV} = I$ and
+Take $d = 2$, $H = 2$, $d_h = 1$, $d_r = 2$, and $d_c = d_q = 2$, with $W^{DQ} = W^{DKV} = W^{UQ} = W^{UV} = I$ and:
 
 ```python
 w_uk = [[1, 1], [0, 2]]  # head 0: row [1, 1]; head 1: row [0, 2]
@@ -119,10 +99,9 @@ w_qk, w_ov = absorb(w_uq, w_uk, w_uv, w_o, 2)
 # w_ov = [[[1, 0], [0, 0]], [[0, 1], [0, 1]]]
 ```
 
-$W^{QK}_0 = [1, 1]^\top [1, 0]$ and $W^{QK}_1 = [0, 2]^\top [0, 1]$ are outer
-products because $d_h = 1$; likewise $W^{OV}_1 = [1, 1]^\top [0, 1]$.
+Because $d_h = 1$, the absorbed matrices are outer products: $W^{QK}_0 = [1, 1]^\top [1, 0]$, $W^{QK}_1 = [0, 2]^\top [0, 1]$, and $W^{OV}_1 = [1, 1]^\top [0, 1]$.
 
-Two tokens, $x_0 = [1, 0]$ and $x_1 = [0, 1]$, fed one at a time:
+Now feed two tokens, $x_0 = [1, 0]$ and $x_1 = [0, 1]$, one step at a time:
 
 ```python
 out, cache = mla_step([[[1.0, 0.0]]], weights, None)
@@ -132,49 +111,25 @@ out, cache = mla_step([[[0.0, 1.0]]], weights, cache)
 # cache = ([[[1, 0], [0, 1]]], [[[1, 0], [0.540302, 0.841471]]])
 ```
 
-- **Token 0** sees only itself, so each head returns its own value:
-  $o = [1, 0]$ and $u_0 = W^O o = [1, 0]$. Its shared key is $W^{KR} x_0 = [1, 0]$,
-  unrotated at position 0.
-- **Token 1** has $c^Q = c = [0, 1]$ and the shared key $[1, 0]$ rotated by one
-  radian, $[\cos 1, \sin 1] = [0.5403, 0.8415]$; that rotated vector is what goes
-  into the cache. Head 0 has a zero query (content $W^{QK}_0 c^Q = [0, 0]$, RoPE part
-  $[0, 0]$), so its weights are $[0.5, 0.5]$ and it mixes the latents to
-  $[0.5, 0.5]$. Head 1 has content query $W^{QK}_1 c^Q = [0, 2]$ and RoPE query
-  $[\cos 1, \sin 1]$. Against token 0: $[0, 2] \cdot [1, 0] + [\cos 1, \sin 1] \cdot
-  [1, 0] = 0.5403$. Against itself: $[0, 2] \cdot [0, 1] + 1 = 3$. Divided by
-  $\sqrt{d_h + d_r} = \sqrt{3}$ the scores are $[0.3119, 1.7321]$, the weights
-  $[0.1946, 0.8054]$, and the mixed latent $[0.1946, 0.8054]$. Then
-  $u_1 = W^{OV}_0 [0.5, 0.5] + W^{OV}_1 [0.1946, 0.8054] = [0.5, 0] + [0.8054,
-  0.8054]$.
+- **Token 0** can only attend to itself, so each head returns its own value. That gives $o = [1, 0]$ and $u_0 = W^O o = [1, 0]$. Its shared rotary key is $W^{KR} x_0 = [1, 0]$, which is unrotated at position 0.
+- **Token 1** has $c^Q = c = [0, 1]$. Its shared key $W^{KR} x_1 = [1, 0]$ is rotated by 1 radian to $[\cos 1, \sin 1] = [0.5403, 0.8415]$, and that rotated vector is stored in the cache.
+  - Head 0 has a zero query (content query $W^{QK}_0 c^Q = [0, 0]$ and RoPE query $[0, 0]$), so its attention weights are $[0.5, 0.5]$, producing the mixed latent $[0.5, 0.5]$.
+  - Head 1 has content query $W^{QK}_1 c^Q = [0, 2]$ and RoPE query $[\cos 1, \sin 1]$. Its raw score against token 0 is $[0, 2] \cdot [1, 0] + [\cos 1, \sin 1] \cdot [1, 0] = 0.5403$, and against itself is $[0, 2] \cdot [0, 1] + 1 = 3$. Dividing by $\sqrt{d_h + d_r} = \sqrt{3}$ gives $[0.3119, 1.7321]$, softmax yields $[0.1946, 0.8054]$, and the mixed latent is $[0.1946, 0.8054]$.
+  - Combining heads via $W^{OV}$ gives $u_1 = W^{OV}_0 [0.5, 0.5] + W^{OV}_1 [0.1946, 0.8054] = [0.5, 0] + [0.8054, 0.8054]$.
 
-The cache holds $d_c + d_r = 4$ floats per token. No key of width $H d_h$ was
-formed at any point.
+The cache stores $d_c + d_r = 4$ floats per token, and no key vector of width $H d_h$ is ever materialized.
 
 ## Constraints
 
-- $1 \le B \le 2$; $1 \le T$; $S + T \le 32$; $1 \le H \le 4$; $d_r$ even,
-  $2 \le d_r \le 4$; all other widths between 1 and 20.
-- Outputs and the cache are compared with the explicit form above, computed for the
-  whole sequence at once, with a relative tolerance of `1e-4` and an absolute
-  tolerance of `1e-5` (`1e-3` and `1e-4` for the 30-token case). Every way of
-  cutting a sequence into calls must give the same result.
-- After every call the cache must be a tuple of two tensors holding at most
-  $d_c + d_r$ floats per token and sequence, with the shapes above.
-- `absorb` is compared with the reference and by the two identities stated above.
-- You may use `ops.rope` and `ops.softmax` from the kit
-  (`from learnai.kit import ops`). No Python loops over tokens, heads, or batch
-  rows are needed.
+- $1 \le B \le 2$, $1 \le T$, $S + T \le 32$, and $1 \le H \le 4$.
+- $d_r$ is even with $2 \le d_r \le 4$. All other dimensions are between 1 and 20.
+- Outputs and cache tensors are compared against the explicit form evaluated on the full sequence at once, with relative tolerance `1e-4` and absolute tolerance `1e-5` (`1e-3` and `1e-4` for the 30-token test case). Any split of a sequence into calls must match.
+- After every call, `cache` must be a tuple of two tensors matching the shapes above and holding at most $d_c + d_r$ floats per token and sequence.
+- `absorb` is checked against the reference values and the two algebraic identities above.
+- You may use `ops.rope` and `ops.softmax` from `learnai.kit`. No Python loops over tokens, heads, or batch rows are needed.
 
 ## Why this matters
 
-KV memory, not compute, limits how many long sequences a GPU can hold, and MLA is
-the architectural answer that shipped: with DeepSeek-V2's sizes ($H = 128$,
-$d_h = 128$, $d_c = 512$, $d_r = 64$) a token costs 576 cached numbers per layer
-where per-head keys and values would cost 32,768. An engine gets that saving only
-if it caches the latent. One that ports MLA by reusing its standard attention path
-(up-project, split into heads, cache keys and values) runs the model correctly and
-stores 57 times more than it needs. And once the latent is what is cached, there
-are two ways to attend: rebuild all keys and values from the latents on every step,
-or move the up-projections to the query and output sides once. The second is only
-possible because the position-dependent rotation was kept out of the compressed
-path, which is why the split into a content part and a RoPE part exists at all.
+KV cache memory, not compute, is what caps how many long sequences fit on a GPU. MLA solves this at the architecture level. At DeepSeek-V2's dimensions ($H = 128$, $d_h = 128$, $d_c = 512$, $d_r = 64$), each token requires only 576 cached floats per layer instead of 32,768 for standard per-head keys and values.
+
+An inference engine only captures this 57x reduction if it caches the latent directly. Porting MLA into a standard attention path by up-projecting and caching per-head keys and values produces the right numbers while silently wasting 57 times the memory. Once you cache the latent, you can either up-project every cached latent on every decode step or absorb the up-projections into the query and output weights once. Absorption works only because the position-dependent RoPE rotation is kept outside the compressed path, which is the reason MLA splits queries and keys into content and RoPE components.

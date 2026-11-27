@@ -1,35 +1,16 @@
 ## The idea
 
-In a standard decoder every layer keeps its own keys and values, so KV memory grows
-with the number of layers, and every layer must process every prompt token: a layer
-that skipped a position would leave a hole in its cache that later tokens attend
-into.
+In a standard decoder, every layer stores its own keys and values. As a result, KV memory scales with the total layer count $L$, and every layer must process every prompt token so no later token attends into a missing cache entry.
 
-Now let the layers from $s$ up attend over the keys and values of layer $s - 1$
-instead of their own. Each still computes its own queries, has its own output
-projection and MLP, and passes its state up; it just looks things up in a table
-another layer wrote. Two things follow.
+When layers $s, \dots, L - 1$ (with $s =$ `share_from`) instead attend over the keys and values cached by layer $s - 1$, each upper layer still computes its own queries, output projection, and MLP, and still passes hidden states upward. It simply reads from another layer's cache instead of maintaining its own. Two properties follow directly.
 
-**Memory.** The upper layers store nothing. The cache holds $s$ layers instead of
-$L$.
+**Memory.** The upper $L - s$ layers store nothing, so the KV cache holds $s$ layers instead of $L$.
 
-**Prefill.** Consider what is ever read from a forward pass. The state of layer
-$\ell$ at position $i$ feeds layer $\ell + 1$ at the same position, and, in an
-ordinary layer, it is also projected to a key and a value that later positions
-attend to. For a reading layer the second use does not exist. Its state at position
-$i$ only flows upward at position $i$, to the logits of position $i$. For a prompt
-position other than the last, nobody reads those logits. So the upper layers need
-to run on exactly one prompt position, the last, and the result is not an
-approximation: the logits are the same numbers as if the whole stack had run on
-every token. The prefill costs $s \cdot P + (L - s)$ layer-tokens instead of
-$L \cdot P$.
+**Prefill.** In a forward pass, a layer's hidden state at position $i$ can be used in only two ways. It feeds the next layer at position $i$, and in an ordinary layer it is also projected into a key and value for future positions to attend to. For a reader layer, the second path does not exist, so its output at position $i$ can only affect the logits at position $i$. Because prefill on a $P$-token prompt only needs the logits at the final position $P - 1$, running the upper layers on `h[-1:]` alone is exact, not an approximation. It produces identical logits while cutting prefill work from $L \cdot P$ layer-tokens to $s \cdot P + (L - s)$.
 
-A decode step has one new position whose logits are wanted, so it runs all $L$
-layers on it: decoding is not faster, only smaller.
+In `decode_step`, we need the logits for the single new position, so all $L$ layers run on that one token. Decoding uses less KV memory rather than fewer layer-tokens.
 
-The sharing model is not a cheaper way to evaluate the ordinary model. It is a
-different function (in the example the two predict different tokens), and a model
-has to be trained with the sharing in place.
+Cross-layer KV sharing is not a faster way to evaluate a standard model. It defines a distinct function (producing a different top token in the worked example), so the model must be trained with KV sharing enabled.
 
 ## Reference solution (PyTorch)
 
@@ -48,68 +29,26 @@ def decode_step(lm, token, cache, share_from):
     return lm.head(lm.norm(h))[0], cache
 ```
 
-The solution is the same text in JAX and MLX: all tensor work is inside the kit, and
-the problem is which layers run on which rows. `h[-1:]` keeps the row axis, and the
-kit takes the rows handed to a reader to be the last positions the source layer has
-cached, so the single row is position $P - 1$ and attends over all $P$ positions.
+The exact same code works in JAX and MLX because all tensor operations live inside `LayeredLM`. Slicing `h[-1:]` preserves the sequence axis of length 1. Since `lm.layers(..., kv_from=j)` aligns the $T$ input rows with the last $T$ cached positions in layer `j`, passing `h[-1:]` runs the upper layers at position $P - 1$ while attending over all $P$ prompt positions.
 
 ## Common mistakes
 
-- **The full stack on every prompt token.** Passing all of `h` to the upper layers
-  gives the right logits and the right cache, and $L \cdot P$ layer-tokens. This is
-  the mistake that survives every correctness test and only shows up as a prefill
-  that is no faster than before.
-- **Upper layers with caches of their own.** Calling `lm.layers(h, s, L, cache)`
-  without `kv_from` runs the ordinary model: different logits, and keys and values
-  stored for all $L$ layers. In an engine this is the allocator giving every layer
-  a cache because every layer used to need one.
-- **Skipping the upper layers in the prefill altogether.** "The prompt only needs
-  the lower layers" is true for $P - 1$ positions. The last one produces the first
-  generated token, and its logits come from the top of the stack, not from the
-  state after layer $s - 1$.
-- **Reading the wrong layer.** `kv_from=0` is right only for $s = 1$. The source is
-  the last ordinary layer, $s - 1$.
-- **A stale cache in the decode step.** Caches are immutable, so the lower layers
-  return a new one. Handing the upper layers the old one makes them read layer
-  $s - 1$ without the new position: the token cannot attend to itself, and the
-  logits are slightly, silently wrong.
-- **Forgetting the position offset.** `lm.embed([token])` embeds at position 0.
-- **Prefill token by token.** The layer-tokens are the same, but one call per token
-  is $s \cdot P$ layer calls where one batched call is $s$; on a GPU that is the
-  difference between one matrix product and $P$ small ones.
+- **Running the full stack on every prompt token.** Passing all of `h` into the upper layers produces the right logits and cache, but spends $L \cdot P$ layer-tokens. This bug passes every numeric correctness check and only shows up as missing prefill speedup.
+- **Giving upper layers their own caches.** Calling `lm.layers(h, s, L, cache)` without `kv_from` evaluates the ordinary unshared model, producing wrong logits and allocating KV caches for all $L$ layers.
+- **Skipping the upper layers during prefill.** The upper layers can be skipped on the first $P - 1$ prompt positions, but not on the last one. The first generated token's logits must come from layer $L - 1$, not layer $s - 1$.
+- **Reading from the wrong source layer.** Passing `kv_from=0` only works when $s = 1$. The source must be the last ordinary layer, `share_from - 1`.
+- **Passing a stale cache in `decode_step`.** Because caches are immutable, the lower layers return a new cache containing the new token. Passing the old `cache` to the upper layers prevents the new token from attending to itself, causing subtle numeric errors.
+- **Forgetting the position offset.** Calling `lm.embed([token])` without `offset=cache.length` embeds every decoded token at position `0`.
+- **Prefilling one token at a time.** Looping token by token uses the same `layer_tokens` for the lower layers, but takes $s \cdot P$ layer calls instead of $s$. On a GPU, that replaces one large matrix multiplication with $P$ small ones.
 
 ## Complexity
 
-Prefill: $s \cdot P + (L - s)$ layer-tokens in $L$ layer calls. Decode: $L$
-layer-tokens per token. Stored KV: $2\,s\,n\,d$ numbers after $n$ tokens, a factor
-$s / L$ of the ordinary model's.
+Prefill takes $s \cdot P + (L - s)$ layer-tokens in $L$ layer calls. Decoding takes $L$ layer-tokens in $L$ layer calls per token. After $n$ tokens, stored KV size is $2\,s\,n\,d$ values, a factor of $s / L$ relative to an ordinary decoder.
 
 ## In the wild
 
-- **YOCO** ("You Only Cache Once: Decoder-Decoder Architectures for Language
-  Models", arXiv 2405.05254, NeurIPS 2024) splits a decoder into a self-decoder and
-  a cross-decoder stacked on top of it. The self-decoder's output is turned into
-  one global set of keys and values that every cross-decoder layer reuses through
-  cross-attention, so the pairs are cached once, and the abstract states the
-  consequence used here: the prefill can exit early without changing the final
-  output.
-- **Gemma 3n** ships the idea under the name KV cache sharing. Google's developer
-  guide ("Introducing Gemma 3n: The developer guide") describes the keys and values
-  of a middle layer being shared directly with all the top layers, and reports
-  about twice the prefill performance of Gemma 3 4B.
-- **vLLM** accounts for such models in its KV cache manager: according to its
-  design document on the hybrid KV cache manager, layers with KV sharing are
-  ignored when cache is allocated, and only layers that need a cache get one.
-- **What this problem simplifies.** The kit's upper layers read the self-attention
-  keys and values of layer $s - 1$ as they are, which is the Gemma 3n arrangement.
-  YOCO instead computes the shared keys and values from the self-decoder's *output*
-  with projections of their own, and its self-decoder uses efficient (windowed or
-  gated-retention) attention. Real models also apply the sharing per attention type.
-  In Gemma 4 as `transformers` 5.23 implements it (`Gemma4TextConfig.kv_sharing_modes`,
-  read in the code), the last `num_kv_shared_layers` layers reuse, and each reads the
-  keys and values stored by the last earlier layer of its own type, sliding-window or
-  full, which is not always the layer just below the shared block. The cost
-  argument is the same in all of them. Related work that keeps the standard
-  architecture and caches only a few layers' pairs, such as "Layer-Condensed KV
-  Cache for Efficient Inference of Large Language Models" (arXiv 2405.10637), is a
-  different design and is not what is modeled here.
+- **YOCO** (*You Only Cache Once: Decoder-Decoder Architectures for Language Models*, arXiv 2405.05254, NeurIPS 2024) splits a decoder into a self-decoder and a stacked cross-decoder. The self-decoder's output is projected into one shared set of keys and values that every cross-decoder layer attends to via cross-attention. This caches keys and values once and allows prefill to exit early on non-final prompt tokens without changing the output.
+- **Gemma 3n** ships this mechanism as KV cache sharing. As described in Google's developer guide (*Introducing Gemma 3n: The developer guide*), a middle layer's keys and values are shared directly with all top layers, yielding roughly $2\times$ the prefill performance of Gemma 3 4B.
+- **vLLM** supports shared layers in its hybrid KV cache manager, which skips cache allocation for KV-sharing layers so only layers that write keys and values receive cache blocks.
+
+This problem simplifies a few details of deployed architectures. Here, upper layers directly read the self-attention keys and values of layer $s - 1$, matching Gemma 3n. YOCO instead projects shared keys and values from the self-decoder's output and uses efficient attention (windowed or gated retention) in the lower stack. Models with mixed attention types also share per attention type. For example, in Gemma 4 (`Gemma4TextConfig.kv_sharing_modes` in `transformers` 5.23), the final `num_kv_shared_layers` layers each read from the most recent earlier layer of the same attention type (sliding-window or full), which is not always the immediately preceding layer. The prefill cost argument remains the same. Separate work that keeps a standard architecture and drops caches on selected layers, such as *Layer-Condensed KV Cache for Efficient Inference of Large Language Models* (arXiv 2405.10637), is a different design not modeled here.

@@ -1,26 +1,14 @@
-Solve the stages in order and keep one invariant in view from stage 2 on: when
-`sim_engine.step` is called, the allocator holds exactly the tokens every admitted
-sequence will have after that step, plus the prompt tokens it was promised at
-admission. If every place that changes who holds memory (admission, a decode, a
-finish, a preemption) makes the matching allocator call at that moment, what does
-"how many blocks are available" become?
+Solve the stages in order and maintain one invariant from stage 2 onward: whenever `sim_engine.step` is called, the allocator holds the exact blocks for every token each sequence will have after that step plus all remaining prompt tokens reserved at admission. If every state transition (admission, decode, finish, preemption) updates the allocator immediately, how can you check available memory without maintaining separate reservation counters?
 
 ---
 
-Stage 1 is `paged-kv-copy-on-write` with one more argument. Stage 2 is the loop of
-`continuous-batching-scheduler` with three allocator calls: `append(id, prompt)` at
-admission, `append(id, 1)` per decode, `free(id)` per finished id. For stage 3,
-plan in three passes that share one `budget`: decodes (one token each), then
-admitted sequences with `remaining_prefill > 0`, then admissions; every chunk is
-`min(remaining, threshold, budget)`. For stage 4, keep both the waiting queue and
-the list of sequences that hold memory sorted by `(priority, arrival number)`:
-then the victim is always the last element of the second list, and the first pass
-walks it from the front while popping victims from the back. Because you append
-eagerly, `allocator.free_blocks()` is already the number of available blocks.
+Stage 1 is `paged-kv-copy-on-write` with an optional `n_tokens` parameter on `fork`. Stage 2 adds three allocator calls to `continuous-batching-scheduler`: `append(id, prompt_tokens)` at admission, `append(id, 1)` per decode, and `free(id)` for every finished sequence.
+
+For stage 3, plan each step in three passes that share one `budget`: decodes (1 token each), admitted sequences with `remaining_prefill > 0`, and new admissions, using `min(remaining, threshold, budget)` for each chunk. For stage 4, keep both the waiting queue and the list of sequences holding memory ordered by `(priority, arrival_number)`. The decode pass walks the holding list from the front while popping victims from the back. Because you allocate eagerly, `allocator.free_blocks()` is always exact.
 
 ---
 
-The first pass of stage 4, with `holding` sorted by rank:
+The decode-and-preemption pass of stage 4, with `holding` sorted by rank:
 
 ```python
 i, evicted, decode = 0, False, []
@@ -39,10 +27,6 @@ while i < len(holding):
     decode.append(request.id)
 ```
 
-Admission of the head needs `ceil((shared + prefill) / block_size) - shared //
-block_size` blocks, where `shared` is 0 until stage 5 and `prefill` is
-`remaining_prefill(id)` for a preempted sequence; compare `free_blocks() - needed`
-with `watermark_blocks`, or with 0 when nothing holds memory. For stage 5,
-`shared = block_size * max over holders of min(common prefix, min(kv_tokens,
-prompt_tokens), r.prompt_tokens - 1) // block_size`, then `fork(donor, r.id,
-shared)`, `admit(r, cached_tokens=shared)`, `append(r.id, prompt_tokens - shared)`.
+Admitting the head of the queue requires `ceil((shared + prefill) / block_size) - shared // block_size` blocks, where `shared` is `0` before stage 5 and `prefill` is `remaining_prefill(id)` for a preempted sequence. Compare `free_blocks() - needed` against `watermark_blocks`, or against `0` when no sequence holds memory.
+
+For stage 5, for an incoming request `r` and each candidate donor `s`, compute `shared = block_size * (min(common_prefix, min(sim.kv_tokens(s.id), s.prompt_tokens), r.prompt_tokens - 1) // block_size)`. Pick the donor with the largest `shared` (tie-breaking by best rank). If `shared > 0`, call `fork(donor, r.id, shared)`, `admit(r, cached_tokens=shared)`, and `append(r.id, r.prompt_tokens - shared)`.

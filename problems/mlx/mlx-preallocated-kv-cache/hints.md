@@ -1,27 +1,21 @@
-There are only two moments in this cache's life: an update that fits, and one that
-does not. For each, which arrays must exist afterwards, and what are their shapes?
-Write the capacity rule as code first and check it against the four rows of the
-example; note in particular what the old buffer contributes when it grows (its first
-`offset` slots, not all of its slots).
+An update falls into one of two cases: the new tokens fit in the existing buffers, or the buffers need to grow. For each case, work out which arrays must exist afterward and what their shapes should be. Write the capacity formula in code first and verify it against all four rows of the worked example, paying close attention to how many slots the old buffer contributes when growing (`offset`, not its full capacity).
 
 ---
 
-Growth: make zeros for the new room, `ceil(T / step) * step` slots, with the dtype
-of the incoming arrays (`mx.zeros(shape, keys.dtype)`; the default is float32). If
-buffers exist, concatenate the *used part* of each old buffer with the new room along
-axis 2; if not, the new room is the buffer. Then, in both cases, write with slice
-assignment, which keeps the buffer's shape, and return a slice:
+Save `previous = self.offset` at the start of the update. To grow the cache, allocate `ceil(T / step) * step` slots of zeros matching the incoming dtypes (`mx.zeros(shape, keys.dtype)`, since the default is float32). If buffers already exist, concatenate only the used prefix (`[..., :previous, :]`) of each buffer with the new zeros along axis 2. Otherwise, use the new zeros directly as the buffers.
+
+In both cases, write the incoming tokens with slice assignment (which preserves the buffer shape) and return only the filled prefix:
 
 ```python
 self.keys[..., previous : self.offset, :] = keys
 return self.keys[..., : self.offset, :], self.values[..., : self.offset, :]
 ```
 
-Integer ceiling without floats: `-(-T // step)`, or `(T + step - 1) // step`.
+You can compute integer ceiling division without floats using `-(-T // step)` or `(T + step - 1) // step`.
 
 ---
 
-The whole method:
+Here is the complete update logic:
 
 ```python
 previous, new = self.offset, keys.shape[2]
@@ -38,5 +32,4 @@ if self.keys is None or previous + new > self.keys.shape[2]:
 self.offset = previous + new
 ```
 
-followed by the two slice assignments and the return above. Nothing here calls
-`mx.eval`: every line adds nodes to the graph of the forward pass that called it.
+Follow this block with the two slice assignments and the sliced return statement from the previous hint. Do not call `mx.eval` anywhere in the method so every operation remains part of the caller's lazy graph.

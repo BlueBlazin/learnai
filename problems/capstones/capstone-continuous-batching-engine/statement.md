@@ -1,10 +1,4 @@
-Build the scheduling core of an LLM inference engine in five stages: a paged KV cache
-with reference-counted blocks, a continuous-batching loop on top of it, chunked
-prefill under a token budget, priorities with preemption by recompute when memory
-runs out, and sharing of prompt-prefix blocks between requests. Each stage is a few
-lines on its own; the capstone is making them agree with each other, so that the
-loop never plans a step the allocator cannot back and the allocator never frees a
-block the loop still counts on.
+Build the scheduling core of an LLM inference engine in five stages. You will implement a paged KV cache with reference-counted blocks, a continuous-batching loop on top of it, chunked prefill under a per-step token budget, priority scheduling with preemption by recompute when memory runs out, and prompt-prefix block sharing between requests.
 
 ## Overview
 
@@ -44,86 +38,35 @@ class Engine:  # stages 2 to 5
 
 ![The planner builds each step from the queue and the allocator's blocks, and the kit's `SimEngine` runs it.](assets/architecture.svg)
 
-The cases are grouped by stage, and each stage's cases use only what that stage and
-the ones before it specify: later features are off by default (`long_prefill_threshold=None`,
-`watermark_blocks=0`, `prefix_sharing=False`, every `priority` 0) or cannot matter (a
-budget and a pool that are large enough). So the stages can be solved, and pass, in
-order.
+Test cases are grouped by stage. Each stage uses only the features defined in that stage and earlier ones, because later features default to off (`long_prefill_threshold=None`, `watermark_blocks=0`, `prefix_sharing=False`, and `priority=0`) or are non-binding. You can implement and pass the stages in order.
 
-**The simulated engine.** `sim_engine` is the kit's
-[`SimEngine`](../../../python/src/learnai/kit/simengine.py): a forward pass with the
-model taken out. Time is virtual and counted in **milliseconds**. What `Engine` uses:
+### The simulated engine
 
-- `sim_engine.admit(request, cached_tokens=0)` makes a request a live sequence. It
-  takes no time.
-- `result = await sim_engine.step(prefill=[(id, n), ...], decode=[id, ...])` runs one
-  forward pass over $P$ prompt tokens in total and $D$ decoded sequences, which takes
-  $8 + 0.25\,P + D$ ms. A prompt may be prefilled in one step or in chunks over
-  several. The step that completes a sequence's prefill produces its **first** output
-  token; from the next step on the sequence is listed in `decode` and produces one
-  token per step. A sequence may appear only once in the two lists of a step.
-  `result.finished` holds the ids that produced their last token: they are no longer
-  live.
-- `sim_engine.remaining_prefill(id)`: tokens still to prefill before the sequence can
-  be decoded (0: ready). `sim_engine.kv_tokens(id)`: tokens the sequence has in the KV
-  cache; a prefill of `n` adds `n` and a decode adds 1 when the step **starts**, so a
-  ready sequence that has produced `g` tokens holds `prompt_tokens + g - 1`.
-- `sim_engine.preempt(id)` (stage 4): the sequence loses its KV cache but stays live
-  and keeps the tokens it has produced. Its whole context, prompt plus produced
-  tokens, must be prefilled again (`remaining_prefill(id)` says how many tokens that
-  is); the step that completes this produces its *next* token. Do not `admit` it
-  again.
+`sim_engine` is the kit's [`SimEngine`](../../../python/src/learnai/kit/simengine.py), which simulates forward passes in virtual time measured in **milliseconds**. `Engine` interacts with it through four methods:
 
-The kit engine has no memory limit of its own and one step runs at a time. Anything
-it cannot do (an empty step, an id listed twice, a decode of a sequence whose prefill
-is incomplete, a chunk larger than the remaining prefill, more than
-`max_batch_tokens` tokens in a step, an unknown id) raises `ProtocolViolation` and
-fails the case, also if the exception is caught.
+- `sim_engine.admit(request, cached_tokens=0)` registers a request as a live sequence. It takes zero virtual time.
+- `result = await sim_engine.step(prefill=[(id, n), ...], decode=[id, ...])` runs one forward pass over $P$ total prompt tokens and $D$ decoded sequences. One step takes $8 + 0.25\,P + D$ ms. A prompt can be prefilled in one step or in chunks across several steps. The step that finishes a sequence's prefill produces its **first** output token. On later steps, that sequence appears in `decode` and produces one token per step. A sequence id may appear at most once across `prefill` and `decode` in a single step. `result.finished` contains the sequence ids that produced their final token and are no longer live.
+- `sim_engine.remaining_prefill(id)` returns how many tokens the sequence still needs to prefill before it can decode (`0` means ready). `sim_engine.kv_tokens(id)` returns how many tokens the sequence currently holds in the KV cache. A prefill of `n` adds `n` tokens and a decode adds `1` token when the step **starts**, so a ready sequence that has produced $g$ tokens holds $\texttt{prompt\_tokens} + g - 1$ tokens in the KV cache.
+- `sim_engine.preempt(id)` (stage 4) discards the sequence's KV cache while keeping the sequence live and preserving the output tokens it already produced. Its full context (prompt plus produced tokens) must be prefilled again, and `remaining_prefill(id)` reports that total. The step that finishes this re-prefill produces its *next* output token. Do not call `admit` on a preempted sequence again.
 
-**Requests** are [`SimRequest`](../../../python/src/learnai/kit/workloads.py)
-objects. Read `id` (hashable, unique), `prompt_tokens`, `priority` (stage 4), and
-`tokens` (stage 5). Do not read `output_tokens`: an engine learns the length of an
-output when the sequence finishes.
+`SimEngine` enforces no memory limit of its own and runs one step at a time. Any invalid call raises `ProtocolViolation` and fails the test case even if caught. Invalid calls include an empty step, a duplicate id in a step, decoding a sequence with incomplete prefill, prefilling more than `remaining_prefill(id)`, exceeding `max_batch_tokens` total tokens in a step, or referencing an unknown id.
+
+### Requests
+
+Requests are [`SimRequest`](../../../python/src/learnai/kit/workloads.py) objects. Read `id` (hashable and unique), `prompt_tokens`, `priority` (stage 4), and `tokens` (stage 5). Do not read `output_tokens`, because a real engine only discovers an output's length when the sequence finishes.
 
 ## Stage 1: the block allocator
 
-The pool has `n_blocks` physical blocks with ids `0` to `n_blocks - 1`, each with
-room for `block_size` tokens. A **live sequence** has a token count $t \ge 1$ and a
-**block table**: the ids of the blocks that hold its tokens, in logical order. Token
-$i$ lives in slot `i % block_size` of block `table[i // block_size]`, so a table has
-exactly $\lceil t / \texttt{block\_size} \rceil$ entries and only the last block can
-have empty slots. One block may be in the tables of several sequences; its
-**reference count** is the number of live sequences whose table contains it, and a
-block is free exactly when the count is 0. The allocator stores no tensors.
+The memory pool contains `n_blocks` physical blocks numbered `0` to `n_blocks - 1`, and each block holds `block_size` tokens. A **live sequence** has a token count $t \ge 1$ and a **block table** listing the physical block ids that store its tokens in logical order. Token $i$ lives at slot `i % block_size` of block `table[i // block_size]`. Every block table therefore has length $\lceil t / \texttt{block\_size} \rceil$, and only its last block can have empty slots. Multiple sequences may reference the same physical block. A block's **reference count** is the number of live sequences whose block table contains it, and a block is free if and only if its reference count is 0. The allocator stores no tensors.
 
-- `append(seq_id, n_tokens)` adds `n_tokens` $\ge 1$ tokens. A `seq_id` that is not
-  live starts a new sequence with zero tokens. With $t$ tokens before the call:
-  1. **Copy on write.** If the last block has empty slots ($t \bmod
-     \texttt{block\_size} \ne 0$) and its reference count is greater than 1, the
-     sequence may not write into it: a new block `dst` is allocated and replaces
-     the last entry `src` of this sequence's table, and `src` loses one reference.
-     A full last block is never written, hence never copied.
-  2. **Growth.** $\lceil (t + n) / \texttt{block\_size} \rceil - \lceil t /
-     \texttt{block\_size} \rceil$ further blocks are allocated and appended to the
-     table.
+- `append(seq_id, n_tokens)` appends `n_tokens` $\ge 1$ tokens to `seq_id`. If `seq_id` is not live, it starts with $t = 0$ tokens. Let $t$ be the token count before the call, and let $n = \texttt{n\_tokens}$. The call performs two steps:
+  1. **Copy on write.** If the last block has empty slots ($t \bmod \texttt{block\_size} \ne 0$) and its reference count is greater than 1, the sequence cannot write into that shared block. Allocate a new block `dst`, replace the last entry `src` of this sequence's table with `dst`, and decrement `src`'s reference count by 1. A full last block is never written to, so it is never copied.
+  2. **Growth.** Allocate $\lceil (t + n) / \texttt{block\_size} \rceil - \lceil t / \texttt{block\_size} \rceil$ additional blocks and append them to the table.
 
-  Blocks are taken from the free blocks **lowest id first**: the copy destination
-  (if any) first, then the growth blocks. Returns `(allocated, copies)`:
-  `allocated` is the list of block ids taken by this call in allocation order, and
-  `copies` is `[(src, dst)]` if the call copied, otherwise `[]`. If the call needs
-  more blocks than are free, it raises `OutOfBlocks` and **changes nothing**: no
-  block is taken, and a `seq_id` that was not live is still not live.
-- `fork(parent_id, child_id)` creates `child_id` with the token count and the block
-  table of `parent_id` (the same ids, in a list of its own). Every block of the
-  table gains one reference; nothing is allocated. Raises `ValueError` if `child_id`
-  is live (this includes `child_id == parent_id`), and otherwise `KeyError` if
-  `parent_id` is not live; nothing changes. (`n_tokens` belongs to stage 5.)
-- `free(seq_id)` forgets the sequence: each block of its table loses one reference,
-  and a block whose count reaches 0 returns to the pool. Raises `KeyError` if
-  `seq_id` is not live.
-- `block_table(seq_id)` returns the table as a new list; `KeyError` if not live.
-  `ref_count(block)` returns the reference count of a block id in `[0, n_blocks)`.
-  `free_blocks()` returns the number of blocks with count 0.
+  Allocate free blocks **lowest id first**, taking the copy destination (if any) before the growth blocks. Return `(allocated, copies)`, where `allocated` is the list of newly allocated block ids in allocation order and `copies` is `[(src, dst)]` if a copy occurred or `[]` otherwise. If fewer free blocks are available than needed, raise `OutOfBlocks` and **change nothing**: no blocks are allocated, and a non-live `seq_id` remains non-live.
+- `fork(parent_id, child_id)` creates `child_id` with the same token count as `parent_id` and a new list containing the same block ids as `parent_id`'s table. Every block in that table gains 1 reference, and no new blocks are allocated. Raise `ValueError` if `child_id` is already live (including `child_id == parent_id`). Otherwise raise `KeyError` if `parent_id` is not live. Leave all state unchanged on error. (The `n_tokens` parameter is added in stage 5.)
+- `free(seq_id)` removes `seq_id`, decrements the reference count of every block in its table by 1, and returns any block whose count reaches 0 to the free pool. Raise `KeyError` if `seq_id` is not live.
+- `block_table(seq_id)` returns a fresh copy of `seq_id`'s block table, raising `KeyError` if `seq_id` is not live. `ref_count(block)` returns the reference count of a block id in `[0, n_blocks)`. `free_blocks()` returns the number of blocks with reference count 0.
 
 ### Example 1
 
@@ -144,54 +87,33 @@ alloc.free("c")  #                        free_blocks() is 6
 
 ## Stage 2: continuous batching
 
-`Engine` owns `self.allocator = BlockAllocator(n_blocks, block_size)`, and that
-allocator is the engine's memory from here on.
+`Engine` creates `self.allocator = BlockAllocator(n_blocks, block_size)` and uses it as the engine's KV memory.
 
-`submit(request)` is called by the test at the request's arrival instant, from a
-plain callback inside the event loop. It is a plain method: it puts the request into
-the waiting queue, wakes the loop, and returns. `run()` is a coroutine that never
-returns. A request is *waiting* until it is admitted; an admitted sequence *holds
-memory* until it finishes (or, in stage 4, is preempted). Before every step, `run`:
+The test harness calls `submit(request)` synchronously from an event-loop callback at each request's arrival time. `submit` appends the request to the waiting queue, wakes `run`, and returns. `run()` is an async coroutine that never returns. A request is *waiting* until admitted, and an admitted sequence *holds memory* until it finishes (or is preempted in stage 4). Before every step, `run` plans work in three stages:
 
-1. **Decodes.** Every sequence that holds memory and whose prefill is complete
-   decodes in this step. The token a decode stores needs room: call
-   `allocator.append(id, 1)` for each.
-2. **Admits**, first come, first served: while fewer than `max_running` sequences
-   hold memory and a request is waiting, admit the oldest one. Admitting is
-   `sim_engine.admit(request)` and `allocator.append(id, prompt_tokens)`: a sequence
-   takes the blocks of its **whole prompt when it is admitted**. Its prompt is
-   prefilled in this step.
-3. **Steps** once: `prefill` lists the sequences admitted in (2), in admission
-   order, each with its whole prompt; `decode` lists the sequences of (1), in
-   admission order.
+1. **Decodes.** Every sequence that holds memory and has completed prefill decodes in this step. Call `allocator.append(id, 1)` for each decoding sequence to reserve room for the new token.
+2. **Admits.** Admit waiting requests first come, first served while fewer than `max_running` sequences hold memory and at least one request is waiting. To admit a request, call `sim_engine.admit(request)` and `allocator.append(id, prompt_tokens)`. Each sequence takes the blocks for its **entire prompt at admission** and prefills its prompt in this step.
+3. **Step.** Call `await sim_engine.step(prefill=..., decode=...)`. `prefill` lists the sequences admitted in step (2) in admission order, each paired with its full `prompt_tokens`. `decode` lists the sequences from step (1) in admission order.
 
-When the step returns, each sequence in `result.finished` stops holding memory:
-`allocator.free(id)`. The next step is planned immediately, at the same virtual
-instant. With nothing waiting and nothing holding memory, `run` blocks (on an
-`asyncio.Event`, for example) until `submit` wakes it; it never calls an empty step,
-sleeps, or polls.
+When `step` returns, call `allocator.free(id)` for every `id` in `result.finished` so those sequences stop holding memory. Plan the next step immediately at the same virtual timestamp. When no request is waiting and no sequence holds memory, `run` blocks (for example on an `asyncio.Event`) until `submit` wakes it. Never issue an empty step, sleep, or poll.
 
-**Events at one instant.** Requests that arrive at the same instant are submitted in
-arrival order, and all of them are waiting before `run` resumes. A request that
-arrives during a step, or at exactly the instant a step ends, is waiting when the
-next step is planned (arrivals are delivered before the step's completion).
+### Events at the same instant
 
-**The allocator is checked at every step.** At the moment `sim_engine.step` is
-called, for every sequence that holds memory, `allocator.block_table(id)` must have
-exactly $\lceil T / \texttt{block\_size} \rceil$ entries, where $T$ is
-`kv_tokens(id) + remaining_prefill(id)` before the step, plus 1 if the sequence
-decodes in it; every reference count must equal the number of those tables that
-contain the block; and `free_blocks()` plus the number of distinct blocks in those
-tables must be `n_blocks`. A finished sequence that was not freed is a leak and
-fails this check. At most `max_running` sequences may hold memory.
+Requests that arrive at the same virtual timestamp are submitted in arrival order before `run` resumes. Any request that arrives during a step, or at the exact instant a step finishes, is already in the waiting queue when the next step is planned.
 
-In stage 2 (and 3) the pool is large enough that an `append` never fails.
+### Per-step allocator audit
+
+Whenever `sim_engine.step` is called, the test harness checks three invariants:
+
+- For every sequence holding memory, `len(allocator.block_table(id))` equals $\lceil T / \texttt{block\_size} \rceil$, where $T$ is `kv_tokens(id) + remaining_prefill(id)` before the step, plus `1` if the sequence decodes in this step.
+- Every block's reference count equals the number of live sequences holding memory whose table contains that block.
+- `free_blocks()` plus the number of distinct blocks across those tables equals `n_blocks`, and at most `max_running` sequences hold memory.
+
+Leaving a finished sequence unfreed leaks blocks and fails this audit. In stages 2 and 3, the pool is large enough that `append` never runs out of blocks.
 
 ### Example 2
 
-`max_running = 2`. Requests as (arrival ms, prompt tokens, output tokens): request 0
-`(0, 8, 4)`, request 1 `(0, 16, 2)`, request 2 `(5, 8, 3)`, request 3 `(45, 4, 2)`,
-request 4 `(50, 12, 1)`, request 5 `(60, 4, 2)`.
+With `max_running = 2` and requests given as `(arrival ms, prompt tokens, output tokens)`: request 0 `(0, 8, 4)`, request 1 `(0, 16, 2)`, request 2 `(5, 8, 3)`, request 3 `(45, 4, 2)`, request 4 `(50, 12, 1)`, and request 5 `(60, 4, 2)`.
 
 | starts | prefill | decode | takes | at its end |
 |---|---|---|---|---|
@@ -204,39 +126,27 @@ request 4 `(50, 12, 1)`, request 5 `(60, 4, 2)`.
 | 67 | `(5, 4)` | | 9 | first token of 5 |
 | 76 | | `5` | 9 | request 5 finishes |
 
-Request 2 arrives at 5 and joins at 24, the moment request 1 frees a slot, next to
-the decode of request 0. Request 3 arrives at exactly 45, the instant a step ends,
-and is in the next step.
+Request 2 arrives at 5 ms and joins at 24 ms as soon as request 1 frees a slot, running alongside the decode of request 0. Request 3 arrives at 45 ms, the exact instant the previous step ends, so it enters the next step immediately.
 
 ## Stage 3: chunked prefill
 
-A step may process at most `max_batch_tokens` tokens: prompt tokens plus decoded
-sequences. Planning a step becomes:
+Each step can process at most `max_batch_tokens` total tokens, counting both prompt tokens and decoded sequences. Planning a step now follows three passes that share a single token budget:
 
-1. **Decodes first**, as in stage 2. Each costs one token of the budget.
-   (`max_running <= max_batch_tokens`, so every ready sequence always decodes.)
-2. **Prompts in progress.** For every sequence that holds memory and has prefill
-   left, in admission order, while budget is left: a chunk of
+1. **Decodes first.** Schedule every ready sequence as in stage 2. Each decode uses 1 token of the budget. Because `max_running <= max_batch_tokens`, all ready sequences always fit.
+2. **Prompts in progress.** Walk the sequences that hold memory and still have prefill remaining, in admission order, while budget remains. Assign each one a chunk of
 
    $$
-   n = \min(\text{remaining prefill},\ \text{long\_prefill\_threshold},\ \text{budget left})
+   n = \min(\text{remaining prefill},\ \texttt{long\_prefill\_threshold},\ \text{budget left})
    $$
 
-   tokens (without the threshold term when `long_prefill_threshold` is `None`).
-3. **Admission**, while budget is left, fewer than `max_running` sequences hold
-   memory, and a request is waiting: admit the oldest waiting request as in stage 2
-   (it takes the blocks of its whole prompt now), and give it a chunk by the same
-   formula.
+   tokens, omitting `long_prefill_threshold` when it is `None`.
+3. **Admission.** While budget remains, fewer than `max_running` sequences hold memory, and a request is waiting, admit the oldest waiting request as in stage 2 (allocating all blocks for its full prompt now) and assign it a chunk using the same formula.
 
-`prefill` lists the chunks of (2), then those of (3), in that order. A prompt that
-does not fit is split and continues in later steps; nobody is skipped; a sequence
-whose last chunk is in this step decodes from the next step on. With a budget that
-never binds and no threshold this is exactly stage 2.
+`prefill` lists the chunks from pass (2) followed by the chunks from pass (3), each in order. Prompts that do not fit in the remaining budget are split across steps, and no sequence is skipped. A sequence whose final prefill chunk runs in this step begins decoding on the next step. When the budget never binds and `long_prefill_threshold` is `None`, this matches stage 2.
 
 ### Example 3
 
-`max_batch_tokens = 32`, `long_prefill_threshold = 24`. Request 0 `(0, 16, 4)`,
-request 1 `(0, 40, 2)`, request 2 `(3, 8, 2)`.
+With `max_batch_tokens = 32`, `long_prefill_threshold = 24`, and requests: request 0 `(0, 16, 4)`, request 1 `(0, 40, 2)`, and request 2 `(3, 8, 2)`.
 
 | starts | prefill | decode | takes |
 |---|---|---|---|
@@ -245,184 +155,109 @@ request 1 `(0, 40, 2)`, request 2 `(3, 8, 2)`.
 | 32.75 | `(2, 1)` | `0, 1` | 10.25 |
 | 43 | | `0, 2` | 10 |
 
-At 0, request 1 gets the 16 tokens request 0 left. At 16 the decode of request 0
-costs one token; request 1 is capped by the threshold, and request 2 gets the last
-7. All 40 tokens' worth of blocks of request 1 were taken at time 0.
+At 0 ms, request 1 receives the 16 tokens left after request 0, while still reserving all 40 tokens' worth of blocks at admission. At 16 ms, decoding request 0 costs 1 token, request 1 is capped at 24 by `long_prefill_threshold`, and request 2 takes the remaining 7 tokens.
 
 ## Stage 4: priorities and preemption
 
-Now the pool can run out, and requests have a `priority`: an int, **smaller is more
-urgent**.
+The block pool can now run out of memory, and every request has an integer `priority` where **smaller values are more urgent**.
 
-**Rank.** The rank of a request is the pair `(priority, arrival number)`, where the
-arrival number counts `submit` calls from 0. Ranks are compared as tuples; a smaller
-rank is better. One order governs everything: the waiting queue, the sequences
-that hold memory, and both lists of a step are kept in rank order, and a preempted
-sequence returns to the waiting queue with the rank it always had. (With equal
-priorities, rank order is arrival order, which is the admission order of stages 2
-and 3.)
+Define a request's **rank** as the tuple `(priority, arrival_number)`, where `arrival_number` counts `submit` calls starting from `0`. Smaller ranks are better. One total order governs the entire engine: the waiting queue, the sequences holding memory, and both `prefill` and `decode` lists are ordered by rank. A preempted sequence returns to the waiting queue with its original rank. When all priorities are equal, rank order reduces to arrival order, matching stages 2 and 3.
 
-Planning a step:
+Planning a step now follows three passes:
 
-1. **Memory for the decodes, best rank first.** Walk through the sequences that
-   hold memory, in rank order; those whose prefill is incomplete are skipped (they
-   took their blocks at admission). A ready sequence needs one new block exactly
-   when `kv_tokens(id) % block_size == 0`. If it needs one and
-   `allocator.free_blocks()` is 0, **preempt the sequence of the worst rank that
-   holds memory**: `allocator.free(victim)`, `sim_engine.preempt(victim)`, and the
-   victim joins the waiting queue. Repeat until a block is free or the sequence
-   that needs the block was itself the victim (it had the worst rank). If it still
-   holds memory, `allocator.append(id, 1)` and it decodes in this step.
-2. **Prompts in progress**, as in stage 3, in rank order.
-3. **Admission, only if (1) preempted nothing**, from the head of the waiting queue
-   (best rank), while budget is left and fewer than `max_running` sequences hold
-   memory. The head's prefill is its `prompt_tokens`, or `remaining_prefill(id)` if
-   it was preempted, and needs $\lceil \text{prefill} / \texttt{block\_size} \rceil$
-   blocks. It is admitted if
+1. **Memory for decodes, best rank first.** Iterate through sequences holding memory in rank order, skipping any whose prefill is incomplete (they already hold their prompt blocks). A ready sequence needs one new block if and only if `kv_tokens(id) % block_size == 0`. If it needs a block and `allocator.free_blocks() == 0`, **preempt the worst-ranked sequence currently holding memory**: call `allocator.free(victim)` and `sim_engine.preempt(victim)`, and return the victim to the waiting queue. Repeat until at least one block is free or the requesting sequence itself becomes the victim (because it had the worst rank). If it still holds memory, call `allocator.append(id, 1)` and add it to `decode`.
+2. **Prompts in progress.** Assign chunks to sequences holding memory with remaining prefill, in rank order, as in stage 3.
+3. **Admission (only if pass 1 preempted nothing).** While budget remains, fewer than `max_running` sequences hold memory, and the waiting queue is non-empty, inspect the head of the waiting queue (best rank). Let `prefill` be its `prompt_tokens`, or `remaining_prefill(id)` if it was previously preempted. It requires `needed` = $\lceil \text{prefill} / \texttt{block\_size} \rceil$ blocks. Admit it if
 
-   `allocator.free_blocks() - needed >= watermark_blocks`,
+   `allocator.free_blocks() - needed >= watermark_blocks`
 
-   **or**, when no sequence holds memory at that moment, if
-   `allocator.free_blocks() - needed >= 0`. Admitting takes all of those blocks
-   (`allocator.append(id, prefill)`), calls `sim_engine.admit` for a request that
-   was never admitted, and gives the sequence its first chunk. If the head is not
-   admitted, admission stops: nobody overtakes it.
+   or, when no sequence currently holds memory, if `allocator.free_blocks() - needed >= 0`. To admit it, call `allocator.append(id, prefill)`, call `sim_engine.admit(request)` if it has never been admitted before, and assign its first chunk. If the head cannot be admitted, stop admission immediately so lower-ranked requests cannot overtake it.
 
-A preempted sequence keeps its tokens: the engine continues its numbering, and the
-tokens prefilled again are counted in `sim_engine.counters.recomputed_tokens`. A
-victim may be a sequence that is still prefilling. Several sequences can be
-preempted in one step.
+A preempted sequence keeps the tokens it already generated, and the tokens it must re-prefill are tracked in `sim_engine.counters.recomputed_tokens`. A victim may be a sequence that is still prefilling, and multiple sequences may be preempted during a single step.
 
 ### Example 4
 
-Seven blocks of 4 tokens, `max_running = 3`, `watermark_blocks = 0`. Requests as
-(arrival, prompt, output, priority): request 0 `(0, 8, 6, 1)`, request 1
-`(0, 6, 7, 0)`, request 2 `(2, 7, 5, 2)`, request 3 `(30, 4, 3, 0)`.
+With 7 blocks of 4 tokens, `max_running = 3`, `watermark_blocks = 0`, and requests `(arrival, prompt, output, priority)`: request 0 `(0, 8, 6, 1)`, request 1 `(0, 6, 7, 0)`, request 2 `(2, 7, 5, 2)`, and request 3 `(30, 4, 3, 0)`.
 
 | starts | prefill | decode | free blocks during the step | notes |
 |---|---|---|---|---|
-| 0 | `(1, 6), (0, 8)` | | 3 | request 1 is more urgent: first in both lists |
-| 11.5 | `(2, 7)` | `1, 0` | 0 | request 0 (8 tokens) takes a third block; request 2 takes the last two |
+| 0 | `(1, 6), (0, 8)` | | 3 | request 1 is more urgent, so it appears first in both lists |
+| 11.5 | `(2, 7)` | `1, 0` | 0 | request 0 (8 tokens) takes a third block, and request 2 takes the last two |
 | 23.25 | | `1, 0, 2` | 0 | |
-| 34.25 | | `1, 0` | 1 | request 1 (8 tokens) needs a block and none is free: request 2, the worst rank, is preempted after 2 tokens. No admission in this step |
+| 34.25 | | `1, 0` | 1 | request 1 (8 tokens) needs a block and none is free. Request 2, the worst rank, is preempted after 2 tokens. No admission in this step |
 | 44.25 | `(3, 4)` | `1, 0` | 0 | request 3 (priority 0) is ahead of request 2 in the queue and takes the free block |
-| 55.25 | | `1, 3` | 2 | request 3 (4 tokens) needs a block. The newest sequence is request 3 itself, but the worst rank is request 0 (priority 1): preempted after 5 of its 6 tokens |
+| 55.25 | | `1, 3` | 2 | request 3 (4 tokens) needs a block. Request 3 is newest, but request 0 (priority 1) has the worst rank and is preempted after 5 of its 6 tokens |
 | 65.25 | | `1, 3` | 2 | request 0 would need 4 blocks for its 13 tokens |
 | 75.25 | `(0, 13), (2, 9)` | | 0 | requests 1 and 3 have finished. Request 0 produces its last token at 88.75 |
 | 88.75 | | `2` | 4 | |
 | 97.75 | | `2` | 4 | request 2 finishes at 106.75 |
 
-22 tokens are recomputed. Request 2 produced tokens 0 and 1 before 34.25 and token
-2 at 88.75: it was not started over.
+In total, 22 tokens are recomputed. Request 2 generated tokens 0 and 1 before 34.25 ms and resumed with token 2 at 88.75 ms instead of starting over.
 
 ## Stage 5: prefix sharing
 
-With `prefix_sharing=True`, a new request reuses KV blocks that a sequence in
-memory has already computed for the same prompt prefix. `request.tokens` is the
-prompt as a tuple of token ids (`None` for a request that takes no part in
-sharing).
+When `prefix_sharing=True`, a newly admitted request reuses KV blocks that a sequence currently holding memory has already prefilled for the same prompt prefix. `request.tokens` holds the prompt as a tuple of token ids, or `None` if the request does not participate in sharing.
 
-**`fork(parent_id, child_id, n_tokens)`.** The child gets the parent's first
-`n_tokens` tokens: its token count is `n_tokens` and its table is the first
-$\lceil \texttt{n\_tokens} / \texttt{block\_size} \rceil$ entries of the parent's,
-each of which gains one reference. `n_tokens=None` means all of the parent's tokens
-(stage 1). After the checks of stage 1, raises `ValueError` if `n_tokens` is not in
-`[1, parent's token count]`. Copy on write is unchanged: a child whose last shared
-block it uses only partly copies that block at its first `append`.
+### Partial fork
 
-**At admission** of a request `r` that was never admitted and has `tokens`, look at
-every sequence `s` that holds memory at that moment and has `tokens`:
+Extend `fork(parent_id, child_id, n_tokens=None)` so that `child_id` receives the parent's first `n_tokens` tokens. The child's token count becomes `n_tokens`, its block table is the first $\lceil \texttt{n\_tokens} / \texttt{block\_size} \rceil$ blocks of the parent's table, and each of those blocks gains 1 reference. Passing `n_tokens=None` forks all of the parent's tokens as in stage 1. After checking the stage 1 error conditions, raise `ValueError` if `n_tokens` is outside `[1, parent's token count]`. Copy-on-write behavior is unchanged: if a child partially occupies its last shared block, its first `append` copies that block.
+
+### Donor selection at admission
+
+When admitting a never-admitted request `r` whose `tokens` is not `None`, examine every sequence `s` that currently holds memory and has `tokens` not `None`. Compute the number of full shareable blocks $h(r, s)$:
 
 $$
 h(r, s) = \left\lfloor \frac{\min\bigl(\text{common}(r, s),\ \text{filled}(s),\ \texttt{r.prompt\_tokens} - 1\bigr)}{\texttt{block\_size}} \right\rfloor
 $$
 
-where common is the length of the longest common prefix of the two token tuples,
-and $\text{filled}(s) = \min(\texttt{kv\_tokens}(s),\ \texttt{s.prompt\_tokens})$ is
-the number of prompt tokens `s` has in the KV cache now. So only **full blocks**
-that `s` has **already prefilled** count, and at least one token of `r` is left to
-prefill: its forward pass produces the first output token. The **donor** is the
-`s` with the largest $h$; among equals, the best rank. If $h > 0$:
+Here $\text{common}(r, s)$ is the length of the longest common prefix of `r.tokens` and `s.tokens`, and $\text{filled}(s) = \min(\texttt{kv\_tokens}(s),\ \texttt{s.prompt\_tokens})$ is how many prompt tokens `s` has already prefilled into the KV cache. Only **full blocks** that `s` has **already prefilled** can be shared, and at least one token of `r` must remain unshared so its forward pass produces the first output token.
 
-- `allocator.fork(donor, r.id, h * block_size)`;
-- `sim_engine.admit(r, cached_tokens=h * block_size)`: the engine then counts those
-  tokens as present and only `prompt_tokens - h * block_size` remain to prefill;
-- `allocator.append(r.id, prompt_tokens - h * block_size)` for the rest, so the
-  admission needs $\lceil \texttt{prompt\_tokens} / \texttt{block\_size} \rceil - h$
-  blocks in the rule of stage 4.
+Pick the **donor** `s` with the largest $h(r, s)$, breaking ties by best rank. If $h > 0$:
 
-Everything else is unchanged. Consequences worth knowing: two requests admitted in
-the same step share nothing with each other; a sequence that was preempted returns
-without sharing (its whole context is recomputed), but can be a donor again once it
-holds memory; a donor can be a sequence that itself shares those blocks, so blocks
-outlive the sequence that first computed them; and preempting or finishing a
-sequence returns only the blocks nobody else holds.
+- Call `allocator.fork(donor, r.id, h * block_size)`.
+- Call `sim_engine.admit(r, cached_tokens=h * block_size)` so `sim_engine` marks those tokens as cached and leaves `prompt_tokens - h * block_size` tokens to prefill.
+- Call `allocator.append(r.id, prompt_tokens - h * block_size)` for the remaining prompt tokens. In the stage 4 admission check, the number of new blocks needed is therefore $\lceil \texttt{prompt\_tokens} / \texttt{block\_size} \rceil - h$.
+
+Notice four consequences of these rules:
+
+- Two requests admitted in the same step cannot share with each other because neither has prefilled yet.
+- A preempted sequence returns without sharing (its full context is recomputed), though it can act as a donor again once it holds memory and has prefilled blocks.
+- A donor may itself be sharing blocks from an earlier sequence, allowing cached prefix blocks to outlive the request that first computed them.
+- Freeing or preempting a sequence returns only the blocks that no other sequence still references.
 
 ### Example 5
 
-Ten blocks of 4 tokens, `max_running = 4`, `prefix_sharing=True`. `S` is a system
-prompt of 8 tokens, `(1, 2, ..., 8)`. Request 0 arrives at 0 with `S + (11, 12, 13)`
-and 4 output tokens; request 1 at 0 with `S + (21, 22)` and 3; request 2 at 5 with
-`S + (31, ..., 35)` and 2; request 3 at 30 with `(1, 2, 3, 4, 9, 9, 9, 9, 9)` and
-2; request 4 at 40 with `S + (41,)` and 2.
+With 10 blocks of 4 tokens, `max_running = 4`, and `prefix_sharing=True`, let `S` be an 8-token system prompt `(1, 2, ..., 8)`. Five requests arrive:
+
+- Request 0 at 0 ms: `S + (11, 12, 13)`, 4 output tokens.
+- Request 1 at 0 ms: `S + (21, 22)`, 3 output tokens.
+- Request 2 at 5 ms: `S + (31, ..., 35)`, 2 output tokens.
+- Request 3 at 30 ms: `(1, 2, 3, 4, 9, 9, 9, 9, 9)`, 2 output tokens.
+- Request 4 at 40 ms: `S + (41,)`, 2 output tokens.
 
 | starts | prefill | decode | notes |
 |---|---|---|---|
-| 0 | `(0, 11), (1, 10)` | | admitted together: nothing to share yet |
-| 13.25 | `(2, 5)` | `0, 1` | requests 0 and 1 both hold `S` in two full blocks; the donor is request 0 (best rank). Request 2 shares 8 tokens and takes 2 new blocks |
+| 0 | `(0, 11), (1, 10)` | | admitted together, so nothing can be shared yet |
+| 13.25 | `(2, 5)` | `0, 1` | requests 0 and 1 both hold `S` in two full blocks. Request 0 is the donor (best rank), so request 2 shares 8 tokens and takes 2 new blocks |
 | 24.5 | | `0, 1, 2` | |
-| 35.5 | `(3, 5)` | `0` | requests 1 and 2 finished. Request 3 agrees with request 0 on 4 tokens: one block |
-| 45.75 | `(4, 5)` | `3` | request 0 finished; its first block lives on in request 3, which is the donor for request 4 (4 tokens in common) |
+| 35.5 | `(3, 5)` | `0` | requests 1 and 2 finished. Request 3 shares 4 tokens (one block) with request 0 |
+| 45.75 | `(4, 5)` | `3` | request 0 finished, but its first block lives on in request 3, which becomes the donor for request 4 (4 tokens in common) |
 | 56 | | `4` | request 4 finishes at 65 |
 
-36 tokens are prefilled instead of 52, and at most 9 blocks are in use. Without
-sharing, the same workload runs out of memory at 26.5 and preempts request 2.
+Sharing prefills 36 tokens instead of 52 and uses at most 9 blocks. Without sharing, the same workload runs out of memory at 26.5 ms and preempts request 2.
 
 ## Constraints
 
-- `1 <= block_size <= 64`, `1 <= n_blocks <= 4096`, `1 <= max_running <= 16`,
-  `max_running <= max_batch_tokens`, `0 <= watermark_blocks < n_blocks`. For every
-  request, `prompt_tokens + output_tokens - 1` tokens fit in the pool, so a sequence
-  running alone always finishes. Prompts have 1 to 4,000 tokens. Arrival times are
-  multiples of 0.25 ms, so every time in a test is an exact float.
-- **Stage 1.** Return values, block tables, reference counts, and `free_blocks()`
-  are compared exactly after every call, on scripts and on random workloads, and
-  the invariants of stage 1 are checked independently.
-- **Stages 2 to 5.** The rules determine every step, admission, and preemption.
-  The tests compare them exactly: with the literal schedules above and others like
-  them, and with the reference's trace on seeded bursty and Poisson workloads of up
-  to 120 requests. They also check that every request finishes with each token
-  produced exactly once, in order; that no sequence is released; and the allocator
-  conditions of stage 2 at every step, and that the pool is entirely free at the end.
-- **Stage 3, stall bound.** Six sequences are generating when a 4,000-token prompt
-  arrives, followed by three 24-token prompts, with `max_batch_tokens = 512`: the
-  longest gap between two consecutive tokens of any of the six is at most **150 ms**
-  (the largest step is 8 + 0.25 · 506 + 6 = 140.5 ms), with and without
-  `long_prefill_threshold = 128`; with it, each short prompt has its first token
-  within **120 ms** of arriving.
-- **Stage 4, cost.** 120 Poisson requests in three priorities (prompts of 16 to 160
-  tokens, outputs of 8 to 96), 40 blocks of 16 tokens, `max_running = 8`,
-  `max_batch_tokens = 128`, `watermark_blocks = 4`: at most **3000** recomputed
-  tokens and **30** preemptions. The reference recomputes 1365 tokens in 11
-  preemptions; without the watermark it is several times as many.
-- **Stage 5, cost.** 120 requests over three shared prefixes of 64 to 160 tokens,
-  96 blocks of 16 tokens, `max_running = 8`: at most **6000** prefilled tokens
-  (`sim_engine.counters.prefill_tokens`; the reference needs 4767, and 18655 without
-  sharing), at most **64** blocks in use at any step (reference 54; 96 without
-  sharing), and no preemption.
-- Use `asyncio`, the allocator, and `sim_engine` only. Time is virtual: the real
-  clock and real sleeping have no meaning here.
+- `1 <= block_size <= 64`, `1 <= n_blocks <= 4096`, `1 <= max_running <= 16`, `max_running <= max_batch_tokens`, and `0 <= watermark_blocks < n_blocks`. Every request satisfies `prompt_tokens + output_tokens - 1 <= n_blocks * block_size`, so any request running alone finishes. Prompts contain 1 to 4,000 tokens. Arrival times are multiples of 0.25 ms, so all timestamps are exact floats.
+- **Stage 1.** Return values, block tables, reference counts, and `free_blocks()` are checked exactly after every call on scripted and random workloads, alongside independent invariant checks.
+- **Stages 2 to 5.** The scheduling rules determine a unique trace of steps, admissions, and preemptions. Tests compare your trace exactly against the examples above, additional scripted schedules, and seeded bursty and Poisson workloads of up to 120 requests. Tests also verify that every request produces each token once in order, that no sequence is dropped, that the stage 2 allocator audit holds at every step, and that all blocks are free at the end.
+- **Stage 3 stall bound.** Six sequences are generating when a 4,000-token prompt arrives, followed by three 24-token prompts, with `max_batch_tokens = 512`. The longest gap between consecutive tokens of any of the six sequences must be at most **150 ms** (the largest step takes $8 + 0.25 \cdot 506 + 6 = 140.5$ ms), both with and without `long_prefill_threshold = 128`. With `long_prefill_threshold = 128`, each short prompt must produce its first token within **120 ms** of arriving.
+- **Stage 4 cost.** On 120 Poisson requests across three priorities (prompts of 16 to 160 tokens, outputs of 8 to 96 tokens) with 40 blocks of 16 tokens, `max_running = 8`, `max_batch_tokens = 128`, and `watermark_blocks = 4`, the engine must incur at most **3000** recomputed tokens and **30** preemptions. The reference recomputes 1365 tokens across 11 preemptions, whereas omitting the watermark causes several times as many.
+- **Stage 5 cost.** On 120 requests sharing three prefixes of 64 to 160 tokens with 96 blocks of 16 tokens and `max_running = 8`, the engine must prefill at most **6000** tokens (`sim_engine.counters.prefill_tokens`; the reference prefills 4767 compared to 18655 without sharing), use at most **64** blocks at any step (reference 54 vs 96 without sharing), and trigger zero preemptions.
+- Use only `asyncio`, `BlockAllocator`, and `sim_engine`. Time is virtual, so wall-clock timers and real sleeping do not apply.
 
 ## Why this matters
 
-This is the loop at the center of vLLM, TGI, SGLang, and llama.cpp's server, and
-each stage is a decision those engines make before every forward pass. Continuous
-batching keeps the GPU full; the token budget bounds the length of a step, and with
-it the time between two streamed tokens; paging lets the engine admit optimistically
-instead of reserving the longest possible output for everyone, and preemption is
-the price it pays when the optimism fails; reference-counted blocks let a thousand
-requests with one system prompt store it once. The parts are simple, and the
-failures come from their seams: a block leaked on a path that only runs under memory
-pressure, a slot that idles one step in every finish, a prompt that starves the
-stream, a pool that thrashes because admission took the last free block, a shared
-block freed while another request was still attending to it.
+This scheduling loop sits at the core of vLLM, TGI, SGLang, and `llama.cpp`'s server. Continuous batching keeps GPU utilization high, and a per-step token budget bounds inter-token latency. Paged blocks allow optimistic admission without reserving maximum output lengths up front, preemption recovers when memory runs out, and reference counting lets thousands of requests share a single system prompt in memory.
+
+Most real serving bugs occur at the seams between these mechanisms. A leaked block on a rare preemption path eventually exhausts memory, and an off-by-one slot count leaves a batch slot idle after every completion. An unchunked prompt stalls active streams, admitting down to zero free blocks triggers preemption thrashing, and freeing a shared block while another sequence still attends to it silently corrupts generated text.

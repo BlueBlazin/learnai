@@ -1,32 +1,19 @@
 ## The idea
 
-The block is a multiplicative gate, a short filter, and another gate:
+The block combines an input gate, a short depthwise filter, and an output gate:
 
 $$
 y = \bigl(C \odot \operatorname{conv}(B \odot h)\bigr)\,W_{out}^\top,
 \qquad [\,B \mid C \mid h\,] = x\,W_{in}^\top .
 $$
 
-One projection produces all three parts. $B$ decides, per channel, how much of the
-signal $h$ enters the filter; the filter mixes each channel with its own last
-$L - 1$ values; $C$ decides how much of the result leaves. There is no nonlinearity
-other than the two products, and no mixing across channels inside the convolution:
-that is left to the projections.
+A single linear projection produces $B$, $C$, and $h$. For each channel, $B$ controls how much of the signal $h$ enters the filter. The filter then mixes each channel with its own previous $L - 1$ values, and $C$ controls how much of the filtered result passes to the output projection. There is no nonlinearity other than the two elementwise products, and no cross-channel mixing inside the convolution itself. Cross-channel mixing happens only in $W_{in}$ and $W_{out}$.
 
-Because output $t$ reads $u_{t-L+1}, \dots, u_t$, the block is causal, and continuing
-a sequence needs exactly the last $L - 1$ rows of $u$. That is the entire state:
-$(L - 1) \cdot D$ numbers, independent of the context length. It must hold $u$, the
-tensor the filter reads. Rows of $x$ would do only if the projection and the gate were
-recomputed, and rows of the filter's output are of no use at all, since a finite
-impulse response filter has no feedback.
+Because output $t$ depends only on $u_{t-L+1}, \dots, u_t$ (where $u = B \odot h$), the block is causal and requires only the last $L - 1$ rows of $u$ to continue a sequence. That fixed-size tensor of $(L - 1) \cdot D$ numbers is the entire state, independent of context length. The state must store $u$, which is the exact tensor the filter reads. Storing rows of $x$ would work only if the input projection and gate were recomputed, and storing the filter output $v$ is useless because a finite impulse response filter has no feedback.
 
-The alignment of the taps is a convention, and the one used here is the one in the
-weights: `w_conv[c, L - 1]` multiplies the current token. That is what every deep
-learning library computes under the name "convolution" (a cross-correlation over a
-left-padded input). The convolution of signal processing would reverse the taps.
+Trained weights fix the tap alignment so that `w_conv[c, L - 1]` multiplies the current token. Every deep-learning framework computes this exact cross-correlation over a left-padded input under the name "convolution". A signal-processing convolution would reverse the taps.
 
-$B$ and $h$ enter only through their product, so exchanging them changes nothing; $C$
-is not exchangeable with either.
+Note also that $B$ and $h$ enter only through their product $B \odot h$, so swapping them does not change the result. By contrast, $C$ sits outside the filter and cannot be swapped with either.
 
 ## Reference solution (PyTorch)
 
@@ -42,57 +29,29 @@ def conv_block(x, w_in, w_conv, w_out, state):
     return (C * conv) @ w_out.T, padded[steps:]
 ```
 
-`F.conv1d(padded.T[None], w_conv[:, None, :], groups=D)[0].T` is the same sum.
+`F.conv1d(padded.T[None], w_conv[:, None, :], groups=D)[0].T` (with `D = u.shape[1]`) computes the same sum.
 
 ## Common mistakes
 
-- **Symmetric padding.** "Same" padding centers the window, and output $t$ reads up
-  to $(L - 1) / 2$ future tokens. Every output of a prompt changes when a token is
-  appended.
-- **A flipped kernel.** Indexing taps from the current token backwards
-  (`w[:, j] * u[t - j]`), or using a routine that implements the mathematical
-  convolution. Invisible with a symmetric kernel, which is why the tests use none.
-- **State holds `x`.** Same shape as the right answer. Correct for one call.
-- **State holds the convolution's output.** Same shape again.
-- **State reset on each call,** or **cut from the new rows only.** The second is right
-  whenever a call has at least $L - 1$ tokens and wrong for every decoding step.
-- **Updating the state in place.** Shifting the caller's state tensor row by row
-  gives the right outputs and changes a tensor the caller still holds.
-- **Calling the kit's convolution.** `ops.causal_conv1d` does steps 3 and 5; the
-  statement rules it out and the harness rejects the call.
-- **The thirds in the wrong roles:** filtering $B \odot C$ and gating with $h$, or
-  multiplying $C$ in before the filter. The split itself is three consecutive blocks
-  of columns, not every third column.
+- **Symmetric padding.** Using "same" padding centers the kernel window, so output $t$ reads up to $(L - 1) / 2$ future tokens. Appending a new token then changes earlier outputs.
+- **Flipped kernel.** Indexing taps backward from the current token (`w[:, j] * u[t - j]`), or using a routine that flips the kernel, fails on asymmetric kernels. The tests use only asymmetric kernels for this reason.
+- **Storing `x` in the state.** This tensor has the right shape and passes every single-call test, but fails on multi-call continuations.
+- **Storing the convolution output `v` in the state.** This also has the right shape and fails only when state is carried across calls.
+- **Resetting the state or slicing only from `u`.** Slicing `u[-(L - 1):]` works whenever a call has at least $L - 1$ tokens, but drops earlier state rows on shorter calls such as single-token decoding steps. Slicing `padded[T:]` handles every call length.
+- **Updating the state in place.** Shifting the caller's state tensor row by row produces the right outputs while mutating a tensor the caller still holds.
+- **Calling the kit's convolution.** `ops.causal_conv1d` implements steps 3 and 5, so the harness forbids it.
+- **Misassigning the three projected blocks.** Filtering $B \odot C$ and gating with $h$, or multiplying by $C$ before the filter, gives the wrong result. The split must also take three contiguous blocks of $D$ columns rather than strided slices.
 
 ## Complexity
 
-$O(T \cdot D \cdot (D + L))$: the projections dominate, the filter costs $L$
-multiply-adds per channel and token. State: $(L - 1) \cdot D$ numbers, 12,288 per
-layer for LFM3-1.7B ($D = 2048$, $L = 7$).
+The time complexity is $O(T \cdot D \cdot (D + L))$. The linear projections dominate, while the depthwise filter adds $L$ multiply-adds per channel and token. The state holds $(L - 1) \cdot D$ numbers, which is 12,288 floats per layer for LFM3-1.7B ($D = 2048$, $L = 7$).
 
 ## In the wild
 
-Checked on 2026-11-21 by reading and running `transformers` 5.23.0 and by reading the
-`config.json` of `LiquidAI/LFM3-1.7B` on the Hugging Face Hub (`conv_L_cache` 7,
-`conv_bias` false, hidden size 2048, 13 `conv` layers of 24, `use_sandwich_norm`
-true).
+Checked on 2026-11-21 by reading and running `transformers` 5.23.0 and by reading the `config.json` of `LiquidAI/LFM3-1.7B` on the Hugging Face Hub (`conv_L_cache` 7, `conv_bias` false, hidden size 2048, 13 `conv` layers out of 24, `use_sandwich_norm` true).
 
-- `Lfm3ShortConv.forward` in `transformers/models/lfm3/modeling_lfm3.py`:
-  `B, C, x = in_proj(hidden_states).chunk(3)`, `hidden_states = B * x`, a depthwise
-  `F.conv1d` over the left-padded (or cached) sequence, `y = C * hidden_states`,
-  `out_proj`. The public test "the block of LFM3" and a hidden one compare your
-  function with that module, without a cache and with a `DynamicCache`
-  (`fixtures/make.py` regenerates the arrays). Running it against a reversed kernel
-  confirmed that the library does not flip.
-- The library's cache keeps $L$ rows of $u$ per layer as `(D, L)`, one more than the
-  next token reads; this problem keeps $L - 1$ as `(L - 1, D)`.
-- The Gated DeltaNet layer of Qwen3.5 (`gated-delta-layer`) and the Mamba-2 block of
-  Nemotron contain a causal depthwise convolution of the same form with kernel 4 (Nemotron's has a bias), there followed
-  by SiLU and used as a preprocessing step for a recurrence.
+- `Lfm3ShortConv.forward` in `transformers/models/lfm3/modeling_lfm3.py` runs `B, C, x = in_proj(hidden_states).chunk(3)`, computes `hidden_states = B * x`, applies a depthwise `F.conv1d` over the left-padded or cached sequence, computes `y = C * hidden_states`, and applies `out_proj`. Both the public test "the block of LFM3" and a hidden test compare your function against this module without a cache and with a `DynamicCache` (`fixtures/make.py` regenerates the arrays). Running the module against a reversed kernel confirmed that it does not flip the taps.
+- The library's cache stores $L$ rows of $u$ per layer with shape `(D, L)`, which is one row more than the next token needs. This problem stores $L - 1$ rows with shape `(L - 1, D)`.
+- The Gated DeltaNet layer in Qwen3.5 (`gated-delta-layer`) and the Mamba-2 block in Nemotron both include a causal depthwise convolution of this form with kernel size 4 (Nemotron adds a bias). In those architectures, the convolution is followed by SiLU and serves as a preprocessing step before a recurrence.
 
-Deliberate simplifications: no batch axis; no attention mask for padding tokens (the
-library zeroes padded positions before the projection); no bias, as shipped. Around
-the block, the layer applies a norm before it, and with `use_sandwich_norm` another
-after it, then the residual connection; those are not part of this function. No
-paper for this architecture was read, and the license of the weights was not checked;
-no weights are used.
+Deliberate simplifications in this problem: there is no batch axis, no padding mask (the library zeroes padded positions before the input projection), and no bias (matching the shipped model). In the full LFM3 layer, a normalization sits before the block, and with `use_sandwich_norm` another normalization sits after it before the residual connection; those are omitted here. No paper for this architecture was read, no weight license was checked, and no model weights are used.

@@ -1,27 +1,10 @@
 ## The idea
 
-A tensor lives on one device, and an operation needs all its operands on the same
-one. Operations on existing tensors take care of themselves: the result of
-`h * valid` is created where `h` and `valid` are. The tensors that go wrong are the
-ones with no parent: those made by a factory function. `torch.arange(T)` has no
-operand to inherit a device from, so it uses the default device, which is the CPU
-unless someone changed it. The rule that keeps a forward pass on one device is
-therefore short: **every factory call says `device=`** (or uses a form that inherits,
-such as `torch.zeros_like(x)` and `x.new_zeros(...)`), and every tensor that arrives
-from outside is moved once, at the door.
+Every tensor lives on a single device, and an operation requires all of its operands to live on that same device. Operations on existing tensors preserve placement automatically, so multiplying two tensors produces a result on their shared device. Bugs come from tensors created without an existing parent tensor. A call like `torch.arange(T)` has no operand to inherit from, so it falls back to the default device (the CPU). To keep everything on one device, move external inputs once at the entry point and pass `device=` to every factory call (or use device-inheriting helpers like `torch.zeros_like(x)` and `x.new_zeros(...)`).
 
-The second half of the rule is about values, not placement. The host cannot know a
-number that the device has computed without waiting for the device to finish
-everything queued before it and copying the number over. `.item()`, `.tolist()`,
-`.cpu()`, `int(x)`, `if x:`, a tensor as a slice bound, and an index with a boolean
-mask (whose result has a size the host must learn) all do that. A padding mask does
-not need the lengths as Python numbers: comparing a row of positions with a column of
-lengths says the same thing, entirely on the device.
+The second rule avoids host-device synchronization. Because GPU kernels run asynchronously, the CPU cannot read a device-computed value without waiting for all queued GPU work to finish and copying the value across. Calls such as `.item()`, `.tolist()`, `.cpu()`, `int(x)`, `if x:`, slicing with a tensor bound, and boolean-mask indexing (`h[mask]`, whose output size the host must learn) all trigger a synchronization. You can build a padding mask entirely on the device by broadcasting a row of position indices against a column of sequence lengths.
 
-Dtypes follow the same logic as devices. `bool` and integer tensors do not widen a
-float tensor they are combined with, so `h * valid` and `sum / lengths` stay in the
-dtype of `h`. A float tensor of another width does: `valid.float()` is float32 by
-definition, and float16 times float32 is float32.
+Dtypes follow the same principle. Combining a floating-point tensor with a `bool` or integer tensor preserves the float's dtype, so multiplying `h` by a boolean mask and dividing the sum by `lengths` stay in `h.dtype`. Combining two float tensors of different widths promotes to the wider type. Because calling `.float()` on a mask always produces `float32`, multiplying it with a `float16` tensor promotes the result to `float32`.
 
 ## Reference solution (PyTorch)
 
@@ -46,57 +29,28 @@ def run(weights, inputs, device):
     return pooled @ weights["w_out"].T + inputs["head"]["bias"]
 ```
 
-`tokens.shape[1]` is metadata kept on the host; reading it synchronizes nothing.
-`tensor.to(device)` returns the tensor itself when it is already there, so moving a
-batch that is already on the device costs nothing.
+`tokens.shape[1]` is metadata stored on the host, so reading it does not synchronize with the device. Calling `tensor.to(device)` returns the original tensor with zero overhead when it is already on `device`.
 
 ## How the CPU cases see a GPU mistake
 
-On a CPU run every tensor is on the CPU and every value is already there, so the
-tests use three instruments. `DeviceSpy` wraps the factory functions and reports each
-call from your file that had no `device=`. `SyncSpy` wraps the tensor methods that
-hand a value to Python and reports each call from your file. And one case runs `run`
-on `torch.device("meta")`: meta tensors carry a shape and a dtype and no data, and
-elementwise operations refuse to mix them with CPU tensors with the same kind of
-error CUDA gives. The meta device is not a complete stand-in: indexing a meta tensor
-with a CPU index tensor and `@` between the two do not raise in PyTorch 2.15, and
-indexing a CUDA tensor with a CPU index is also accepted on a GPU, where it means a
-transfer. That is why the factory check exists as well.
+On a CPU run, every tensor is already on the CPU and readable without synchronization, so the test suite uses three checks. `DeviceSpy` wraps PyTorch factory functions and flags any call from your file that omits `device=`. `SyncSpy` wraps tensor methods that transfer values to Python and flags any call from your file. Finally, one test runs `run` on `torch.device("meta")`. Meta tensors carry shape and dtype without data, so elementwise operations reject mixing them with CPU tensors just as CUDA does. However, in PyTorch 2.15, indexing a meta tensor with a CPU index and matrix multiplication between meta and CPU tensors do not raise, and CUDA likewise allows indexing a CUDA tensor with a CPU index via an implicit transfer. The factory spy catches those cases too.
 
 ## Common mistakes
 
-- **`torch.arange(T)` without `device=`.** The position ids are on the CPU. The
-  comparison with the lengths raises on a GPU; the embedding lookup with a CPU index
-  does not, and silently ships the index across.
-- **`torch.from_numpy(np.arange(T))`** and other detours through NumPy. A tensor
-  wrapped around host memory is a CPU tensor, with no factory call to warn about it.
-- **Building the mask on the host.** `lengths.cpu().tolist()` and a list
-  comprehension give the right mask, after waiting for the device and copying in both
-  directions.
-- **A Python loop over the rows** with `h[b, :lengths[b]]`. A tensor used as a slice
-  bound is converted with `__index__`, a host read per row.
-- **Returning `.cpu()`.** The caller asked for logits on the device; sampling and the
-  next layer run there.
-- **`.float()` on the mask or the lengths.** It hard-codes float32 and promotes a
-  half-precision pass to single precision from that line on.
-- **`h.mean(dim=1)`.** Padding positions count, and each row's result depends on what
-  the batch happened to be padded with and to.
-- **A shallow `to_device`.** Moving the values of the top-level dict leaves
-  `inputs["head"]["bias"]` on the CPU.
-- **Turning tuples into lists**, or **moving in place**: the caller that unpacks a
-  pair, or reuses the CPU batch for logging, gets something it did not send.
+- **Calling `torch.arange(T)` without `device=`.** Position IDs are allocated on the CPU. Comparing them with GPU `lengths` raises an error, while using them to index a GPU embedding table silently transfers the index tensor.
+- **Routing through NumPy, such as `torch.from_numpy(np.arange(T))`.** A tensor backed by a NumPy array lives in CPU memory, bypassing `device=` altogether.
+- **Building the mask on the host.** Calling `lengths.cpu().tolist()` and constructing a mask in Python stalls the device and copies data in both directions.
+- **Looping over rows with `h[b, :lengths[b]]`.** Using a tensor as a slice bound invokes `__index__`, forcing one host read per row.
+- **Returning `.cpu()`.** The caller expects logits on `device` so downstream sampling or subsequent layers can run without another transfer.
+- **Calling `.float()` on the mask or lengths.** `.float()` hard-codes `float32` and promotes a `float16` forward pass to `float32` from that point onward.
+- **Using `h.mean(dim=1)`.** This averages over padding positions, making each row's output depend on the batch's padding length and pad tokens.
+- **Writing a shallow `to_device`.** Moving only top-level dictionary values leaves `inputs["head"]["bias"]` on the CPU.
+- **Turning tuples into lists, or mutating containers in place.** Callers that unpack tuples or reuse the original CPU batch for logging receive corrupted data.
 
 ## Complexity
 
-$O(B\,T\,D)$ for the embeddings and the pooled sum, $O(B\,C\,D)$ for the head; one
-host-to-device copy per input tensor, and no copy in the other direction.
+The embedding lookup and masked sum take $O(B\,T\,D)$ time, and the linear head takes $O(B\,C\,D)$ time. Each input tensor is copied from host to device at most once, with zero device-to-host copies.
 
 ## In the wild
 
-PyTorch's own modules follow this rule (masks in `nn.Transformer` are created with
-the device of their input), and the CUDA notes recommend the `new_*` and `*_like`
-constructors inside `forward` for the same reason. Collate functions and
-`Trainer`-style frameworks all carry a recursive `to_device`. What is stated here
-about CUDA comes from the PyTorch 2.15 documentation (GPU operations are queued
-asynchronously, and copying between the CPU and the GPU synchronizes); the CPU checks
-were run, the GPU cases were not.
+PyTorch's built-in modules follow these same conventions. For example, `nn.Transformer` creates masks on its input's device, and the PyTorch CUDA documentation recommends `new_*` and `*_like` constructors inside `forward`. Data-loader collate utilities and `Trainer` frameworks also rely on recursive `to_device` helpers. The CUDA behaviors described here follow the PyTorch 2.15 documentation on asynchronous execution and host-device synchronization. The CPU tests were executed during authoring, while the GPU tests were not.

@@ -1,18 +1,14 @@
-With a KV cache, "the longest common prefix" is the amount you can reuse, because the
-cache can be cut to any length. A recurrent state has read exactly the tokens of its
-key, all of them. For which stored keys is that set of tokens something the new
-prompt also starts with? And at which positions of the new sequence will you hold a
-state that you could save for the next request?
+With a KV cache, the longest common prefix determines how much you can reuse because you can truncate the cache to any length. A recurrent state, however, has folded in every token of its key. Ask yourself which stored keys consist exclusively of tokens that the new prompt starts with, and at which positions along the new sequence you will actually have a state in hand to save.
 
 ---
 
-Three separate steps. Pick: the longest key with `len(key) < len(prompt)` and
-`tuple(prompt[:len(key)]) == key`. Prefill: a state exists only at the end of a call,
-so cut the remaining prompt at the multiples of `interval` and at its end, one call
-per piece, saving after each. Generate: every decode step is its own call, so after
-each one check whether the sequence length is a multiple of `interval`. Keep the
-store as a dict in recency order: to make a key the most recent, remove it and
-insert it again.
+Break the function into three steps.
+
+1. **Pick a checkpoint.** Find the longest key in `store` with `len(key) < len(prompt)` and `tuple(prompt[:len(key)]) == key`.
+2. **Prefill in segments.** Because a state is returned only at the end of a call, split the remaining prompt at multiples of `interval` and at `len(prompt)`, making one call per segment and saving after each.
+3. **Decode and checkpoint.** Every decode step is already a single-token call, so check whether `len(sequence)` is a multiple of `interval` after each fed token.
+
+Keep the store as a Python `dict` in recency order. To refresh a key as most recently used, pop it and re-insert it.
 
 ---
 
@@ -34,5 +30,4 @@ while len(new_store) > max_checkpoints:
     del new_store[next(iter(new_store))]                # least recently used
 ```
 
-`(done // interval + 1) * interval` is the next multiple strictly above `done`,
-whether or not `done` itself is one; a resumed state need not sit on a multiple.
+The expression `(done // interval + 1) * interval` gives the next multiple of `interval` strictly greater than `done`, even when a resumed checkpoint does not sit on a multiple of `interval`.

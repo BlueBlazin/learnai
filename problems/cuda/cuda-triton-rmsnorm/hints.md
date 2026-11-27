@@ -1,19 +1,8 @@
-Program `r` owns elements `r * n_cols` to `r * n_cols + n_cols - 1` of `x` and `out`.
-A block of `BLOCK` columns starting at column `start` covers columns `start` to
-`start + BLOCK - 1`. For the last block of a row, which of those columns exist? What
-is behind the pointer at the ones that do not, for row 0 and for the last row? Write
-the condition "this column exists" as a comparison between two things the kernel
-has.
+Program `r` owns elements `r * n_cols` through `r * n_cols + n_cols - 1` of `x` and `out`. A block of `BLOCK` columns starting at `start` covers columns `start` through `start + BLOCK - 1`. In the last block of a row, which of those columns are valid, and what sits in memory at the invalid offsets for row 0 versus the last row? Express the validity condition as a comparison between two values the kernel already has.
 
 ---
 
-Two loops over `range(0, n_cols, BLOCK)`. In both, `cols = start + tl.arange(0,
-BLOCK)` and the mask is `cols < n_cols`. The first loop loads `x` with that mask and
-`other=0.0`, converts to float32, and adds the squares to a float32 accumulator of
-`BLOCK` elements; after it, `tl.sum(acc, axis=0) / n_cols + eps` goes under the
-root. The second loop loads `x` and the gains again, and stores `x / rms * w` with
-the same mask. For the wrapper: `x.reshape(-1, d).contiguous()`, an output from
-`torch.empty_like`, one launch on a grid of `(rows,)`, and a `reshape` back.
+Use two loops over `range(0, n_cols, BLOCK)`. In both loops, compute `cols = start + tl.arange(0, BLOCK)` and `mask = cols < n_cols`. In the first loop, load `x` with `mask` and `other=0.0`, cast to `tl.float32`, and accumulate `x * x` into a `BLOCK`-element `float32` vector. After the loop, compute `tl.sqrt(tl.sum(acc, axis=0) / n_cols + eps)`. In the second loop, load `x` and `w` with the same mask, cast to `tl.float32`, and store `x / rms * w` with `mask=mask`. In `rms_norm`, reshape `x` to `(-1, n_cols)` and call `.contiguous()` on both `x` and `weight`, allocate `out` with `torch.empty_like`, launch on grid `(rows,)`, and reshape the output back to `x.shape`.
 
 ---
 
@@ -28,7 +17,4 @@ for start in range(0, n_cols, BLOCK):
 rms = tl.sqrt(tl.sum(acc, axis=0) / n_cols + eps)
 ```
 
-The `.to(tl.float32)` comes before the multiplication: the product of two float16
-values is a float16. The second pass is the same loop with a `tl.store(out_row +
-cols, x / rms * w, mask=mask)` at the end; the gains are at `w_ptr + cols`, with no
-row offset.
+Call `.to(tl.float32)` before squaring, because multiplying two `float16` values produces a `float16` that can overflow. The second pass uses the same loop structure and ends with `tl.store(out_row + cols, x / rms * w, mask=mask)`. Remember that `w` is shared across all rows, so load it from `w_ptr + cols` with no row offset.

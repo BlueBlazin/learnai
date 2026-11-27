@@ -1,61 +1,18 @@
 ## The idea
 
-Five problems, one loop. What makes them compose is a separation that none of the
-component problems needed on its own: **who proposes** is one decision, **how a
-proposal is verified** is another, and **where each cache stands** is bookkeeping
-that neither of them should see.
+All five stages fit into one decoding loop by separating three concerns: who proposes draft tokens, how those proposals are verified, and how each model's KV cache tracks the sequence.
 
 ![One round. A proposer drafts up to $k$ tokens, the target scores them in one call, and the verifier accepts a prefix.](assets/engine.svg)
 
-**The caches (stage 1).** `speculative-decode-loop` tracks two caches and two
-lengths by hand. Put a model, its cache, and "how many tokens of the sequence the
-cache covers" into one object with two methods. `feed(tokens)` passes the model
-whatever of `tokens` it has not seen; `rollback(n)` truncates to `n` if the cache is
-longer. Then every subtlety of that problem is a consequence, not a case: the first
-draft call of a round feeds the verified tokens the draft missed (two after a fully
-accepted round, many after lookup rounds); the target call feeds one verified token
-plus the drafts; and `rollback(len(seq) - 1)` on both removes rejected drafts and
-keeps the newest token outside, because the next round starts from its logits.
-Truncating a cache costs nothing; refeeding it costs everything the speculation
-saved.
+**Cache management (stage 1).** Instead of tracking two caches and two lengths manually as in `speculative-decode-loop`, wrap each model together with its cache and the number of sequence tokens currently cached. Give the wrapper two methods. `feed(tokens)` passes only the unseen suffix `tokens[self.length:]` to the model, and `rollback(n)` truncates the cache to `n` tokens when `self.length > n`. With this abstraction, every cache case works automatically. The first draft call of a round catches up on whatever verified tokens the draft missed (two after a full acceptance, or many after lookup rounds). The target call feeds one verified token plus the drafts. Calling `rollback(len(seq) - 1)` on both models at the end of a round removes rejected drafts and leaves the newest verified token outside the cache so the next round can score what follows it.
 
-**The verifier (stage 2).** Greedy verification compares argmaxes. Sampling
-verification is `speculative-sampling-block`: accept draft $j$ with probability
-$\min(1, p_j[x_j] / q_j[x_j])$, stop at the first rejection, and emit one more token
-from the residual $\max(0, p_n - q_n)$ or, after a full acceptance, from $p_m$.
-The token at each position is then distributed as $p$: for a token $v$, the
-probability of proposing and accepting it is $\min(p[v], q[v])$, and the probability
-of rejecting something and then drawing $v$ is
-$(1 - \sum_i \min(p_i, q_i)) \cdot \max(0, p[v] - q[v]) / \sum_i \max(0, p_i - q_i)$;
-the two normalizers are equal, so the sum is $p[v]$. Exactness needs every uniform
-to be fresh, which is why they are indexed by round: a token position can be drafted
-in one round, thrown away, and drafted again in the next, and reusing its uniform
-would correlate the second draft with the decisions that led to it.
+**Verification (stage 2).** Greedy verification compares argmaxes. Sampling verification follows `speculative-sampling-block`. It accepts draft $j$ with probability $\min(1, p_j[x_j] / q_j[x_j])$, stops at the first rejection, and samples one more token from $\max(0, p_n - q_n)$ on rejection or from $p_m$ on full acceptance. For any token $v$, the probability of proposing and accepting it is $\min(p[v], q[v])$, and the probability of rejecting and drawing $v$ from the residual is $(1 - \sum_i \min(p_i, q_i)) \cdot \max(0, p[v] - q[v]) / \sum_i \max(0, p_i - q_i)$. Because the two normalizers cancel, the total probability is exactly $p[v]$. Indexing uniforms by round ensures every draw is independent, even when a rejected position is drafted again in the next round.
 
-**The draft length (stage 3)** is two lines after the verification. It compares
-the number accepted with the number *drafted*: near the end of the output, or after
-a short lookup copy, fewer than $k$ tokens are drafted, and a full acceptance of
-those should still count as one.
+**Adaptive draft length (stage 3).** Updating $k$ takes two lines after verification. Compare $n$ against the number of tokens actually drafted ($m$), not against $k$. Near the end of generation or after a short lookup match, $m$ can be smaller than $k$, and accepting all $m$ tokens should still count as a full acceptance.
 
-**The second proposer (stage 4).** Lookup returns tokens without distributions. The
-insight that makes it fit is that a deterministic proposal *is* a distribution: all
-mass on one token. Hand the verifier one-hot rows as $q$ and nothing else changes.
-Greedy verification never looked at $q$; sampling verification accepts with
-probability $p[x]$ and its residual is $p$ with the entry of $x$ removed, both
-straight from the general formulas. The draft model is not called in a lookup
-round, and its wrapper needs no special case: its cache is simply further behind
-the next time it is fed.
+**Prompt lookup (stage 4).** Lookup returns tokens without probability distributions. A deterministic copy is equivalent to a one-hot distribution $q_j$ that puts all its mass on the copied token $x_j$. Passing one-hot rows as $q$ keeps the verifier completely unchanged. Greedy verification ignores $q$, while sampling verification accepts with probability $p_j[x_j]$ and sets the residual to $p_n$ with entry $x_n$ zeroed out. The draft model is skipped during lookup rounds, and its wrapper catches up automatically on the next draft round.
 
-**The batch (stage 5).** After one verification, row 0 has accepted nothing and row
-1 everything. The kit's cache, like most tensors, has one length. Two facts resolve
-it. The model is causal, so a row can be padded on the right with anything: the
-logits of its real positions do not change. And a cache may be cut to any prefix
-that is valid for every row. So each round feeds, per row, the verified tokens
-beyond the common prefix plus the drafts, reads each row's logits at its own offset,
-and cuts the cache to the shortest valid row. Rows that got ahead feed their lead
-again; that costs tokens, not rounds. The alternative that keeps everything
-rectangular, discarding what the luckier rows accepted, costs rounds: 31 instead of
-21 in Example 5, and worse as the batch grows.
+**Batched verification (stage 5).** After a verification step, different rows accept different numbers of drafts, while the shared KV cache has a single length across the batch. Two properties solve this. Because the model is causal, right-padding shorter rows does not affect the logits of their real tokens. Because any valid shared prefix can be kept, each round feeds every active row's verified tokens beyond the common cached prefix $c$ followed by its drafts, reads each row's verification logits at its own offset, and truncates the shared cache to the shortest valid length among the remaining rows. Faster rows reprocess their lead tokens, which costs extra tokens rather than extra rounds. Truncating every row to the batch minimum acceptance instead wastes rounds (31 vs. 21 in Example 5) and degrades further as batch size grows.
 
 ## Reference solution (PyTorch)
 
@@ -114,64 +71,29 @@ def _propose(self, draft, seq, limit, u):
     return "draft", drafts, rows
 ```
 
-`_verify_sampled` is the block rule (see the last hint), `_lookup` is
-`prompt-lookup-draft`, and `generate_batch` is the round of the last hint with one
-`_Cached` draft per row. The decisions about single tokens are scalar logic, so the
-reference brings each call's probabilities to Python once (`tolist`) and compares
-plain floats: a few tensor operations per model call, which matters when a GPU
-framework pays a round trip for every value it hands back.
+`_verify_sampled` implements the block rule from the last hint, `_lookup` follows `prompt-lookup-draft`, and `generate_batch` uses one `_Cached` draft wrapper per row with the batched target step from the last hint. Because token decisions are scalar logic, the reference converts each call's probabilities to Python floats once with `tolist()`. This avoids repeated host-device round trips per token.
 
 ## Common mistakes
 
-- **A stale target cache.** Keeping rejected drafts in the target's cache gives
-  fluent output that is not the target's.
-- **A stale draft cache.** The output stays right, the draft model continues from
-  tokens that were rejected, acceptance collapses, and only the round count shows it.
-- **Refeeding the whole sequence** to either model: correct tokens, quadratic work.
-- **The residual not normalized.** Sampling $\max(0, p - q)$ as if it summed to 1
-  runs off the end of the cumulative sums whenever the uniform exceeds the total, and
-  whatever catches that (a clamp, usually) receives the missing mass.
-- **Greedy drafts in sampling mode.** The acceptance test assumes $x \sim q$; an
-  argmax draft is tested as if it had been sampled and the output leans toward the
-  draft model's favorite tokens.
-- **Counting passes instead of a prefix.** A draft that passes its test after an
-  earlier one failed was conditioned on a rejected token.
-- **A fixed $k$**, or a $k$ that shrinks to zero without the floor of 1 and turns
-  speculation off for the rest of the output.
-- **Copied tokens trusted.** "It occurred before" is a guess; emitting it unverified
-  changes the output wherever the text does not repeat.
-- **A rejected copy that can come back.** Drawing the replacement from $p$ instead
-  of from $p$ without the rejected token gives that token probability
-  $p[x] + (1 - p[x])\,p[x]$.
-- **The latest occurrence** instead of the earliest in the lookup: other drafts,
-  other rounds.
-- **Rows cut to the batch minimum**, rows decoded one at a time, or a row's
-  verification logits read from the end of the padded call, where only the longest
-  row has them.
+- **Stale target cache.** Leaving rejected drafts in the target cache produces fluent text that no longer matches the target model.
+- **Stale draft cache.** Output tokens remain correct, but the draft model continues from rejected tokens, causing acceptance to collapse and changing the `rounds` trace.
+- **Refeeding the whole sequence.** Recomputing from token 0 produces the right tokens but violates the token-count limits with quadratic work.
+- **Unnormalized residual.** Sampling $\max(0, p - q)$ as if it summed to 1 runs off the end of the cumulative sums whenever the uniform exceeds the residual total, dumping the missing probability mass onto the clamped fallback token.
+- **Greedy drafts in sampling mode.** The acceptance ratio assumes $x \sim q$. Testing an argmax draft with $q[x]$ biases the output toward the draft model's top tokens.
+- **Counting total passes instead of a prefix.** A draft that passes after an earlier draft failed was conditioned on a rejected token and cannot be accepted.
+- **Broken $k$ updates.** Leaving $k$ fixed or allowing $k$ to drop to 0 without the floor of 1 disables speculation for the rest of the sequence.
+- **Trusting copied tokens.** Emitting prompt-lookup copies without target verification corrupts the output whenever the text stops repeating.
+- **Allowing a rejected copy to be redrawn.** Sampling the replacement from $p$ instead of $p$ with $x_n$ zeroed out gives $x_n$ probability $p[x_n] + (1 - p[x_n])\,p[x_n]$.
+- **Picking the latest lookup match.** Choosing the most recent n-gram match instead of the earliest changes the drafts and the `rounds` trace.
+- **Incorrect batch handling.** Truncating all rows to the minimum acceptance wastes rounds, decoding rows sequentially exceeds the call limit, and reading verification logits from the right edge of the padded tensor breaks shorter rows.
 
 ## Complexity
 
-With $R$ rounds and $D$ drafted tokens, the target processes $P + D + R$ tokens in
-$R$ calls and the draft at most $P + N + D_m$; plain decoding needs $N$ target
-calls. Lookup is $O(L \cdot n)$ list work per round for a sequence of length $L$
-(the direct search; a suffix automaton makes it constant per token). In a batch the
-number of calls is that of the slowest row, and the token count grows with how far
-the rows drift apart, because the lead of the faster rows is fed again each round;
-an engine with per-row cache lengths (an attention mask per row) avoids even that.
+Across $R$ rounds with $D$ total drafted tokens and $D_m$ model-drafted tokens, the target processes $P + D + R$ tokens in $R$ calls and the draft processes at most $P + N + D_m$ tokens. Standard autoregressive decoding requires $N$ target calls. Direct prompt lookup takes $O(L \cdot n_g)$ list comparisons per round on a sequence of length $L$, though a suffix automaton can reduce this to constant time per token. In batched mode, the number of target calls equals the round count of the slowest row. Total target tokens increase with the length gap between rows because faster rows reprocess their lead each round, which production engines avoid using per-row cache lengths and attention masks.
 
 ## In the wild
 
-- The acceptance rule and its proof are in "Fast Inference from Transformers via
-  Speculative Decoding" (ICML 2023, arXiv:2211.17192) and "Accelerating Large
-  Language Model Decoding with Speculative Sampling" (arXiv:2302.01318).
-- The heuristic length schedule is that of `transformers`' assisted generation
-  (`num_assistant_tokens_schedule="heuristic"`: plus 2 after a fully accepted round,
-  minus 1 otherwise); `problems/speculative/dynamic-draft-length` covers it together
-  with the confidence stop, which this capstone leaves out: on the kit's model pairs
-  it did not lower the cost at any threshold that was tried.
-- Prompt lookup decoding (`github.com/apoorvumang/prompt-lookup-decoding`) is
-  `prompt_lookup_num_tokens` in `transformers` and the n-gram speculator of vLLM.
-- Batched speculative decoding with per-row acceptance is the subject of "BASS:
-  Batched Attention-optimized Speculative Sampling" (arXiv:2404.15778), which
-  discusses the padding and ragged-tensor handling that the rectangular cache forces
-  here.
+- The speculative rejection-sampling rule and its exactness proof come from "Fast Inference from Transformers via Speculative Decoding" (ICML 2023, arXiv:2211.17192) and "Accelerating Large Language Model Decoding with Speculative Sampling" (arXiv:2302.01318).
+- The adaptive schedule (+2 on full acceptance, -1 otherwise) matches Hugging Face `transformers` assisted generation (`num_assistant_tokens_schedule="heuristic"`). `problems/speculative/dynamic-draft-length` pairs it with a confidence stop, which this capstone omits because it did not lower cost on the kit's model pairs at any tested threshold.
+- Prompt lookup decoding (`github.com/apoorvumang/prompt-lookup-decoding`) appears as `prompt_lookup_num_tokens` in `transformers` and as the n-gram speculator in vLLM.
+- Batched speculative decoding with ragged per-row acceptance is explored in "BASS: Batched Attention-optimized Speculative Sampling" (arXiv:2404.15778), which addresses the padding and ragged-tensor overhead of rectangular caches.

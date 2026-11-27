@@ -1,30 +1,12 @@
 ## The idea
 
-A growing cache carries its length in its shape. A static cache gives that up: the
-buffers are `max_len` long from the first step, and the three things that used to
-follow from the shape have to be said explicitly.
+A dynamically growing cache encodes its current length in its tensor shape. A static cache fixes the buffer length at `max_len` from the first step, so three things must be handled explicitly.
 
-**Where to write.** Slots `pos` to `pos + T - 1`. Written as a slice,
-`buffer[:, :, pos : pos + T] = k`, this needs the *value* of `pos` on the host,
-because a slice is built from Python integers; with `pos` on a GPU the host waits
-for the device at every step. `index_copy_(dim, index, source)` takes the slots as a
-tensor: `pos + arange(T)` is computed on the device, and the write is queued like any
-other kernel. `T` is not a problem: it is `k.shape[2]`, and shapes live on the host.
+**Where to write.** A block of `T` new tokens goes into slots `pos` through `pos + T - 1`. Writing with a slice such as `buffer[:, :, pos : pos + T] = k` requires Python integers as slice bounds, which forces a host read of `pos` and stalls the GPU at every step. Instead, `index_copy_(dim, index, source)` accepts a device tensor of slot indices. Computing `pos + arange(T)` stays entirely on the device, and the write is queued like any other kernel. Using `T = k.shape[2]` is free because tensor shapes already live on the host.
 
-**What to attend to.** Slots `0` to `pos + i` for the `i`-th new token. The unused
-tail cannot be sliced away without changing the shape, so it is masked: a bool row
-per query, `True` up to and including the query's own slot. The model writes
-$-\infty$ into the masked scores, the softmax turns them into exact zeros, and a
-zero weight times a finite value contributes nothing. The comparison
-`slots[None, :] <= (pos + arange(n_new))[:, None]` builds all rows at once, on the
-device, in a shape that depends only on `n_new`.
+**What to attend to.** The $i$-th new token can attend to slots `0` through `pos + i`. Because slicing away the unused tail would change the tensor shape, we hide it with a boolean mask that is `True` up to and including each query's slot. Setting masked scores to $-\infty$ before softmax produces exact zero weights, so finite values in unused slots contribute nothing. With `slots = arange(max_len)`, broadcasting `slots[None, :] <= (pos + arange(n_new))[:, None]` builds all mask rows in one device operation with a shape that depends only on `n_new`.
 
-**Which memory.** The same, always. `index_copy_` and `zero_` end in an underscore:
-they write into the tensor they are called on and allocate nothing. Their
-out-of-place twins return a new tensor; assigning that to `self.k[layer]` keeps the
-numbers right and silently turns the static cache back into an allocating one. It
-also breaks every consumer that captured the old tensor: a CUDA graph replays on the
-addresses it recorded, and would keep reading the buffer that is no longer updated.
+**Which memory to use.** The buffers allocated in `__init__` must be reused for the lifetime of the cache. In-place methods with a trailing underscore (`index_copy_` and `zero_`) modify the existing tensor without allocating. Their out-of-place counterparts return a new tensor. Rebinding `self.k[layer]` to that new tensor still produces the right numbers, but it allocates on every step and breaks consumers like CUDA graphs that hold fixed pointers to the original buffer addresses.
 
 ## Reference solution (PyTorch)
 
@@ -51,64 +33,32 @@ class StaticCache:
             buffer.zero_()
 ```
 
-`self._slots[:T]` is a view, and `pos + view` is a new `(T,)` tensor on the device:
-a few bytes per step, served from the allocator's cache. Nothing in the class
-depends on how many tokens are stored; the cache does not even keep a length. The
-caller owns the position, as a device tensor it increments in place.
+`self._slots[:T]` is a zero-copy view, and `pos + view` creates a tiny `(T,)` tensor on the device from the caching allocator. The cache does not even store a current length. Instead, the caller owns `pos` as a device tensor and increments it in place.
 
-If the mask is right, `reset` is not needed for correctness, since the next request
-masks whatever is left. It is specified because leaving one request's keys and
-values in memory that the next request's code can reach is a bug waiting for an
-off-by-one.
+With a correct mask, `reset` is not strictly required for numerical correctness because the next request masks out unvisited slots. Clearing the buffers is still good practice so an off-by-one bug cannot silently read keys and values from an earlier request.
 
 ## Common mistakes
 
-- **`torch.cat`.** Correct numbers; a new shape and two allocations per layer per
-  step.
-- **`index_copy` without the underscore, rebinding the buffer.** Correct numbers and
-  shapes; a full-size allocation and copy per write, and a new `data_ptr()`.
-- **`[torch.zeros(shape)] * n_layers`.** The list holds the same tensor `n_layers`
-  times, and every layer overwrites the others' keys.
-- **The mask with `<` instead of `<=`.** A token cannot see itself, and the first
-  token of a request sees nothing: its softmax is over $-\infty$ only, which is NaN.
-- **The mask one slot too wide.** The query attends to the first unused slot. With a
-  zero tail the logits are slightly off at every step; with a reused buffer the
-  model reads the previous request.
-- **One mask row for a whole block.** Giving every token of a prefill the visibility
-  of the block's last token lets tokens attend to their successors.
-- **No dependence on `pos` at all** (everything visible).
-- **`int(pos)` or `pos.item()`** to build a slice. One host synchronization per layer
-  per step.
-- **`pos` as a slice bound** (`buffer[:, :, pos:end].copy_(k)`). The same read,
-  hidden in the indexing code.
-- **`torch.arange(max_len)` without `device=`.** On a GPU it is a CPU tensor;
-  `.to(device)` afterwards repairs the device and costs a transfer.
-- **Buffers in the default dtype.** A float16 model with a float32 cache holds twice
-  the memory and converts at every read.
-- **Returning the filled prefix** (`buffer[:, :, :end]`). In-place writes, but a
-  shape that changes with the step and a host read to compute `end`.
-- **`reset` that allocates new buffers**, or that does nothing.
+- **Growing the cache with `torch.cat`.** The values match, but every step changes the shape and allocates two new tensors per layer.
+- **Calling `index_copy` without the trailing underscore and rebinding the buffer.** Numbers and shapes look right, but each write allocates a full-size copy and changes `data_ptr()`.
+- **Aliasing layers with `[torch.zeros(shape)] * n_layers`.** Every list entry points to the same tensor, so layers overwrite each other.
+- **Using `<` instead of `<=` in the mask.** A token cannot attend to itself, and the first token sees no valid slots, causing softmax over all $-\infty$ values to produce `NaN`.
+- **Making the mask one slot too wide.** Queries attend to the first unused slot. Against a zero tail this slightly skews logits, and against a reused buffer it reads stale data from the previous request.
+- **Sharing one mask row across a multi-token block.** Giving every token in a prefill block the visibility of the block's last token lets tokens attend to future tokens.
+- **Ignoring `pos` in the mask.** Making all slots visible attends to the entire unused buffer.
+- **Calling `int(pos)` or `pos.item()` to build a slice.** This triggers a host-device synchronization on every layer and step.
+- **Using `pos` as a slice bound (`buffer[:, :, pos:end].copy_(k)`).** Python slicing reads the tensor value onto the host under the hood.
+- **Calling `torch.arange(max_len)` without `device=`.** On a GPU this creates a CPU tensor, and calling `.to(device)` later adds an unnecessary host-to-device transfer.
+- **Leaving buffers in the default `float32` dtype.** A `float16` model with a `float32` cache doubles memory usage and converts dtypes on every read.
+- **Returning only the filled prefix (`buffer[:, :, :end]`).** Writes happen in place, but the returned shape changes on every step and computing `end` requires a host read.
+- **Allocating new buffers in `reset`, or leaving `reset` as a no-op.** Reallocating breaks fixed addresses, while doing nothing fails the zeroing requirement.
 
 ## Complexity
 
-`update` copies $O(B \cdot H \cdot T \cdot D)$ elements and allocates a `(T,)` index;
-`mask` is $O(\text{n\_new} \cdot \text{max\_len})$. Memory is fixed at
-$2 \cdot L \cdot B \cdot H \cdot \text{max\_len} \cdot D$ elements from construction
-on. The model's attention now runs over `max_len` slots at every step instead of
-over the current length; that is the price of the static shape, and it is small
-against a recompilation.
+Let $L = \text{n\_layers}$, $B = \text{batch}$, $H = \text{n\_kv\_heads}$, and $D = \text{head\_dim}$. `update` copies $O(B \cdot H \cdot T \cdot D)$ elements and allocates a `(T,)` index tensor. `mask` runs in $O(\text{n\_new} \cdot \text{max\_len})$ time and memory. Total cache memory is fixed from construction at $2 \cdot L \cdot B \cdot H \cdot \text{max\_len} \cdot D$ elements. Attention now scores all `max_len` slots at every step rather than only the filled prefix, which is a small cost compared to recompilation or losing CUDA graph capture.
 
 ## In the wild
 
-Hugging Face Transformers' `StaticCache` is this design: zero buffers of
-`max_cache_len` slots per layer, `index_copy_` at a `cache_position` tensor in
-`update`, in-place zeroing in `reset`, introduced so that `generate` can run under
-`torch.compile`. The next two problems of this track build on it for exactly the
-two consumers named above: a decode step compiled once, and a captured CUDA graph.
+Hugging Face Transformers implements `StaticCache` with this exact pattern: zero-initialized buffers of length `max_cache_len` per layer, `index_copy_` using a `cache_position` tensor in `update`, and in-place zeroing in `reset` so `generate` can run under `torch.compile`. The next two problems in this track build directly on this cache for a compiled decode step and a captured CUDA graph.
 
-What was verified where: on the CPU build of torch 2.15, `index_copy_` writes in
-place and keeps `data_ptr()`, an out-of-range index raises `IndexError`, and a
-tensor used as a slice bound reads its value (visible as `Tensor.item()` failing on
-the meta device). That the same read is a host synchronization on a GPU, and that
-reserved memory stays flat over a decode loop, are taken from the documentation; the
-GPU cases have not been run.
+Verification note: on the CPU build of PyTorch 2.15, `index_copy_` writes in place and preserves `data_ptr()`, an out-of-range index raises `IndexError`, and using a tensor as a slice bound reads its value (caught by `Tensor.item()` failing on the `meta` device). GPU host-synchronization behavior and flat reserved memory across decode steps follow the PyTorch documentation. The GPU cases have not been run on hardware.

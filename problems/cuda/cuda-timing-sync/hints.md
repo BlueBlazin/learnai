@@ -1,16 +1,8 @@
-When `fn()` returns, how much of its work has the device done? What has to happen
-before reading the clock a second time, so that the difference of the two readings
-contains the work? And what is the device still doing at the moment you read the
-clock the *first* time?
+When `fn()` returns, how much of its work has the device actually finished? What must happen before you read the clock a second time so the interval includes the device work? And what might the device still be doing when you read the clock the *first* time?
 
 ---
 
-Call `fn()` once and throw the call away: that is the warm-up. Then, for each of the
-`n` samples: wait for the device, read the clock, call `fn()`, wait for the device,
-read the clock again, and keep the difference. The first wait makes sure the timer
-starts with an idle device, so that the sample does not pay for the warm-up, for the
-previous call, or for work queued before `time_region` was called. The second wait
-puts this call's work inside the interval.
+Call `fn()` once and discard it as the warm-up. Then, for each of the `n` samples, wait for the device to finish, read the clock, call `fn()`, wait for the device to finish again, read the clock, and record the difference. The first wait ensures the device is idle at the start so the sample does not absorb the warm-up, the previous call, or any earlier queued work. The second wait ensures the interval includes the work queued by this call.
 
 ---
 
@@ -22,6 +14,4 @@ device_api.sync()
 samples.append(device_api.clock() - start)
 ```
 
-For the result, `statistics.median(samples)` does what the statement defines: it
-sorts, takes the middle value for an odd count, and averages the two middle values
-for an even count.
+For the return value, `statistics.median(samples)` sorts the durations, takes the middle value for an odd count, and averages the two middle values for an even count.

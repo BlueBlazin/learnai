@@ -1,9 +1,4 @@
-Write the logits processor that caps how long a reasoning model may think. It runs
-once per generated token, keeps track of where generation is (before the thinking
-span, inside it, closing it, or in the answer), and when the thinking-token budget
-is used up it takes the choice away from the model: the next tokens are the
-end-of-thinking sequence, one per step, and then the answer proceeds. The processor
-sees one token at a time, so everything it knows it has to carry in its state.
+Implement a logits processor that caps how many tokens a reasoning model may spend thinking. It runs once before each generated token, tracks the current generation phase, forces a fixed end-of-thinking sequence once the budget is used up, and applies an optional answer mask outside the thinking span.
 
 ## Specification
 
@@ -11,63 +6,49 @@ sees one token at a time, so everything it knows it has to carry in its state.
 def budget_step(state, token, logits, cfg): ...  # -> (state, logits)
 ```
 
-The generation loop calls `budget_step` once before each token is chosen:
+The generation loop calls `budget_step` once before each token is chosen, where $V$ is the vocabulary size:
 
 ```python
 state, token = None, None
 while generating:
-    raw = model(...)  # logits for the next token, shape (V,)
+    raw = model(...)  # next-token logits, shape (V,)
     state, logits = budget_step(state, token, raw, cfg)
     token = choose(logits)  # any token whose logit is not -inf
 ```
 
-- `state`: `None` on the first call; afterwards whatever the previous call
-  returned. Its form is yours to choose; the caller only passes it back.
-- `token`: `None` on the first call; afterwards the token (a Python int) that was
-  chosen from the logits the previous call returned.
-- `logits`: the model's raw logits for the next token, shape `(V,)`, finite.
-- `cfg`: a dict.
+- `state`: `None` on the first call, and whatever the previous call returned thereafter. Its structure is up to you, since the caller only passes it back unchanged.
+- `token`: `None` on the first call. On every subsequent call, it is the Python `int` token chosen from the previous call's returned logits.
+- `logits`: the model's finite raw logits for the next token.
+- `cfg`: a configuration dictionary with the following keys:
 
   | key | meaning |
   |---|---|
-  | `"start_id"` | the start-of-thinking token |
-  | `"end_id"` | the end-of-thinking token |
-  | `"forced"` | the **end sequence**: a list of one or more token ids, forced when the budget is used up. Its last element is `end_id`, which occurs nowhere else in it; `start_id` does not occur in it. |
-  | `"budget"` | the largest number of thinking tokens, an int $\ge 0$ |
-  | `"answer_mask"` | `None`, or a bool tensor of shape `(V,)`: the tokens the answer may contain (a stand-in for a structured-output constraint) |
+  | `"start_id"` | start-of-thinking token ID |
+  | `"end_id"` | end-of-thinking token ID |
+  | `"forced"` | the **end sequence**, a non-empty list of token IDs forced when the budget is exhausted. Its last element is `end_id`, which does not appear earlier in the list, and `start_id` does not appear in it at all. |
+  | `"budget"` | maximum number of thinking tokens, an integer $\ge 0$ |
+  | `"answer_mask"` | `None`, or a boolean tensor marking which tokens the answer may contain (a stand-in for a structured-output constraint) |
 
-- Returns `(state, logits)`: the new state, and a float32 tensor of shape `(V,)` in
-  which every token that may not come next is `-inf` and every other entry is the
-  raw logit, unchanged.
+- Returns `(state, logits)`, where `state` is the updated state and `logits` has `-inf` for every disallowed token and the original raw logit unchanged for every allowed token.
 
-**Phases.** A generation is in one of four phases. Each call first moves the phase
-forward by `token`, then processes the logits for the phase it is now in.
+**Phases.** Generation is always in one of four phases. Each call first advances the phase using `token`, and then masks `logits` according to the resulting phase. Let $u$ be the number of thinking tokens generated so far, and let $i$ be the number of tokens from `forced` generated so far.
 
-| phase | when | tokens that may come next |
+| phase | when | allowed next tokens |
 |---|---|---|
-| *start* | the first call: nothing has been generated | all, if `answer_mask` is `None`; otherwise the tokens of `answer_mask` and `start_id` |
-| *thinking* | inside the span, with $u$ thinking tokens so far, $u <$ `budget` | all (the answer mask does **not** apply) |
-| *forcing* | the budget is used up; $i$ tokens of the end sequence have been generated | only `forced[i]` |
-| *answer* | the span is closed, or was never opened | all, if `answer_mask` is `None`; otherwise the tokens of `answer_mask` |
+| *start* | first call, before any token is generated | all tokens if `answer_mask` is `None`, otherwise the tokens in `answer_mask` plus `start_id` |
+| *thinking* | inside the thinking span with $u <$ `budget` | all tokens (`answer_mask` does **not** apply) |
+| *forcing* | budget is exhausted, with $i$ tokens of `forced` already generated | only `forced[i]` |
+| *answer* | thinking span is closed, or was never opened | all tokens if `answer_mask` is `None`, otherwise the tokens in `answer_mask` |
 
-**Transitions**, by the token that was chosen:
+**Transitions.** On any call after the first, update the phase using `token`:
 
-1. From *start*: `start_id` opens the span (*thinking* with $u = 0$); any other
-   token is the first token of the answer (*answer*). A span can only open with
-   the first generated token.
-2. From *thinking*: `end_id` closes the span (*answer*): the model stopped on its
-   own, and nothing is forced. Any other token, `start_id` included, is a thinking
-   token: $u \leftarrow u + 1$.
-3. Whenever the phase is *thinking* and $u =$ `budget`, it becomes *forcing* with
-   $i = 0$ at once, before the logits are processed. With `budget = 0` this
-   happens in the call that receives `start_id`.
-4. From *forcing*: $i \leftarrow i + 1$; when $i$ reaches `len(forced)` the phase is
-   *answer*.
-5. *answer* is final. A `start_id` in the answer is an ordinary token.
+1. From *start*, `start_id` opens the thinking span and enters *thinking* with $u = 0$. Any other token is the first token of the answer and enters *answer*. A thinking span can only open on the first generated token.
+2. From *thinking*, `end_id` closes the span and enters *answer* without forcing anything. Any other token, including `start_id`, counts as a thinking token and increments $u \leftarrow u + 1$.
+3. Whenever the phase is *thinking* and $u =$ `budget`, transition immediately to *forcing* with $i = 0$ before masking `logits`. When `budget = 0`, this happens on the same call that receives `start_id`.
+4. From *forcing*, increment $i \leftarrow i + 1$. When $i$ reaches `len(forced)`, transition to *answer*.
+5. *answer* is terminal. A `start_id` appearing in the answer is treated as an ordinary token.
 
-So the thinking tokens are the tokens after `start_id` and before the end sequence
-or the model's own `end_id`; there are never more than `budget` of them, and the
-tokens of the end sequence do not count.
+Under these rules, thinking tokens are the tokens generated after `start_id` and before either `forced` or the model's own `end_id`. There are never more than `budget` thinking tokens, and tokens in `forced` do not count toward the budget.
 
 ## Shapes
 
@@ -79,58 +60,32 @@ tokens of the end sequence do not count.
 
 ## Example
 
-$V = 8$, `start_id = 6`, `end_id = 7`, `forced = [5, 7]` (token 5 stands for a short
-"time to answer" message), `budget = 2`, and an answer mask that allows tokens 0, 1,
-and 2. The loop chooses the largest remaining logit.
+Suppose $V = 8$, `start_id = 6`, `end_id = 7`, `forced = [5, 7]` (where token 5 represents a short cutoff message), `budget = 2`, and `answer_mask` allows tokens 0, 1, and 2. Assume the generation loop picks the largest non-`-inf` logit.
 
-| call | `token` | phase after moving | raw logits | may come next | chosen |
+| call | `token` | phase after transition | raw logits | allowed next | chosen |
 |---|---|---|---|---|---|
 | 1 | `None` | start | `[0.5, 0.1, 0.3, 2.0, 0.2, 0.0, 1.5, 0.4]` | 0, 1, 2, 6 | 6 |
 | 2 | 6 | thinking, $u = 0$ | `[0.1, 0.2, 0.0, 0.3, 1.2, 0.5, 0.4, 0.6]` | all | 4 |
 | 3 | 4 | thinking, $u = 1$ | `[0.3, 0.1, 0.2, 1.4, 0.5, 0.0, 0.6, 0.9]` | all | 3 |
-| 4 | 3 | $u = 2$: forcing, $i = 0$ | `[1.0, 0.2, 0.1, 0.4, 0.8, -0.5, 0.3, 0.6]` | 5 | 5 |
+| 4 | 3 | $u = 2 \rightarrow$ forcing, $i = 0$ | `[1.0, 0.2, 0.1, 0.4, 0.8, -0.5, 0.3, 0.6]` | 5 | 5 |
 | 5 | 5 | forcing, $i = 1$ | `[0.2, 0.9, 0.1, 0.3, 0.4, 0.5, 0.6, 0.0]` | 7 | 7 |
 | 6 | 7 | answer | `[0.1, 0.4, 0.7, 1.1, 0.9, 0.2, 1.3, 0.5]` | 0, 1, 2 | 2 |
 | 7 | 2 | answer | `[0.8, 0.3, 0.2, 0.1, 0.6, 0.4, 0.0, 1.0]` | 0, 1, 2 | 0 |
 
-Call 1 returns `[0.5, 0.1, 0.3, -inf, -inf, -inf, 1.5, -inf]`: the model's favorite,
-token 3, is not an answer token, and of what is left it prefers to think. Calls 2
-and 3 return the raw logits: tokens 4 and 3 are not answer tokens, and inside the
-span that does not matter. Call 4 receives the second thinking token, so the budget
-is used up, and returns `[-inf, -inf, -inf, -inf, -inf, -0.5, -inf, -inf]`: token 5
-keeps its logit, low as it is. Call 6 is the first call of the answer, and the mask
-is in force from that call on: the raw favorite there is token 6, which would have
-been another `start_id`.
+Call 1 returns `[0.5, 0.1, 0.3, -inf, -inf, -inf, 1.5, -inf]`. Token 3 has the highest raw logit, but it is masked out because it is neither in `answer_mask` nor `start_id`, so the loop chooses token 6 to start thinking. Calls 2 and 3 return the raw logits unchanged because `answer_mask` is suspended inside the thinking span, letting tokens 4 and 3 through. Call 4 receives the second thinking token, which exhausts the budget, so it returns `[-inf, -inf, -inf, -inf, -inf, -0.5, -inf, -inf]`, preserving token 5's raw logit. Call 6 is the first answer step, where `answer_mask` takes effect again and blocks token 6 even though it has the highest raw logit.
 
-Had the model chosen token 7 in call 3, call 4 would already be in the answer phase,
-with nothing forced. With `budget = 0`, call 2 would return the row that only
-allows token 5.
+If the model had chosen token 7 on call 3 instead, call 4 would have entered *answer* directly without forcing anything. With `budget = 0`, call 2 would immediately enter *forcing* and allow only token 5.
 
 ## Constraints
 
-- $4 \le V \le 64$, $0 \le$ `budget`, `1 <= len(forced) <= 4`. The raw logits are
-  finite.
-- The returned logits are compared with the reference's: the same entries must be
-  `-inf`, and the others must equal the raw logits (`rtol = 1e-4`, `atol = 1e-6`).
-- The loop only ever chooses a token whose returned logit is not `-inf`. In most
-  cases the test chooses the tokens; a wrong row is reported at the first call that
-  produced one.
-- **Cost.** In the model-run cases your processor steers a
-  [`TinyLM`](../../../python/src/learnai/kit/tinylm.py) by itself (the next token
-  is the argmax of the row you return). The run must open the span, let at most
-  `budget` thinking tokens through (reported as `thinking_tokens`), close the span
-  with the complete end sequence, and keep the answer inside the mask.
-- Do not modify `cfg` or the `logits` argument.
+- $4 \le V \le 64$, $0 \le$ `budget`, and `1 <= len(forced) <= 4`. Raw logits are finite.
+- Returned logits are checked against the reference processor. The exact same positions must be `-inf`, and all other positions must match the raw logits within `rtol = 1e-4` and `atol = 1e-6`.
+- The generation loop only ever chooses a token whose returned logit is not `-inf`. In most test cases, the test harness supplies the chosen tokens and reports a failure on the first call whose output is wrong.
+- **Cost.** In the model-run test cases, your processor steers a [`TinyLM`](../../../python/src/learnai/kit/tinylm.py) by itself, with the next token chosen as the argmax of your returned logits. The run must open the thinking span, allow at most `budget` thinking tokens (reported as `thinking_tokens`), close the span with the complete `forced` sequence, and keep all answer tokens inside `answer_mask`.
+- Do not modify `cfg` or the `logits` argument in place.
 
 ## Why this matters
 
-A reasoning model decides for itself how long to think, and the serving engine
-pays for it: thinking tokens occupy a batch slot, count against `max_tokens`, and
-delay the first token of the answer a user is waiting for. A thinking budget turns
-that into a bound the operator controls, and it is enforced exactly here, between
-the model's logits and the sampler. The details are what production bugs are made
-of. Force only the first token of a multi-token end marker and the span never
-closes, so the parser files the whole answer under reasoning. Count the wrong
-tokens and the budget is off by one on every request. Apply the JSON grammar while
-the model is still thinking and it has to reason in JSON; forget to apply it on the
-first answer token and the "guaranteed" structure starts with prose.
+Reasoning models choose how long to think, and every thinking token consumes a serving batch slot, counts against `max_tokens`, and delays the first answer token. A thinking-token budget gives operators a hard upper bound enforced right between the model's logits and the sampler.
+
+Small bugs in this processor cause silent production failures. Forcing only the first token of a multi-token end marker leaves the thinking span unclosed, so the output parser classifies the entire answer as reasoning. Miscounting tokens makes every request off by one. Applying a JSON grammar during thinking forces the model to reason in JSON, while applying it one token too late lets unconstrained prose slip into the start of a structured output.

@@ -1,20 +1,10 @@
-Which tensors does `run` receive, and which does it have to make? For every tensor it
-makes, ask where it will live if you say nothing, and what happens when it meets a
-tensor that lives somewhere else. For the mask: can you say "position `t` is before
-the end of row `b`" as one comparison between two tensors, without ever asking what
-the lengths are?
+Which tensors does `run` receive, and which ones does it create itself? For every tensor it creates, consider which device it lands on if you omit `device=`, and what happens when it interacts with tensors on another device. For the padding mask, think about how to test whether position `t` is before the end of row `b` using a single tensor comparison without ever reading `lengths` into Python.
 
 ---
 
-`to_device` is a recursion with four cases: a tensor (move it), a dict (rebuild it
-from its items), a list or tuple (rebuild it with `type(batch)(...)`), anything else
-(return it). Call it first in `run`, on the whole of `inputs`.
+Write `to_device` as a recursive function with four cases: move a tensor with `.to(device)`, rebuild a `dict` from its items, rebuild a `list` or `tuple` with `type(batch)(...)`, and return any other value unchanged. Call `to_device` on the entire `inputs` dictionary at the start of `run`.
 
-Then create the position ids with `torch.arange(T, device=device)`; `T` comes from
-`tokens.shape[1]`, which is a Python int and costs nothing to read. Broadcasting the
-positions as a row against the lengths as a column gives the `(B, T)` mask on the
-device. Do not convert the mask or the lengths with `.float()`: multiplying a float
-tensor by a boolean one, and dividing it by an integer one, keeps the float's dtype.
+Next, create position IDs with `torch.arange(T, device=device)`, where `T = tokens.shape[1]` is a Python `int` that requires no device read. Broadcast the positions as a row against `lengths` as a column to form a `(B, T)` boolean mask on `device`. Avoid calling `.float()` on the mask or lengths, because multiplying a float tensor by a `bool` tensor and dividing by an integer tensor both preserve the float's dtype.
 
 ---
 
@@ -25,4 +15,4 @@ valid = positions[None, :] < lengths[:, None]  # (B, T), bool, on the device
 pooled = (h * valid[:, :, None]).sum(dim=1) / lengths[:, None]
 ```
 
-The logits are `pooled @ weights["w_out"].T` plus the bias from the moved inputs.
+Finally, compute the logits as `pooled @ weights["w_out"].T + inputs["head"]["bias"]`.

@@ -1,7 +1,4 @@
-Implement the forward pass of a decoder in the shape of the Qwen3.5 text models, where
-three of every four layers are Gated DeltaNet layers and the fourth is a gated attention
-layer, so that it can continue a sequence. The two kinds of layer carry two kinds of
-state, a fixed-size one and a growing one, and one call has to thread both.
+Implement the forward pass of a hybrid decoder modeled on the Qwen3.5 text architecture, where three of every four layers are Gated DeltaNet layers and the fourth is a gated attention layer. Your implementation must support sequence continuation by threading both fixed-size recurrent states and growing key-value caches across calls.
 
 ## Specification
 
@@ -10,107 +7,68 @@ def layer_types(n_layers, interval): ...  # -> list of str
 def hybrid_forward(params, cfg, tokens, state): ...  # -> (logits, state)
 ```
 
-**`layer_types`** returns the kind of each layer as a list of `n_layers` strings: layer
-$i$, counted from 0, is `"full_attention"` when $(i + 1) \bmod \texttt{interval} = 0$ and
-`"linear_attention"` otherwise ($\texttt{n\_layers} \ge 1$, $\texttt{interval} \ge 1$).
+### `layer_types`
 
-**`hybrid_forward`** runs $T$ new tokens through the model. `cfg` is a
-[`HybridConfig`](../../../python/src/learnai/kit/hybrid.py); write $D$ for `d_model`,
-$H$ for `n_heads`, $G$ for `n_kv_heads`, and $d$ for `head_dim` (a field of its own:
-$H d$ need not equal $D$). The kind of layer $i$ is `cfg.layers[i]`: the config's
-explicit `layer_types` when it has one, and otherwise the interval rule above with
-`cfg.full_attention_interval`. `params` maps the checkpoint's tensor names to float32
-weights; linear weights are `(out, in)`, applied as `x @ W.T`, and there are no biases.
-$P$ is the number of tokens the state has already seen (0 for a new sequence).
+Return a list of `n_layers` strings identifying the mixer type of each layer, for `n_layers >= 1` and `interval >= 1`. Layer $i$ (0-indexed) is `"full_attention"` when $(i + 1) \bmod \texttt{interval} = 0$, and `"linear_attention"` otherwise.
 
-1. **Embed.** $x = E[\texttt{tokens}]$ with $E$ = `model.embed_tokens.weight`, shape
-   $(T, D)$, not scaled.
-2. **Blocks.** For each layer $i$ in order, with the weights `model.layers.{i}.*`:
+### `hybrid_forward`
+
+Run $T \ge 1$ new token IDs (`tokens`, integers in `[0, cfg.vocab_size)`) through the model given a checkpoint parameter dictionary `params`, a [`HybridConfig`](../../../python/src/learnai/kit/hybrid.py) `cfg`, and the previous `state`.
+
+Write $D$ for `cfg.d_model`, $H$ for `cfg.n_heads`, $G$ for `cfg.n_kv_heads`, and $d$ for `cfg.head_dim` (note that $H d$ need not equal $D$). Let $P$ be the number of tokens already processed in `state`, with $P = 0$ for a new sequence. The type of layer $i$ is given by `cfg.layers[i]`, which uses the config's explicit `layer_types` list if present and otherwise applies the interval rule above with `cfg.full_attention_interval`. Linear weights in `params` have shape `(out, in)`, are applied as `x @ W.T`, and have no biases.
+
+1. **Embed.** Look up token embeddings $x = E[\texttt{tokens}]$ with $E =$ `model.embed_tokens.weight`, of shape `(T, D)`, without scaling.
+2. **Decoder blocks.** For each layer $i = 0, \dots, \texttt{cfg.n\_layers} - 1$, apply the layer's mixer and MLP using weights under `model.layers.{i}.`:
 
 $$
 x \leftarrow x + \operatorname{Mix}_i\bigl(\operatorname{RMSNorm}(x;\, g_1)\bigr), \qquad
 x \leftarrow x + \operatorname{MLP}_i\bigl(\operatorname{RMSNorm}(x;\, g_2)\bigr),
 $$
 
-   with $g_1$ = `input_layernorm.weight` and $g_2$ = `post_attention_layernorm.weight`.
-   Every RMSNorm of the model, the two inside attention included, is
-   `ops.rms_norm(x, weight, cfg.norm_eps)`: the weight is a plain gain. The MLP is
-   `ops.swiglu(u, gate_proj, up_proj, down_proj)` with the three `mlp.*` weights.
-3. **Head.** $\text{logits} = \operatorname{RMSNorm}(x;\, g)\,E^\top$ with $g$ =
-   `model.norm.weight`. The head is tied to the embedding.
+   where $g_1 =$ `input_layernorm.weight` and $g_2 =$ `post_attention_layernorm.weight`. Every RMSNorm in the model, including the two inside attention, uses `ops.rms_norm(x, weight, cfg.norm_eps)` with a plain multiplicative gain. The MLP uses `ops.swiglu(u, gate_proj, up_proj, down_proj)` with the three `mlp.*` weights.
+3. **Output head.** Apply the final norm with $g =$ `model.norm.weight` and project through the tied embedding matrix: $\text{logits} = \operatorname{RMSNorm}(x;\, g)\,E^\top$. Row $t$ of `logits` scores the next token after position $P + t$.
 
-**A linear-attention mixer** is the layer of `gated-delta-layer`, from the kit:
-`ops.gated_delta_layer(u, weights, layer_state, cfg.n_key_heads, cfg.norm_eps)` returns
-`(out, (conv_state, S))`. `weights` maps the nine names of that problem
-(`in_proj_qkv.weight`, `in_proj_z.weight`, `in_proj_a.weight`, `in_proj_b.weight`,
-`conv1d.weight`, `A_log`, `dt_bias`, `norm.weight`, `out_proj.weight`) to the tensors
-stored under `model.layers.{i}.linear_attn.`; `layer_state` is `None` or the pair an
-earlier call returned.
+#### Linear-attention mixer
 
-**A full-attention mixer** is gated attention. For a normalized input $u$ of shape
-$(T, D)$, with the weights under `model.layers.{i}.self_attn.`:
+For a `"linear_attention"` layer with normalized input $u$ of shape `(T, D)`, call the kit's Gated DeltaNet layer from `gated-delta-layer`:
 
-1. **Project.** $u\,W_q^\top$ has $2 d H$ columns. Head $h$ owns columns $2 d h$ to
-   $2 d h + 2 d - 1$: the first $d$ of them are its query $q_h$, the last $d$ its gate
-   $\gamma_h$. $u\,W_k^\top$ and $u\,W_v^\top$ have $d\,G$ columns; key-value head $j$
-   owns columns $d j$ to $d j + d - 1$.
-2. **Normalize** each query with `q_norm.weight` and each key with `k_norm.weight`, an
-   RMSNorm over the $d$ channels of one head. Values and gates are not normalized.
-3. **Rotate** queries and keys, not values, with
-   `ops.partial_rope(x, positions, cfg.rope_base, cfg.partial_rotary_factor)`, the
-   function of `partial-rope`: the first $\lfloor d \cdot \texttt{factor} \rfloor$
-   channels of a head rotate and the rest pass through. Row $t$ of this call is the
-   token at position $P + t$.
-4. **Attend.** The keys and values of this call follow the cached ones, giving $P + T$
-   per key-value head. The query at position $p$ attends to the keys at positions
-   $0, \dots, p$; query head $h$ uses key-value head $\lfloor h / (H / G) \rfloor$; scores
-   are divided by $\sqrt d$. This is `ops.attention(q, k, v, mask)` for `q` of shape
-   $(H, T, d)$, `k` and `v` of shape $(G, P + T, d)$, and a boolean `mask` of shape
-   $(T, P + T)$ that is `True` where a query may attend. Call the result $a$,
-   $(H, T, d)$.
-5. **Gate and project.** With heads laid side by side in head order,
+```python
+out, (conv_state, S) = ops.gated_delta_layer(u, weights, layer_state, cfg.n_key_heads, cfg.norm_eps)
+```
+
+Here `weights` maps the nine keys of `gated-delta-layer` (`in_proj_qkv.weight`, `in_proj_z.weight`, `in_proj_a.weight`, `in_proj_b.weight`, `conv1d.weight`, `A_log`, `dt_bias`, `norm.weight`, `out_proj.weight`) to the corresponding tensors under `model.layers.{i}.linear_attn.`. The `layer_state` argument is `None` for a new sequence or the `(conv_state, S)` pair returned by the previous call.
+
+#### Full-attention mixer
+
+For a `"full_attention"` layer with normalized input $u$ of shape `(T, D)` and weights under `model.layers.{i}.self_attn.`, compute gated grouped-query attention in five steps:
+
+1. **Project.** Compute $u\,W_q^\top$ (using `q_proj.weight`), which has $2 d H$ columns. Head $h$ owns columns $2 d h$ through $2 d h + 2 d - 1$. Its first $d$ columns are the query $q_h$, and its last $d$ columns are the gate $\gamma_h$. Compute $u\,W_k^\top$ and $u\,W_v^\top$ (using `k_proj.weight` and `v_proj.weight`), each with $d G$ columns, where key-value head $j$ owns columns $d j$ through $d j + d - 1$.
+2. **Normalize.** Apply `ops.rms_norm` with `q_norm.weight` to each query and `k_norm.weight` to each key, normalizing across the $d$ channels of each head. Do not normalize values or gates.
+3. **Rotate.** Rotate queries and keys (not values) with `ops.partial_rope(x, positions, cfg.rope_base, cfg.partial_rotary_factor)`. This rotates the first $\lfloor d \cdot \texttt{factor} \rfloor$ channels of each head and leaves the rest unchanged. Row $t$ of this call sits at sequence position $P + t$.
+4. **Attend.** Append the new keys and values after the cached keys and values along the sequence axis, giving $P + T$ positions per key-value head. Each query at position $p$ attends to keys at positions $0, \dots, p$. Query head $h$ uses key-value head $\lfloor h / (H / G) \rfloor$, and scores are divided by $\sqrt{d}$. Compute this with `ops.attention(q, k, v, mask)`, where `q` has shape `(H, T, d)`, `k` and `v` have shape `(G, P + T, d)`, and `mask` is a boolean tensor of shape `(T, P + T)` that is `True` where a query may attend. Call the resulting tensor $a$, of shape `(H, T, d)`.
+5. **Gate and project.** Multiply each head's attention output by the logistic sigmoid $\sigma$ of its gate, concatenate all heads in head order, and project with $W_o^\top$ (using `o_proj.weight`):
 
 $$
-\text{out}_t = \bigl[\,a_{0,t} \odot \sigma(\gamma_{0,t}),\ \dots,\ a_{H-1,t} \odot \sigma(\gamma_{H-1,t})\,\bigr]\;W_o^\top ,
+\text{out}_t = \bigl[\,a_{0,t} \odot \sigma(\gamma_{0,t}),\ \dots,\ a_{H-1,t} \odot \sigma(\gamma_{H-1,t})\,\bigr]\;W_o^\top .
 $$
 
-   where $\sigma$ is the logistic sigmoid.
-
-The layer's state is `(k, v)`: the keys **after the norm and the rotation** and the
-values, each of shape $(G, P + T, d)$.
+The layer's returned state is `(k, v)`, where `k` holds the keys **after normalization and rotation** and `v` holds the values, each of shape `(G, P + T, d)`.
 
 ![The state of a four-layer model after four tokens. Each linear-attention layer keeps a pair of fixed size, and the attention layer keeps a key and a value per token.](assets/two-kinds-of-state.svg)
 
-Arguments and results:
+#### State and immutability
 
-- `tokens`: integer tensor of shape `(T,)`, $T \ge 1$, ids in `[0, cfg.vocab_size)`.
-- `state`: `None` for a new sequence, or the list returned by the call that read the
-  tokens before these. It has one entry per layer, in layer order: the pair
-  `(conv_state, S)` of a linear-attention layer or the pair `(k, v)` of a
-  full-attention layer. Nothing else is stored: $P$ is the length of the cached `k` of
-  any full-attention layer. A model may have no such layer (an interval larger than
-  `n_layers`); its state then holds only `(conv_state, S)` pairs, there is no $P$ to
-  read, and none is needed, because only the attention mixer uses positions. A model
-  may equally consist of attention layers only.
-- Returns `(logits, state)`: float32 logits of shape `(T, cfg.vocab_size)`, where row
-  $t$ scores the token after position $P + t$, and the state after these tokens as a
-  new list.
-- Nothing passed in is modified, neither a tensor nor the state list: a caller may
-  continue twice from one state.
+- `state` is `None` for a new sequence, or the list returned by the previous call. It has one entry per layer in layer order: `(conv_state, S)` for a linear-attention layer, and `(k, v)` for a full-attention layer.
+- Nothing else is stored in `state`. Determine $P$ from the sequence length of the cached `k` in any full-attention layer. A model may have no full-attention layers (when `interval > n_layers`), in which case no $P$ is needed because only attention uses positions. A model may also consist exclusively of full-attention layers.
+- Return `(logits, new_state)`, where `new_state` is a fresh list. Do not modify any input tensor or the caller's `state` list in place, because a caller may branch twice from the same state.
 
-The kit's `ops` functions named above are the intended building blocks. Do not call
-`hybrid_forward_ref` or `gated_attention_ref`.
+Use the kit's `ops` functions named above as building blocks. Do not call `hybrid_forward_ref` or `gated_attention_ref`.
 
-**Stages.** The tests are grouped. Stage 1 calls only `layer_types`. Stage 2 calls
-`hybrid_forward` with `state=None` and reads only the logits, so it passes before a
-correct state is returned. Stage 3 checks the returned state and feeds it back.
+**Test stages.** Tests run in three stages. Stage 1 tests only `layer_types`. Stage 2 calls `hybrid_forward` with `state=None` and checks only `logits`. Stage 3 checks the returned `state` and passes it into subsequent calls.
 
 ## Shapes
 
-For a linear-attention layer, as in `gated-delta-layer`: $K$ = `cfg.conv_kernel`,
-$H_v$ = `cfg.n_value_heads`, $d_v$ = `cfg.value_head_dim`, $d_k$ = `cfg.key_head_dim`,
-and $C = 2\,\texttt{n\_key\_heads}\,d_k + H_v d_v$ (`cfg.gdn.conv_dim`) is the width of
-its convolution.
+For a linear-attention layer (matching `gated-delta-layer`), let $K =$ `cfg.conv_kernel`, $H_v =$ `cfg.n_value_heads`, $d_v =$ `cfg.value_head_dim`, $d_k =$ `cfg.key_head_dim`, and $C = 2\,\texttt{cfg.n\_key\_heads}\,d_k + H_v d_v$ (`cfg.gdn.conv_dim`).
 
 | name | shape | dtype |
 |---|---|---|
@@ -136,8 +94,7 @@ layer_types(6, 2)  # linear, full, linear, full, linear, full
 layer_types(3, 1)  # ["full_attention", "full_attention", "full_attention"]
 ```
 
-A two-layer model (a linear-attention layer, then an attention layer) in the kit's
-default sizes:
+Consider a two-layer model (one linear-attention layer followed by one full-attention layer) using the kit's default sizes:
 
 ```python
 # `tensor` stands for your framework's integer tensor, and `params` for its float32 weights.
@@ -153,7 +110,7 @@ logits, state = hybrid_forward(params, cfg, tensor([3, 1, 4, 1, 5, 9]), None)
 #                  [ 0.675812, -1.043934, 0.745240, -0.798664]]
 ```
 
-In two calls:
+Running the first two tokens in two separate calls:
 
 ```python
 _, state = hybrid_forward(params, cfg, tensor([3]), None)
@@ -162,35 +119,15 @@ logits, state = hybrid_forward(params, cfg, tensor([1]), state)
 # logits[:, :4] = row 1 above;  state[1] = (k (2, 2, 16), v (2, 2, 16))
 ```
 
-In the second call the token `1` sits at position 1 and attends to keys 0 and 1. In
-layer 0 the convolution reads two rows of zeros and the saved row of the token `3`
-before its own.
+In the second call, token `1` sits at position 1 and attends to keys 0 and 1. In layer 0, the convolution reads two rows of zeros and the saved row for token `3` before its own input.
 
 ## Constraints
 
-- Every test uses the default sizes of `HybridConfig` (model width 32, 4 query heads on
-  2 key-value heads of width 16, delta layers with 2 key heads and 4 value heads of
-  width 8, kernel 4, vocabulary 64) and `tie_embeddings = True`. A sequence has at most
-  8 tokens, a model at most 8 layers.
-- Read `cfg.norm_eps` ($10^{-6}$ to $0.3$), `cfg.rope_base` ($50$ to $10^7$),
-  `cfg.partial_rotary_factor` (0.25 or 0.5), and `cfg.layers` from the config.
-- Logits and every state tensor are compared with relative tolerance `5e-4` and absolute
-  tolerance `5e-4`, against the reference, the kit's `hybrid_forward_ref`, and the logits
-  and cache of a `Qwen3_5ForCausalLM` in Hugging Face Transformers holding the same
-  weights. The library sums in another order and runs the delta rule in chunks; the
-  largest difference measured between it and a correct solution is below `4e-5`.
-- Any split of a sequence into consecutive calls, each given the state the previous one
-  returned, gives the logits and the final state of a single call, to the same
-  tolerance. The splits of 8 tokens that are tested are 6 + 1 + 1 and 1 + 1 + 1 + 5 (a
-  first call of one token, and calls shorter than the $K - 1 = 3$ rows of convolution
-  state), and a continuation of 3 tokens by 5.
+- Every test uses the default sizes of `HybridConfig` (model width 32, 4 query heads on 2 key-value heads of width 16, delta layers with 2 key heads and 4 value heads of width 8, kernel size 4, vocabulary 64) and `tie_embeddings = True`. Sequences have at most 8 tokens, and models have at most 8 layers.
+- Read `cfg.norm_eps` ($10^{-6}$ to $0.3$), `cfg.rope_base` ($50$ to $10^7$), `cfg.partial_rotary_factor` (`0.25` or `0.5`), and `cfg.layers` from `cfg`.
+- Logits and every state tensor are compared with relative tolerance `5e-4` and absolute tolerance `5e-4` against the reference, the kit's `hybrid_forward_ref`, and the logits and cache of `Qwen3_5ForCausalLM` in Hugging Face Transformers with the same weights. Because the library sums in a different order and runs the delta rule in chunks, the largest measured difference against a correct solution is below `4e-5`.
+- Any split of a sequence into consecutive calls, passing each returned state to the next call, must match a single call on the full sequence to the same tolerance. Tested splits include `6 + 1 + 1`, `1 + 1 + 1 + 5` (covering single-token starts and calls shorter than the $K - 1 = 3$ convolution state rows), and `3 + 5`.
 
 ## Why this matters
 
-A serving stack written for attention assumes that state is a cache: it grows by one
-entry per token, can be truncated to roll back, and can be rebuilt by running the prompt
-again. In Qwen3.5-0.8B, 18 of 24 layers break each of those assumptions, and the 6
-attention layers still need all of them. A decode loop that treats the per-layer state
-as one opaque kind either restarts the recurrent layers at every call or forgets where
-in the sequence the attention layers are; both produce fluent, wrong text, and both
-pass every test that calls the model once.
+A serving stack built for pure attention assumes every layer's state is a key-value cache that grows by one entry per token, can be truncated to roll back, and can be rebuilt from the prompt alone. In Qwen3.5-0.8B, 18 of the 24 layers break all three assumptions, while the 6 attention layers still require them. A decode loop that handles per-layer state uniformly either resets the recurrent layers on every step or loses track of sequence positions in the attention layers. Both bugs pass single-call tests and silently generate fluent but wrong text during decoding.

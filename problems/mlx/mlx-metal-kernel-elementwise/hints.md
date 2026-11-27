@@ -1,23 +1,12 @@
-A kernel is a function that runs once per thread, and the only thing that
-distinguishes one thread from another is `thread_position_in_grid`. If every thread
-handles one element, how many threads does an array of shape `(64, 48)` need, and
-which number does a thread need to find its element in a row-major buffer? Does the
-shape matter at all?
+A Metal kernel runs once per thread, and `thread_position_in_grid` is the only value that distinguishes one thread from another. If each thread computes one output element, how many threads does a `(64, 48)` array need, and what index does a thread use in a row-major buffer? Does the tensor's multi-dimensional shape matter at all?
 
 ---
 
-Launch `a.size` threads in a one-dimensional grid, `grid=(a.size, 1, 1)`, and let
-thread `elem = thread_position_in_grid.x` read `a[elem]` and `b[elem]` and write
-`out[elem]`. Leave `ensure_row_contiguous` at its default so that a strided view is
-copied into row-major order before the kernel runs. Pass the dtype of the inputs as
-a template parameter (`template=[("T", a.dtype)]`) and as the output dtype, and
-write the sigmoid as `x / (1 + exp(-x))`: the form `exp(x) / (1 + exp(x))` is
-`inf / inf` once `exp(x)` overflows. A 0-d array cannot be indexed inside a kernel;
-reshape it to one element first and reshape the result back.
+Launch `a.size` threads in a 1-D grid with `grid=(a.size, 1, 1)`. Let each thread compute `elem = thread_position_in_grid.x`, read `a[elem]` and `b[elem]`, and write `out[elem]`. Leave `ensure_row_contiguous` at its default (`True`) so MLX copies strided views into row-major order before dispatch. Pass the input dtype both in `template=[("T", a.dtype)]` and in `output_dtypes=[a.dtype]`. Write `silu(x)` as `x / (1 + exp(-x))`, because writing the sigmoid as `exp(x) / (1 + exp(x))` turns into `inf / inf` once `exp(x)` overflows. Finally, reshape 0-D inputs to `(1,)` before calling the kernel and reshape the output back to `()`, since 0-D arrays cannot be subscripted inside a Metal kernel.
 
 ---
 
-The body and the call:
+The kernel body and dispatch call:
 
 ```python
 source = """
@@ -39,5 +28,4 @@ out = kernel(
 )[0]
 ```
 
-Build the kernel once, outside the function. For `a.ndim == 0`, call it on
-`a.reshape(1)` and `b.reshape(1)` and return `out.reshape(())`.
+Construct `kernel` once outside `fused_silu_mul`. When `a.ndim == 0`, run the kernel on `a.reshape(1)` and `b.reshape(1)`, then return `out.reshape(())`.

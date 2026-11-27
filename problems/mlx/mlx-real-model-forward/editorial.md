@@ -1,14 +1,10 @@
 ## The idea
 
-Two things have to be right, and they are checked separately.
+This problem has two independent requirements: matching the checkpoint's parameter tree and assembling the forward pass from MLX's fused kernels.
 
-**The tree is the loader.** `mlx.nn.Module` is a dict. Assigning a module to
-`self.name` adds a key; a Python list of modules adds integer keys; an array is a
-parameter. `tree_flatten(model.parameters())` walks it and joins the keys with dots.
-If those dotted paths are the checkpoint's tensor names, `load_weights(path,
-strict=True)` is the entire loader: it reads the names from the file, checks that the
-two sets are equal and that every shape matches, and swaps the arrays in. So the
-constructor is written by reading the checkpoint's header, not the paper:
+**Matching the parameter tree.** In MLX, an `nn.Module` behaves like a nested dictionary. Assigning a submodule to `self.name` creates a string key, a Python list of submodules creates integer keys, and an array attribute becomes a parameter. `tree_flatten(model.parameters())` walks this hierarchy and joins keys with dots.
+
+If those dotted paths match the checkpoint's tensor names, `load_weights(path, strict=True)` handles loading on its own. It verifies that the name sets and shapes match, then swaps in the checkpoint arrays. The checkpoint header defines the exact tree:
 
 ```
 model.embed_tokens.weight
@@ -19,27 +15,15 @@ model.layers.{0..27}.shared_mlp.{input,output}_linear.weight
 model.norm.weight
 ```
 
-226 tensors, eight per layer plus two. There is no `lm_head.weight` because the head
-is tied, and therefore the module must not have that parameter either: strict
-loading fails on a parameter the file does not provide. Things that are not arrays
-(the multipliers, head counts, an `nn.RoPE` instance, which has no parameters) can
-be attributes anywhere without adding a name.
+For Granite 4.0 350M, that is 226 tensors (8 per layer plus the embedding and final norm). Because the embeddings are tied, `lm_head.weight` is absent from the file and must also be absent from the module, or strict loading will fail. Non-array attributes such as Python floats (multipliers, head counts) and parameter-free modules like `nn.RoPE` do not appear in `parameters()`.
 
-**The forward pass is three kernels and the config.**
+**Fused kernels and config constants.** Three MLX primitives cover the core operations:
 
-- `nn.RMSNorm(d_model, eps=cfg.norm_eps)` calls `mx.fast.rms_norm`.
-- `nn.RoPE(head_dim, traditional=False, base=cfg.rope_theta)` calls `mx.fast.rope`.
-  `traditional=False` is the half-split layout this checkpoint uses; the default base
-  is 10,000, and Granite's is 10,000,000.
-- `mx.fast.scaled_dot_product_attention(q, k, v, scale=cfg.attention_scale,
-  mask="causal")` does grouped-query attention itself when `k` and `v` have fewer
-  heads than `q`, so the 4 key/value heads are passed as 4. The scale is whatever
-  the config says: $1/64$ here, which is $1/\texttt{head\_dim}$ and not
-  $1/\sqrt{\texttt{head\_dim}}$.
+- `nn.RMSNorm(d_model, eps=cfg.norm_eps)` dispatches to `mx.fast.rms_norm`.
+- `nn.RoPE(head_dim, traditional=False, base=cfg.rope_theta)` dispatches to `mx.fast.rope`. Setting `traditional=False` selects the half-split layout used by this checkpoint, and passing `base=cfg.rope_theta` overrides the default of 10,000 with Granite's 10,000,000.
+- `mx.fast.scaled_dot_product_attention(q, k, v, scale=cfg.attention_scale, mask="causal")` handles grouped-query attention natively when `k` and `v` have fewer heads than `q`, so the 4 key/value heads can be passed directly. The `scale` argument takes `cfg.attention_scale` ($1/64 = 1/\texttt{head\_dim}$ here, not $1/\sqrt{\texttt{head\_dim}}$).
 
-Everything else is the list from `real-model-logits`: the embedding times 12, both
-branches times 0.263, the fused gate-and-up matrix with the gate rows first, the
-embedding matrix as the head, the logits divided by 4.
+The remaining steps apply the config constants from `real-model-logits`: multiply embeddings by `embedding_multiplier`, multiply both residual branches by `residual_multiplier`, split the fused MLP projection with `gate` first and `up` second, reuse the embedding matrix when tied, and divide the final logits by `logits_scaling`.
 
 ## Reference solution (MLX)
 
@@ -121,16 +105,11 @@ class Granite(nn.Module):
         return logits / self.logits_scaling
 ```
 
-Constructing the module allocates nothing that matters: `nn.Linear` and
-`nn.Embedding` create lazy random arrays, and `load_weights` replaces them before
-anything is evaluated. `mx.load` is lazy too, so the 705 MB are read when the
-parameters are first evaluated.
+Constructing `Granite` does not allocate real weight memory. `nn.Linear` and `nn.Embedding` create lazy random arrays that `load_weights` replaces before evaluation, and `mx.load` reads the 705 MB file lazily when parameters are first evaluated.
 
 ## Which 16 bits
 
-The checkpoint is bfloat16, and a model that computes in the dtype of its parameters
-can run it as stored. Measured on this machine (M1 Max, MLX 0.32.4), against
-`transformers` in float32, on logits of magnitude 25:
+The checkpoint is stored in `bfloat16`, so a dtype-preserving module can run it directly as stored. Measured on an M1 Max (MLX 0.32.4) against `transformers` in `float32`, on logits of magnitude 25:
 
 | dtype | parameters | largest logit error, four 12-token prompts |
 |---|---|---|
@@ -138,69 +117,40 @@ can run it as stored. Measured on this machine (M1 Max, MLX 0.32.4), against
 | bfloat16 | 0.66 GiB | 0.52 |
 | float16 | 0.66 GiB | 0.09 on two prompts, **NaN** on the other two |
 
-float16 has more mantissa than bfloat16 (10 bits against 7) and is more accurate
-when it works. It fails here because it has less range. In layer 2 the MLP of this
-model produces one of the "massive activations" real transformers have: on the
-capital prompt the gate reaches 122 and the up projection 591, and their product
-passes 65,504, the largest float16. One `inf` in the residual stream is NaN one
-RMSNorm later. bfloat16 keeps float32's exponent and survives, which is why `mlx-lm`
-runs checkpoints in bfloat16, and why the 16-bit case on the real model is bfloat16.
-The small random models stay far from the limit and run in float16 without trouble.
+`float16` has more mantissa bits than `bfloat16` (10 vs. 7), so it is more accurate when values stay in range. It fails on this model because of its limited dynamic range. In layer 2, the MLP produces a massive activation where the gate reaches 122 and the up projection reaches 591 on the capital prompt. Their product exceeds 65,504 (the maximum finite `float16`), producing `inf` in the residual stream and `NaN` at the next RMSNorm. `bfloat16` keeps `float32`'s exponent range and avoids overflow, which is why `mlx-lm` runs checkpoints in `bfloat16` and why the 16-bit real-model test uses `bfloat16`. The small random models stay well within `float16` range.
 
-The dtype follows from one habit: multiply by Python numbers, not by arrays. `x *
-12.0` keeps `x`'s dtype; `x * mx.array(12.0)` promotes a 16-bit `x` to float32, and
-every layer after it computes in float32.
+Preserving dtype requires multiplying by Python floats rather than MLX arrays. `x * 12.0` preserves `x`'s dtype, whereas `x * mx.array(12.0)` promotes a 16-bit `x` to `float32` for every subsequent layer.
 
 ## What the fused kernels buy
 
-On the real model in float32, with the attention kernel and with the same attention
-written as `repeat`, `matmul`, `where`, `softmax`, `matmul`:
+Comparing `mx.fast.scaled_dot_product_attention` against hand-written attention (`repeat`, `matmul`, `where`, `softmax`, `matmul`) on the real model in `float32`:
 
 | | 12 tokens | 1024 tokens | peak memory at 1024 tokens |
 |---|---|---|---|
 | `mx.fast.scaled_dot_product_attention` | 14 ms | 129 ms | 1.68 GiB |
 | hand-written attention | 14 ms | 157 ms | 1.88 GiB |
 
-Nothing at prompt length 12, about 20% of the time and 200 MiB at 1024, where the
-hand-written version materializes a `(16, 1024, 1024)` score matrix and the repeated
-keys and values in every layer. The kernel exists for head dimensions 64, 96, 128,
-192, 256, and 512; for others the same call silently expands into the hand-written
-operations.
+At 12 tokens the timings are identical. At 1024 tokens, the fused kernel saves about 20% runtime and 200 MiB of peak memory by avoiding the `(16, 1024, 1024)` score matrix and repeated KV tensors in every layer. The fused kernel supports head dimensions 64, 96, 128, 192, 256, and 512, and silently falls back to unfused operations for other sizes.
 
 ## Common mistakes
 
-- **A tree that does not spell the names.** Putting `embed_tokens`, `layers`, and
-  `norm` on the top-level module gives `layers.0...` where the file says
-  `model.layers.0...`; a strict load reports all 226 tensors as unexpected.
-- **`1 / sqrt(head_dim)` as the scale.** The textbook value, 8 times Granite's.
-- **`nn.RoPE(head_dim)`.** The default base is 10,000. The text still reads
-  well, which makes this one hard to see by eye; only the logits give it away.
-- **`traditional=True`.** Rotates pairs `(2i, 2i + 1)`; the checkpoint was trained
-  with pairs `(i, i + 32)`.
-- **Missing multipliers**: the embedding's 12, the residual's 0.263, the logits' 4.
-- **Gate and up swapped** in the fused projection.
-- **A default epsilon.** `nn.RMSNorm(d)` uses `1e-5`, which happens to be Granite's;
-  a config with another value gets the wrong norm.
-- **Tiling the key/value heads** (`mx.tile`) before the kernel. `tile` cycles the
-  heads (0, 1, 0, 1), but query head $h$ belongs to KV head $\lfloor h / g \rfloor$;
-  and the kernel wants them unexpanded.
-- **The embedding as the head of an untied model.** The loaded `lm_head.weight` is
-  ignored.
-- **No mask**, so every position sees the future.
-- **Array constants** that promote a 16-bit model to float32.
-- **Hand-written attention**, or importing the model from `mlx_lm`.
+- **Wrong module hierarchy.** Placing `embed_tokens`, `layers`, and `norm` directly on `Granite` produces `layers.0...` instead of `model.layers.0...`, causing strict loading to reject all 226 tensors.
+- **Using `1 / sqrt(head_dim)` for attention scale.** That is 8 times larger than Granite's `1 / 64`.
+- **Omitting `base=cfg.rope_theta` in `nn.RoPE`.** The default base is 10,000. Text may still look plausible, but the logits diverge.
+- **Using `traditional=True` in `nn.RoPE`.** That rotates adjacent pairs `(2i, 2i + 1)` instead of the half-split pairs `(i, i + head_dim // 2)` used during training.
+- **Dropping multipliers.** Forgetting `embedding_multiplier` (12), `residual_multiplier` (0.263), or `logits_scaling` (4) breaks numerical agreement.
+- **Swapping gate and up.** The first half of `input_linear` is the SiLU gate and the second half is the up projection.
+- **Hardcoding RMSNorm epsilon.** `nn.RMSNorm`'s default `1e-5` matches Granite 4.0 350M, but fails on test configs with a different `norm_eps`.
+- **Expanding KV heads with `mx.tile`.** With group size $g = \texttt{n\_heads} / \texttt{n\_kv\_heads}$, query head $h$ maps to KV head $\lfloor h / g \rfloor$, whereas `mx.tile` cycles `(0, 1, 0, 1)`. Pass the KV heads unexpanded to `scaled_dot_product_attention`.
+- **Using the embedding as the head when untied.** When `cfg.tied_embeddings` is `False`, the model must project through `lm_head` instead of `embed_tokens.as_linear`.
+- **Omitting `mask="causal"`.** Without the mask, tokens attend to future positions.
+- **Wrapping scalar constants in `mx.array`.** A `float32` scalar array upcasts 16-bit activations to `float32`.
+- **Writing unfused attention or importing `mlx_lm`.** Both violate the exercise rules and fail the graph or source checks.
 
 ## Complexity
 
-One pass over $B \cdot T$ tokens through `n_layers` blocks; attention is
-$O(T^2)$ per head and layer inside the kernel. The parameters take 2 or 4 bytes
-each.
+One forward pass processes $B \cdot T$ tokens through `n_layers` blocks, with $O(T^2)$ attention work per head and layer inside the fused kernel. Parameters occupy 2 bytes each in 16-bit dtypes or 4 bytes each in `float32`.
 
 ## In the wild
 
-`mlx_lm/models/granitemoehybrid.py` is this module with the model's optional parts
-(mixture-of-experts and Mamba layers, which this checkpoint has none of) and a KV
-cache. `mlx_lm.utils.load_model` builds it from `config.json`, calls
-`model.sanitize(weights)` to drop or rename tensors that do not fit the tree, and
-then `load_weights`. The next problem does the same for a 3B model whose linear
-layers are stored quantized.
+`mlx_lm/models/granitemoehybrid.py` is this same module extended with KV caching and optional mixture-of-experts and Mamba layers (unused in this dense checkpoint). `mlx_lm.utils.load_model` constructs the module from `config.json`, calls `model.sanitize(weights)` to drop or rename any non-matching tensors, and then calls `load_weights`. The next problem applies the same pattern to a 3B model stored with quantized weights.

@@ -1,35 +1,14 @@
 ## The idea
 
-A masked-diffusion language model is trained to fill in masked tokens given the
-unmasked ones, at every masking ratio. Generation runs that in reverse: start with
-everything masked and, over $T$ steps, unmask. In each step the model predicts a
-distribution for every masked position in one forward pass. The predictions are
-made independently per position given the current sequence, so committing all of
-them at once would sample each token without knowing its neighbors. Committing only
-some and predicting again lets the later positions condition on the earlier ones.
-The step is the rule for "which some".
+A masked-diffusion language model is trained to predict masked tokens given the unmasked ones across all masking ratios. Generation runs that process in reverse by starting with all target positions masked and unmasking them over $T$ steps. In each step, one forward pass produces a token distribution for every masked position independently. Committing all positions at once would sample each token without knowing what its neighbors become. Committing only a subset and running another forward pass lets later positions condition on the tokens settled earlier.
 
-**Which ones: the most confident.** Draw a candidate everywhere, score each by the
-probability the model gives it, commit the top $n$. The effect is that easy
-positions (function words, forced continuations) are settled first and become
-context for the hard ones.
+**Choosing which positions to commit.** Draw a candidate token at every position, score each candidate by the model's probability for it, and commit the top $n$. Easy positions such as function words and forced continuations settle first and provide context for harder positions.
 
-**Confidence of what.** With a temperature above 0 the candidate is a sample and
-need not be the model's favorite. The score must be the probability of the token
-that will actually be written. Scoring a position by its favorite's probability
-while writing something else commits unlucky draws with a confidence they do not
-have. The score uses the model's distribution at temperature 1: the temperature
-shapes the draw, not the model's opinion of it.
+**Scoring the drawn candidate.** When `temperature > 0`, sampling can pick a token other than the model's argmax. The confidence score must be the probability of the token that will actually be written, not the maximum probability in that row. Scoring by the row's maximum would commit an unlikely sample with a confidence it does not have. The confidence also uses the unscaled distribution at temperature 1, because temperature shapes the sampling distribution rather than the model's own estimate of token probability.
 
-**What may change.** Two facts about the process are structural, not learned. An
-unmasked token stays: only masked positions are ever candidates, however confident
-the model is elsewhere. And the mask token is never an output: its logit is removed
-before anything else, so it can neither be drawn nor take probability mass.
+**Structural constraints.** Two rules are built into the decoding step rather than learned. First, already-unmasked tokens never change, so only masked positions may be selected regardless of how confident the model is elsewhere. Second, the mask token is never a valid prediction, so its logit is set to $-\infty$ before any softmax is computed. That prevents it from being sampled or taking probability mass away from real tokens.
 
-**How many.** With a linear noise schedule the expected number of tokens revealed
-per step is constant, so the schedule is an even split of the masked count, with
-the remainder spread over the first steps. Rounding each step down instead leaves
-masks in the final output.
+**Splitting the count across steps.** Under a linear noise schedule, the expected number of tokens revealed per step is constant. Dividing `n_masked` evenly across `steps` and adding 1 to the first `n_masked % steps` steps ensures the total equals `n_masked`. Rounding every step down would leave mask tokens in the final output.
 
 ## Reference solution (PyTorch)
 
@@ -59,90 +38,36 @@ def unmask_step(tokens, logits, mask_id, n_unmask, temperature, uniforms):
     return torch.where(rank < n, candidates, tokens)
 ```
 
-The commit is written without indexing by a variable-length list: `rank < n` is a
-mask of fixed shape, which keeps JAX from compiling a new program for every `n` and
-suits MLX, where boolean-mask reads are not available. `torch.argsort` needs
-`stable=True`; `jnp.argsort` and `mx.argsort` are stable, so there the descending
-order is a sort of the negated confidences. The mask token's column is `-inf` in
-both softmaxes, so it has probability exactly 0 and, since its cumulative sum
-repeats the previous one, it is never the first index to exceed the threshold.
+Using `rank < n` avoids indexing with a variable-length slice. That keeps the tensor shapes static for JAX compilation and works in MLX, where boolean-mask indexing is not supported. `torch.argsort` requires `stable=True` to preserve index order on ties. In JAX and MLX, `jnp.argsort` and `mx.argsort` are already stable, so sorting `-confidence` in ascending order produces the same descending rank. Setting the mask token's column to `-inf` gives it probability 0 in both softmaxes, so its cumulative sum repeats the previous entry and it can never be the first index to exceed the threshold.
 
 ## Common mistakes
 
-- **Committing unmasked positions.** Without `-inf` confidence at unmasked
-  positions, a confident prediction there takes one of the $n$ places and
-  overwrites a committed token (or a prompt token). The step then also commits
-  fewer masks than scheduled.
-- **Confidence of the argmax.** `probs.max(-1)` is the right score only at
-  temperature 0. With sampling it ranks positions by a token they are not getting.
-- **Confidence from the tempered distribution.** Using
-  `softmax(logits / temperature)` for the score changes the ranking whenever
-  positions differ in entropy.
-- **Ignoring the temperature in the draw**, or applying it to probabilities instead
-  of logits.
-- **Leaving the mask token in.** A model's mask logit is not trained to be small. If
-  it is not removed, positions get "committed" to the mask token and the real
-  tokens lose probability.
-- **Uniforms indexed by rank.** `uniforms[k]` for the $k$-th masked position instead
-  of `uniforms[i]` for position $i$ gives a valid sampler with a different stream;
-  the statement pins the stream down so results can be compared.
-- **Not limiting `n` to the number of masks.** With `rank < n_unmask` and fewer
-  masks than that, the surplus places fall on unmasked positions.
-- **Unstable top-k.** `torch.topk` and a default `torch.argsort` do not promise an
-  order among equal values; ties must go to the lowest index.
-- **A schedule that rounds down**, which leaves $n \bmod T$ masks at the end, or one
-  that puts the whole remainder into the last step, which commits the most tokens
-  with the least re-prediction.
-- **Drawing your own noise.** The harness refuses a framework generator; the
-  uniforms are an argument.
+- **Committing unmasked positions.** Without setting unmasked confidences to `-inf`, a confident prediction at an unmasked position can take one of the $n$ slots, overwriting a committed or prompt token and committing fewer masked positions than scheduled.
+- **Using the argmax probability as confidence.** `probs.max(-1)` matches the specification only at temperature 0. When sampling, it scores positions by a token they did not draw.
+- **Using the tempered distribution for confidence.** Computing confidence from `softmax(logits / temperature)` alters the ranking whenever positions have different entropies.
+- **Mishandling temperature during sampling.** Ignoring `temperature` or dividing probabilities instead of logits produces the wrong sampling distribution.
+- **Leaving the mask token in the vocabulary.** A model's mask logit is not guaranteed to be small. Leaving it unmasked lets positions commit to `mask_id` and reduces the probability mass on valid tokens.
+- **Indexing `uniforms` by masked-position rank.** Using `uniforms[k]` for the $k$-th masked position instead of `uniforms[i]` for position $i$ changes which uniform draw each position receives and fails exact comparison.
+- **Not clamping `n` to the masked count.** Checking `rank < n_unmask` when fewer than `n_unmask` positions are masked lets the extra slots spill onto unmasked positions.
+- **Using an unstable sort or `topk`.** `torch.topk` and default `torch.argsort` do not guarantee that ties go to the lowest index.
+- **Rounding the schedule down or dumping the remainder at the end.** Rounding down leaves $n \bmod T$ masks in the output. Putting the entire remainder into the final step commits the most tokens when the fewest re-prediction steps remain.
+- **Drawing random numbers inside `unmask_step`.** The harness forbids framework RNG calls because randomness must come from `uniforms`.
 
 ## Complexity
 
-One softmax or two, a cumulative sum, and a sort over the positions:
-$O(LV + L \log L)$ per step, negligible next to the forward pass that produced the
-logits. A generation of $L$ tokens costs $T$ forward passes over the whole
-sequence, where an autoregressive decoder with a KV cache costs $L$ single-token
-passes; the trade is fewer, wider passes, and no KV cache to reuse, because every
-position's input can change between steps.
+Each step performs one or two softmaxes, a cumulative sum, and a sort over sequence positions, costing $O(LV + L \log L)$ time. That overhead is negligible compared to the transformer forward pass that produces `logits`. Generating $L$ tokens takes $T$ full-sequence forward passes, whereas an autoregressive decoder with a KV cache takes $L$ single-token passes. Masked diffusion trades fewer, wider passes for the loss of a reusable KV cache, since any position's input can change between steps.
 
 ## In the wild
 
-What is established:
+What is established in the literature:
 
-- **LLaDA** ("Large Language Diffusion Models", arXiv 2502.09992) describes the
-  reverse process in its section on inference and in two appendix algorithms. The
-  plain version predicts all masked tokens and then remasks a fraction $s/t$ of
-  them at random when going from time $t$ to $s$; the paper says the remasking
-  should in principle be purely random and that, in practice, remasking the
-  predictions with the *lowest confidence* works better. Confidence is the
-  predicted token's probability, and timesteps are uniform by default. The
-  official `generate.py` is this problem's step: `get_num_transfer_tokens` is
-  `schedule` (the comment there derives the even split from the linear noise
-  schedule), the candidate is an argmax of the logits with Gumbel noise scaled by
-  the temperature, the confidence is the candidate's entry of `softmax(logits)`,
-  positions that are not masked get confidence $-\infty$, and the top-$k$ are
-  transferred. It also has a `random` strategy, which replaces the confidences by
-  random numbers.
-- **MDLM** ("Simple and Effective Masked Diffusion Language Models", arXiv
-  2406.07524) states the two structural rules as properties of its
-  parameterization: zero masking probabilities (the mask token's logit is set to
-  $-\infty$) and carry-over unmasking (unmasked inputs are copied), and notes that
-  in the reverse process unmasked tokens remain unchanged.
-- The idea of predicting everything in parallel and refining over a few passes
-  comes from masked image generation: the abstract of "MaskGIT: Masked Generative
-  Image Transformer" (arXiv 2202.04200) describes generating all tokens at once
-  and refining them iteratively.
+- **LLaDA** ("Large Language Diffusion Models", arXiv 2502.09992) describes this reverse process in its inference section and appendix algorithms. While the theoretical reverse process remasks a random fraction $s / t$ of tokens when stepping from time $t$ to $s$, the paper finds that remasking the *lowest-confidence* predictions works better in practice. Its official `generate.py` matches this problem closely. `get_num_transfer_tokens` implements `schedule` (derived from the linear noise schedule), candidates are drawn via Gumbel-max with temperature-scaled logits, confidence is the candidate's entry in `softmax(logits)`, unmasked positions receive confidence $-\infty$, and the top-$k$ positions are transferred. It also offers a `random` strategy that replaces confidences with random numbers.
+- **MDLM** ("Simple and Effective Masked Diffusion Language Models", arXiv 2406.07524) formalizes the two structural rules as parameterization properties: zero masking probabilities (setting the mask token's logit to $-\infty$) and carry-over unmasking (copying unmasked tokens unchanged through the reverse process).
+- **MaskGIT** ("MaskGIT: Masked Generative Image Transformer", arXiv 2202.04200) introduced this parallel predict-and-refine decoding paradigm for masked image generation.
 
 What this problem simplifies or chooses:
 
-- The candidate is drawn by inverse-CDF sampling from one uniform number per
-  position. LLaDA's code uses Gumbel-max with one number per logit; the two give
-  the same distribution, not the same tokens.
-- The mask token is excluded as in MDLM. The LLaDA code as published does not mask
-  that logit explicitly.
-- One sequence, no batch; no classifier-free guidance; no semi-autoregressive
-  blocks (LLaDA's instruct model generates block by block, left to right, running
-  this step inside each block); no random-remasking variant.
-- The LLaDA paper's low-confidence algorithm states the count per step as a target
-  number of unmasked tokens at each time; with uniform timesteps that is the even
-  split used here, up to rounding.
+- Candidates are drawn by inverse-CDF sampling with one uniform number per position. LLaDA's code uses Gumbel-max with one random number per logit, which defines the same distribution but yields different concrete samples.
+- The mask token is explicitly masked out as in MDLM. LLaDA's published inference code does not mask that logit explicitly.
+- This problem covers a single unbatched sequence without classifier-free guidance, semi-autoregressive block generation (used by LLaDA's instruct model to run this step block by block from left to right), or random remasking.
+- LLaDA's low-confidence algorithm states a target number of unmasked tokens per timestep. With uniform timesteps, that reduces to the even split used here up to rounding.
