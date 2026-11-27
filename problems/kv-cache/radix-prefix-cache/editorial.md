@@ -1,37 +1,14 @@
 ## The idea
 
-A prefix cache answers one question: *how many leading tokens of this prompt do I
-already have KV entries for?* A trie over tokens answers it by walking, and
-sequences with a common prefix share the nodes of that prefix, so the shared KV
-entries are stored once. A plain trie has one node per token, which is hopeless
-for prompts of thousands of tokens. A **radix tree** compresses every chain of
-single-child nodes into one edge that carries the whole run. The number of nodes
-is then proportional to the number of *branch points and sequence ends*, not to
-the number of tokens.
+A prefix cache answers one question: how many leading tokens of a prompt already have cached KV entries? A token-level trie answers this by walking from the root so that sequences with a common prefix share nodes and store shared KV entries once. A plain trie allocates one node per token, which is too large for prompts of thousands of tokens. A **radix tree** compresses every chain of single-child nodes into a single edge carrying the entire run of tokens. The number of nodes then scales with the number of branch points and sequence ends rather than total tokens.
 
-Compression has a price: a new sequence can diverge from, or end in, the middle of
-an edge. Then the edge must be **split** at that point, because a node is the unit
-of everything else: what a request locks, what the evictor removes, and where a
-new branch can attach.
+Compression introduces one complication. A new sequence can diverge from or end in the middle of an existing edge. When that happens, you must **split** the edge at the divergence point because a node is the unit of locking, eviction, and branching.
 
-Three invariants carry the design.
+Three invariants keep the tree sound:
 
-1. **Children of a node start with different tokens.** That makes the walk
-   deterministic, a dict lookup per node, and it is what a split restores when a
-   new sequence shares part of an edge.
-2. **A lock covers a whole path.** A running request that reuses the prefix ending
-   at node $x$ depends on the KV entries of $x$ and of every ancestor. Incrementing
-   the count on the whole path makes "this node is in use" a local test
-   (`locks > 0`). Splitting must preserve it: the new upper half is above
-   everything that held a lock on the old edge, so it inherits the count, and a
-   later `unlock`, which walks up from the handle, passes through it and releases
-   it.
-3. **Only leaves are evicted.** An inner node is a prefix of its descendants;
-   their KV entries were computed attending to it, and are unreachable without it.
-   Eviction therefore eats the tree from the outside in: least recently used
-   unlocked leaf first, and a parent becomes a candidate once its last child is
-   gone. Because an access stamps the whole path, a parent is never older than
-   its children, and the cascade removes a cold branch tip to root in one call.
+1. **Children of a node start with distinct tokens.** This makes the walk deterministic with a single dictionary lookup per node. Splitting restores this invariant whenever a new sequence shares part of an existing edge.
+2. **A lock covers the entire path to the root.** A running request reusing the prefix at node $x$ depends on the KV entries of $x$ and all of its ancestors. Incrementing the lock count along the whole path makes checking whether a node is in use a local test (`locks > 0`). During a split, the new upper half sits above everything that locked the old edge, so it inherits the lock count. A later `unlock` walks up from the handle through the upper half and decrements it properly.
+3. **Only leaves are evicted.** An inner node is a prefix of its descendants, whose KV entries depend on it and become unreachable without it. Eviction therefore works from the outside in, removing the least recently used unlocked leaf first. When a parent loses its last child, it becomes a leaf and joins the eviction candidates. Because every access stamps the entire path, a parent is never older than its children, allowing a single `evict` call to reclaim a cold branch from tip to root.
 
 ## Reference solution (Python)
 
@@ -140,81 +117,26 @@ class RadixCache:
         return sorted(out)
 ```
 
-The split creates the upper half and keeps the existing node as the lower half.
-The other way round also works for the tree, but then every handle given out for
-the old node would silently change meaning from "the prefix ending here" to "the
-first part of it". The `id(node)` in the heap entries only keeps Python from
-comparing two nodes; times never tie between leaves.
+`_split` creates a new node for the upper half and reuses the existing node as the lower half. Doing the reverse would keep the tree shape valid, but any handle previously returned for the existing node would silently change meaning from the full prefix to the shorter upper prefix. The `id(node)` tie-breaker in the heap only prevents Python from comparing `Node` objects, since leaf access times never tie.
 
 ## Common mistakes
 
-- **Matching only whole nodes.** Without the split in `match_prefix`, a prompt
-  that shares 900 of the 1,000 tokens on an edge reuses nothing. With whole-edge
-  matching in `insert` and no split, the new sequence is attached as a second
-  child that starts with the same token as its sibling and replaces it in the
-  children dict: an entire subtree disappears from lookups while its tokens are
-  still counted.
-- **Evicting an inner node.** "Least recently used unlocked node" instead of
-  "leaf" removes a prefix together with everything below it, or worse, unlinks it
-  and leaves the subtree's KV entries allocated. The count returned is also wrong:
-  the node's own tokens are counted, the subtree's are not.
-- **Not stamping the ancestors.** If only the node where the match ends gets the
-  new time, an inner node keeps the time of its creation. It is protected while
-  it has children, but once they are evicted it looks like the oldest leaf in the
-  tree and goes before leaves that were idle far longer. It takes a locked
-  bystander to observe (see the hidden case), which is why this bug survives
-  simple tests.
-- **Stamping a partly matched node.** Setting the time when the walk enters an
-  edge, before measuring the match, refreshes the lower half of a split: tokens
-  that the request did not reuse look recently used.
-- **A split that drops the lock count.** The upper half starts at 0 while the
-  request that locked the lower half still depends on it. In this problem only
-  leaves are evicted, so the damage shows on `unlock`, which decrements the upper
-  half to -1; in an engine that tracks evictable memory by lock count, the
-  accounting is off by the upper half's tokens.
-- **Locking the node only.** The same accounting error in the other direction,
-  and after a split the inherited count on the upper half is never released: the
-  branch can never be evicted.
-- **No cascade.** If a parent that just became a leaf is not reconsidered,
-  `evict` returns less than was asked although more could go, and the caller,
-  which needed the memory for a request, fails or retries.
-- **Ignoring locks**, **evicting the newest leaf**, or **continuing after
-  `n_tokens` is reached** (`<=` for `<`): each is one comparison.
+- **Matching only whole nodes.** Skipping splits in `match_prefix` wastes partial matches, such as sharing 900 tokens of a 1,000-token edge. Skipping splits in `insert` attaches a second child starting with the same token, which overwrites its sibling in the `children` dict and drops an entire subtree from lookups while still counting its tokens.
+- **Evicting an inner node.** Evicting the least recently used unlocked node instead of restricting to leaves removes a shared prefix along with everything beneath it, or unlinks it while leaving the subtree's KV memory allocated. It also misreports the evicted token count by counting only the node's own edge instead of its descendants.
+- **Not stamping ancestors.** Updating only the final matched node leaves inner nodes with their creation timestamps. Those nodes stay safe while they have children, but once their children are evicted they appear older than leaves that have been idle much longer. This bug only surfaces when a locked bystander forces eviction across branches, so simple tests often miss it.
+- **Stamping a partly matched node.** Setting `last_access` upon entering an edge, before checking how many tokens match, refreshes the unmatched lower half of a split and makes unused tokens appear recently accessed.
+- **Dropping the lock count during a split.** Starting the new upper half at 0 ignores the active requests holding the lower half. Calling `unlock` then decrements the upper half to -1, and in a real engine tracking evictable memory by lock count, the accounting is off by the upper half's tokens.
+- **Locking only the target node.** Failing to lock ancestors causes the same accounting error in reverse. Worse, after a split, an inherited lock count on the upper half is never decremented on `unlock`, permanently pinning that branch.
+- **Skipping the eviction cascade.** If a parent that becomes a leaf is not pushed onto the heap, `evict` frees fewer tokens than requested even when more evictable nodes remain, forcing the scheduler to fail or retry.
+- **Off-by-one or comparison bugs.** Ignoring `locks`, popping the newest leaf instead of the oldest, or looping while `evicted <= n_tokens` instead of `evicted < n_tokens` each break eviction with a single wrong condition.
 
 ## Complexity
 
-With $n$ the length of the input, $d$ the number of nodes on its path, and $N$
-the number of nodes in the tree: the walk is $O(n)$ token comparisons plus $O(d)$
-dict lookups; a split is $O(\text{edge length})$ for the slices; `lock` and
-`unlock` are $O(d)$; `evict` is $O(N)$ to collect the leaves plus $O(\log N)$ per
-removal. Memory is $O(\text{total tokens})$. An engine keeps the set of evictable
-leaves up to date instead of collecting it on every call.
+Let $n$ be the input sequence length, $d$ be the number of nodes along its path, and $N$ be the total number of nodes in the tree. The walk performs $O(n)$ token comparisons and $O(d)$ dictionary lookups. A split takes $O(\text{edge length})$ time to slice the token list. Both `lock` and `unlock` run in $O(d)$ time. `evict` takes $O(N)$ time to collect the initial leaves plus $O(\log N)$ per removed node. Total memory is $O(\text{total tokens})$. Production engines maintain the set of evictable leaves incrementally instead of scanning the tree on each eviction.
 
 ## In the wild
 
-- **The paper.** Zheng et al., "SGLang: Efficient Execution of Structured Language
-  Model Programs" (NeurIPS 2024), introduces RadixAttention: the KV cache of
-  finished requests is kept in a radix tree keyed by tokens, with LRU eviction of
-  leaves and a reference counter on nodes used by running requests.
-- **The code** (`python/sglang/srt/mem_cache/radix_cache.py`). `match_prefix`
-  walks the tree and, when the match ends inside a node's key, calls
-  `_split_node`, which creates the new *upper* node, sets
-  `new_node.lock_ref = child.lock_ref`, and keeps `child` as the lower part, as
-  here. `inc_lock_ref` and `dec_lock_ref` loop `while node != self.root_node`.
-  `evict` heapifies the evictable leaves by priority (last access time under the
-  default LRU policy), deletes the popped leaf, and pushes the parent when
-  `len(x.parent.children) == 0 and x.parent.lock_ref == 0`.
-- **Where this problem differs.** (1) SGLang stamps `child.last_access_time`
-  when the walk enters a child, before it knows how much of the key matches, so
-  both halves of a split carry the new time; with wall-clock times the lower half
-  and a newly inserted sibling can then tie. This problem stamps only fully
-  matched nodes, which is the stricter reading of "used" and makes the eviction
-  order unique. (2) Time is `time.monotonic()` there and a logical counter here.
-  (3) SGLang matches and splits at multiples of a page size when the allocator is
-  paged, and stores the KV indices of the tokens as each node's value. (4) Other
-  eviction policies (LFU, priority) plug into the same heap.
-- **Compared with block hashing.** vLLM's index (`block-hash-prefix-cache`) is a
-  flat hash table with $O(1)$ probes per block and hits in multiples of the block
-  size; the radix tree matches to the token and shares structure explicitly, at
-  the cost of pointer-chasing and splits. Both evict from the tail of a prefix
-  inward, for the same reason.
+- **The paper.** Zheng et al., "SGLang: Efficient Execution of Structured Language Model Programs" (NeurIPS 2024), introduced RadixAttention. It keeps the KV cache of finished requests in a radix tree keyed by tokens, with LRU leaf eviction and reference counts on nodes used by active requests.
+- **The implementation** (`python/sglang/srt/mem_cache/radix_cache.py`). `match_prefix` walks the tree and calls `_split_node` when a match ends inside an edge. `_split_node` creates the new upper node, copies `new_node.lock_ref = child.lock_ref`, and keeps `child` as the lower half. `inc_lock_ref` and `dec_lock_ref` walk upward `while node != self.root_node`. `evict` builds a heap of evictable leaves ordered by priority (last access time under LRU), deletes each popped leaf, and pushes its parent when `len(x.parent.children) == 0 and x.parent.lock_ref == 0`.
+- **Differences from this problem.** (1) SGLang stamps `child.last_access_time` as soon as the walk enters a child, before measuring the match, so both halves of a split receive the new timestamp. This problem stamps only fully matched nodes, which reflects actual reuse more strictly and guarantees unique leaf timestamps. (2) SGLang uses `time.monotonic()` instead of a logical counter. (3) With a paged allocator, SGLang aligns matches and splits to page-size multiples and stores KV slot indices on each node. (4) Alternative eviction policies such as LFU or priority plug into the same heap.
+- **Comparison with block hashing.** vLLM's index (`block-hash-prefix-cache`) uses a flat hash table with $O(1)$ probes per block and hits at block-size multiples. A radix tree matches to the exact token and represents shared structure explicitly, at the cost of pointer traversal and edge splits. Both systems evict from the tail of a prefix inward for the same reason.

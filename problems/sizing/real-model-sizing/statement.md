@@ -1,9 +1,4 @@
-Size a real checkpoint from two small pieces of text: the header of its safetensors
-file and its `config.json`. Four numbers come out: the parameter count, the bytes on
-disk, the bytes one token adds to the KV cache, and the size the model would have
-after 8-bit quantization. No weight is read. The catch is that a file stores
-*tensors*, and tensors are not always parameters: a quantized file packs four weights
-into one stored element and adds side tables, and a tied matrix may be stored twice.
+Implement `size_report` to compute four sizing metrics for a model checkpoint from its safetensors header and `config.json`, without loading any weights. Stored tensors do not always map one-to-one to model parameters, because a quantized file packs multiple weights into each stored element alongside scale and bias tables, and a tied output head may be stored as a second copy of the embedding matrix.
 
 ## Specification
 
@@ -11,71 +6,49 @@ into one stored element and adds side tables, and a tied matrix may be stored tw
 def size_report(header: dict, config: dict) -> dict[str, int]: ...
 ```
 
-- `header`: the tensor table of a safetensors file, as `read_header` of
-  `safetensors-parse` returns it: a dict from tensor name to
-  `{"dtype": str, "shape": list[int], "data_offsets": [begin, end]}`.
-- `config`: the parsed `config.json`. The function uses `num_hidden_layers`,
-  `num_attention_heads`, `num_key_value_heads`, `hidden_size`, `tie_word_embeddings`,
-  and `quantization` if present; it ignores every other key.
+- `header` is the tensor table of a safetensors file, in the format returned by `read_header` in `safetensors-parse`. It maps each tensor name to `{"dtype": str, "shape": list[int], "data_offsets": [begin, end]}`.
+- `config` is the parsed `config.json`. Use `num_hidden_layers`, `num_attention_heads`, `num_key_value_heads`, `hidden_size`, `tie_word_embeddings`, and `quantization` (when present). Ignore all other keys.
 
-The result is a dict with exactly the four keys below, all Python ints.
+Return a dict with exactly four keys, all mapped to Python `int` values.
 
-**Logical tensors.** The parameters of the model are the elements of its *logical*
-tensors, which are the header's entries after two corrections.
+### Logical tensors
 
-1. *Packed weights.* If `config` has a `"quantization"` entry
-   `{"bits": b, "group_size": g, ...}`, the file was written by a quantizer that
-   stores a matrix `X.weight` of logical shape `[out, in]` as three tensors:
+The model's parameters are the elements of its *logical* tensors, obtained from `header` after two adjustments.
+
+1. **Packed weights.** When `config` contains a `"quantization"` dict `{"bits": b, "group_size": g, ...}`, the checkpoint was written by a quantizer that stores a logical weight matrix `X.weight` of shape `[out, in]` as three tensors.
 
    | tensor | dtype | stored shape | content |
    |---|---|---|---|
-   | `X.weight` | `U32` | `[out, in * b / 32]` | the $b$-bit codes, $32 / b$ per word |
+   | `X.weight` | `U32` | `[out, in * b / 32]` | $b$-bit codes, $32 / b$ per word |
    | `X.scales` | `BF16` | `[out, in / g]` | one scale per group of $g$ weights |
    | `X.biases` | `BF16` | `[out, in / g]` | one bias per group |
 
-   An entry `X.weight` is **packed** when its dtype is `U32` and `X.scales` is also in
-   the header. Its logical shape is `[out, words * 32 // b]`. The `X.scales` and
-   `X.biases` of a packed weight are **side data**: they are stored, but they are not
-   logical tensors. Without a `"quantization"` entry nothing is packed and nothing is
-   side data, whatever the names and dtypes.
-2. *A tied head stored twice.* If `config["tie_word_embeddings"]` is true and the
-   header contains both `model.embed_tokens.weight` and `lm_head.weight`, the head is
-   a second copy of the embedding: no entry whose name starts with `lm_head.` is a
-   logical tensor.
+   An entry `X.weight` is **packed** if its dtype is `U32` and `X.scales` is also present in `header`. If its stored shape is `[out, cols]`, its logical shape is `[out, cols * 32 // b]`. The corresponding `X.scales` and `X.biases` entries are **side data**. They occupy bytes on disk, but they are not logical tensors. When `config` has no `"quantization"` entry, nothing is packed and nothing is side data, regardless of tensor names or dtypes.
 
-Every other entry is a logical tensor with the shape in the header.
+2. **Duplicated tied head.** If `config["tie_word_embeddings"]` is true and `header` contains both `model.embed_tokens.weight` and `lm_head.weight`, the output head is a second copy of the embedding matrix. Exclude every entry whose name starts with `lm_head.` from the logical tensors.
 
-**`"parameters"`**: the sum over logical tensors of the product of the logical shape
-(1 for a scalar, shape `[]`).
+Every remaining entry in `header` is a logical tensor with its stored shape.
 
-**`"tensor_bytes"`**: the bytes of the file's data section, $\sum (\text{end} -
-\text{begin})$ over **all** entries of the header, side data and second copies
-included. (The file itself is 8 bytes plus the header longer.)
+### Output keys
 
-**`"kv_bytes_per_token"`**: the bytes one token of one sequence adds to a bfloat16 KV
-cache: a key and a value vector per layer and per key/value head,
+- **`"parameters"`** is the sum over all logical tensors of the product of each logical shape (with a scalar of shape `[]` having product 1).
+- **`"tensor_bytes"`** is the total size of the file's data section, computed as $\sum (\text{end} - \text{begin})$ across **all** entries in `header`, including side data and duplicated tied heads. (The full file on disk also includes an 8-byte length prefix and the JSON header.)
+- **`"kv_bytes_per_token"`** is the number of bytes that one token of one sequence adds to a bfloat16 KV cache. Each layer stores one key vector and one value vector per key/value head, where each head has width `hidden_size / num_attention_heads` and each bfloat16 value takes 2 bytes:
 
-$$
-2 \cdot \texttt{num\_hidden\_layers} \cdot \texttt{num\_key\_value\_heads} \cdot
-\frac{\texttt{hidden\_size}}{\texttt{num\_attention\_heads}} \cdot 2 .
-$$
+  $$
+  2 \cdot \texttt{num\_hidden\_layers} \cdot \texttt{num\_key\_value\_heads} \cdot
+  \frac{\texttt{hidden\_size}}{\texttt{num\_attention\_heads}} \cdot 2 .
+  $$
 
-**`"quantized_bytes"`**: the predicted data-section size of the model after 8-bit
-quantization with groups of 64, in the layout of the table above, whatever format the
-input file is in. Summed over logical tensors:
+- **`"quantized_bytes"`** is the predicted data-section size after 8-bit quantization with group size 64 in the layout above, regardless of the input file's current format. Sum the following over all logical tensors:
+  - A 2D logical tensor of shape `[out, in]` is quantized. It takes `out * in` bytes for the 8-bit codes, plus one bfloat16 scale (2 bytes) and one bfloat16 bias (2 bytes) for each of the `out * in / 64` groups, adding $4 \cdot \text{out} \cdot \text{in} / 64$ bytes.
+  - A logical tensor with any other number of dimensions (such as a 1D normalization gain) stays in bfloat16 at 2 bytes per element.
 
-- a logical tensor with two dimensions `[out, in]` is quantized: `out * in` bytes of
-  codes, plus one bfloat16 scale and one bfloat16 bias for each of the
-  `out * in / 64` groups, $4 \cdot \text{out} \cdot \text{in} / 64$ bytes;
-- a logical tensor with any other number of dimensions (a norm gain) is kept in
-  bfloat16: 2 bytes per element.
-
-The function does not modify its arguments.
+Do not modify `header` or `config`.
 
 ## Example
 
-A one-block model: vocabulary 100, width 64, two query heads sharing one key/value
-head of width 32, a SwiGLU MLP of width 128, tied embeddings, stored in bfloat16.
+Consider a one-block bfloat16 model with vocabulary size 100, hidden size 64, 2 query heads sharing 1 key/value head of width 32, a SwiGLU MLP of width 128, and tied embeddings.
 
 ```python
 header = {
@@ -103,43 +76,25 @@ size_report(header, config)
 | matrices | $6400 + 4096 + 2 \cdot 2048 + 4096 + 3 \cdot 8192$ | 43,264 |
 | norm gains | $3 \cdot 64$ | 192 |
 | `parameters` | $43264 + 192$ | 43,456 |
-| `tensor_bytes` | every tensor is BF16: $2 \cdot 43456$ | 86,912 |
+| `tensor_bytes` | $2 \cdot 43456$ (all tensors are BF16) | 86,912 |
 | `kv_bytes_per_token` | $2 \cdot 1 \cdot 1 \cdot 32 \cdot 2$ | 128 |
 | `quantized_bytes` | $43264 + 4 \cdot 43264 / 64 + 2 \cdot 192$ | 46,352 |
 
-Now suppose the same file also stored `lm_head.weight`, shape `[100, 64]`. The model
-is tied, so the head is a copy: `parameters` and `quantized_bytes` do not change, and
-`tensor_bytes` grows by 12,800 to 99,712. With `tie_word_embeddings: False` the head
-is a matrix of its own: 49,856 parameters and 53,152 quantized bytes.
+Now suppose the same file also contains `lm_head.weight` with shape `[100, 64]`. Because `tie_word_embeddings` is true, the head is a duplicate copy. Both `parameters` and `quantized_bytes` stay unchanged, while `tensor_bytes` increases by 12,800 to 99,712. If `tie_word_embeddings` is false, the head is a separate matrix, raising `parameters` to 49,856 and `quantized_bytes` to 53,152.
 
-The same model as an 8-bit file has, for each matrix, a `U32` weight with a quarter
-of the columns plus scales and biases: `q_proj.weight` is `[64, 16]` and
-`q_proj.scales` is `[64, 1]`. Its `parameters` are still 43,456, and its
-`tensor_bytes` are now 46,352: the prediction, come true.
+If the same model is stored as an 8-bit quantized file, each matrix has a `U32` weight with one quarter as many columns, plus `scales` and `biases` tensors. For example, `q_proj.weight` has shape `[64, 16]` and `q_proj.scales` has shape `[64, 1]`. Its `parameters` remain 43,456, and its `tensor_bytes` drop to 46,352, matching the earlier `quantized_bytes` prediction.
 
 ## Constraints
 
 - Results are compared exactly.
-- Dtypes are among `BF16`, `F16`, `F32`, `U32`, `I64`. `bits` is 2, 4, or 8. Every
-  logical matrix has a second dimension that is a multiple of 64, and
-  `num_attention_heads` divides `hidden_size`.
-- Real inputs: the header and config of `ibm-granite/granite-4.0-350m` (226 tensors,
-  bfloat16, tied, read from the downloaded checkpoint) and of the 8-bit MLX build of
-  Granite 4.2 3B, `lmstudio-community/granite-4.2-3b-MLX-8bit` (927 tensors, untied;
-  its header is shipped with the problem, so this case needs no download). The
-  expected numbers were measured with `transformers` and `mlx-lm`: 352,379,904 and
-  3,659,737,600 parameters, and for the small model the exact size of the file that
-  `mlx-lm` writes when asked to quantize it to 8 bits.
+- Tensor dtypes are among `BF16`, `F16`, `F32`, `U32`, and `I64`.
+- `bits` is 2, 4, or 8.
+- Every 2D logical tensor has a second dimension divisible by 64.
+- `num_attention_heads` divides `hidden_size`.
+- Real-model test cases use the header and config of `ibm-granite/granite-4.0-350m` (226 tensors, bfloat16, tied, read from the downloaded checkpoint) and the 8-bit MLX build of Granite 4.2 3B, `lmstudio-community/granite-4.2-3b-MLX-8bit` (927 tensors, untied; its header is shipped with the problem so no download is required). Expected values were measured with `transformers` and `mlx-lm`, giving 352,379,904 and 3,659,737,600 parameters, and matching the exact data-section size that `mlx-lm` writes when quantizing the 350M model to 8 bits.
 
 ## Why this matters
 
-Before a model is loaded, these four numbers decide whether it can be: the bytes on
-disk are the resident memory of the weights, the KV bytes per token times context
-times concurrency is the memory that grows with traffic, and the quantized size says
-what a smaller build would buy. All of them can be read off a header fetched with one
-HTTP range request, without downloading gigabytes. The traps are the ones in the
-specification. Counting the stored elements of an 8-bit file reports 1.03 billion
-parameters for a 3.66 billion parameter model. A file that stores a tied matrix under
-both names advertises a quarter more parameters than the model has. And "8-bit" is
-8.5 bits per weight once the scales and biases are counted, which is 229 MB on a
-3.9 GB file.
+Before loading a model, these four numbers determine whether it fits in memory. `tensor_bytes` gives the resident weight footprint, `kv_bytes_per_token` multiplied by context length and concurrency gives the traffic-dependent cache memory, and `quantized_bytes` shows how much an 8-bit build would save. All four can be computed from a header fetched with a single HTTP range request, without downloading gigabytes of weights.
+
+Naive counters fail silently on real checkpoints. Summing stored tensor elements on an 8-bit checkpoint reports 1.03 billion parameters for a 3.66 billion parameter model. Counting a duplicated tied head inflates the parameter count by roughly a quarter. Ignoring scales and biases underestimates an 8-bit checkpoint because 8-bit group-64 quantization actually uses 8.5 bits per weight, adding 229 MB of overhead to a 3.9 GB file.

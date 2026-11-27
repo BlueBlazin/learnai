@@ -1,8 +1,4 @@
-Implement XTC ("exclude top choices"), a sampler that does the opposite of every
-truncation filter: with some probability it removes the *most* likely tokens of a row
-and keeps the tail. What keeps the output coherent is one rule that is easy to get
-wrong: of the tokens that qualify as top choices, the least likely one always
-survives.
+Implement XTC ("exclude top choices"), a sampler that works in the opposite direction of standard truncation filters. With a given probability, it removes the most likely tokens from a distribution while keeping the tail. To preserve coherence, the least likely token among those top choices always survives.
 
 ## Specification
 
@@ -10,49 +6,34 @@ survives.
 def xtc_filter(logits, threshold, probability, u): ...
 ```
 
-Randomness is an input: row $b$ is decided by its own uniform number `u[b]`.
+The inputs represent a batch of $B$ independent next-token logit rows over a vocabulary of size $V$:
 
-Each row is treated independently. For one row, let
-$\pi = \operatorname{softmax}(\text{logits})$. The **top choices** are the tokens with
+- `logits`: next-token logits for each row. Entries may be `-inf` (a masked token with probability 0), and every row has at least one finite entry. `+inf` and NaN never appear.
+- `threshold`: a Python float with $0 < \text{threshold} \le 1$, shared across all rows.
+- `probability`: a Python float with $0 \le \text{probability} \le 1$, shared across all rows.
+- `u`: per-row uniform random draws in $[0, 1)$, so row $b$ is controlled by `u[b]`.
+
+The function returns filtered logits (not probabilities). Kept entries must keep their exact input values, and removed entries must be exactly `-inf`.
+
+Each row $b \in \{0, \ldots, B - 1\}$ is processed independently. Let $\pi = \operatorname{softmax}(\text{logits}[b])$ be the token probabilities of row $b$, where `-inf` entries contribute probability 0. A token $i$ is a **top choice** if
 
 $$
-\pi_i \;\ge\; \text{threshold}.
+\pi_i \ge \text{threshold}.
 $$
 
-XTC **acts** on the row when both conditions hold:
+XTC **acts** on row $b$ when both of the following conditions hold:
 
 1. `u[b] < probability`, and
-2. the row has **at least two** top choices.
+2. row $b$ has **at least two** top choices.
 
-When it acts, every top choice is removed (set to `-inf`) **except the least likely
-one**. When it does not act, the row is returned unchanged. In both cases the tokens
-below the threshold are returned unchanged.
+When XTC acts on a row, every top choice is set to `-inf` **except the least likely one**. When XTC does not act, the entire row is returned unchanged. Tokens below `threshold` are always returned unchanged.
 
-- `logits`: a float32 tensor of shape `(B, V)`. Entries may be `-inf` (a masked token,
-  probability 0); every row has at least one finite entry. `+inf` and NaN never appear.
-- `threshold`: a Python float with $0 < \text{threshold} \le 1$, the same for every
-  row.
-- `probability`: a Python float with $0 \le \text{probability} \le 1$, the same for
-  every row.
-- `u`: a float32 tensor of shape `(B,)` with $0 \le u < 1$.
-- Returns a float32 tensor of shape `(B, V)`: logits, not probabilities. A kept entry
-  has exactly its input value; a removed entry is exactly `-inf`.
+Key rules:
 
-Details that decide the output:
-
-- **The survivor.** The least likely top choice is the one with the smallest logit.
-  If several top choices share that smallest logit exactly, the one with the
-  **highest index** survives and the others are removed. So when XTC acts, exactly
-  one top choice is left.
-- **A single top choice is never removed.** If only one token reaches the threshold,
-  removing it would leave only what the model considers unlikely; the row is
-  unchanged. For the same reason a threshold above 0.5 can never have an effect: two
-  probabilities cannot both exceed one half.
-- **The comparisons.** A token at exactly the threshold is a top choice (`>=`). The
-  row is filtered when `u[b] < probability` (strictly), so `probability = 0` never
-  acts and `probability = 1` acts on every row with two top choices.
-- The probabilities are those of the logits as given (the softmax over the whole
-  row, masked entries contributing 0). Nothing is renormalized afterwards.
+- **Choosing the survivor.** The least likely top choice is the top choice with the smallest logit. If multiple top choices tie for that exact smallest logit, the one with the **highest token index** survives and the others are removed. Thus, whenever XTC acts, exactly one top choice survives.
+- **Single top choice guard.** If only one token meets `threshold`, removing it would leave only low-probability tokens, so the row is left unchanged. For the same reason, any `threshold > 0.5` has no effect because two probabilities cannot both exceed 0.5.
+- **Comparison boundaries.** The threshold check is inclusive (`>=`), so a token with probability equal to `threshold` is a top choice. The probability check is strict (`u[b] < probability`), so `probability = 0` never acts and `probability = 1` acts on every row with at least two top choices.
+- **No renormalization.** Probabilities are computed once from the input logits, and the output logits are not renormalized.
 
 ## Shapes
 
@@ -81,45 +62,21 @@ xtc_filter(logits, 0.1, 0.5, u)
 #  [-0.0834, -2.9957, -3.9120, -4.6052,    -inf]]
 ```
 
-Row 0: `u = 0.2 < 0.5`, and three tokens reach the threshold of 0.1 (0.45, 0.25,
-0.15). The two most likely are removed; token 2, the least likely top choice,
-survives, and so do tokens 3 and 4, which were never top choices. Sampling from the
-result means taking its softmax: `[0, 0, 0.5, 0.2667, 0.2333]`.
-
-Row 1: the same logits with `u = 0.8`. XTC does not act.
-
-Row 2: `u = 0.3 < 0.5`, but only one token reaches the threshold. The model is sure
-of this token, and XTC leaves the row alone.
+- **Row 0:** `u[0] = 0.2 < 0.5`, and three tokens reach `threshold = 0.1` (probabilities `0.45`, `0.25`, and `0.15`). The two most likely tokens are set to `-inf`. Token 2 (the least likely top choice) survives alongside tokens 3 and 4, which were below `threshold`. Taking softmax of the returned row yields `[0, 0, 0.5, 0.2667, 0.2333]`.
+- **Row 1:** Same logits, but `u[1] = 0.8 >= 0.5`. XTC does not act, so the row is unchanged.
+- **Row 2:** `u[2] = 0.3 < 0.5`, but only one token reaches `threshold = 0.1`. Because fewer than two top choices exist, the row is unchanged.
 
 ## Constraints
 
-- $1 \le B \le 20000$, $1 \le V \le 2000$. `threshold` lies in $[0.01, 1]$. Finite
-  logits lie in $[-1000, 1000]$.
-- Kept entries are compared with the reference to a relative tolerance of `1e-4` and
-  an absolute tolerance of `1e-6` (they are copies of the input); removed entries must
-  be exactly `-inf`.
-- Float32 rounding cannot decide a test. Every probability differs from the threshold
-  by at least $10^{-4}$, except where both are exact: two equal finite logits in a
-  row whose other entries are `-inf` have probability exactly 0.5. Two top choices
-  have either exactly equal logits or logits that differ by at least $10^{-3}$. Every
-  `u[b]` differs from `probability` by at least $10^{-4}$, except in the statistical
-  cases, where `probability` is 0.25 or 0.75, which float32 represents exactly.
-- **Statistical cases.** The function is called once with 20,000 identical rows and
-  independent uniforms, and the fraction of rows in which the most likely token was
-  removed is compared with `probability` using Hoeffding's inequality. A correct
-  solution fails with probability below $10^{-9}$, and since the seeds are fixed, it
-  either always passes or always fails.
-- No Python loop over rows or tokens is needed, and no sort.
+- $1 \le B \le 20000$ and $1 \le V \le 2000$.
+- `threshold` lies in $[0.01, 1]$, and finite logits lie in $[-1000, 1000]$.
+- Kept entries are compared against the reference with a relative tolerance of `1e-4` and an absolute tolerance of `1e-6`. Removed entries must be exactly `-inf`.
+- Float32 rounding cannot flip any test case. Every token probability differs from `threshold` by at least $10^{-4}$, except in exact boundary cases where two equal finite logits and `-inf` elsewhere give probability exactly `0.5`. Any two top choices have either identical logits or logits differing by at least $10^{-3}$. Every `u[b]` differs from `probability` by at least $10^{-4}$, except in statistical tests where `probability` is `0.25` or `0.75` (exact in float32).
+- **Statistical tests.** The function is called once on 20,000 identical rows with independent uniform draws. The fraction of rows where the most likely token is removed is checked against `probability` using Hoeffding's inequality. A correct solution fails with probability below $10^{-9}$, and because seeds are fixed, it either always passes or always fails.
+- No Python loop over rows or tokens is needed, and no sort is needed.
 
 ## Why this matters
 
-XTC (Weidmann, 2024; first a community sampler in text-generation-webui, since
-adopted by llama.cpp, ExLlamaV2, and mlx-lm) is what creative-writing front ends turn
-on to break a model out of its most predictable phrasing. Repetition penalties and
-temperature act on all tokens; XTC acts only where the model has several acceptable
-continuations and removes the obvious ones. The guard rails are the whole design.
-Remove the last top choice too, and the sampler falls through to tokens the model
-gave a percent or less: grammar breaks. Act on a row with a single top choice, and
-the one token that was certainly right (the closing quote, the second half of a
-word) becomes impossible. Because the sampler fires at random, such bugs show up as
-occasional garbage in long generations, not as a failing prompt.
+XTC (Weidmann, 2024) started as a community sampler in text-generation-webui and has since been adopted by llama.cpp, ExLlamaV2, and mlx-lm. Creative-writing front ends enable it to steer models away from repetitive, predictable phrasing. Unlike temperature or repetition penalties, which affect the entire vocabulary, XTC intervenes only when the model already sees multiple plausible continuations and removes the most obvious ones.
+
+The two guard rails are critical to keeping generations readable. Removing the last remaining top choice leaves only low-probability tail tokens and breaks grammar. Acting on a row with a single top choice blocks tokens the model is certain about, such as a closing quote or the second half of a word. Because XTC triggers randomly, bugs in these guards show up as occasional gibberish in long generations rather than deterministic test failures.

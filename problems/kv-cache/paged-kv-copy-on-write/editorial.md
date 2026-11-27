@@ -1,36 +1,16 @@
 ## The idea
 
-In a paged cache a block table entry is just an id, so nothing stops two tables
-from naming the same physical block. Sharing is then free: a fork copies a list of
-integers, not gigabytes of keys and values. Two rules make sharing safe.
+Because a block table entry is just a physical block id, multiple block tables can point to the same physical block. Forking a sequence only copies a list of integers rather than gigabytes of keys and values. Two rules keep sharing safe.
 
-**Rule 1: reference counts decide when a block is free.** A block's count is the
-number of tables that contain it. `fork` increments, `free` decrements, and a
-block returns to the pool only at 0. No sequence "owns" a block in any stronger
-sense: the parent may be freed first, and the blocks it allocated live on in its
-children.
+**Rule 1: reference counts decide when a block is free.** Each block's reference count is the number of live block tables containing it. `fork` increments the count for every block in the parent's table, `free` decrements each block's count, and a block returns to the free pool only when its count reaches `0`. No sequence owns a block exclusively. A parent can be freed before its children, and its blocks stay alive as long as any child references them.
 
-**Rule 2: a block is written only by its sole holder.** KV blocks are append-only:
-a slot, once written, never changes, and a full block is never written again. So
-full blocks can stay shared forever, and the only write that could ever hit a
-shared block is an append into a *partly filled last block*. Before that write,
-the appending sequence checks the count. If it is 1, it writes in place. If it is
-more, it takes a fresh block, repoints its own table entry, drops one reference on
-the old block, and tells the engine to copy old to new. The other holders keep the
-old block untouched.
+**Rule 2: only a block's sole holder may write to it.** KV blocks are append-only, so once a slot is written it never changes, and a full block is never written again. Full blocks stay shared indefinitely. The only write that can ever hit a shared block is an append into a *partly filled last block*. Before writing, the appending sequence checks that block's reference count. If the count is `1`, it writes in place. If the count is greater than `1`, it allocates a fresh block, replaces the last entry in its own table, decrements the old block's reference count, and returns `(old, new)` so the engine copies the old block's contents before writing. Other holders keep pointing to the untouched old block.
 
-The copy is of one block, at most once per sequence per fork, and it copies at
-most `block_size - 1` valid slots. That bound is why PagedAttention can afford it.
+Each fork triggers at most one block copy per sequence, copying at most `block_size - 1` valid slots. That small bound is what makes copy-on-write cheap in PagedAttention.
 
-**"Shared" is evaluated at the append.** After a fork of two sequences, the first
-to append copies. The second then holds the old block alone (count 1) and writes
-in place. With $n$ sequences sharing a partly filled block, there are $n - 1$
-copies, not $n$. A freed sibling has the same effect: its references disappear,
-and the survivor may write in place again.
+**Evaluate sharing at append time.** Suppose $m$ sequences share a partly filled block. The first $m - 1$ sequences to append each trigger a copy and decrement the original block's reference count. When the last sequence appends, the count is `1`, so it writes in place. There are $m - 1$ copies, not $m$. Freeing siblings has the same effect. Once only one holder remains, it can write in place again.
 
-**Capacity.** The copy needs a block too. The transactional rule of the previous
-problem still holds, so the check is `copy + growth <= free` before anything is
-changed.
+**Capacity check.** A copy needs a free block just like growth does. Keep `append` transactional by checking `copy + growth <= len(free)` before mutating any state.
 
 ## Reference solution (Python)
 
@@ -97,72 +77,27 @@ class CowAllocator:
         return len(self._free)
 ```
 
-The source of a copy is never pushed back to the pool in `append`: its count was
-above 1, so after the decrement at least one other sequence still holds it.
+In `append`, the source of a copy is never pushed back to `_free`. Its reference count was at least `2`, so after decrementing it, at least one other sequence still holds it.
 
 ## Common mistakes
 
-- **Copying on fork.** Giving the child its own copy of every block is correct in
-  the sense that nothing is corrupted, and it throws away the point: memory
-  doubles with every fork, each fork costs a full memcpy of the prompt, and a fork
-  can fail for lack of memory. Beam search forks at every step.
-- **No copy.** Appending into a shared last block makes two sequences write their
-  different token 6 into the same slot. The second write wins, and the first
-  sequence silently attends to another sequence's keys and values from then on.
-  Nothing crashes; the text of one sample just goes subtly wrong.
-- **Double free.** `free` that returns every block of the table to the pool
-  ignores the other holders. The block is handed to the next request while a
-  sibling still reads it. The classic trigger is the parent finishing before its
-  children, which is the normal order for parallel sampling.
-- **Deciding "shared" at fork time.** Marking blocks as shared when they are
-  forked and copying whenever a marked block is written makes the *last* holder
-  copy as well: $n$ copies instead of $n - 1$, and the abandoned original leaks or
-  is freed late. Ask the count, now.
-- **Copying a full block.** If the last block is full, the append goes to a new
-  block and writes nothing old. Copying it anyway wastes a block per fork at
-  every block boundary.
-- **Forgetting to drop the source's reference.** After the copy this sequence no
-  longer holds the old block. If its count stays where it was, the block can never
-  reach 0 and is lost to the pool.
-- **Leaving the copy out of the capacity check.** Checking only the growth blocks
-  and taking the copy destination afterwards fails half-way when the pool is one
-  block short: the sequence has grown, and then the call raises.
-- **Aliased tables.** `tables[child] = tables[parent]` stores one list under two
-  keys. Combined with in-place `append`/`extend` on tables, every block one
-  sequence gains shows up in the other.
-- **The copy destination allocated last.** Harmless in an engine, but this problem
-  fixes the order (copy first, lowest id first) so that results are reproducible.
-- **A child that starts at zero tokens.** The fork must copy the token count along
-  with the table; otherwise the child's first append is placed at slot 0 of the
-  shared prefix.
+- **Copying eagerly on fork.** Giving the child its own copy of every block avoids corruption, but defeats the purpose of sharing. Memory doubles on every fork, each fork copies the full prompt, and a fork can fail with `OutOfBlocks`.
+- **Skipping the copy on write.** Writing into a shared last block lets two sequences write different tokens into the same slot. The second write overwrites the first, so the first sequence silently attends to another sequence's keys and values without raising an error.
+- **Double free.** Returning every block in a freed sequence's table to the pool without checking reference counts hands live blocks to new requests while siblings still read them. This fails immediately when a parent finishes before its children, which is common in parallel sampling.
+- **Marking blocks as shared at fork time.** Tracking a sticky "shared" flag set during `fork` forces the last remaining holder to copy as well, causing $m$ copies instead of $m - 1$ and leaking or delaying the release of the original block. Always check the current reference count at append time.
+- **Copying a full last block.** When `tokens % block_size == 0`, the new tokens go into a newly allocated growth block and never touch the previous block. Copying it wastes a block per fork at every block boundary.
+- **Forgetting to decrement the source's reference count.** After a copy, the appending sequence no longer holds `src`. Leaving `src`'s count unchanged prevents it from ever reaching `0`, permanently leaking the block.
+- **Excluding the copy block from the capacity check.** Checking only growth blocks and popping the copy destination afterward fails halfway through when the pool is one block short, leaving mutated state behind.
+- **Aliasing block tables.** Setting `tables[child] = tables[parent]` shares the same list object. Any in-place `append` or `extend` then mutates both sequences' tables.
+- **Allocating the copy destination last.** Although engines do not care about allocation order, this problem requires allocating the copy destination before growth blocks (lowest id first) so outputs are deterministic.
+- **Initializing a forked child with zero tokens.** `fork` must copy the parent's token count along with its block table, or the child's first append will write to slot `0` of the shared prefix.
 
 ## Complexity
 
-`fork` and `free` are $O(k)$ for a table of $k$ blocks (plus $O(\log n)$ per block
-that returns to the heap); `append` is $O(k)$ for the table copy plus
-$O(g \log n)$ for $g$ new blocks. Engines avoid the table copy by mutating the
-table in place, which is safe once every sequence has its own list. Memory is one
-counter per block.
+Let $n$ be `n_blocks`, $k$ be the length of a sequence's block table, and $g$ be the number of newly allocated blocks (`copy + growth`). `fork` takes $O(k)$ time. `free` takes $O(k)$ time plus $O(\log n)$ for each block whose count drops to `0`. `append` takes $O(k + g \log n)$ time because it copies the table list. Production engines mutate the sequence's own list in place to avoid the $O(k)$ copy. Extra memory is $O(n)$ for the reference-count array.
 
 ## In the wild
 
-- **The paper.** PagedAttention (Kwon et al., SOSP 2023, section 4.4, on other
-  decoding scenarios) describes this design for parallel sampling and beam
-  search: several sequences map their logical blocks to the same physical block,
-  each physical block carries a reference count, and a block that more than one
-  sequence would modify is copied at block granularity, as an operating system
-  does for the pages of a forked process. Only the last, partly filled block of a
-  shared prompt is ever copied.
-- **vLLM's first block manager** (`vllm/core/block_manager.py`, v0.2): `fork`
-  copies the parent's block table and increments `ref_count` on every block, with
-  the comment that it "does not allocate a new physical block" and is therefore
-  "always safe from OOM". `append_slot` returns `None` when the last block has
-  `ref_count == 1` and otherwise allocates a block, replaces the last table entry,
-  frees the old block (a decrement), and returns the pair
-  `(old block number, new block number)` for the engine to copy. The allocator's
-  `free` raises `"Double free!"` on a block whose count is already 0.
-- **Today.** vLLM's current KV cache manager shares blocks through the prefix
-  cache instead: a second request with the same prompt finds the full blocks by
-  hash and takes a reference (`block-hash-prefix-cache`). Only full blocks are
-  shared there, so no copy on write is needed: the partly filled tail is simply
-  recomputed.
+- **The PagedAttention paper.** Kwon et al. (SOSP 2023, Section 4.4) introduce this reference-counted copy-on-write design for parallel sampling and beam search. Multiple sequences map logical blocks to the same physical block, and any block that more than one sequence would write to is copied at block granularity, mirroring OS process `fork`. Only the last, partly filled block of a shared prompt is ever copied.
+- **vLLM's original block manager.** In `vllm/core/block_manager.py` (v0.2), `fork` copies the parent's block table and increments `ref_count` on every block, noting that it allocates no physical blocks and is therefore safe from OOM. `append_slot` returns `None` when the last block has `ref_count == 1`, and otherwise allocates a new block, replaces the last table entry, decrements the old block's count, and returns `(old_block, new_block)` for the engine to copy. Freeing a block whose count is already `0` raises `"Double free!"`.
+- **Prefix caching today.** Modern vLLM shares blocks through a prefix cache instead (`block-hash-prefix-cache`). A new request with the same prompt looks up full blocks by hash and increments their reference counts. Because only full blocks are cached, no copy-on-write is needed, and the partly filled tail is simply recomputed.

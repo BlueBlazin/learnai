@@ -1,21 +1,15 @@
-There are three tensors that must stay aligned along the sequence axis: keys, values,
-and scores. If you had the positions each head keeps, as an index tensor of shape
-`(B, H, N)`, how would you produce all three outputs from it?
+Keys, values, and scores must stay aligned along the sequence axis. Suppose you already had an index tensor `kept` of shape `(B, H, N)` containing the positions each head keeps. How would you produce all three outputs from `kept`?
 
 ---
 
-Work in this order. (1) Extend the scores with `T` zeros and add the column sums
-`attn_weights.sum(axis=2)`. (2) If `S <= budget`, the kept positions are
-`0 .. S - 1` for every head. Otherwise split the positions at `old = S - recent`:
-rank positions `0 .. old - 1` by score, take the first `budget - recent` of that
-ranking, **sort those positions**, and append `old .. S - 1`. (3) Gather keys,
-values, and scores along axis 2 with the kept positions.
+Follow three steps:
+1. Pad `scores` with `T` zeros on the right (or start from zeros if `scores` is `None`) and add the column sums `attn_weights.sum(axis=2)`.
+2. If `S <= budget`, set `kept` to `0 .. S - 1` for every batch item and head. Otherwise split at `old = S - recent`, rank positions `0 .. old - 1` by score, take the top `budget - recent` indices, **sort those indices into increasing order**, and concatenate `old .. S - 1` after them.
+3. Gather `k`, `v`, and `scores` along axis `2` using `kept`.
 
 ---
 
-The ranking must put equal scores in position order, which is a stable descending
-sort: `torch.argsort(x, descending=True, stable=True)`, or `argsort(-x)` in JAX and
-MLX (both stable). Then
+Use a stable descending sort so equal scores preserve their original position order (putting older positions first). In PyTorch, use `torch.argsort(x, descending=True, stable=True)`. In JAX and MLX, `argsort(-x)` is stable. Then:
 
 ```
 ranked = argsort_descending(scores[:, :, :old])          # (B, H, old)

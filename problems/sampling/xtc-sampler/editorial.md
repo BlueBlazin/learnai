@@ -1,28 +1,17 @@
 ## The idea
 
-Truncation samplers (top-k, top-p, min-p) cut the tail and keep the head. They make
-output more coherent and, for the same reason, more predictable: the model's favorite
-continuation wins most of the time, and across a long story the same phrases come
-back. XTC attacks that directly. Where the model has **several** acceptable
-continuations, it sometimes removes the most obvious ones.
+Truncation samplers like top-k, top-p, and min-p cut off the tail of the distribution and keep the head. That improves coherence, but it also makes long generations repetitive because the model's favorite continuations win most of the time. XTC takes the opposite approach. When the model has **several** plausible continuations, XTC occasionally removes the most obvious ones.
 
-"Acceptable" is defined by the threshold: a token with probability at least
-`threshold` is a top choice, something the model would plausibly say. The rule is
+A token is considered plausible (a **top choice**) when its probability is at least `threshold`. The core rule is:
 
-> if a row has at least two top choices, remove all of them except the least likely.
+> If a row has at least two top choices, remove all of them except the least likely one.
 
-Two properties follow, and they are the design:
+Two safety properties follow directly from this rule:
 
-- **The result is never worse than "acceptable".** The survivor is itself a top
-  choice, with probability at least `threshold`, so after XTC the most likely
-  remaining token is one the model rated plausible. The sampler does not fall
-  through to the tail.
-- **Certainty is respected.** With one top choice there is no alternative of
-  comparable quality, and nothing happens. A threshold above 0.5 therefore disables
-  the sampler: two probabilities above one half do not fit in a distribution.
+- **The best remaining token is still plausible.** Because the surviving top choice has probability at least `threshold`, the sampler never falls through to the low-probability tail.
+- **High-confidence steps stay untouched.** When only one token reaches `threshold`, there is no comparable alternative, so the row is left alone. Consequently, any `threshold > 0.5` disables XTC because two probabilities cannot both exceed 0.5.
 
-The coin (`u < probability`) makes the intervention occasional, so the text is a
-mixture of ordinary sampling and steps where the obvious choices were unavailable.
+The per-row coin flip (`u < probability`) makes this intervention occasional, mixing normal sampling steps with steps where the most predictable continuations are masked out.
 
 ## Reference solution (PyTorch)
 
@@ -39,78 +28,35 @@ def xtc_filter(logits, threshold, probability, u):
     return torch.where(remove, float("-inf"), logits)
 ```
 
-- The softmax is needed only for `above`. The survivor is found among the logits,
-  where "least likely" is "smallest" and ties are exact.
-- There is no sort. The original implementations walk a sorted candidate list
-  because their data structure is one; on a dense tensor, a masked minimum finds
-  the last top choice in one pass.
-- A row with no top choice has `floor = +inf`, `candidate` all false, and
-  `survivor = -1`; it does not matter, since `fires` is false for it.
+- Softmax is needed only to compute `above`. Finding the survivor directly on `logits` makes "least likely" equivalent to "smallest" and ensures exact tie comparisons.
+- No sorting is required. Original C++ implementations scan a sorted candidate list because their sampler API already stores candidates that way, whereas on a dense tensor a masked minimum finds the smallest top-choice logit in one pass.
+- If a row has no top choices, `floor` is `+inf`, `candidate` is all false, and `survivor` is `-1`. That value is harmless because `fires` is false for that row.
 
 ## Common mistakes
 
-- **Removing every top choice.** The off-by-one of this sampler. The best remaining
-  token then has probability below the threshold, possibly far below, and the
-  renormalized distribution is made of tokens the model rejected.
-- **Removing only the top token.** That is a different, much weaker sampler: with
-  probabilities 0.45, 0.25, 0.15 it leaves 0.25 as the favorite, and the next step
-  is as predictable as before.
-- **Acting on a single top choice.** The token that was certainly right becomes
-  impossible. The condition is on the *count* of top choices, not on the top
-  probability.
-- **Keeping the most likely top choice** and removing the rest. A plausible reading
-  of "exclude top choices, keep one" that turns XTC into a truncation filter.
-- **An inverted coin** (`u >= probability`, or `u > 1 - probability` when the
-  uniforms are not symmetric in your tests). `probability` is the chance of acting.
-- **One coin for the batch.** All requests in a batch are then filtered on the same
-  steps.
-- **Ties.** With equal logits among the least likely top choices, "keep the last
-  one" has to say which. The rule here keeps one token; keeping all tied tokens is
-  also defensible (see below), but it is a different function, and with two tokens
-  at 0.5 each it never acts.
-- **`>` for the threshold.** Invisible except at exact equality, which happens with
-  uniform rows: two equal tokens at a threshold of 0.5.
+- **Removing every top choice.** Failing to spare the least likely top choice leaves only tokens below `threshold`, so the renormalized distribution consists entirely of tokens the model considered unlikely.
+- **Removing only the single most likely token.** With probabilities `0.45, 0.25, 0.15`, dropping only `0.45` still leaves `0.25` as the dominant choice and produces a much weaker effect than XTC.
+- **Acting on a single top choice.** Checking whether the maximum probability exceeds `threshold` instead of counting top choices removes high-confidence tokens that have no good substitute.
+- **Keeping the most likely top choice.** Inverting the survivor rule turns XTC into a standard truncation filter that keeps only the top token.
+- **Inverting the coin flip.** Using `u >= probability` (or `u > 1 - probability` on asymmetric test inputs) applies the wrong activation rate, since `probability` is the chance of acting.
+- **Sharing one coin flip across the batch.** Drawing a single boolean for all rows forces every sequence in a batch to trigger on the same decoding steps.
+- **Mishandling ties.** When multiple top choices share the smallest logit, keeping all of them instead of the highest index implements a different rule and prevents XTC from acting when two tokens tie at `0.5` each.
+- **Using `>` instead of `>=` for `threshold`.** This bug stays hidden until an exact boundary case occurs, such as two equal tokens at `threshold = 0.5`.
 
 ## Complexity
 
-$O(B \cdot V)$ time and memory: a softmax, two masked reductions, and a select.
+Time and memory are $O(B \cdot V)$, where $B$ is the batch size and $V$ is the vocabulary size. The implementation runs one softmax, two masked reductions along the vocabulary axis, and a final `where` select.
 
 ## In the wild
 
-XTC was proposed by Philipp Emanuel Weidmann (p-e-w) as text-generation-webui pull
-request 6335 (2024) and spread through local inference engines for two years before
-it was written up as a paper, "XTC: Head-Aware Sampling by Excluding Top
-Choices" (arXiv 2608.22758, 2026), whose abstract states the rule as here: tokens
-above an absolute plausibility threshold are flagged, the rule applies only when at
-least two pass, and with a given probability all but the weakest of them are
-removed. This problem follows the rule as merged in llama.cpp
-(`llama_sample_xtc_apply` in `src/llama-sampler.cpp`): return early when
-`probability <= 0`, `threshold > 0.5`, or fewer than two candidates remain; draw a
-uniform number and return when it is greater than `probability`; sort the
-candidates by probability; find the last position whose probability is
-`>= threshold`; and, if that position is not the first, drop every candidate before
-it. llama.cpp's defaults are `--xtc-probability 0.0` and `--xtc-threshold 0.1`, and
-XTC runs after min-p and before temperature in its default sampler order, so the
-threshold applies to the probabilities before temperature scaling.
+Philipp Emanuel Weidmann (p-e-w) proposed XTC in text-generation-webui pull request 6335 (2024). It spread across local inference engines for two years before appearing in the paper "XTC: Head-Aware Sampling by Excluding Top Choices" (arXiv 2608.22758, 2026), which states the same rule: flag tokens above a plausibility threshold, act only when at least two pass, and with a given probability remove all but the weakest of them.
 
-Where implementations differ:
+This problem matches the rule in llama.cpp (`llama_sample_xtc_apply` in `src/llama-sampler.cpp`). That implementation returns early when `probability <= 0`, `threshold > 0.5`, or fewer than two candidates remain. Otherwise it draws a uniform number, skips if the draw exceeds `probability`, sorts candidates by probability, finds the last candidate with probability `>= threshold`, and drops every candidate before it when that position is not index 0. Its defaults are `--xtc-probability 0.0` and `--xtc-threshold 0.1`, and it runs after min-p and before temperature so the threshold applies to pre-temperature probabilities.
 
-- **Ties.** llama.cpp keeps exactly one token, whichever its sort placed last among
-  equal probabilities; that order is not specified. This problem makes it the
-  highest index. mlx-lm's `apply_xtc` instead removes the tokens whose probability
-  is strictly greater than the smallest above-threshold probability, so every token
-  tied for last survives.
-- **The threshold comparison.** llama.cpp uses `p >= threshold`; mlx-lm uses
-  `probs > xtc_threshold`.
-- **The coin.** llama.cpp skips when `chance > probability` and mlx-lm when
-  `uniform > xtc_probability`, so both act when the draw equals the probability;
-  here the test is `u < probability`, which makes `probability = 0` exactly "never"
-  for uniforms in $[0, 1)$.
-- **Guards.** llama.cpp has a `min_keep` argument and will not act if fewer
-  candidates than that would remain. mlx-lm takes a list of special tokens (end of
-  sequence, newline) that XTC is never allowed to remove, so the sampler cannot
-  prevent a generation from ending; llama.cpp has no such list.
-- **Temperature.** Because XTC reads probabilities, its effect depends on where it
-  sits relative to temperature. Before temperature (llama.cpp's default order), the
-  set of top choices is a property of the model's distribution; after a high
-  temperature, more tokens clear the threshold and more are removed.
+Implementations differ in several details:
+
+- **Ties.** llama.cpp keeps whichever tied token its sort happens to place last, whereas this problem fixes the tie-breaker to the highest index. mlx-lm's `apply_xtc` removes only tokens whose probability is strictly greater than the minimum above-threshold probability, so all tokens tied for last survive.
+- **Threshold comparison.** llama.cpp uses `p >= threshold`, while mlx-lm uses `probs > xtc_threshold`.
+- **Coin flip.** llama.cpp skips when `chance > probability` and mlx-lm skips when `uniform > xtc_probability`, so both act on exact equality. Using `u < probability` ensures that `probability = 0` never acts for draws in $[0, 1)$.
+- **Extra guards.** llama.cpp accepts a `min_keep` parameter and skips filtering if fewer candidates would remain. mlx-lm accepts a list of special tokens (such as EOS and newline) that XTC cannot remove, whereas llama.cpp does not.
+- **Sampler order relative to temperature.** Because XTC inspects probabilities, running it before temperature (llama.cpp's default) operates on the model's raw distribution. Running it after a high temperature flattens the distribution, allowing more tokens to clear `threshold` and be removed.

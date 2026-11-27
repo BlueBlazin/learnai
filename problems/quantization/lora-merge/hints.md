@@ -1,16 +1,10 @@
-Start from the shapes. `w` is `(out, in)`, `a` is `(r, in)`, and `b` is `(out, r)`.
-There is exactly one order in which `a` and `b` multiply to something of the shape of
-`w`. Which one, and where does the number $r$ come from if it is not an argument?
+Start from the matrix shapes. `w` has shape `(out, in)`, `a` has shape `(r, in)`, and `b` has shape `(out, r)`. Only one product of `a` and `b` matches the shape of `w`. Identify that order and check which axis gives the rank $r$.
 
 ---
 
-`b @ a` has shape `(out, r) @ (r, in) = (out, in)`, and $r$ is `a.shape[0]`. The scale
-$\alpha / r$ multiplies that product once. `merge` adds the scaled product to `w`;
-`unmerge` subtracts the very same expression.
+`b @ a` has shape `(out, r) @ (r, in) = (out, in)`, and $r$ is `a.shape[0]`. Multiply that product by $\alpha / r$ once. `merge` adds this scaled update to `w`, and `unmerge` subtracts the exact same term.
 
-For `lora_forward`, apply the same transposition rule as for the base layer. The base
-output is `x @ w.T`. Since $W' = W + \frac{\alpha}{r} BA$, the extra term is
-`x @ (b @ a).T`, and $(BA)^{\top} = A^{\top} B^{\top}$.
+For `lora_forward`, apply the same transpose rule as the base layer. The base output is `x @ w.T`. Since $W' = W + \frac{\alpha}{r} B A$, the adapter contribution is `x @ (b @ a).T`, and $(B A)^{\top} = A^{\top} B^{\top}$.
 
 ---
 
@@ -20,6 +14,4 @@ merged = w + scale * (b @ a)
 y = x @ w.T + scale * ((x @ a.T) @ b.T)
 ```
 
-The parentheses in the last line matter for cost, not for the value: `x @ a.T` has
-only `r` columns, so the adapter path costs two thin matmuls and the `(out, in)`
-update is never built. Apply `scale` exactly once.
+The parentheses in the last line keep the computation cheap without changing the result. Because `x @ a.T` has only `r` columns, the adapter path uses two thin matrix multiplications and never materializes an `(out, in)` matrix. Apply `scale` exactly once.

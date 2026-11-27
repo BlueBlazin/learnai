@@ -1,20 +1,12 @@
 ## The idea
 
-Split the cache into storage and bookkeeping. The storage is two buffers whose shape
-is fixed when the cache is created. The bookkeeping is one integer, `length`, and one
-invariant:
+Split the cache into fixed storage and a single piece of bookkeeping. The storage consists of two buffers allocated once at capacity `C`. The bookkeeping is an integer `length` governed by one invariant:
 
-> slots `0 .. length - 1` hold the tokens written so far, in order; nothing may
-> depend on any other slot.
+> Slots `0 .. length - 1` hold the tokens written so far, in order. Nothing may depend on any other slot.
 
-`cache_write` maintains the invariant: it fills the next `T` slots and adds `T` to
-the length. `cache_attend` relies on it: it reads slots below the length and nothing
-else. Every bug in this problem breaks one half of that sentence.
+`cache_write` maintains this invariant by writing the next `T` tokens into slots `length .. length + T - 1` and advancing `length` by `T`. `cache_attend` relies on it by reading only slots below `length`. Every common bug in this problem breaks one of those two rules.
 
-The reason to bother is cost. Appending by concatenation allocates a new tensor and
-copies the old one on every step: $O(S)$ per token, $O(n^2)$ bytes moved over a
-generation of $n$ tokens, and a different tensor shape at every step. Writing into a
-preallocated buffer moves $O(T)$ bytes and leaves every shape as it was.
+Preallocation avoids the quadratic copy cost of concatenation. Growing a cache by concatenating on every decode step allocates a new buffer and copies all $S$ cached tokens each time, moving $O(S)$ bytes per token and $O(n^2)$ bytes across an $n$-token generation, while also changing the tensor shape at every step. Writing into a preallocated buffer moves only $O(T)$ bytes and keeps every buffer shape fixed.
 
 ## Reference solution (PyTorch)
 
@@ -42,65 +34,28 @@ def cache_attend(q, cache):
     return ops.attention(q, k, v, visible)
 ```
 
-The mask is the one from `kv-cache-append` with $S = \text{length} - T$: the queries
-are the last $T$ rows of the full causal computation.
+The causal mask matches `kv-cache-append` with $S = \text{length} - T$ prior tokens, since the `T` queries correspond to the last `T` rows of a full causal attention matrix.
 
-**The three frameworks.** The interface is "a cache goes in, a cache comes out, and
-the old one is not used again", which each framework implements in its own natural
-way. PyTorch and MLX assign to a slice of the existing buffer. JAX arrays cannot be
-assigned to, so the JAX reference writes `k = k.at[:, :, length:end].set(k_new)`,
-which returns an array of the same shape. Run eagerly, that copies the buffer; inside
-`jit`, when the caller does not use the old buffer again (which is exactly what the
-contract promises), XLA performs the update in place. The "never reuse the old
-cache" rule is what makes the in-place and the functional versions indistinguishable.
+**The three frameworks.** The contract says a cache goes in, a cache comes out, and the caller never reuses the old one. Each framework implements that idiomatically. PyTorch and MLX assign directly to a slice of the existing buffer. JAX arrays are immutable, so the JAX reference writes `k = k.at[:, :, length:end].set(k_new)`, which returns a new array of the same shape. In eager JAX that copies the buffer, but inside `jit`, XLA sees that the old buffer is never used again and performs the update in place. The "never reuse the old cache" rule makes the in-place and functional implementations indistinguishable.
 
 ## Common mistakes
 
-- **Attending over the whole buffer.** A zero key has score 0, not $-\infty$, so each
-  unused slot takes a share of the attention and pulls the output toward its (zero)
-  value. The error shrinks as the buffer fills up, which makes it easy to miss.
-- **Masking only the scores.** Setting the tail's scores to $-\infty$ gives the tail
-  weight 0, and then the weighted sum multiplies that 0 by whatever is in the tail of
-  `v`. For finite garbage the result is right. For NaN or infinity, $0 \times
-  \text{NaN} = \text{NaN}$ and the output is NaN. Slicing avoids the question; a
-  masked implementation must sanitize `v` too.
-- **Concatenating in `cache_write`.** `cat(k[:, :, :length], k_new)` produces the
-  right outputs and the wrong cache: the buffer shrinks to the length and is
-  reallocated at every step. It is `kv-cache-append` with extra steps.
-- **`length + 1`.** Correct for every decode step and wrong after a prefill of more
-  than one token; the next write then lands on top of live entries.
-- **`>=` in the capacity check.** `length + T == capacity` fills the last slot and is
-  valid. Refusing it wastes a slot and fails exactly at the model's context limit.
-- **Truncating instead of raising.** Writing "what fits" drops tokens silently; the
-  caller believes they are cached.
-- **No causal mask among the new queries.** As in `kv-cache-append`: one new token
-  needs no mask, a chunk does.
+- **Attending over the whole buffer.** A zero key has score 0, not $-\infty$, so each unused slot takes a share of the softmax weight and pulls the output toward its zero value. The error shrinks as the buffer fills up, making it easy to miss.
+- **Masking only the scores.** Setting unused scores to $-\infty$ gives them weight 0, but the weighted sum still multiplies that 0 by the unused tail of `v`. For finite garbage that happens to work, but for NaN or infinity, $0 \times \text{NaN} = \text{NaN}$ poisons the output. Slicing avoids touching the tail altogether. A masked implementation must sanitize `v` as well.
+- **Concatenating in `cache_write`.** Calling `cat(k[:, :, :length], k_new)` produces the right attention outputs but breaks the cache contract. The buffer shrinks to `length` and reallocates on every step.
+- **Advancing by `length + 1`.** This works for single-token decode steps, but after a multi-token prefill the next write overwrites live entries.
+- **Using `>=` in the capacity check.** Filling the last slot (`length + T == capacity`) is valid. Rejecting it wastes a slot and fails right at the context limit.
+- **Truncating instead of raising.** Writing only what fits silently drops tokens while the caller assumes they were cached.
+- **Omitting the causal mask among new queries.** A single new token needs no mask, but a multi-token chunk does, just as in `kv-cache-append`.
 
 ## Complexity
 
-`cache_write` is $O(B\,H\,T\,D)$ time and no new memory (in place), independent of
-how much is cached. `cache_attend` is $O(B\,H\,T\,\text{length}\,D)$. Memory is
-$2\,B\,H\,C\,D$ floats from the first call on, whether or not they are used: the
-price of preallocation is that the capacity must be chosen in advance.
+`cache_write` takes $O(B\,H\,T\,D)$ time and no extra memory when done in place, regardless of how many tokens are already cached. `cache_attend` takes $O(B\,H\,T\,\text{length}\,D)$ time. Memory usage is $2\,B\,H\,C\,D$ floats from the start, whether or not all slots are used, because capacity must be chosen up front.
 
 ## In the wild
 
-Hugging Face Transformers' `StaticCache` is this design: each layer lazily allocates
-`torch.zeros((batch, heads, max_cache_len, head_dim))`, and `update` writes with
-`index_copy_` at positions `arange(T) + cumulative_length`. It returns the whole
-buffer and leaves it to the attention mask to hide the unused slots, which works
-because the buffer was zero-initialized and is never NaN: the "mask only the scores"
-approach is safe exactly when you control what the tail contains. Its purpose is
-`torch.compile`: with fixed shapes, the compiled graph is reused at every step.
+Hugging Face Transformers' `StaticCache` uses this design. Each layer lazily allocates `torch.zeros((batch, heads, max_cache_len, head_dim))`, and `update` writes new entries with `index_copy_` at positions `arange(T) + cumulative_length`. It returns the full buffer and relies on the attention mask to hide unused slots. Masking only the scores is safe there because the buffer is zero-initialized and never contains NaN. Fixed shapes allow `torch.compile` to reuse the same compiled graph on every decode step.
 
-mlx-lm's `KVCache` grows in blocks of 256 slots, writes with
-`self.keys[..., prev : self.offset, :] = keys`, and returns
-`self.keys[..., : self.offset, :]`: the slice-the-prefix approach of the reference
-solution. llama.cpp goes one step further and allocates the KV buffers for the whole
-context window when the context is created.
+`mlx-lm`'s `KVCache` grows in blocks of 256 slots, writes with `self.keys[..., prev : self.offset, :] = keys`, and returns the active prefix `self.keys[..., : self.offset, :]`, matching the slicing approach above. `llama.cpp` goes further and allocates the KV buffers for the entire context window when the context is created.
 
-Slicing gives the attention a tensor whose shape changes with `length`, which is fine
-in eager code and a recompilation per step under `jax.jit` or `torch.compile`. Keeping
-the shapes static all the way through the attention is the subject of
-`cuda-static-kv-cache`; growing the buffer in steps and MLX's lazy evaluation are the
-subject of `mlx-preallocated-kv-cache`.
+Slicing passes a tensor whose shape changes with `length` into attention. That is fine in eager execution, but triggers a recompilation on every step under `jax.jit` or `torch.compile`. Keeping shapes static all the way through attention is covered in `cuda-static-kv-cache`, and growing the buffer in chunks with MLX's lazy evaluation is covered in `mlx-preallocated-kv-cache`.

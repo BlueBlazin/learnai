@@ -1,9 +1,4 @@
-Extend the paged KV allocator so that sequences can share blocks: `fork` creates a
-sequence whose block table points at its parent's blocks, and a block is copied only
-when a sequence is about to write into one that another sequence also holds. The
-bookkeeping is a reference count per block; the difficulty is that "shared" is a
-fact about the present, and it changes whenever any sequence copies, appends, or is
-freed.
+Extend the paged KV allocator so that sequences can share physical blocks. `fork` creates a new sequence whose block table points to its parent's blocks without allocating memory, and `append` copies a block only when a sequence is about to write into a block that another sequence also holds. Track a reference count for each block so you always know whether a block is still shared at the moment of an append or free.
 
 ![This problem is the Block pool, here with blocks that several sequences share.](assets/map.svg)
 
@@ -23,66 +18,35 @@ class CowAllocator:
     def free_blocks(self): ...  # -> int
 ```
 
-The pool, the block tables, and the placement of tokens are those of
-`paged-kv-allocator`: `n_blocks` physical blocks with ids `0` to `n_blocks - 1`,
-each with room for `block_size` tokens; a live sequence with $t \ge 1$ tokens has a
-block table of exactly $\lceil t / \texttt{block\_size} \rceil$ ids, and its token
-$i$ lives in slot `i % block_size` of block `table[i // block_size]`. New here: one
-block id may appear in the tables of several sequences.
+The pool, block tables, and token placement match `paged-kv-allocator`. The pool has `n_blocks` physical blocks with ids `0` through `n_blocks - 1`, each holding up to `block_size` tokens. A live sequence with $t \ge 1$ tokens has a block table `table` of length $\lceil t / \texttt{block\_size} \rceil$, where token $i$ (counting from `0`) lives in slot `i % block_size` of block `table[i // block_size]`. Unlike the basic allocator, one block id may now appear in the block tables of several sequences.
 
-The **reference count** of a block is the number of live sequences whose block
-table contains it. A block is free exactly when its count is 0.
+The **reference count** of a block is the number of live sequences whose block table contains it. A block is free if and only if its reference count is `0`.
 
-- `fork(parent_id, child_id)` creates the sequence `child_id` with the same token
-  count and the same block table as `parent_id` (the same ids, in a list of its
-  own). Every block of the parent gains one reference. No block is allocated, so a
-  fork never raises `OutOfBlocks`. Raises `ValueError` if `child_id` is live
-  (this includes `child_id == parent_id`), and otherwise `KeyError` if `parent_id`
-  is not live; in both cases nothing changes. After the fork the two sequences are
-  equals: either may append, fork again, or be freed first.
+- `fork(parent_id, child_id)` creates `child_id` with the same token count and a copy of `parent_id`'s block table (the same block ids, stored in its own list). Every block in the table gains one reference. No physical block is allocated, so `fork` never raises `OutOfBlocks`. Raise `ValueError` if `child_id` is already live (including when `child_id == parent_id`). Otherwise raise `KeyError` if `parent_id` is not live. On either error, change nothing. After a fork, parent and child are equal. Either may append, fork again, or be freed first.
 
-- `append(seq_id, n_tokens)` adds `n_tokens` $\ge 1$ tokens; a `seq_id` that is not
-  live starts a new sequence. With $t$ tokens before the call:
+- `append(seq_id, n_tokens)` adds $n = \texttt{n\_tokens} \ge 1$ tokens to `seq_id`. If `seq_id` is not live, this call starts a new sequence with `0` existing tokens. Let $t$ be the sequence's token count before the call.
 
-  1. **Copy on write.** The call writes into the sequence's last block if that
-     block has empty slots ($t \bmod \texttt{block\_size} \ne 0$). If that block's
-     reference count is then greater than 1, the sequence must not write into it:
-     a new block `dst` is allocated, it replaces the last entry `src` of **this
-     sequence's** table, and `src` loses one reference. The engine will copy the
-     contents of `src` to `dst` before it writes the new tokens. A full last block
-     is never written again, so it is never copied, however many sequences hold
-     it.
-  2. **Growth.** As before,
+  1. **Copy on write.** The call writes into the sequence's last block if that block has empty slots ($t \bmod \texttt{block\_size} \ne 0$). If that block's reference count is greater than `1`, the sequence must not write into it. Allocate a new block `dst`, replace the last entry `src` of **this sequence's** table with `dst`, and decrement `src`'s reference count. The serving engine will copy the contents of `src` to `dst` before writing the new tokens. A full last block is never written again, so it is never copied regardless of its reference count.
+  2. **Growth.** Allocate
      $\lceil (t + n) / \texttt{block\_size} \rceil - \lceil t / \texttt{block\_size} \rceil$
-     further blocks are allocated and appended to the table.
+     additional blocks and append them to the table.
 
-  Blocks are taken from the free blocks lowest id first: the copy destination (if
-  there is one) first, then the growth blocks. Returns a tuple
-  `(allocated, copies)`:
+  Take all needed blocks from the free pool **lowest id first**, allocating the copy destination (if any) before the growth blocks. Return a tuple `(allocated, copies)`:
 
-  - `allocated`: the list of all block ids allocated by this call, in allocation
-    order (so `dst` is `allocated[0]` when there is a copy);
-  - `copies`: `[(src, dst)]` if the call copied, otherwise `[]`. Each pair is a
-    tuple of two ints.
+  - `allocated` is the list of all block ids allocated by this call, in allocation order (`dst` is `allocated[0]` when a copy occurs).
+  - `copies` is `[(src, dst)]` if the call triggered a copy, or `[]` otherwise. Each pair is a tuple of two ints.
 
-  If the call needs more blocks than are free, counting the copy, it raises
-  `OutOfBlocks` and **changes nothing**.
+  If the call needs more blocks than are free (counting both the copy and growth blocks), raise `OutOfBlocks` and **change nothing**.
 
-- `free(seq_id)` forgets the sequence. Each block of its table loses one reference,
-  and a block whose count reaches 0 returns to the pool. Returns `None`. Raises
-  `KeyError` if `seq_id` is not live.
-- `block_table(seq_id)` returns the block table as a new list. Raises `KeyError` if
-  `seq_id` is not live.
-- `ref_count(block)` returns the reference count of the block with id `block`
-  ($0 \le$ `block` $<$ `n_blocks`), 0 for a free block.
-- `free_blocks()` returns the number of blocks with reference count 0.
+- `free(seq_id)` removes the sequence. Decrement the reference count of every block in its table, and return any block whose count reaches `0` to the free pool. Return `None`. Raise `KeyError` if `seq_id` is not live.
+- `block_table(seq_id)` returns the sequence's block table as a new list. Raise `KeyError` if `seq_id` is not live.
+- `ref_count(block)` returns the reference count of `block` ($0 \le \texttt{block} < \texttt{n\_blocks}$), which is `0` for a free block.
+- `free_blocks()` returns the number of blocks with reference count `0`.
 
-`seq_id` is any hashable value.
+`seq_id` can be any hashable value.
 
 > [!NOTE]
-> Whether an append copies depends on the reference count **at the time of the
-> append**. After a fork, the first of the two sequences to append copies the
-> shared last block; the other is then its only holder and writes in place.
+> Whether an append triggers a copy depends on the reference count **at the time of the append**. After a fork of two sequences, the first sequence to append copies the shared last block. The other sequence is then its sole holder and writes in place.
 
 ## Example
 
@@ -107,52 +71,24 @@ alloc.free("c")
 alloc.free_blocks()  # 6
 ```
 
-The third call is the copy on write: `a` and `b` agree on tokens 0 to 5, and token
-6 is where they differ. `b` cannot put its token 6 into slot 2 of block 1, because
-`a` will put its own token 6 there. So `b` gets block 2, the engine copies block 1
-into it (two valid slots), and `b` writes its token into slot 2 of the copy. Block
-0 is full; it stays shared for as long as either sequence lives.
+The third call shows copy-on-write in action. Sequences `a` and `b` share tokens `0` through `5`, and diverge at token `6`. Because `a` still holds block `1`, `b` cannot write its token `6` into slot `2` of block `1`. Instead, `b` allocates block `2`, the engine copies block `1`'s two valid slots into block `2`, and `b` writes into slot `2` of block `2`. Block `0` is full and stays shared for as long as either sequence is live.
 
-`free("b")` shows why counts, not ownership, decide what returns to the pool: `b`
-allocated blocks 2 and 3, but `c` still reads them.
+`free("b")` shows that reference counts, not original ownership, decide when blocks return to the pool. Although `b` allocated blocks `2` and `3`, `c` still references them, so neither block is freed.
 
 ![The pool at four points of the example, with each block's reference count and holders.](assets/pool-steps.svg)
 
 ## Constraints
 
-- $1 \le$ `n_blocks` $\le 1000$, $1 \le$ `block_size` $\le 64$, and at most a few
-  hundred calls per allocator.
-- Results are compared exactly: the tuple returned by `append`, every block table,
-  every reference count, and `free_blocks()` after every operation.
-- **Checks after every operation**, on scripted and random workloads:
-  - `ref_count(b)` equals the number of block tables that contain `b`, and
-    `free_blocks()` plus the number of distinct blocks in block tables equals
-    `n_blocks`.
-  - *Isolation.* The tests play the engine: they keep the contents of every
-    physical block, perform the copies `append` returns, write each new token to
-    the slot its sequence's block table names, and then read every live sequence
-    back through its table. Each sequence must read exactly the tokens it holds:
-    its ancestors' up to the fork, then its own.
-- **Copies and allocations are counted.** Four sequences that share a 10-token
-  prompt (`block_size = 4`: two full blocks and one half-filled) and then decode 7
-  tokens each must cause at most **3** copies and **14** block allocations: 3 for
-  the prompt, one copy for each of the first three sequences to decode (the fourth
-  is by then the only holder of the prompt's last block), and 2 growth blocks per
-  sequence. Copying eagerly on fork would take 20.
-- `OutOfBlocks` must be an exception class defined by your solution, as in the
-  starter.
+- $1 \le \texttt{n\_blocks} \le 1000$, $1 \le \texttt{block\_size} \le 64$, and at most a few hundred calls per allocator.
+- Outputs are checked for exact equality, including the tuple returned by `append`, every block table, every reference count, and `free_blocks()` after each operation.
+- Property checks run after every operation on scripted and random workloads:
+  - For every block id `b`, `ref_count(b)` must equal the number of live block tables containing `b`, and `free_blocks()` plus the number of distinct blocks in live tables must equal `n_blocks`.
+  - *Isolation.* The tests simulate the serving engine by storing token contents in each physical block, applying every copy returned by `append`, writing new tokens to the slots named by each sequence's block table, and reading every live sequence back. Each sequence must read back its ancestors' tokens up to each fork, followed by its own tokens.
+- **Copies and allocations are counted.** Four sequences sharing a 10-token prompt (`block_size = 4`, so two full blocks and one half-filled block) that each decode 7 tokens must trigger at most **3** copies and **14** block allocations. That accounts for 3 blocks for the prompt, 1 copy for each of the first three sequences to decode (leaving the fourth as the sole holder of the prompt's last block), and 2 growth blocks per sequence. Copying eagerly on fork would take 20 allocations.
+- `OutOfBlocks` must be an exception class defined by your solution, as in the starter code.
 
 ## Why this matters
 
-One prompt often feeds several sequences: `n > 1` completions of the same request,
-the beams of a beam search, the branches of a tree search or of speculative
-tool calls. All of them share the prompt's keys and values, which are usually most
-of the memory. With reference-counted blocks the shared part is stored once, a
-fork costs no memory and no copying, and the only copy ever made is of one block:
-the partly filled one at the point where two sequences diverge. This is how
-PagedAttention makes parallel sampling and beam search cheap, and the same
-mechanism lets a prefix cache hand a cached system prompt to many requests. Its
-bugs are the bugs of every shared-ownership scheme: a missed copy lets one request
-write into another's attention state, a block freed while a sibling still reads it
-is handed to a stranger, and a count that is never decremented leaks capacity
-until restart.
+A single prompt often feeds multiple sequences, such as `n > 1` completions for one request, beams in beam search, or branches in tree search and speculative decoding. The shared prompt usually accounts for most of the KV cache memory. With reference-counted blocks, the prompt is stored once, forking costs zero memory and zero copying, and at most one partly filled block is ever copied when sequences diverge.
+
+This is how PagedAttention makes parallel sampling and beam search affordable, and the same mechanism lets a prefix cache share a cached system prompt across requests. Bugs in shared ownership fail silently. A missed copy lets one request overwrite another's attention state. Freeing a block while a sibling still reads it hands live memory to a new request. A reference count that is never decremented leaks capacity until restart.

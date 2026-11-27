@@ -1,38 +1,21 @@
 ## The idea
 
-Split the generated text into three parts at any moment:
+At any point during generation, the text splits into three regions:
 
 ```
 text = [ emitted | held | not generated yet ]
 ```
 
-*Emitted* text is on the user's screen and cannot change. *Held* text has been
-generated but is kept back. The whole problem is choosing the boundary between the
-two, and the right choice follows from one question: **which already-generated
-characters can still end up inside a stop string?**
+*Emitted* text has already reached the user and cannot be retracted. *Held* text has been generated but not sent yet. Choosing the boundary between them comes down to one question: **which already-generated characters can still end up inside a stop string?**
 
-A stop string that has not completed yet must end in text that does not exist yet.
-So it either lies entirely in the future, or it straddles the present: it starts at
-some position of the current text and runs past its end. In the second case the
-current text *ends with a proper prefix of that stop string*. Conversely, any suffix
-of the text that is a proper prefix of a stop string can still be completed. The
-characters at risk are therefore exactly the longest such suffix, and that is what
-must be held:
+Any stop string that has not completed yet must end in future text. It either lies entirely in the future, or it starts in the current text and extends past its end. In the second case, the current text ends with a *proper prefix* of that stop string. Conversely, any suffix of the current text that is a proper prefix of some stop string can still complete into a match. The characters at risk are therefore exactly the longest such suffix.
 
-- holding less shows the user the beginning of a stop string that may complete;
-- holding more delays text that is certainly ordinary output.
+- Holding fewer characters risks showing the start of a stop string that later completes.
+- Holding more characters delays text that is guaranteed to be ordinary output.
 
-This choice also makes matching local. Every match that completes in the new piece
-starts either in the piece or in the held text, so `held + piece` is the only string
-that ever has to be searched, and the state is just the held text, which is shorter
-than the longest stop string.
+This boundary also keeps matching local. Any match that completes during a new `piece` must start inside either `held` or `piece`. As a result, `held + piece` is the only string we ever need to search, and `state` only needs to store `held`, whose length is always strictly less than the longest stop string.
 
-**Which match?** Generation stops at the first character that completes any stop
-string, so the match that counts is the one that *ends* first. When a piece contains
-several matches, picking the earliest end gives the result that feeding the same
-text one character at a time would give; that is what makes the output independent
-of the chunking. Matches that end at the same character differ only in where they
-start, and the cut goes before the longer one, since all of it is stop string.
+**Choosing the winning match.** Generation stops at the first character that completes any stop string, so the winning match is the one that *ends* earliest. Picking the earliest end when a piece contains multiple matches produces the same result as feeding the text one character at a time, which guarantees chunk invariance. When two matches end at the same character, cutting at the earlier start removes the longer stop string completely.
 
 ## Reference solution (Python)
 
@@ -62,68 +45,27 @@ def stop_flush(state):
     return state or ""
 ```
 
-Why the cut can never fall inside text that was already emitted: a match found in
-`buffer` starts in `buffer`, and `buffer` consists of unemitted text only.
-
-Why the held text never hides a complete match: it is a *proper* prefix of a stop
-string and was searched, as part of `buffer`, before it was held.
+A match found in `buffer` can never cut into already-emitted text because `buffer` contains only unemitted characters. Likewise, the held suffix can never hide a complete match because it is a proper prefix of a stop string and was already searched as part of `buffer` before being held.
 
 ## Common mistakes
 
-- **Checking each piece alone.** `if stop in piece` finds a stop string only when one
-  token contains all of it. With real tokenizers that is the exception.
-- **Emitting first, matching later.** Keeping the recent text only for detection
-  finds the stop, but its first characters are already on the screen. The output
-  ends in `"\nUs"`.
-- **A fixed hold-back window.** Always holding the last `max(len(stop)) - 1`
-  characters is correct in total and simple, and it is what some engines do (see
-  below). It delays every piece of ordinary text by that many characters, which a
-  user sees as stutter when a stop string is long.
-- **Restarting after a failed partial match.** When `held + piece` stops being a
-  prefix of a stop string, the held text is not necessarily free to go: with the stop
-  `"aab"` and the text `"aaa"`, the last two characters are a new partial match. This
-  is the string-matching mistake that the KMP failure function exists for. Recomputing
-  the longest suffix from the whole buffer avoids it.
-- **Letting the list order decide.** Returning the first stop string *of the list*
-  that occurs cuts too late when a later entry of the list occurs earlier in the
-  text.
-- **Preferring the match that starts first.** It sounds like the same thing as
-  "ends first" and differs only when one stop string lies inside a longer match, as
-  `"bc"` in `"abcd"`. Then the answer depends on whether the text arrived in one
-  piece or two, which no user of an API can predict.
-- **Forgetting the flush.** A response that ends in `"#"` or in a newline loses its
-  last characters when a stop string begins with them.
+- **Checking each piece alone.** Testing `stop in piece` only catches a stop string when a single token contains all of it, which rarely happens with real tokenizers.
+- **Emitting first and matching later.** Keeping recent text only for detection catches the stop, but its prefix (such as `"\nUs"`) has already been sent to the user.
+- **Using a fixed hold-back window.** Always holding the last `max(len(s) for s in stops) - 1` characters is simple and produces the right final string, but it delays every piece of ordinary text by that many characters and causes visible stutter when stop strings are long.
+- **Resetting completely after a failed partial match.** When `held + piece` stops matching a stop prefix, the held characters are not always safe to emit. With stop `"aab"` and text `"aaa"`, the last two characters form a new partial match. Recomputing the longest suffix over the full buffer avoids this bug (the same overlap issue addressed by the KMP failure function).
+- **Letting the `stops` list order decide.** Returning the first stop string in the list that appears in `buffer` cuts too late when a later list entry completes earlier in the text.
+- **Preferring the match that starts first.** Choosing the smallest start instead of the smallest end breaks chunk invariance when one stop lies inside another, such as `"bc"` inside `"abcd"`. The output then depends on how the text was split into pieces.
+- **Forgetting the flush.** If a response ends with `"#"` or a newline and a stop string starts with that character, skipping `stop_flush` drops the final characters.
 
 ## Complexity
 
-With $S$ stop strings of length at most $L$ and a piece of length $n$, the buffer has
-at most $L - 1 + n$ characters. The search is $O(S \cdot L \cdot (L + n))$ in the
-worst case with naive matching and the suffix test $O(S \cdot L^2)$; both are
-independent of the length of the text generated so far. The state is at most
-$L - 1$ characters. An Aho-Corasick automaton over the stop strings does both jobs
-in $O(n)$ per piece with the automaton state as the only state: its depth is the
-length to hold back. With a handful of short stop strings the simple version is
-faster in practice.
+Let $S$ be the number of stop strings, $L$ be the maximum stop-string length, and $n$ be the length of `piece`. The buffer has at most $L - 1 + n$ characters. Naive substring search takes $O(S \cdot L \cdot (L + n))$ time in the worst case, and the suffix check takes $O(S \cdot L^2)$ time. Both are independent of the total generated length, and the state stores at most $L - 1$ characters. An Aho-Corasick automaton over the stop strings handles both matching and suffix tracking in $O(n)$ time per piece using only the current automaton node as state, where the node depth is the hold-back length. For a small list of short stop strings, the simple implementation above is faster in practice.
 
 ## In the wild
 
-- **llama.cpp** (`tools/server/server-context.cpp`) searches the unsent text for
-  every stop word, takes the smallest start position among the full matches, and
-  otherwise looks for a partial match at the end of the text; while there is one it
-  sends nothing. It is the approach of this problem, with "earliest start" where
-  this problem says "earliest end".
-- **vLLM** (`vllm/v1/engine/detokenizer.py`) holds back a fixed
-  `max(len(s) for s in stop) - 1` characters while streaming, and
-  `check_stop_strings` selects "the stop string that completes earliest in the
-  text", so that the result matches appending one token at a time: the rule used
-  here, motivated by speculative decoding delivering several tokens in one step.
-- **Hugging Face transformers** has `StopStringCriteria`, which works on token ids:
-  it precomputes, for every token, how it can overlap each stop string, so the check
-  runs on the GPU without detokenizing. It stops generation but does not trim the
-  output.
-- The OpenAI-style API contract (`stop`: "the returned text will not contain the
-  stop sequence") is what all of them implement.
+- **llama.cpp** (`tools/server/server-context.cpp`) searches unsent text for every stop word, picks the smallest start position among full matches, and otherwise holds back output while a partial suffix match exists. It uses the same strategy as this problem, except with earliest-start tie-breaking instead of earliest-end.
+- **vLLM** (`vllm/v1/engine/detokenizer.py`) holds back a fixed `max(len(s) for s in stop) - 1` characters while streaming, and `check_stop_strings` selects the stop string that completes earliest so that multi-token steps from speculative decoding match single-token streaming.
+- **Hugging Face transformers** provides `StopStringCriteria`, which precomputes how each token in the vocabulary can overlap each stop string so the check runs on token IDs without detokenizing. It stops generation but does not trim the output.
+- All of these implement the OpenAI-style `stop` API contract, which guarantees that the returned text never contains the stop sequence.
 
-Stop strings are matched on characters, so they compose with the streaming
-detokenizer of `streaming-detokenizer`: bytes become complete characters first, and
-pieces of characters then go through this filter.
+Because stop strings are matched on characters, this filter composes directly with `streaming-detokenizer`. Raw bytes become complete Unicode characters first, and those character pieces then pass through `stop_step`.

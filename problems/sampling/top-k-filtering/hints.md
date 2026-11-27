@@ -1,22 +1,9 @@
-Comparing each logit with the k-th largest value of its row cannot be the whole
-answer: if that value occurs three times and only one place is left, all three pass
-the comparison. What do you need to know about each token, other than its value, to
-decide whether it is among the first `k`?
+Comparing each logit against the k-th largest value in its row is not enough. If that boundary value appears three times and only one slot remains, all three entries pass the comparison. What do you need to know about each token, besides its logit value, to tell whether it belongs in the first `k`?
 
 ---
 
-You need each token's *rank*: its position in the row sorted by decreasing logit, with
-equal logits ordered by index. A stable descending argsort gives `order`, where
-`order[b, r]` is the token at rank `r`. That is the wrong way around: you want
-`rank[b, v]`, the rank of token `v`. The two are inverse permutations of each other.
-Handle `k <= 0` and `k >= V` before any of this, by returning the logits.
+You need each token's *rank*, meaning its position when the row is sorted by decreasing logit with ties ordered by lowest index. A stable descending `argsort` produces `order`, where `order[b, r]` is the token at rank `r`. You need the inverse mapping `rank[b, v]`, which gives the rank of token `v`. Handle `k <= 0` and `k >= V` up front by returning `logits` unchanged.
 
 ---
 
-The argsort of a permutation is its inverse, so `rank = argsort(order)`, and the
-answer is `where(rank < k, logits, -inf)`. For the stable descending sort: PyTorch
-needs `torch.argsort(logits, dim=-1, descending=True, stable=True)`; in JAX and MLX
-`argsort` is stable, and sorting `-logits` gives descending order with ties still in
-index order (sorting ascending and flipping would reverse the ties). Instead of the
-second argsort you can also scatter: write `True` at the positions `order[:, :k]` of
-an all-`False` table.
+The `argsort` of a permutation is its inverse, so `rank = argsort(order)`, and the filtered output is `where(rank < k, logits, -inf)`. For the stable descending sort, PyTorch uses `torch.argsort(logits, dim=-1, descending=True, stable=True)`. In JAX and MLX, `argsort` is stable, so sorting `-logits` gives descending order while keeping ties in index order (sorting ascending and flipping would reverse ties). To avoid the second `argsort`, you can alternatively scatter `True` into an all-`False` boolean mask at positions `order[:, :k]`.

@@ -1,8 +1,8 @@
-Push a prompt through a transformer language model in consecutive chunks of at most
-`chunk_size` tokens, carrying the KV cache from one chunk to the next, and return the
-logits that score the first new token together with the cache that covers the whole
-prompt. The result must be what a single call on the whole prompt gives; the judge
-counts the calls and the tokens.
+Run a prompt through a transformer language model in consecutive chunks of at most
+`chunk_size` tokens, carrying the KV cache from each chunk to the next. Return the
+logits that score the first generated token along with the final cache covering the
+entire prompt. The output must match a single call over the full prompt, and the judge
+verifies both the call count and the total tokens processed.
 
 ![This problem is Prefill, here done in chunks that share one cache.](assets/map.svg)
 
@@ -13,38 +13,42 @@ def prefill(lm, prompt, chunk_size): ...
 ```
 
 `lm` is a [`TinyLM`](../../../python/src/learnai/kit/tinylm.py), the kit's small
-seeded transformer, as in `cached-greedy-decode`:
+seeded transformer from `cached-greedy-decode`. You call it with a list of token IDs
+and an optional cache:
 
 ```python
 logits, cache = lm(tokens)           # no cache: `tokens` start the sequence
 logits, cache = lm(tokens, cache)    # with a cache: `tokens` continue the cached prefix
 ```
 
-`logits` is a float32 tensor of shape `(T, vocab_size)` with one row per token passed
-in *this* call, and `logits[-1]` scores the token that follows the last one passed.
-`cache` covers every token seen so far (`cache.length` of them). A call never modifies
-the cache it is given; it returns a new one. A call needs at least one token.
+When called with `T` tokens, `lm` returns `logits` of shape `(T, vocab_size)` and a
+new `cache`. Each row of `logits` scores the token that follows the corresponding
+input token, so `logits[-1]` scores the token after the last input token. The returned
+`cache` covers every token seen so far (`cache.length` tokens in total). Calls never
+modify the cache passed in, and every call requires at least one token.
 
-Split the prompt of $P$ tokens into $n = \lceil P / c \rceil$ chunks, where $c$ is
-`chunk_size`: chunk $k$ (counting from 0) is `prompt[k * c : (k + 1) * c]`. So every
-chunk has exactly $c$ tokens except the last, which has the $P - (n - 1)\,c$ tokens
-that remain (between 1 and $c$). Feed the chunks in order, one call per chunk, each
-call continuing from the cache the previous call returned.
+Let $P$ be the number of tokens in `prompt` and $c$ be `chunk_size`. Split `prompt`
+into $n = \lceil P / c \rceil$ consecutive chunks, where chunk $k$ (0-indexed) is
+`prompt[k * c : (k + 1) * c]`. Every chunk contains $c$ tokens except possibly the
+last, which contains the remaining $P - (n - 1)\,c$ tokens (between $1$ and $c$).
+Feed the chunks to `lm` in order, passing the cache returned by each call into the
+next call.
 
-- `prompt`: a list of ints, $P \ge 1$ token ids.
-- `chunk_size`: an int $\ge 1$. It may be larger than $P$; then there is one chunk.
-- Returns a tuple `(last_logits, cache)`:
-  - `last_logits`: the last row of the logits of the **final** call, a float32 tensor
-    of shape `(vocab_size,)`. It scores the first token after the prompt.
+- `prompt`: a list of $P \ge 1$ token IDs.
+- `chunk_size`: an integer $\ge 1$. If `chunk_size` is larger than $P$, the entire
+  prompt runs in one chunk.
+- Returns `(last_logits, cache)`:
+  - `last_logits`: the last row of the **final** call's `logits`, which scores the
+    first token after the prompt.
   - `cache`: the cache returned by the final call, with `cache.length == P`.
 
-**Cost.** Both counters of the model are fixed by the rule above, and the judge
-compares them exactly:
+**Cost.** The chunking rule fixes both model counters, and the judge checks them for
+exact equality.
 
 | counter | value | why |
 |---|---|---|
-| `lm.counters.forward_calls` | $\lceil P / c \rceil$ | one call per chunk, and no call on an empty chunk |
-| `lm.counters.tokens_processed` | $P$ | every prompt token goes through the model once |
+| `lm.counters.forward_calls` | $\lceil P / c \rceil$ | one call per chunk, with no empty calls |
+| `lm.counters.tokens_processed` | $P$ | every prompt token passes through the model once |
 
 ## Shapes
 
@@ -53,7 +57,7 @@ compares them exactly:
 | `prompt` | list of $P$ ints | Python `int` |
 | `logits` (from `lm`) | `(T, vocab_size)` for a call with `T` tokens | float32 |
 | `last_logits` | `(vocab_size,)` | float32 |
-| `cache` | a `KVCache` with `length == P` | |
+| `cache` | `KVCache` with `length == P` | |
 
 ## Example
 
@@ -66,7 +70,7 @@ last_logits, cache = prefill(lm, prompt, chunk_size=4)
 # cache.length = 10                                       3 calls, 10 tokens processed
 ```
 
-Ten tokens in chunks of four are $\lceil 10 / 4 \rceil = 3$ chunks:
+A 10-token prompt with `chunk_size=4` splits into $\lceil 10 / 4 \rceil = 3$ chunks.
 
 | call | tokens passed | cache passed in | cache covers afterwards |
 |---|---|---|---|
@@ -74,37 +78,39 @@ Ten tokens in chunks of four are $\lceil 10 / 4 \rceil = 3$ chunks:
 | 2 | `[9, 33, 12, 60]` | 4 tokens | 8 tokens |
 | 3 | `[21, 7]` | 8 tokens | 10 tokens |
 
-Call 3 returns two rows of logits. The second one belongs to token 7, the last token
-of the prompt, and is `last_logits`: the same 64 numbers as `lm(prompt)[0][-1]`. The
-rows returned by calls 1 and 2 score positions inside the prompt and are not needed.
+Call 3 returns two rows of logits. Its second row corresponds to token 7 (the last
+token of the prompt) and becomes `last_logits`, matching the 64 values of
+`lm(prompt)[0][-1]`. The logits from calls 1 and 2 score positions inside the prompt
+and are discarded.
 
-With `chunk_size=5` the same prompt takes exactly two calls of five tokens; a third
-call would have nothing to pass. With `chunk_size=16` it is a single call.
+With `chunk_size=5`, the same prompt takes two calls of 5 tokens, with no empty third
+call. With `chunk_size=16`, it runs in a single call.
 
 ## Constraints
 
-- $1 \le P \le 100$ and $1 \le$ `chunk_size` $\le 64$; `lm.max_context` is 128.
-- `last_logits` is compared with the logits of a single call on the whole prompt, to a
-  relative tolerance of `1e-3` and an absolute tolerance of `1e-4` (splitting the
-  calls changes the float32 rounding by about `1e-5`). It must be float32.
-- The returned cache must have length $P$, and a token fed after it must get the
-  logits it gets after the whole prompt.
-- `forward_calls` and `tokens_processed` must equal the values in the table, and no
-  call may pass more than `chunk_size` tokens. The chunk layout is checked too: full
-  chunks first, the remainder last.
+- $1 \le P \le 100$ and $1 \le$ `chunk_size` $\le 64$. `lm.max_context` is 128.
+- `last_logits` must be float32 and match the logits of a single full-prompt call
+  within relative tolerance `1e-3` and absolute tolerance `1e-4`. Splitting the calls
+  changes float32 rounding by about `1e-5`.
+- The returned `cache` must have `length == P`. Passing another token to `lm` with
+  this cache must yield the same logits as passing it after a single-call prefill.
+- `forward_calls` and `tokens_processed` must equal the values in the cost table. No
+  call may pass more than `chunk_size` tokens, and full chunks must come first with
+  any remainder last.
 
 ## Why this matters
 
-One call over a long prompt is the fastest way to prefill, and the most expensive in
-memory: the activations of every layer, and attention scores of size (new tokens)
-$\times$ (all tokens), exist for the whole chunk at once. Engines therefore cap the
-chunk. `mlx-lm` prefills in steps of `prefill_step_size` tokens (2048 by default),
-evaluating the cache and releasing temporary memory after each step, which is also
-where it reports progress on a long prompt; llama.cpp cuts the prompt into batches of
-`n_batch` tokens. On a server the same loop, interleaved with the decode steps of
-other requests, is *chunked prefill*: a 30,000-token prompt no longer stalls every
-stream that is already generating. The loop is short, and each of its bugs is
-expensive: a forgotten cache silently changes the model's answer, a re-fed prefix
-makes prefill quadratic, and a wrong boundary either crashes on a prompt whose length
-happens to be a multiple of the chunk size or defeats the memory bound the chunking
-was for.
+Prefilling a long prompt in one call is fast, but it creates a large memory spike.
+Activations for every layer and attention score matrices of size
+$(\text{new tokens}) \times (\text{all tokens})$ must fit in memory at once.
+Inference engines cap the chunk size to bound this peak. For example, `mlx-lm`
+prefills in steps of `prefill_step_size` tokens (2048 by default), evaluating the
+cache, freeing temporary buffers, and reporting progress after each step. Similarly,
+`llama.cpp` splits prompts into batches of `n_batch` tokens.
+
+Serving engines extend this same loop into *chunked prefill*, interleaving prompt
+chunks with decode steps from other requests so a 30,000-token prompt does not stall
+active streams. Even though the loop is short, every mistake is costly. Dropping the
+cache silently corrupts the model's answer, re-feeding the prefix makes prefill
+quadratic, and an off-by-one boundary either crashes when $P$ is a multiple of
+`chunk_size` or breaks the memory bound.

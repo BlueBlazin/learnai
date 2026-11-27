@@ -1,46 +1,23 @@
 ## The idea
 
-The keys and values a model computes for token $i$ depend on tokens $0$ to $i$
-and on nothing else. So a block of KV cache can be reused by any request whose
-prompt agrees with the original **up to the end of that block**. That sentence is
-the whole specification of a prefix cache; the rest is making it cheap.
+Because attention is causal, the keys and values computed for token $i$ depend on tokens $0$ through $i$ and nothing else. Any new request can therefore reuse a cached KV block as long as its prompt matches the original **up to the end of that block**.
 
-**A key for a prefix in $O(B)$.** Storing a block under the tuple of its whole
-prefix is correct and costs $O(n)$ per block, $O(n^2 / B)$ per prompt. Chain the
-keys instead:
+**Keying a prefix with chained hashes.** Let $B = \text{block\_size}$ and let $n$ be the number of tokens in the prompt. Keying a block by the tuple of its entire prefix is correct, but it costs $O(n)$ per block and $O(n^2 / B)$ per prompt. Chaining the keys reduces the cost to $O(B)$ per block. For each block $k$ (starting from a constant $\text{key}_{-1}$):
 
 $$
 \text{key}_k = H(\text{key}_{k-1},\ \text{block}_k).
 $$
 
-By induction, $\text{key}_k$ is a function of all tokens through block $k$, and
-with a collision-resistant $H$ two different prefixes get different keys. Each
-block costs one hash of $B$ tokens plus a fixed-size parent key. This is a Merkle
-chain, the construction of a git commit id or a blockchain header.
+By induction, $\text{key}_k$ depends on every token through block $k$. With a collision-resistant hash $H$, distinct prefixes produce distinct keys. Computing each block's key hashes only $B$ tokens plus a fixed-size parent key. This is a Merkle chain, the same construction used for Git commit IDs and blockchain headers.
 
-**Lookup is a walk.** Compute the keys of the prompt's full blocks and count how
-many leading ones are in the cache. The walk stops at the first miss: a later
-block cannot be a hit, because its key contains the missing block's key.
+**Lookup is a prefix walk.** Compute the keys of the prompt's full blocks and count how many leading keys exist in the cache. The walk stops at the first miss. No later block can be a hit because its key incorporates the missing block's key.
 
-**Only full blocks.** A partly filled block is still being written by the request
-that owns it. If it were shared, the next request would read slots that belong to
-someone else's continuation (or write its own). So the tail of the prompt, up to
-$B - 1$ tokens, is always recomputed. That is the price of the fixed block grid,
-and the reason hits come in multiples of the block size.
+**Only full blocks are cached.** A partially filled block is still being written by its owning request. If another request shared it, that request would read or overwrite slots belonging to a different continuation. The trailing $n \bmod B$ tokens (at most $B - 1$) are therefore always recomputed, which means cache hits always occur in multiples of $B$.
 
-**Reference counts and the eviction order.** A block in use by a running request
-must not be reclaimed, so every block counts its holders. Blocks with count 0 stay
-cached, in case the prefix returns, and are evicted in the order in which they
-became idle. Two details keep the structure sound:
+**Reference counts and eviction order.** A block held by an active request cannot be reclaimed, so each block tracks how many active requests reference it. Blocks with a reference count of 0 stay in the cache in case their prefix appears again, and they are evicted in the order they became idle. Two ordering rules keep the cache consistent:
 
-- *Hits are referenced before room is made.* Otherwise inserting a request's new
-  blocks could evict the very blocks it is about to reuse.
-- *A release queues the deepest block first.* A child then always sits ahead of
-  its parent in the eviction order, so the cache stays prefix-closed: no cached
-  block has an evicted parent. Without this, the head of a chain would be evicted
-  first and the rest would occupy slots that no lookup can reach. It is also the
-  right policy: the tail of a prompt is specific to one request, the head (the
-  system prompt) is what everyone shares.
+- **Reference hits before evicting.** Incrementing reference counts for hit blocks before inserting new ones prevents a request from evicting the very blocks it is about to reuse.
+- **Release the deepest block first.** Releasing in reverse order places every child ahead of its parent in the eviction queue. The cache therefore stays prefix-closed, meaning no cached block ever has an evicted parent. Without this rule, the head of a chain would be evicted first and leave its descendants unreachable while still occupying cache slots. This order also matches reuse patterns, since the tail of a prompt is request-specific while the head (such as a system prompt) is shared widely.
 
 ## Reference solution (Python)
 
@@ -112,70 +89,28 @@ class PrefixBlockCache:
         return len(self._refs)
 ```
 
-`hash((parent, tuple(block)))` with Python's built-in hash is also accepted here:
-it is 64 bits wide and chains the same way. A nested tuple
-`(parent_tuple, block_tuple)` used directly as the dict key is exact but slow,
-because Python rehashes the whole nesting on every lookup.
+Python's built-in `hash((parent, tuple(block)))` is also accepted here because it is 64 bits wide and chains the same way. Using a nested tuple `(parent_tuple, block_tuple)` directly as a dictionary key is exact, but Python must rehash the entire nested structure on every lookup, which makes it too slow for long prompts.
 
 ## Common mistakes
 
-- **Hashing the block's tokens alone.** The mistake the design exists to prevent.
-  With `key = H(block)` a block is found wherever those tokens occur: after
-  inserting `a b` and `c d`, the prompt `a d` reports two hits, and the server
-  would attend to keys and values computed after `c`. In production this is
-  silent corruption that depends on what other users sent.
-- **Caching the partial last block.** It makes `lookup` report one block too many
-  for an identical prompt, and hands out a block that its owner is still filling.
-- **Evicting a referenced block.** A plain LRU over all blocks ignores the counts.
-  The running request's block table then points at memory that has been given to
-  someone else.
-- **A flag instead of a count.** Marking a block "in use" and clearing the mark on
-  release frees it when the *first* of several holders finishes.
-- **A hit that stays in the eviction order.** Incrementing the count without
-  removing the block from the queue leaves a referenced block at the front of it.
-- **Referencing the hits after inserting.** Making room first can evict the blocks
-  the request is about to reuse; the request then holds blocks that no longer
-  exist.
-- **Releasing first block first.** The system prompt's first block reaches the
-  front of the eviction order ahead of everything that depends on it. One eviction
-  later the rest of the chain is unreachable and still occupies the cache.
-- **FIFO instead of least recently released.** Evicting by insertion time punishes
-  exactly the blocks that have proven useful the longest.
-- **A `lookup` with side effects.** Refreshing a block's position on lookup turns
-  a query (a router asking "how much of this would you have?") into a use.
-- **Growing past the capacity**, or **never evicting**. When every block is
-  referenced the right answer is to cache nothing more; when some are idle, the
-  oldest idle one goes.
+- **Hashing the block's tokens alone.** With `key = H(block)`, a block matches regardless of what preceded it. After inserting `a b` and `c d`, the prompt `a d` reports two hits, causing the server to attend to keys and values computed after `c`. In production this produces silent corruption that depends on other users' traffic.
+- **Caching the partial last block.** Including the trailing partial block makes `lookup` report one block too many for an identical prompt and exposes a block that its owner is still writing.
+- **Evicting a referenced block.** Running a plain LRU over all blocks ignores reference counts and hands an active request's KV memory to another request.
+- **Using a boolean flag instead of a count.** Marking a block as "in use" and clearing the flag on release frees the block as soon as the *first* of several active holders finishes.
+- **Leaving a hit in the eviction queue.** Incrementing a block's reference count without removing it from the eviction queue leaves an active block eligible for eviction.
+- **Referencing hits after inserting new blocks.** Making room before incrementing hit counts can evict the very blocks the request is about to reuse, leaving the request holding missing blocks.
+- **Releasing the first block first.** Queuing block 0 before deeper blocks puts the head of a shared prefix at the front of the eviction queue. After one eviction, the remaining blocks in the chain are unreachable yet still consume cache slots.
+- **Using FIFO instead of least-recently-released eviction.** Evicting by insertion order discards the oldest shared blocks even when they have been reused continuously.
+- **Giving `lookup` side effects.** Updating eviction order or counts during `lookup` turns a read-only routing query into a state mutation.
+- **Growing past `capacity` or never evicting.** When all cached blocks are referenced, the cache must stop inserting new blocks. When idle blocks exist, it must evict from the front of the eviction queue.
 
 ## Complexity
 
-Keying a prompt is $O(n)$; `lookup` is $O(n / B)$ dictionary probes after that;
-`acquire` and `release` are $O(n / B)$ with $O(1)$ work per block. Memory is one
-key and one count per cached block.
+Keying a prompt of $n$ tokens takes $O(n)$ time. After keying, `lookup`, `acquire`, and `release` each take $O(n / B)$ time with $O(1)$ work per block. Memory usage is $O(\text{capacity})$, storing one key and one reference count per cached block.
 
 ## In the wild
 
-- **vLLM, automatic prefix caching** (`docs/design/prefix_caching.md`): "we hash
-  each kv-cache block by the tokens in the block and the tokens in the prefix
-  before the block". The hash covers the parent block's hash, the block's token
-  ids, and extra keys (LoRA id, image hashes, an optional per-request
-  `cache_salt`). The document states "We only cache full blocks", and that as of
-  v0.11 the default hash is SHA-256 because earlier keys were not guaranteed to
-  be collision-free.
-- **The same queue.** Each `KVCacheBlock` has a `ref_cnt`; blocks with
-  `ref_cnt == 0` sit in a doubly linked free queue and keep their hash. A new
-  request's hit blocks are "touched" (count incremented, removed from the queue)
-  before new blocks are popped from the head of the queue, and popping a cached
-  block evicts it. On release, blocks are appended "in the *reverse* order ...
-  because the last block of a request must hash more tokens and is less likely to
-  be reused" (the design document; `KVCacheManager.free` in
-  `vllm/v1/core/kv_cache_manager.py` says "We free the blocks in reverse order so
-  that the tail blocks are evicted first").
-- **Differences from this problem.** In vLLM the queue holds physical blocks, so
-  a never-used block and an idle cached block are both "free", and the capacity
-  is the GPU's block pool. A request that cannot get its blocks is not scheduled,
-  rather than run uncached. Blocks also become cached as decoding fills them, not
-  only at prefill.
-- **The alternative.** SGLang indexes prefixes with a radix tree instead of a
-  hash per block, which matches at token rather than block granularity
-  (`radix-prefix-cache`).
+- **vLLM automatic prefix caching** (`docs/design/prefix_caching.md`). vLLM hashes each KV block from its parent block's hash, its own token IDs, and extra metadata (such as LoRA ID, image hashes, or an optional per-request `cache_salt`). It caches only full blocks, and since v0.11 it uses SHA-256 by default to prevent hash collisions.
+- **The free queue.** Each `KVCacheBlock` stores a `ref_cnt`. Blocks with `ref_cnt == 0` sit in a doubly linked free queue while retaining their hash. When a request hits cached blocks, vLLM increments their counts and removes them from the free queue before popping new blocks from the front. On release, blocks are appended in reverse order so tail blocks are evicted before shared prefix heads (`KVCacheManager.free` in `vllm/v1/core/kv_cache_manager.py`).
+- **Differences from this problem.** In vLLM, the free queue manages physical GPU blocks, so both unused blocks and idle cached blocks sit in the same pool bounded by GPU memory. A request that cannot obtain enough blocks waits to be scheduled instead of running partially uncached. Blocks also enter the cache as decoding fills them, not only during prefill.
+- **The alternative.** SGLang indexes prefixes with a radix tree instead of per-block hashes, matching at token granularity rather than fixed block boundaries (`radix-prefix-cache`).

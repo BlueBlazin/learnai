@@ -1,14 +1,8 @@
-Work in bytes and in the order the memory is actually given away. Who takes their share
-first, and of what total? The reserve is a share of the device, not of what is left
-after the weights, and the weights do not shrink when you set memory aside.
+Work in bytes and follow the order in which memory is claimed. The reserve is a share of the whole device, not of what remains after loading the weights, and the weights do not shrink when you set memory aside.
 
 ---
 
-Compute one intermediate quantity that both functions share: the number of whole
-blocks in the pool. Reserve first (rounded up), then subtract the weights, then divide
-by the bytes of one block and round down; clamp at zero, because Python's `//` on a
-negative number rounds toward minus infinity and would give `-1`, not `0`. Integer
-ceiling without floats is `-(-a // b)` or `(a + b - 1) // b`.
+Compute one shared helper value: the number of whole blocks in the pool. Round the reserve up, subtract the weights, divide by the bytes per block (rounding down), and clamp the result at `0` so negative budgets do not become negative block counts under Python's `//`. You can compute an integer ceiling without floats as `(a + b - 1) // b` or `-(-a // b)`.
 
 ---
 
@@ -19,6 +13,4 @@ block_bytes = block_tokens * 2 * n_layers * n_kv_heads * head_dim * itemsize
 blocks = max(0, cache_bytes // block_bytes)
 ```
 
-Then `max_sequences` is `blocks // ceil(context / block_tokens)` and `max_context` is
-`(blocks // batch) * block_tokens`. Check the example: 12,110 blocks, 256 blocks for a
-4096-token sequence, 47 sequences.
+From `blocks`, compute `max_sequences` as `blocks // ceil(context / block_tokens)` and `max_context` as `(blocks // batch) * block_tokens`. On the worked example, you should get 12,110 blocks, 256 blocks per 4,096-token sequence, and 47 sequences.

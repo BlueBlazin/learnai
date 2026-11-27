@@ -1,19 +1,12 @@
-Write out one output, $y_i = \sum_j x_j \,(\text{codes}_{i,j} \cdot \text{scale}_{i,g}
-+ \text{bias}_{i,g})$, and look at a single group. Within a group the scale and the
-bias do not depend on $j$. What can you pull out of the sum over $j$, and what is left
-inside?
+Write out a single output element, $y_i = \sum_j x_j \,(\text{codes}_{i,j} \cdot \text{scale}_{i,g} + \text{bias}_{i,g})$, where $g = \lfloor j / \text{group\_size} \rfloor$. Within a single group $g$, neither `scale[i, g]` nor `bias[i, g]` depends on $j$. What can you factor out of the inner sum over $j \in g$, and what stays inside?
 
 ---
 
-Two things are left inside, one per term: $\sum_{j \in g} x_j \,\text{codes}_{i,j}$, a
-dot product of a slice of inputs with a slice of raw codes, and $\sum_{j \in g} x_j$,
-which does not involve the row $i$ at all. To get them for all groups at once, reshape
-`x` to `(..., G, group_size)` and `codes` to `(out, G, group_size)`: the same reshape
-on both, so that group `g` of `x` meets group `g` of every row of codes.
+Two sums stay inside group $g$. The first is the dot product $\sum_{j \in g} x_j \,\text{codes}_{i,j}$ between a group of inputs and a group of raw codes. The second is the input sum $\sum_{j \in g} x_j$, which does not depend on the output row $i$. Let $G = \text{in} / \text{group\_size}$. Reshape `x` to `(..., G, group_size)` and `codes` to `(out, G, group_size)` so that group `g` of `x` aligns with group `g` of every row of `codes`.
 
 ---
 
-With `xg` of shape `(..., G, k)` and the codes as float `cg` of shape `(out, G, k)`:
+Let `k = group_size`, `xg` be `x` reshaped to `(..., G, k)`, and `cg` be `codes` cast to float32 and reshaped to `(out, G, k)`. Then compute:
 
 ```python
 dots = einsum("...gk,ogk->...og", xg, cg)   # (..., out, G): inputs times raw codes
@@ -21,5 +14,4 @@ sums = xg.sum(-1)                           # (..., G): shared by every output r
 y = (dots * scale).sum(-1) + sums @ bias.T  # scale and bias are both (out, G)
 ```
 
-`dots * scale` broadcasts `(..., out, G)` against `(out, G)`, and `sums @ bias.T` is an
-ordinary matrix product of `(..., G)` with `(G, out)`.
+`dots * scale` broadcasts `(..., out, G)` against `(out, G)`, and `sums @ bias.T` is a standard matrix multiplication of `(..., G)` with `(G, out)`.

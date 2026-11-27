@@ -1,26 +1,14 @@
-A smaller range has two opposite effects. For values inside the range, the grid points
-move closer together, so rounding error goes down. For values outside it, the error is
-the whole distance to the limit. Which line of the quantization formula produces each
-of these two errors, and does your error measure include both?
+A smaller range has two opposite effects. Inside the range, grid points move closer together, so rounding error drops. Outside the range, saturated values pay their full distance to the clipping limit. Check which operation in the quantization formula produces each error, and verify that your MSE calculation includes both.
 
 ---
 
-There is nothing to solve analytically: try every candidate. For one candidate,
-compute `limit = c * max|samples|` and `scale = limit / qmax`, quantize all samples
-with round **and** clamp, dequantize by multiplying with `scale` again, and take the
-mean of the squared differences to the original samples. The maximum is taken once,
-over the whole flattened calibration set, before the loop.
+Try every candidate directly rather than solving analytically. First flatten `samples` and compute the single global maximum `max|samples|`. Then, for each candidate `c`, compute `limit = c * max|samples|` and `scale = limit / qmax`, quantize all samples with both `round` and `clamp`, dequantize by multiplying by `scale`, and take the mean squared difference against the original samples.
 
 ---
 
-You can evaluate all candidates at once by giving the scales a trailing axis:
-`scale[:, None]` has shape `(K, 1)` and broadcasts against the flattened samples
-`(N,)` to a `(K, N)` table of quantized values, and a mean over the last axis gives
-`mse` of shape `(K,)`.
+You can evaluate all candidates at once by adding a trailing axis to `scale`. A `scale[:, None]` tensor of shape `(K, 1)` broadcasts against flattened samples of shape `(N,)` to produce a `(K, N)` table of quantized values, and taking the mean over the last axis yields `mse` of shape `(K,)`.
 
-For the tie rule, do not rely on what `argmin` does with equal values or on the order
-of the list. Select the candidates whose error equals the minimum, and take the
-largest:
+For tie-breaking, do not rely on `argmin` or the order of `candidates`. Mask to the candidates whose MSE equals the minimum and take the largest:
 
 ```python
 where(mse == mse.min(), candidates, 0).max()

@@ -1,29 +1,12 @@
 ## The idea
 
-**The quantizer.** Group-wise affine quantization stores, for each run of
-`group_size` weights in a row, a scale, a bias, and one small integer per weight. The
-textbook choice (`groupwise-4bit`) puts the grid's first point on the minimum and its
-last on the maximum. MLX makes two different choices, and both are about zero.
+**The quantizer.** Group-wise affine quantization stores a scale, a bias, and one small integer code per weight for each consecutive run of `group_size` weights in a row. The textbook scheme (`groupwise-4bit`) places the first grid point at the group minimum and the last at the group maximum. MLX makes two modifications, both aimed at handling zero accurately.
 
-First, the grid is anchored at the end of the range that is *further* from zero, the
-value that would cost the most to get wrong, and counts toward the other end; that is
-why the scale can be negative. Second, the step is nudged so that zero is a grid
-point. The anchor $e$ lies $e / s$ steps from zero. That number is rounded to an
-integer $q_0$, and the scale is redefined as $e / q_0$: now $e$ is exactly $q_0$ steps
-from zero, so code $-q_0$ decodes to $-q_0 \cdot e / q_0 + e = 0$. Weights are
-centered on zero and many are small, so a grid without a zero adds noise to every one
-of them, and a sparse or pruned matrix would stop being sparse.
+First, MLX anchors the grid at whichever endpoint is further from zero—the value with the largest magnitude—and steps toward the other endpoint. When the maximum has larger magnitude, the scale is negative. Second, MLX nudges the step size so that zero lands exactly on a grid point. The anchor $e$ sits $e / s$ steps from zero. Rounding that distance to an integer $q_0$ and redefining the scale as $s = e / q_0$ places $e$ exactly $q_0$ steps from zero, so integer code $-q_0$ decodes to $-q_0 \cdot (e / q_0) + e = 0$. Because neural network weights cluster around zero, a grid that misses zero adds noise to most weights and destroys sparsity in pruned matrices.
 
-The nudge is not free: if $|q_0|$ was rounded up, the step shrank, and the far end of
-the range now lies beyond code $L$ and is clamped. In the worked example, $0.6$ comes
-back as $0.35$. On real weights this costs about 0.15 dB against the textbook grid,
-which is the price MLX pays for an exact zero.
+Snapping zero onto the grid has a trade-off. Whenever $|q_0|$ rounds up, the step shrinks, pushing the opposite end of the range past the maximum code $L = 2^{\text{bits}} - 1$ so it gets clamped. In the worked example, $0.6$ clamps to $0.35$. On real weights this costs roughly 0.15 dB relative to the textbook grid, which is the price MLX pays for an exact zero.
 
-**The report.** Everything is a sum. Signal and noise power add up across matrices,
-so the model's SQNR is the ratio of the totals. Bits add up as well: codes, plus 32
-bits per group, plus 16 per element for what stays in floating point. With groups of
-64 the overhead is exactly half a bit per weight, which is why an "8-bit" conversion
-of this model is reported as 8.501 bits per weight.
+**The report.** Both error pooling and bit accounting reduce to running sums. Signal power and noise power add across matrices, so the pooled model SQNR is the ratio of the two totals. Bit counts add the same way: `bits` per quantized weight, 32 bits of metadata per group, and 16 bits per unquantized element. With groups of 64, the metadata adds exactly 0.5 bits per weight, which is why an 8-bit conversion of this model takes 8.501 bits per weight.
 
 ## Reference solution (PyTorch)
 
@@ -70,56 +53,29 @@ def quantize_report(weights, bits, group_size):
     }
 ```
 
-The MLX version is a translation. The JAX version divides by
-`jnp.full_like(hi, levels)` instead of by `levels`: JAX turns division by a scalar
-into multiplication by its reciprocal, which differs from true division in the last
-bit for a third of all values, and the last bit of the step decides ties in $q_0$.
+The MLX implementation is a direct translation. The JAX implementation divides by `jnp.full_like(hi, levels)` instead of the Python scalar `levels`. JAX compiles division by a scalar as multiplication by its reciprocal, which differs from IEEE division in the last bit for about a third of float32 values and can flip rounding ties in $q_0$.
 
 ## Common mistakes
 
-- **The textbook grid.** Minimum and range instead of MLX's edge and adjusted scale.
-  The SQNR comes out 0.15 dB *better*, which is how you can tell it is not what the
-  converter does: the files will not match.
-- **Always starting at the minimum.** Half the groups have their larger magnitude at
-  the maximum; those need the negative scale.
-- **No adjustment of the scale.** The right edge, the textbook step, and no zero on
-  the grid.
-- **No floor on the step.** A constant group (a zero row of a pruned matrix, an
-  untrained embedding row) has range 0, scale 0, and decodes to NaN.
-- **Truncating instead of rounding**, which doubles the noise amplitude.
-- **No clamp.** After the adjustment some weights need a code above $L$. Unclamped
-  they are reproduced better than any file can store them, and the report flatters
-  the quantizer.
-- **Strided groups.** A reshape to `(out, group_size, n_groups)` groups every
-  `n_groups`-th input. Groups are consecutive runs.
-- **Bits per weight without the overhead.** 4.0 instead of 4.5.
-- **Skipping the embedding**, or anything else whose name does not look like a layer.
-  The rule is the shape: two dimensions.
-- **Leaving the unquantized tensors out of bits per weight.** They are small here
-  (58 thousand of 352 million parameters) and not small in a model with large biases
-  or in a small test model.
-- **The mean of the decibels.** Decibels are logarithms; their mean is a geometric
-  mean of ratios in which every matrix has the same weight. Pool the powers.
-- **20 instead of 10.** A ratio of powers takes $10 \log_{10}$.
-- **Sorting the wrong way.** The worst layers have the *lowest* SQNR.
-- **Counting bits in 32 bits.** $3.0 \cdot 10^9$ does not fit in an int32, and the
-  count wraps to a negative number of bits per weight on the first real model, having
-  passed every small test. This is the classic bug of size accounting; the same one
-  truncates files at 2 GB.
+- **Using the textbook grid.** Quantizing from minimum to maximum without MLX's anchor and adjusted scale produces an SQNR about 0.15 dB *higher*, which does not match what `mlx_lm.convert` actually writes.
+- **Always anchoring at the minimum.** Roughly half of all groups have a larger magnitude at the maximum and require a negative scale.
+- **Skipping the scale adjustment.** Picking the right anchor without recomputing `scale = edge / q0` leaves zero off the grid.
+- **Omitting the step floor.** A constant group (such as a zero row in a pruned matrix or an untrained embedding row) has range 0, causing division by zero and NaN outputs.
+- **Truncating instead of rounding.** Truncation doubles the maximum quantization error compared to round-to-nearest.
+- **Omitting the clamp.** After adjusting the scale, some weights map above code $L$. Without clamping, those weights reconstruct better than any stored file can represent, inflating the reported SQNR.
+- **Strided grouping.** Reshaping to `(out, group_size, n_groups)` groups every `n_groups`-th column instead of consecutive runs of `group_size` inputs.
+- **Ignoring scale and bias overhead in `bits_per_weight`.** Reporting 4.0 instead of 4.5 misses the 32 bits of metadata per group.
+- **Skipping the embedding matrix.** Filtering tensors by layer name instead of dimensionality (`w.ndim == 2`) leaves out the embedding matrix.
+- **Excluding unquantized tensors from `bits_per_weight`.** Norm gains are tiny in Granite 350M (58 thousand of 352 million parameters), but unquantized tensors matter in smaller test models and in architectures with large biases.
+- **Averaging per-layer decibels.** Decibels are logarithmic, so their arithmetic mean is a geometric mean that weights every matrix equally regardless of size. Always pool the raw signal and noise powers first.
+- **Using `20 * log10` instead of `10 * log10`.** Signal-to-noise ratio is a ratio of squared amplitudes (powers), which uses a factor of 10.
+- **Sorting `"worst"` in descending order.** The worst layers are the ones with the *lowest* SQNR.
+- **Counting bits in 32-bit integers.** The real model occupies roughly $3.0 \cdot 10^9$ bits, which overflows a signed 32-bit integer and wraps negative after passing every small test. Always accumulate bit counts in Python `int`s.
 
 ## Complexity
 
-One pass over the weights, a handful of elementwise operations each, and no memory
-beyond one matrix and its round trip. For Granite 350M that is under a second.
+The algorithm makes one pass over the weights with a small constant number of elementwise operations per weight, holding only one matrix and its dequantized copy in memory at a time. On Granite 4.0 350M, a full pass finishes in under a second.
 
 ## In the wild
 
-`mlx_lm.convert -q --q-bits 4 --q-group-size 64` applies exactly this function to
-every `nn.Linear` and `nn.Embedding` and prints the bits per weight computed as
-above. The measured outcome on this model is worth remembering: 8 bits is free (KL
-0.003 nats), 4 bits is not (1.5 nats, and the greedy token changes at 3 of 12
-positions), although the per-layer SQNR of about 20 dB looks unremarkable. Small
-models have little redundancy; this is why mixed-precision recipes keep the embedding
-and the first and last layers at 6 or 8 bits, and why the table of per-layer errors
-is the starting point for choosing them. The next problem,
-`mlx-quantized-checkpoint-load`, reads the file this scheme produces.
+`mlx_lm.convert -q --q-bits 4 --q-group-size 64` applies this exact scheme to every `nn.Linear` and `nn.Embedding` layer and prints the effective bits per weight computed the same way. On Granite 350M, 8-bit quantization is nearly lossless (0.003 nats KL divergence), while 4-bit quantization degrades output noticeably (1.5 nats KL divergence, changing the greedy token at 3 of 12 positions) despite a respectable ~20 dB SQNR on every layer. Small models have little redundancy, which is why mixed-precision recipes keep embeddings and the first and last layers at 6 or 8 bits, guided by the per-layer SQNR table built here. The next problem, `mlx-quantized-checkpoint-load`, reads the checkpoint format this quantizer produces.

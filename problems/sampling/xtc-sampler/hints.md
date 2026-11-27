@@ -1,16 +1,8 @@
-Split the function into three per-row questions, each answered by a boolean: which
-tokens are top choices, does XTC act on this row, and which single top choice
-survives. The output is then one `where`. Which of the three needs the softmax, and
-which can be answered from the logits alone?
+Break the logic into three questions for each row: which tokens are top choices, whether XTC acts on the row, and which single top choice survives. Once you have those, the output is a single `where`. Think about which of the three needs softmax and which can be answered directly from `logits`.
 
 ---
 
-`above = softmax(logits) >= threshold` marks the top choices. XTC acts on a row when
-`above` has at least two true entries **and** `u[b] < probability`; give both a
-trailing axis of length 1 so they broadcast over the row. The survivor is the top
-choice with the smallest logit: mask the other entries with `+inf` and take the
-row minimum. No sort is needed, because the top choices are exactly the tokens above
-a cutoff, and you only need the smallest of them.
+Compute `above = softmax(logits) >= threshold` to mark the top choices. XTC acts on row `b` when `above` has at least two true entries **and** `u[b] < probability`. Keep a trailing dimension of size 1 on both conditions so they broadcast across the vocabulary axis. To find the survivor without sorting, mask non-top-choice logits to `+inf` and take the row minimum.
 
 ---
 
@@ -24,6 +16,4 @@ remove = fires & above & (arange(V) != survivor)
 out = where(remove, -inf, logits)
 ```
 
-`candidate` can mark several tokens when logits tie; taking the largest index among
-them picks exactly one. Compare logits, not probabilities, to find the ties: equal
-logits are equal bit for bit, while their computed probabilities need not be.
+Multiple tokens can be marked in `candidate` when logits tie, so taking the maximum index selects exactly one survivor. Compare `logits` rather than probabilities when checking for ties, because identical logits are equal bit-for-bit whereas computed probabilities may differ due to rounding.

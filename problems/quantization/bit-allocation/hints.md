@@ -1,27 +1,14 @@
-Suppose you have already decided the bit widths of the first $i$ layers. What do the
-remaining layers need to know about those decisions? Not which layer got what, only
-two numbers: how many bits have been used, and how much error has accumulated. And if
-two partial assignments have used the same number of bits, is there any reason to
-keep the one with the higher error?
+Suppose you have already chosen bit widths for the first $i$ layers. The remaining layers do not need to know which specific widths earlier layers received. They only need two numbers: how many bits have been used so far and how much error has accumulated. If two partial assignments have used the same number of bits, can the one with higher error ever beat the other?
 
 ---
 
-Dynamic programming over the bits used. Keep a table that maps "bits used by the
-layers so far" to the best (lowest-error) partial assignment with exactly that size.
-Start with `{0: (0, ())}`. For each layer, build a new table: for every entry and
-every option, add the layer's cost `params * bits` and its error; drop the candidate
-if it exceeds the budget; keep it if its size is new or it beats the entry already
-stored for that size. The budget is `floor(target_bpw * total_params)` bits: a size is
-a whole number of bits.
+Use dynamic programming over total bits used. Maintain a table mapping each reachable bit count from the layers processed so far to the lowest-error partial assignment of that size. Start with `{0: (0, ())}`. For each layer, build a new table by combining every existing entry with every option: add `params * bits` to the size and `layer_error` to the error, discard candidates above the budget, and keep a candidate if its size is new or beats the stored entry. Because every valid size is a whole number of bits, the budget is `floor(target_bpw * total_params)`.
 
-A dict keyed by the size is enough. All sizes are multiples of the gcd of the layer
-sizes, so the table has at most `budget / gcd` entries however large the layers are.
+A dictionary keyed by total bits is fast enough without explicit scaling. Every reachable size is a multiple of the gcd of the layer sizes, so the table holds at most `budget / gcd` entries regardless of how large the parameter counts are.
 
 ---
 
-Store each entry as a tuple `(error, chosen_bits_so_far)` and compare tuples: Python
-compares the error first and then the chosen bit widths in layer order, which is the
-lexicographic tie rule for two candidates of the same size.
+Store each table value as a tuple `(error, chosen_bits_so_far)`. Comparing two tuples in Python compares error first and then the chosen bit widths in layer order, which handles the lexicographic tie-breaker automatically:
 
 ```python
 candidate = (error + layer_error, (*chosen, bits))
@@ -29,6 +16,4 @@ if total not in extended or candidate < extended[total]:
     extended[total] = candidate
 ```
 
-At the end, take `min((error, used, chosen) for used, (error, chosen) in best.items())`:
-lowest error, then fewest bits, then the smallest list. If the table is empty after
-some layer, nothing fits: raise `ValueError`.
+After processing all layers, raise `ValueError` if the table is empty. Otherwise, take `min((error, used, chosen) for used, (error, chosen) in best.items())` to pick the lowest error, then fewest bits, then lexicographically smallest list.

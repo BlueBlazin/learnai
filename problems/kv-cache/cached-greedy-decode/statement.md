@@ -1,8 +1,4 @@
-Generate tokens greedily from a prompt with a transformer language model, using its
-KV cache so that **every token passes through the model exactly once**: the prompt in
-a single call, then one token per step. The tokens must be identical to what greedy
-decoding without a cache produces; the judge counts the work the model was asked to
-do.
+Implement greedy decoding for a transformer language model using its KV cache. Pass the prompt in a single call, and then pass one generated token per step so every token goes through the model at most once. Your function must produce the exact same tokens as uncached greedy decoding while staying within strict call and token limits.
 
 ![This problem is the whole loop, from the prompt to the last generated token.](assets/map.svg)
 
@@ -12,48 +8,33 @@ do.
 def greedy_decode(lm, prompt, max_new_tokens, eos_id): ...
 ```
 
-`lm` is a [`TinyLM`](../../../python/src/learnai/kit/tinylm.py), a small seeded
-decoder-only transformer from the kit. It is called in two ways:
+`lm` is a [`TinyLM`](../../../python/src/learnai/kit/tinylm.py), a small seeded decoder-only transformer from the kit. You can call it in two ways:
 
 ```python
 logits, cache = lm(tokens)           # no cache: `tokens` is the whole sequence so far
 logits, cache = lm(tokens, cache)    # with a cache: `tokens` continue the cached prefix
 ```
 
-- `tokens` is a list of ints (or a 1-D integer tensor) with at least one token.
-- `logits` is a float32 tensor of shape `(T, vocab_size)` with one row per token
-  passed in *this* call. Row `i` scores the token that follows `tokens[i]`, so
-  `logits[-1]` scores the next token of the sequence.
-- `cache` holds the attention keys and values of every token seen so far
-  (`cache.length` tokens). The model never modifies a cache; each call returns a new
-  one.
-- `lm.counters.forward_calls` counts the calls, and `lm.counters.tokens_processed`
-  the tokens passed in, summed over calls.
+- `tokens` is a list of ints (or a 1-D integer tensor) containing `T` tokens, with $T \ge 1$.
+- `logits` has one row per token passed in that call. Row `i` scores the token that follows `tokens[i]`, so `logits[-1]` scores the next token of the sequence.
+- `cache` stores the attention keys and values for every token the model has seen so far (`cache.length` tokens). The model never mutates a cache in place and returns a new cache on every call.
+- `lm.counters.forward_calls` counts how many times `lm` was called. `lm.counters.tokens_processed` sums the number of tokens passed across all calls.
 
-Greedy decoding repeats one step: the next token is the argmax of the next-token
-logits given everything before it (the prompt followed by the tokens generated so
-far). `greedy_decode` returns the generated tokens:
+At each step of greedy decoding, the next token is the argmax of the next-token logits given the prompt and all tokens generated so far. Implement `greedy_decode` with these arguments and behavior:
 
-- `prompt`: a list of ints, the prompt tokens, $P \ge 1$ of them.
-- `max_new_tokens`: an int $\ge 1$. At most this many tokens are generated.
-- `eos_id`: an int or `None`. If a generated token equals `eos_id`, generation stops
-  immediately; **that token is the last element of the result**. Only generated
-  tokens count: an `eos_id` that occurs in the prompt does not stop anything. With
-  `None`, exactly `max_new_tokens` tokens are generated.
-- Returns a list of Python ints with the generated tokens only (not the prompt), of
-  length $g$ with $1 \le g \le$ `max_new_tokens`.
+- `prompt`: the initial sequence of $P \ge 1$ token ids.
+- `max_new_tokens`: the maximum number of tokens to generate, with `max_new_tokens` $\ge 1$.
+- `eos_id`: an end-of-sequence token id (`int`), or `None`. If a generated token equals `eos_id`, stop immediately and include that token as the last element of the returned list. An `eos_id` inside `prompt` does not stop generation. If `eos_id` is `None`, generate exactly `max_new_tokens` tokens.
+- Return a list of $g$ generated token ids (excluding the prompt), where $1 \le g \le$ `max_new_tokens`.
 
-**Cost limits.** For a call that returns $g$ tokens:
+**Cost limits.** For a call that returns $g$ tokens from a prompt of length $P$, the counters must not exceed these exact limits:
 
 | counter | limit | why |
 |---|---|---|
-| `forward_calls` | $g$ | one call for the prompt, which yields the first token, then one call per further token |
+| `forward_calls` | $g$ | one call for the prompt (which yields the first token), then one call per additional token |
 | `tokens_processed` | $P + g - 1$ | each prompt token once, and each generated token once except the last |
 
-The last generated token is returned but never fed to the model: nothing would use
-its logits. That includes an EOS token and the token that reaches `max_new_tokens`.
-The prompt must go in as one call, not one call per token. Both limits are the
-minimum possible, so the limits are exact.
+Do not feed the last generated token back into the model because nothing uses its logits. This applies both when hitting `eos_id` and when reaching `max_new_tokens`. You must also pass the entire prompt in one call rather than token by token. Both limits are the theoretical minimum, so they are exact.
 
 ## Shapes
 
@@ -75,7 +56,7 @@ greedy_decode(lm, [0, 17, 42, 5], 8, eos_id=40)
 # [42, 62, 33, 33, 40]                    5 calls, 8 tokens processed
 ```
 
-The first call, step by step:
+The first call runs as follows:
 
 | call | tokens passed | cache covers afterwards | argmax of `logits[-1]` |
 |---|---|---|---|
@@ -88,36 +69,21 @@ The first call, step by step:
 | 7 | `[32]` | 10 tokens | 45 |
 | 8 | `[45]` | 11 tokens | 37 |
 
-Eight tokens are generated after eight calls, and the function returns. Token 37 is
-never passed to the model. In total $4 + 7 = 11$ tokens were processed. Without the
-cache, call $k$ would pass the whole sequence of $3 + k$ tokens, 60 tokens in all.
+After 8 calls, 8 tokens have been generated and the function returns. Token 37 is never passed to the model, so the total is $4 + 7 = 11$ processed tokens. Without a cache, call $k$ would pass all $3 + k$ tokens, totaling 60 tokens.
 
 ![The first four calls of the example, without and with a cache. A filled cell is a token the cache already covers.](assets/tokens-per-call.svg)
 
-In the second call, token 40 is generated by call 5 and equals `eos_id`: the result
-ends with 40 after 5 calls and $4 + 4 = 8$ tokens.
+In the second example, call 5 generates token 40, which equals `eos_id`. Generation stops immediately and returns 5 tokens after 5 calls and $4 + 4 = 8$ processed tokens.
 
 ## Constraints
 
-- $1 \le P$, $1 \le$ `max_new_tokens`, and $P +$ `max_new_tokens` $\le$
-  `lm.max_context` (128).
-- The generated tokens are compared exactly with greedy decoding that uses no cache.
-  The test models keep the two largest logits far enough apart (more than `1e-3`)
-  that the argmax does not depend on how the calls are split.
-- The counters are compared with the limits above, exactly. A solution over a limit
-  fails even when its tokens are right.
-- If two logits are equal, the argmax is the lower token id (this does not occur in
-  the tests).
+- $1 \le P$, $1 \le$ `max_new_tokens`, and $P +$ `max_new_tokens` $\le$ `lm.max_context` (128).
+- Generated tokens are compared exactly against uncached greedy decoding. In the test models, the top two logits differ by more than `1e-3`, so the argmax does not depend on how calls are split.
+- Both counters are checked against the exact limits above. Exceeding either limit fails even if the returned tokens are right.
+- If two logits tie, the argmax is the lower token id (ties do not occur in the tests).
 
 ## Why this matters
 
-This loop is the core of every LLM server: a *prefill* pass that pushes the whole
-prompt through the model at once, then *decode* steps that each process one token
-against the cached keys and values. Without the cache, step $k$ recomputes the
-attention of all earlier tokens, and generating $n$ tokens costs $O(n^2)$ token
-passes instead of $O(n)$; a 1000-token answer is hundreds of times more expensive.
-The off-by-one errors around the loop are just as real in production: feeding the
-wrong token after prefill shifts every prediction by one position, running the
-prompt token by token throws away the parallelism that makes prefill fast (and
-time-to-first-token low), and a wasted forward pass on the final token is a few
-percent of latency on every short response.
+Every LLM inference engine uses this two-phase loop. A *prefill* pass processes the entire prompt at once, and subsequent *decode* steps process one token at a time against the cached keys and values. Without a KV cache, step $k$ recomputes attention over all previous tokens, turning $n$ generated tokens into $O(n^2)$ token passes instead of $O(n)$.
+
+Off-by-one bugs around this loop are common in production servers. Feeding the wrong token after prefill shifts every prediction by one position. Processing the prompt one token at a time throws away the parallelism that keeps time-to-first-token low. Running an extra forward pass on the final token wastes latency on every short response.

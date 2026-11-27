@@ -1,13 +1,12 @@
 ## The idea
 
-Both operands are stored as integers that stand for real numbers:
+Both operands are stored as integer codes that represent real numbers. For token $r$ and output row $i$, let $c_i = \text{w\_scale}_i$ and $w_{ij} = \text{w\_q}_{ij}$:
 
 $$
-x_{rj} \approx s_r\,(q_{rj} - z_r), \qquad \hat W_{ij} = c_i\, w_{ij},
+x_{rj} \approx s_r\,(q_{rj} - z_r), \qquad \hat W_{ij} = c_i\, w_{ij}.
 $$
 
-with $c_i$ = `w_scale[i]` and $w_{ij}$ = `w_q[i, j]`. Substituting into the layer and
-pulling everything that does not depend on $j$ out of the sum:
+Substituting these into the linear layer and factoring out every term that does not depend on the input index $j$ gives:
 
 $$
 \sum_j x_{rj} \hat W_{ij}
@@ -15,32 +14,17 @@ $$
 = s_r c_i \Big( \sum_j q_{rj} w_{ij} \;-\; z_r \sum_j w_{ij} \Big).
 $$
 
-The first sum is the integer matrix product, the only work that grows with
-$\text{in}$. The second is one number per output row, known when the weights are
-loaded. The scales multiply once per output, after the integer work is done. That is
-the whole design of integer inference: floats at the boundary, integers in the loop.
+The first sum is the integer matrix product, which is the only step that scales with $\text{in}$. The second sum is a single integer per output row that can be precomputed when the weights are loaded. The float scales multiply once per output after all integer work is complete.
 
-Three of the choices in the problem follow from this formula.
+Three design choices and the quantization error bound follow directly from this decomposition.
 
-**Why the weights have no zero-point.** With a weight zero-point $z^w_i$ the product
-$(q - z_r)(w - z^w_i)$ has four terms, and one of them, $z^w_i \sum_j q_{rj}$, depends
-on the activations and must be computed for every token. With symmetric weights only
-the term above remains, and it is free.
+**Why the weights have no zero-point.** If weights also had a zero-point $z^w_i$, expanding $(q_{rj} - z_r)(w_{ij} - z^w_i)$ would produce four terms. One of them, $z^w_i \sum_j q_{rj}$, depends on the activations and would have to be computed for every token. Keeping the weights symmetric leaves only the weight row-sum term, which is independent of `x`.
 
-**Why the accumulator is int32.** One product of two int8 codes reaches
-$128 \cdot 127 = 16256$, which needs 15 bits; a sum of 4096 of them reaches
-$6.7 \cdot 10^7$, which needs 27. Casting the *result* of an int8 product to int32 is
-too late: the product has already wrapped.
+**Why the accumulator is int32.** A single product of two int8 codes can reach $128 \cdot 127 = 16256$ (15 bits), and summing 4096 such products can reach $6.7 \cdot 10^7$ (27 bits). Casting the result of an int8 matrix product to int32 is too late because the products have already wrapped.
 
-**Why one grid per token.** The scale is set by the largest activation the grid has to
-cover. Per token, a row of small activations gets a fine grid of its own. With one grid
-for the batch, that row is quantized on the step of the largest row, and its output
-changes when a different sequence is batched next to it.
+**Why one grid per token.** The grid step is determined by the largest range it must cover. Computing one grid per token gives a token with small activations a fine step. Sharing one grid across the whole batch forces every token onto the step of the widest token and makes a token's output depend on whatever else is in the batch.
 
-**The error.** The weights are exact (they *are* the codes). Each activation is
-reproduced within half a step, $|s_r (q_{rj} - z_r) - x_{rj}| \le s_r / 2$, including
-at the clamped top code. So the output differs from the float layer by at most
-$\tfrac{1}{2} s_r \sum_j |\hat W_{ij}|$, the bound in the statement.
+**Quantization error bound.** The weights $\hat W$ are already quantized, so they introduce no additional error. Each activation is represented within half a step, $|s_r (q_{rj} - z_r) - x_{rj}| \le s_r / 2$, including at the top clamped code. By the triangle inequality, the layer output differs from the float layer by at most $\tfrac{1}{2} s_r \sum_j |\hat W_{ij}|$.
 
 ## Reference solution (PyTorch)
 
@@ -62,62 +46,26 @@ def int8_linear(x, w_q, w_scale, bias):
     return y, acc
 ```
 
-`lo`, `hi`, `x_scale`, and `zero_point` have shape `(n, 1)`, so they broadcast along a
-row of `x` and, later, against `w_scale` of shape `(out,)` to give `(n, out)`.
+Because `lo`, `hi`, `x_scale`, and `zero_point` have shape `(n, 1)`, they broadcast along each row of `x` during quantization and against `w_scale` of shape `(out,)` during rescaling to produce `(n, out)`.
 
-The JAX version is a translation. MLX differs in one line: `mx.matmul` accepts
-floating-point inputs only, so the reference forms the int32 products by broadcasting
-`(n, 1, in)` against `(1, out, in)` and sums over the last axis. Routing the product
-through a float32 `matmul` is tempting and is exact only while every partial sum stays
-below $2^{24}$, which holds for $\text{in} \le 1032$ and not beyond.
+The JAX version is a direct translation. MLX differs in one line because `mx.matmul` only accepts floating-point inputs. The MLX reference computes the int32 products by broadcasting `(n, 1, in)` against `(1, out, in)` and summing over the last axis. Using a float32 `matmul` is only exact while every partial sum stays below $2^{24}$, which holds for $\text{in} \le 1032$ and fails for wider layers.
 
 ## Common mistakes
 
-- **Accumulating in int8.** `x_q @ w_q.T` on int8 tensors returns int8 in PyTorch and
-  JAX: the products wrap modulo 256 and the result is noise. Cast first, multiply
-  second.
-- **Accumulating in float32.** Float32 represents every integer up to $2^{24}$ and
-  only every second, fourth, or eighth one above. A layer with 2048 inputs and
-  saturated codes sums to about $3.3 \cdot 10^7$, and the accumulator comes out a few
-  units off. It is the hardest of these to notice, because every narrow layer passes.
-- **One activation grid for the batch.** Taking the minimum and maximum over all of
-  `x` gives every token the step of the widest one. It is identical to the per-token
-  scheme for a batch of one, which is how it gets through a unit test.
-- **Dropping the zero-point correction.** `scale * acc + bias` is the layer for
-  activations that were quantized symmetrically. With an affine grid it is off by
-  $s_r c_i z_r \sum_j w_{ij}$: small for a token centered on zero, the full output for
-  a non-negative one, whose zero-point is $-128$.
-- **Subtracting the zero-point in int8.** Computing $q - z$ first is a valid
-  alternative to the correction term, but $q - z$ spans $[-255, 255]$ and wraps in
-  int8 for every token whose range is not centered.
-- **Adding the bias before the rescale.** The bias is a real number; the accumulator
-  is in units of $s_r c_i$. Integer engines do add the bias to the accumulator, but
-  only after quantizing it to exactly that unit, $\operatorname{round}(b_i / (s_r
-  c_i))$, which a dynamic scheme cannot do offline because $s_r$ is not known.
-- **Scales on the wrong axes.** `x_scale` belongs to tokens and `w_scale` to outputs.
-  With `x_scale` of shape `(n,)` instead of `(n, 1)` the product fails to broadcast,
-  except when `n == out`, where it silently pairs token scales with outputs.
+- **Accumulating in int8.** Running `x_q @ w_q.T` on int8 tensors returns int8 in PyTorch and JAX, wrapping every product modulo 256 into noise. Cast both operands to int32 before multiplying.
+- **Accumulating in float32.** Float32 represents every integer exactly up to $2^{24}$, then skips values above that threshold. A layer with 2048 inputs and saturated codes sums to roughly $3.3 \cdot 10^7$, leaving the accumulator off by a few units. Because narrow layers still pass, this bug is easy to miss.
+- **Sharing one activation grid across the batch.** Taking the minimum and maximum over all of `x` forces every token to use the widest token's step. This behaves identically to per-token quantization when $n = 1$, so single-token tests do not catch it.
+- **Dropping the zero-point correction.** Computing `scale * acc + bias` assumes symmetric activations. With an affine grid, the output is off by $s_r c_i z_r \sum_j w_{ij}$, which is small for centered tokens but huge for non-negative tokens where $z_r = -128$.
+- **Subtracting the zero-point in int8.** Computing $q - z$ before the matmul is mathematically valid, but $q - z$ spans $[-255, 255]$ and wraps in int8 whenever a token is not centered on zero.
+- **Adding the bias before rescaling.** The bias is in real units, while the accumulator is in units of $s_r c_i$. Static integer engines can add a quantized bias $\operatorname{round}(b_i / (s_r c_i))$ to the accumulator offline, but a dynamic scheme cannot because $s_r$ is unknown until run time.
+- **Misaligning scale axes.** `x_scale` indexes tokens and `w_scale` indexes outputs. If `x_scale` has shape `(n,)` instead of `(n, 1)`, broadcasting fails—except when `n == out`, where it silently pairs token scales with output channels.
 
 ## Complexity
 
-Step 1 is $O(n \cdot \text{in})$ and step 2 is $O(n \cdot \text{out} \cdot
-\text{in})$ integer multiply-accumulates; steps 3 and 4 are $O(n \cdot \text{out})$.
-The weights take one byte each plus one float per output row.
+Step 1 takes $O(n \cdot \text{in})$ time, step 2 performs $O(n \cdot \text{out} \cdot \text{in})$ integer multiply-accumulates, and steps 3 and 4 take $O(n \cdot \text{out})$ time. The quantized weights require 1 byte per weight plus one float32 scale per output row.
 
 ## In the wild
 
-The preset schemes of llm-compressor are defined in its `compressed-tensors` library
-(`quantization/quant_scheme.py`). `W8A8` there is 8-bit integer weights with the
-`channel` strategy, symmetric and static, and 8-bit integer input activations with
-the `token` strategy and `dynamic=True`: one grid per token, computed at run time, as
-in this problem. The preset sets `symmetric=True` for the activations as well, which
-makes every zero-point 0 and removes step 3; this problem uses the affine form because
-activations after a nonlinearity are not centered, and because the correction term is
-what an integer layer must get right as soon as the grid is not symmetric.
+The `llm-compressor` presets are defined in `compressed-tensors` (`quantization/quant_scheme.py`). Its `W8A8` preset pairs static per-channel symmetric int8 weights with dynamic per-token int8 activations (`dynamic=True`), matching the per-token structure here. That preset also uses symmetric activations (`symmetric=True`), which sets every zero-point to 0 and skips step 3. This problem uses affine activations because post-nonlinearity activations are often skewed, making the zero-point correction essential whenever the grid is asymmetric.
 
-The arithmetic itself, an int32 accumulator, a correction that is precomputed from the
-weights, and a single rescale, is the scheme of *Quantization and Training of Neural
-Networks for Efficient Integer-Arithmetic-Only Inference* (arXiv:1712.05877), which
-also replaces the final float multiplication by a fixed-point multiplier and a shift
-so that no float is needed at all. That scheme is static: the activation range comes
-from calibration, so the bias can be folded into the accumulator ahead of time.
+The core integer pipeline—an int32 accumulator, a precomputed weight row-sum correction, and a final rescale—comes from *Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference* (arXiv:1712.05877). That paper goes one step further by replacing the final float multiplication with a fixed-point multiplier and bit shift, and uses static calibration ranges so the bias can be folded into the accumulator ahead of time.

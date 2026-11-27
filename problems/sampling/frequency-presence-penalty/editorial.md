@@ -1,29 +1,29 @@
 ## The idea
 
-The OpenAI definition is one line. For token $j$ with logit $\mu_j$ that has been
-sampled $c_j$ times so far:
+In the OpenAI API specification, a token $j$ with logit $\mu_j$ that has been sampled
+$c_j$ times so far is adjusted by:
 
 $$
 \mu_j \leftarrow \mu_j - c_j \cdot \alpha_\text{frequency}
 - \mathbb{1}[c_j > 0] \cdot \alpha_\text{presence}.
 $$
 
-Subtracting $d$ from a logit divides the token's odds against every other token by
-$e^{d}$, whatever the logit was. That makes these penalties behave uniformly, unlike
-the multiplicative repetition penalty, whose effect depends on the sign and size of
-the logit.
+Subtracting $d$ from a logit divides that token's odds against every other token by
+$e^{d}$, regardless of the logit's original value. This gives additive penalties a
+uniform effect, unlike the multiplicative repetition penalty, whose strength depends on
+the sign and magnitude of the logit.
 
-- The **frequency** term is linear in the count. Each repetition costs the same
-  additional amount, so a token stuck in a loop is pushed down until something else
-  wins.
-- The **presence** term is a step: it is paid once, when the count goes from 0 to 1,
-  and never again. It does not punish using a word many times; it rewards using words
-  that have not appeared.
+- The **frequency** term grows linearly with the count. Each extra repetition incurs the
+  same additional cost, pushing a looping token down until another token wins.
+- The **presence** term is a step function. It is paid once when the count moves from 0
+  to 1 and never again. Rather than punishing repeated use of a word, it encourages the
+  model to pick words that have not appeared yet.
 
-The count is over tokens the model *sampled*. The prompt is input, not output, so it
-is excluded. Per row that is a histogram of the generated part of the sequence, and a
-histogram over a batch is a scatter-add: every position adds a weight to the column
-of its token, and the weight is 1 for generated positions and 0 for prompt positions.
+The count covers only tokens the model sampled. Prompt tokens are input, not output, so
+they are excluded. Per row, this count is a histogram of the generated suffix. Across a
+batch, you can compute it with a scatter-add where every position adds a weight to its
+token's column, using weight `1` for generated positions and weight `0` for prompt
+positions.
 
 ## Reference solution (PyTorch)
 
@@ -39,56 +39,60 @@ def apply_penalties(logits, token_counts, frequency_penalty, presence_penalty):
     return logits - penalty
 ```
 
-- `arange(T) >= prompt_lengths[:, None]` broadcasts to `(B, T)`; each row gets its own
-  boundary. Position `prompt_lengths[b]` is the first generated one, hence `>=`.
-- Using the mask as the scattered *value* avoids selecting positions, which would
-  give a ragged result. Prompt positions still write, but they add 0.
+- `arange(T) >= prompt_lengths[:, None]` broadcasts to shape `(B, T)` so each row uses
+  its own boundary. Position `prompt_lengths[b]` is the first generated position, which
+  is why the comparison is `>=`.
+- Passing the mask as the scattered values avoids indexing out ragged slices of
+  generated tokens. Prompt positions still participate in the scatter, but they add `0`.
 - `scatter_add` (and `.at[rows, tokens].add(...)` in JAX and MLX) accumulates when an
-  index repeats. Plain indexed assignment does not.
-- An integer tensor times a Python float is float32 in all three frameworks, and so
-  is a boolean tensor times a float, so the result needs no cast. A masked logit stays
-  masked because `-inf` minus a finite number is `-inf`.
+  index repeats. Plain indexed assignment overwrites instead.
+- Multiplying an integer or boolean tensor by a Python float produces a float32 tensor
+  in all three frameworks, so no explicit cast is needed. Masked logits remain `-inf`
+  because `-inf` minus any finite number is `-inf`.
 
 ## Common mistakes
 
-- **The multiplicative form.** Dividing positive logits and multiplying negative ones
-  by a factor is the *repetition* penalty of CTRL, a different sampler with a
-  different parameter range (around 1.0 to 1.3). The names are close enough that the
-  two are regularly wired to each other's code path.
-- **Presence scaled by the count**, `counts * (frequency + presence)`. The two
-  parameters then do the same thing, and a presence penalty of 1 on a token seen ten
-  times removes 10 from its logit instead of 1.
-- **Counting the prompt.** It is the natural thing to do when the function is handed
-  the whole context. With a long prompt the penalties then act mostly on the prompt's
-  vocabulary before the model has produced a single token.
-- **Off by one at the boundary** (`>` for `>=`): the first generated token of every
-  row escapes the penalty.
-- **Repeats counted once.** In PyTorch, `counts[rows, tokens] += 1` evaluates the
-  right-hand side once and writes each distinct position once, so every count is 0 or
-  1. The frequency penalty then silently behaves like a second presence penalty.
-- **One prompt length for the batch**, left over from single-sequence code.
-- **Adding instead of subtracting.** A positive penalty must make a repeated token
-  less likely.
+- **Using the multiplicative form.** Dividing positive logits and multiplying negative
+  logits by a factor is the CTRL repetition penalty, which is a different sampler with a
+  different parameter range (around `1.0` to `1.3`). Because the names are similar, the
+  two are often wired to the wrong formula.
+- **Scaling the presence penalty by the count.** Computing
+  `counts * (frequency + presence)` makes both parameters do the same thing. A presence
+  penalty of `1.0` on a token seen ten times then subtracts `10.0` instead of `1.0`.
+- **Counting prompt tokens.** When a function receives the full context, it is easy to
+  count every position. With a long prompt, the penalties then suppress the prompt's
+  vocabulary before the model has generated a single token.
+- **Off-by-one boundary (`>` instead of `>=`).** Using strict inequality skips the first
+  generated token of every row.
+- **Counting repeats only once.** In PyTorch, `counts[rows, tokens] += 1` evaluates the
+  right-hand side once and writes each duplicate index only once, capping every count at
+  `1`. The frequency penalty then silently behaves like a second presence penalty.
+- **Using one prompt length for the whole batch.** This bug often carries over from
+  single-sequence code.
+- **Adding instead of subtracting.** A positive penalty must lower the logit of a
+  repeated token, not raise it.
 
 ## Complexity
 
-`count_generated` is $O(B \cdot (T + V))$: one pass over the tokens and the allocation
-of the table. `apply_penalties` is $O(B \cdot V)$. In a decoding loop the count is not
-recomputed from scratch: the engine keeps the `(B, V)` table and adds 1 at the token
-it has just sampled.
+`count_generated` runs in $O(B \cdot (T + V))$ time for one pass over the tokens and
+allocating the `(B, V)` table. `apply_penalties` runs in $O(B \cdot V)$ time. In a real
+decoding loop, the engine does not recompute counts from scratch at every step. It keeps
+the `(B, V)` table in memory and increments the entry for each newly sampled token.
 
 ## In the wild
 
-The formula is quoted from OpenAI's API documentation ("Frequency and presence
-penalties"), which defines `c[j]` as how often the token was sampled prior to the
-current position, suggests coefficients of about 0.1 to 1 to reduce repetition, and
-allows values from -2 to 2. vLLM's `apply_penalties` follows it literally: it builds
-bin counts and masks with `scatter_add_` separately for the prompt tokens and the
-output tokens, subtracts `frequency_penalties * output_bin_counts` and
-`presence_penalties * output_mask`, and uses the prompt mask only for the repetition
-penalty, which does cover the prompt. llama.cpp applies the same expression,
-`logit -= count * penalty_freq + (count > 0) * penalty_present`, to the counts of a
-sliding window of the last `penalty_last_n` tokens (64 by default), and mlx-lm limits
-its presence and frequency penalties to the last 20 tokens. A window is a third
-answer to "which tokens count", so the same parameter values do not transfer
-between engines unchanged.
+The formula comes from OpenAI's API documentation ("Frequency and presence penalties"),
+which defines $c_j$ as how often token $j$ was sampled prior to the current step,
+recommends values around `0.1` to `1.0` to reduce repetition, and accepts values in
+$[-2, 2]$.
+
+vLLM's `apply_penalties` follows this definition directly. It uses `scatter_add_` to
+build separate bin counts and masks for prompt tokens and output tokens, subtracts
+`frequency_penalties * output_bin_counts` and `presence_penalties * output_mask`, and
+uses the prompt mask only for the repetition penalty (which does cover the prompt).
+
+Other engines scope the count differently. llama.cpp applies the same formula,
+`logit -= count * penalty_freq + (count > 0) * penalty_present`, over a sliding window
+of the last `penalty_last_n` tokens (64 by default). mlx-lm restricts its presence and
+frequency penalties to the last 20 tokens. Because the counting window differs, the same
+penalty values do not transfer unchanged across engines.

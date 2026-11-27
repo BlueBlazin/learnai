@@ -1,25 +1,14 @@
-Two questions. First: if you multiply column $j$ of $W$ by $s_j$ and divide
-activation $j$ by $s_j$, what changes in $x W^\top$? Nothing, until you quantize in
-between. Second: the quantizer keeps the *group's* extremes exactly and rounds the
-rest to a grid whose step is set by those extremes. What happens to a column's
-relative error when you scale it up inside its group, and what happens to its
-neighbors?
+Consider two questions. First, if you multiply column $j$ of $W$ by $s_j$ and divide activation channel $j$ by $s_j$, the unquantized product $x W^\top$ does not change—only quantization in between changes the result. Second, because the quantizer preserves each group's minimum and maximum and spaces the grid evenly between them, think about what happens to a column's effective rounding error when you scale it up inside its group, and what happens to its neighbors in the same group.
 
 ---
 
-Structure the function as a loop over `grid` around four lines: the scales for this
-$\alpha$, the scaled-quantized-unscaled weight, the output error, and bookkeeping.
-Everything outside the loop is computed once: the channel magnitudes
-`mean(abs(x_calib), axis=0)` and the target output `x_calib @ w.T`.
+Loop over `grid` and compute four things per $\alpha$: the normalized scales, the scaled-quantized-unscaled weights, the mean squared output error, and the candidate list. Precompute the channel magnitudes `mean(abs(x_calib), axis=0)` and the unquantized target `x_calib @ w.T` once before the loop.
 
-Write the quantizer as a helper that returns dequantized weights (`codes * step +
-lo`), with the constant-group case handled by a `where` as in `groupwise-4bit`.
-Remember the clamp at `1e-4` *before* normalizing: a dead channel has magnitude 0,
-and $0^\alpha = 0$ would later be divided by.
+Write the group-wise quantizer as a helper that returns dequantized weights (`codes * step + lo`), handling constant groups with a `where` as in `groupwise-4bit`. Clamp the raw scales at `1e-4` *before* normalizing so that a dead channel with magnitude 0 does not cause division by zero.
 
 ---
 
-Inside the loop:
+Inside the loop over `grid`:
 
 ```python
 s = maximum(act**alpha, 1e-4)
@@ -28,7 +17,4 @@ w_hat = quantize_groups(w * s, bits, group_size) / s  # s broadcasts over column
 loss = mean((target - x_calib @ w_hat.T) ** 2)
 ```
 
-Keep every candidate's `s` and loss in two lists. After the loop, `argmin` over the
-stacked losses returns the first minimum, which is the tie rule; return
-`candidates[best]` and `grid[best]`. Do not return the loop variable `s`: after the
-loop it holds the scales of the *last* grid entry.
+Append each candidate's `s` and `loss` to lists. After the loop, `argmin` over the stacked losses returns the index of the first minimum, satisfying the tie-breaking rule. Return `candidates[best]` and `grid[best]`, not the loop variable `s` (which holds the last grid entry's scales).

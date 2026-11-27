@@ -1,20 +1,8 @@
-A percentile is a question about the sorted samples: "which value has q percent of
-the data at or below it?" Start by sorting a copy. Then the two methods differ only
-in how they turn `q` into a place in the sorted list: one picks a whole-numbered rank
-and returns the sample there, the other computes a fractional position and blends
-the two samples around it. For the shards: is there any way to recover the tenth
-slowest request overall from each server's own p90?
+A percentile asks which value has `q` percent of the sorted data at or below it. Start by sorting a copy of the list. The two methods then differ only in how they turn `q` into a position. Nearest-rank picks a whole-numbered rank, while linear interpolation computes a fractional index and blends the two neighboring samples. For sharded data, think about whether you can recover the overall ninth-smallest value from each server's own p90.
 
 ---
 
-Nearest rank: the rank is `q * n / 100` rounded **up**, and ranks start at 1 while
-list indices start at 0; a rank of 0 (only when `q` is 0) becomes 1. Linear: the
-position is `h = (n - 1) * q / 100` on a 0-based scale, so `q = 0` lands on the first
-sample and `q = 100` on the last; split `h` into its whole part `i` and its
-fractional part, and move that fraction of the way from `ordered[i]` to
-`ordered[i + 1]`. Take care that `i + 1` does not run off the end when `q` is 100.
-Merging: no arithmetic on per-shard results can work, because the answer depends on
-how the shards' samples interleave. Put all samples into one list first.
+For nearest rank, round `q * n / 100` **up** to get a 1-based rank, clamp rank 0 (when `q == 0`) to 1, and subtract 1 for 0-based indexing. For linear interpolation, compute the 0-based position `h = (n - 1) * q / 100` so `q = 0` maps to index `0` and `q = 100` maps to index `n - 1`. Split `h` into its integer floor `i` and fractional part `h - i`, then move that fraction of the way from `ordered[i]` to `ordered[i + 1]`, clamping `i + 1` at `n - 1` when `q == 100`. For merging, no formula on per-shard percentiles works because the result depends on how values interleave across shards, so pool all samples into one list first.
 
 ---
 
@@ -27,6 +15,4 @@ i = math.floor(h)
 linear = ordered[i] + (h - i) * (ordered[min(i + 1, n - 1)] - ordered[i])
 ```
 
-and `merge_percentile` is `percentile_nearest_rank` applied to
-`[v for shard in shards for v in shard]`. Use `sorted(values)`, not `values.sort()`:
-the caller's list must stay as it was.
+Implement `merge_percentile` by calling `percentile_nearest_rank` on `[v for shard in shards for v in shard]`. Use `sorted(values)` instead of `values.sort()` so the caller's list is not modified.

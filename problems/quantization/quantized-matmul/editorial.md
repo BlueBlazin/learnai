@@ -1,14 +1,12 @@
 ## The idea
 
-The dequantized weight is affine in the code, with coefficients that are constant
-inside a group:
+Let $s_{i,g} = \text{scale}_{i,g}$ and $b_{i,g} = \text{bias}_{i,g}$ be the parameters for group $g$ of output row $i$. Each dequantized weight is an affine function of its code with coefficients that stay constant inside the group:
 
 $$
-\hat W_{i,j} = \text{codes}_{i,j} \cdot s_{i,g} + b_{i,g} .
+\hat W_{i,j} = \text{codes}_{i,j} \cdot s_{i,g} + b_{i,g}.
 $$
 
-Substitute that into one output and split the sum over inputs into a sum over groups
-and a sum inside each group. The scale and the bias leave the inner sum:
+Substitute this into a single output $y_i$ and split the sum over inputs into a sum over groups $g$ and an inner sum over elements $j \in g$. Because $s_{i,g}$ and $b_{i,g}$ do not depend on $j$, both factor out of the inner sum:
 
 $$
 y_i = \sum_g \sum_{j \in g} x_j \big(\text{codes}_{i,j}\, s_{i,g} + b_{i,g}\big)
@@ -16,13 +14,11 @@ y_i = \sum_g \sum_{j \in g} x_j \big(\text{codes}_{i,j}\, s_{i,g} + b_{i,g}\big)
 + \; b_{i,g} \underbrace{\sum_{j \in g} x_j}_{\text{sums}_g} \Big).
 $$
 
-Nothing is approximated; this is the distributive law. What it buys:
+This identity is exact by the distributive law and gives three advantages:
 
-- `dots` multiplies activations by **raw codes**, small unsigned integers that a kernel
-  can unpack from 4-bit fields with a shift and a mask. No float weight ever exists.
-- The scale is applied once per group and output, not once per weight.
-- `sums` does not depend on the output row. One sum per group of inputs is shared by
-  all `out` rows, so the whole bias term costs a `(G) x (G, out)` product.
+- `dots` multiplies activations by **raw codes**, which are small unsigned integers that a low-level kernel can unpack from 4-bit fields with a shift and a mask, never materializing float weights.
+- Each scale is applied once per group and output row rather than once per weight.
+- `sums` does not depend on the output row. With $G = \text{in} / \text{group\_size}$ groups per row, computing one sum per input group shares that work across all `out` rows, so the entire bias contribution is a single `(..., G) @ (G, out)` matrix product.
 
 ## Reference solution (PyTorch)
 
@@ -37,64 +33,28 @@ def qmatmul(x, codes, scale, bias, group_size):
     return (dots * scale).sum(dim=-1) + sums @ bias.T
 ```
 
-The JAX and MLX versions are the same with `astype` and `axis=`.
+The JAX and MLX implementations are the same, using `astype` and `axis=`.
 
-The reshapes are where alignment is decided. `x.reshape(..., G, group_size)` and
-`codes.reshape(out, G, group_size)` cut the input axis the same way, into consecutive
-runs, because a row-major reshape keeps neighbors together. `scale` and `bias` already
-have a `G` axis in the same order. After that, every operation matches axes by name:
-the einsum contracts the within-group axis `k`, the multiplication by `scale` lines up
-`(out, G)`, and the final sum removes `G`.
+The reshapes establish group alignment. Reshaping `x` to `(..., G, group_size)` and `codes` to `(out, G, group_size)` splits the input axis into identical consecutive runs because row-major layout keeps adjacent elements together. `scale` and `bias` already have shape `(out, G)` in that same group order. From there, the `einsum` contracts the within-group axis `k`, multiplying by `scale` broadcasts over `(out, G)`, and summing over the last axis reduces `G`.
 
-The cast of the codes to float32 is a concession to array frameworks, which cannot
-multiply a float tensor by a uint8 one. It is a temporary the size of the codes, which
-a real kernel does not need: it converts each code as it reads it.
+Casting `codes` to `float32` is an artifact of high-level array frameworks that do not multiply float and `uint8` tensors directly. That cast allocates a temporary tensor the size of `codes`, whereas a fused GPU kernel converts each code on the fly in registers as it reads it.
 
 ## Common mistakes
 
-- **Dropping the bias.** `x @ (codes * scale).T` looks plausible because the codes are
-  "the weights". The bias is most of the weight's value whenever a group does not
-  start near zero, and the result is off by $\sum_g b_{i,g} \sum_{j \in g} x_j$.
-- **Bias times `group_size`.** The bias appears once per element of the group, so
-  multiplying it by the element count feels right. But each appearance is weighted by
-  its input: the factor is $\sum_{j \in g} x_j$, which equals `group_size` only for an
-  input of all ones.
-- **Sum of biases times sum of inputs.** `bias.sum(-1) * x.sum(-1)` pairs every bias
-  with every group's inputs. A sum of products is not a product of sums; this is right
-  only with a single group per row.
-- **Misaligned groups.** `x.reshape(..., group_size, G)` followed by a transpose, or a
-  reduction over the wrong axis, yields the right shape, `(..., G, group_size)`, with
-  the wrong content: every `G`-th input instead of `group_size` consecutive ones. No
-  shape error will ever tell you. Test with a group size that is not the square root
-  of `in`, and with one-hot inputs, which read out single columns of $\hat W$.
-- **One scale per row.** Summing the dot products over the groups before scaling
-  treats the scale as constant along a row. That is per-channel quantization; the
-  whole point of groups is that the scale changes every `group_size` inputs.
+- **Dropping the bias.** Computing `x @ (codes * scale).T` omits the group offset. Whenever a group's minimum is far from zero, the bias accounts for most of the weight value, and the output is off by $\sum_g b_{i,g} \sum_{j \in g} x_j$.
+- **Multiplying bias by `group_size`.** Because the bias appears once per element in the group, it is tempting to multiply it by the group length. However, each occurrence is weighted by its input $x_j$, so the true factor is $\sum_{j \in g} x_j$, which equals `group_size` only when every input is `1`.
+- **Multiplying the sum of biases by the sum of inputs.** Computing `bias.sum(-1) * x.sum(-1)` pairs every group's bias with every group's inputs. A sum of products is not equal to a product of sums, so this works only when there is a single group per row.
+- **Misaligned groups.** Reshaping to `(..., group_size, G)` and transposing, or reducing over the wrong axis, produces the expected shape `(..., G, group_size)` with strided elements (every `G`-th input) instead of consecutive runs. No shape error catches this. Test with a `group_size` that is not $\sqrt{\text{in}}$ and with one-hot inputs, which isolate single columns of $\hat W$.
+- **Applying one scale per row.** Summing `dots` across groups before multiplying by `scale` treats the scale as constant along the row. That implements per-channel quantization rather than group-wise quantization.
 
 ## Complexity
 
-The dot products cost $O(\text{out} \cdot \text{in})$ multiply-adds per row of `x`,
-the same as a float matmul. The scales add $O(\text{out} \cdot G)$ multiplications and
-the bias term $O(\text{in} + \text{out} \cdot G)$, both smaller by a factor of
-`group_size`. In a kernel, the memory traffic for the weights drops from 32 (or 16)
-bits to 4 bits per weight plus two floats per group, which is the reason to do it.
+Let $G = \text{in} / \text{group\_size}$ be the number of groups per row. Per row of `x`, the dot products take $O(\text{out} \cdot \text{in})$ multiply-adds, matching a standard float matmul. Scaling adds $O(\text{out} \cdot G)$ multiplications and the bias term adds $O(\text{in} + \text{out} \cdot G)$ operations, both smaller by a factor of `group_size`. In a fused kernel, weight memory traffic drops from 16 or 32 bits per weight to 4 bits per weight plus two floats per group.
 
 ## In the wild
 
-**MLX.** `mx.quantized_matmul(x, w, scales, biases, transpose=True, group_size=64,
-bits=4)` computes `x @ W_hat.T` from `w` packed in uint32 words, for the layout that
-`mx.quantize` produces. `mlx.nn.QuantizedLinear` calls it in every forward pass, so
-this identity runs once per linear layer per token in every quantized MLX model. Its
-kernels unpack the codes with shifts and masks as they accumulate, and return
-`scale * accum + sum * bias` per group, never writing the dequantized matrix.
+**MLX.** `mx.quantized_matmul(x, w, scales, biases, transpose=True, group_size=64, bits=4)` computes `x @ W_hat.T` from codes packed into `uint32` words in the layout produced by `mx.quantize`. Every `mlx.nn.QuantizedLinear` layer calls it on every forward pass, so this identity runs once per linear layer per token. The Metal kernels unpack codes with shifts and masks during accumulation and compute `scale * accum + sum * bias` per group without ever writing the dequantized matrix to memory.
 
-**llama.cpp.** GGUF blocks are consumed the same way by the quantized dot-product
-routines: integer codes are multiplied and accumulated with SIMD, and the block's
-float scale is applied to the block's partial sum. Formats with a per-block minimum
-(`Q4_1`, the 4- and 5-bit K-quants) need the equivalent of the bias term, the block's
-offset times the sum of the activations over that block. The activation format they
-are paired with, `Q8_1`, stores that sum next to its scale for exactly this purpose.
+**llama.cpp.** Quantized dot-product routines consume GGUF blocks in the same way. Integer codes are multiplied and accumulated with SIMD instructions, and each block's float scale multiplies the block's partial sum. Formats that include a per-block minimum (such as `Q4_1` and the 4- and 5-bit K-quants) add the block offset multiplied by the sum of activations in that block. The paired activation format `Q8_1` precomputes and stores that block sum next to its scale specifically for this term.
 
-**Integer-only inference.** When the activations are quantized too, `dots` becomes an
-integer dot product accumulated in int32 and both scales are applied afterward. The
-bias-times-sum term is the same correction that appears there as the zero-point term.
+**Integer-only inference.** When activations are quantized as well, `dots` becomes an integer dot product accumulated in `int32`, and both the weight and activation scales are applied afterward. The bias-times-sum term plays the exact same role as the zero-point correction term in integer-only affine matmul.

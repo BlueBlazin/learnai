@@ -1,18 +1,8 @@
 ## The idea
 
-`param-count` derived the size of a model from its architecture. This problem goes
-the other way and reads it off the artifact, which is what you do with a model you
-did not design: the header lists every tensor that exists, so there is nothing to
-guess about fused MLP matrices, missing biases, or extra norms. What the header does
-not tell you is what a stored tensor *means*. Two conventions have to be undone.
+In `param-count`, you derived a model's size from its architecture hyperparameters. Here you work in the opposite direction and read the size directly from the checkpoint artifact. That is the practical approach when inspecting a model you did not design, because the safetensors header lists every tensor that actually exists. You do not have to guess about fused MLP matrices, omitted biases, or extra normalization layers. However, the header only records stored tensors, so you must undo two storage conventions to recover the model's logical tensors.
 
-**Packing.** MLX's affine quantization (and it is not alone) stores the $b$-bit codes
-of a row packed into 32-bit words, so an `[out, in]` matrix at 8 bits appears as a
-`U32` tensor of shape `[out, in / 4]`. Next to it are a scale and a bias per group of
-$g$ consecutive weights, with $w = \text{code} \cdot \text{scale} + \text{bias}$.
-The codes are the parameters; the scales and biases are the price of representing
-them. For 8 bits and groups of 64 the price is $2 \cdot 16 / 64 = 0.5$ bits per
-weight:
+**Packing.** MLX affine quantization (like several other formats) packs $b$-bit integer codes along each row into 32-bit unsigned integers. An `[out, in]` matrix at 8 bits is therefore stored as a `U32` tensor of shape `[out, in / 4]`. Alongside it are a bfloat16 scale and a bfloat16 bias for each group of $g$ consecutive weights, reconstructing each weight as $w = \text{code} \cdot \text{scale} + \text{bias}$. The packed codes represent the model's parameters, while the scales and biases are storage overhead. At 8 bits with groups of 64, that overhead is $2 \cdot 16 / 64 = 0.5$ bits per weight:
 
 $$
 \text{bytes}(W) = \underbrace{\text{out} \cdot \text{in}}_{\text{codes}}
@@ -20,16 +10,9 @@ $$
 = \tfrac{17}{16}\, \text{out} \cdot \text{in}.
 $$
 
-**Tying.** A tied model has one $V \times d$ matrix. safetensors stores each tensor
-once, and a file written from a tied model normally has no `lm_head.weight` at all,
-as Granite 4.0's does not. But a file *can* contain both names with the same values,
-and then only the config can tell a copy from a second matrix.
+**Tying.** A model with tied embeddings shares a single matrix of shape `[vocab_size, hidden_size]` between the input embedding and the output head. A safetensors file written from a tied model usually omits `lm_head.weight` completely, as Granite 4.0 does. Some exporters still write both tensors with identical values, and only `tie_word_embeddings` in `config.json` distinguishes a duplicate copy from an independent output matrix.
 
-With those two rules the loop is a few lines, and it applies unchanged to a bfloat16
-file and to a file that is already quantized. That gives a free check: for the 8-bit
-checkpoint of Granite 4.2 3B, `quantized_bytes` must equal `tensor_bytes`, because the
-file on disk is exactly the quantization being predicted. It does, to the byte:
-3,888,665,600.
+With those two rules in place, a single loop handles both bfloat16 checkpoints and already-quantized checkpoints. This also gives a built-in consistency check. For the 8-bit checkpoint of Granite 4.2 3B, `quantized_bytes` must match `tensor_bytes` to the exact byte (3,888,665,600), because the file on disk already uses the target 8-bit group-64 layout.
 
 ## Reference solution (Python)
 
@@ -93,55 +76,23 @@ def size_report(header, config):
 | `kv_bytes_per_token` | 28,672 | 81,920 |
 | `quantized_bytes` | 374,458,368 | 3,888,665,600 |
 
-The small model's 8-bit prediction is what `mlx_lm.convert` produces: the data section
-of the file it writes is 374,458,368 bytes, and the whole file is the 374.5 MB that
-the published 8-bit build weighs. The KV figures were measured too, as the bytes held
-by each library's own cache after a forward pass divided by the tokens fed. At 28 kB
-per token the small model's full 32,768-token context costs 940 MB of cache, more
-than its weights.
+The 350M model's `quantized_bytes` prediction matches `mlx_lm.convert` exactly. The converted file's data section is 374,458,368 bytes, and the full file is the 374.5 MB published 8-bit build. The KV cache numbers were verified by measuring the bytes held by each library's cache after a forward pass and dividing by the number of tokens fed. At 28 kB per token, the 350M model's full 32,768-token context takes 940 MB of KV cache, which is larger than its weights.
 
 ## Common mistakes
 
-- **Counting a tied head twice.** Summing every tensor in a file that stores both
-  names. Qwen3-0.6B's checkpoint does this, and the Hub's counter reports 751.6 M for
-  a 596.0 M model.
-- **Dropping an untied head.** The opposite: treating `lm_head.weight` as a copy
-  because it has the embedding's shape. Granite 4.2 3B is untied, and its head is
-  257 M parameters of its own. The config decides.
-- **Counting stored elements.** `sum(prod(shape))` over an 8-bit file gives 1.03 B
-  for the 3B model: the packed words count a quarter of the weights, and the scales
-  and biases are added as if they were parameters.
-- **Forgetting the quantization overhead**, or half of it. One byte per weight
-  predicts 3.66 GB for a file of 3.89 GB. Counting scales without biases is the same
-  mistake at half size.
-- **Quantizing the norm gains.** Quantizers skip one-dimensional tensors. It is
-  only 58 kB for the small model, which is why an exact comparison is useful.
-- **Selecting matrices by name.** `name.endswith("_proj.weight")` covers Llama, Qwen,
-  and Granite 4.2. Granite 4.0 fuses the SwiGLU gate and up projections into
-  `shared_mlp.input_linear.weight` and calls the down projection
-  `shared_mlp.output_linear.weight`; a name filter leaves 176 M parameters at 16 bits
-  and predicts 540 MB instead of 374 MB. Rank is the criterion the quantizer itself
-  uses (it walks the modules and converts every linear and embedding layer).
-- **Bytes from shapes.** `2 * parameters` is right for a pure BF16 file and wrong
-  for float32, for packed files, and for files with duplicates. The offsets are the
-  truth about the disk.
-- **Query heads in the KV cache**, or keys without values. The cache holds what the
-  key and value projections produce, per KV head: 4 heads, not 16, for the small
-  model.
+- **Counting a tied head twice.** Summing every tensor in a file that stores both `model.embed_tokens.weight` and `lm_head.weight` double-counts the embedding. Qwen3-0.6B's checkpoint stores both, which causes the Hugging Face Hub counter to report 751.6 M parameters for a 596.0 M model.
+- **Dropping an untied head.** Always skipping `lm_head.weight` just because it has the same shape as the embedding matrix drops real parameters. Granite 4.2 3B is untied, so its output head contributes 257 M parameters of its own. Always check `tie_word_embeddings` in `config`.
+- **Counting stored elements directly.** Running `sum(prod(shape))` over an 8-bit file returns 1.03 B for the 3B model because each packed `U32` word holds four weights, while the scales and biases get counted as if they were parameters.
+- **Forgetting quantization overhead (or biases).** Estimating 1 byte per weight predicts 3.66 GB for a 3.89 GB file. Counting only scales and forgetting biases makes the same error at half the magnitude.
+- **Quantizing norm gains.** Quantizers leave 1D tensors in bfloat16. On the 350M model that difference is only 58 kB, which is easy to miss without an exact check.
+- **Selecting matrices by name.** Filtering with `name.endswith("_proj.weight")` works for Llama, Qwen, and Granite 4.2, but fails on Granite 4.0. Granite 4.0 fuses its SwiGLU gate and up projections into `shared_mlp.input_linear.weight` and names the down projection `shared_mlp.output_linear.weight`. A name filter leaves 176 M parameters at 16 bits and predicts 540 MB instead of 374 MB. Tensor rank (`len(shape) == 2`) matches how the quantizer selects linear and embedding layers.
+- **Computing bytes from shapes.** Multiplying `2 * parameters` only works for pure 16-bit files without duplicates. It fails on float32 tensors, packed quantized files, and duplicated heads. Always sum `data_offsets` for `tensor_bytes`.
+- **Using query heads or omitting values in the KV cache.** The cache stores both keys and values for each key/value head, not each query head. Granite 4.0 350M has 4 KV heads, not 16.
 
 ## Complexity
 
-One pass over the header: $O(n)$ for $n$ tensors, a few hundred to a few thousand.
+The algorithm makes one pass over the header in $O(n)$ time for $n$ tensors, typically a few hundred to a few thousand entries.
 
 ## In the wild
 
-The Hub's model page computes its parameter count this way, from the safetensors
-header alone, fetched with a range request for the first few hundred kilobytes of the
-file; that is why it shows per-dtype counts and why it miscounts quantized and
-duplicated tensors. `mlx_lm` reports "8.501 bits per weight" after converting the
-small model: that is `8 * quantized_bytes / parameters` with the norm gains included.
-GGUF files carry the same information in a different header, and llama.cpp prints
-the equivalent report at load time. For capacity planning, add the 8 bytes and the
-header to `tensor_bytes` for the file size, and multiply `kv_bytes_per_token` by
-context length and batch size for the memory that `kv-cache-bytes` taught you to
-watch.
+The Hugging Face Hub model page computes its parameter count from the safetensors header alone, fetched with an HTTP range request for the first few hundred kilobytes of the file. That is why it can display per-dtype counts without downloading weights, and why naive counting misreports quantized or duplicated checkpoints. After converting the 350M model, `mlx_lm` reports "8.501 bits per weight", which is `8 * quantized_bytes / parameters` including the unquantized norm gains. GGUF files store equivalent metadata in a different header format, and `llama.cpp` prints a similar sizing report at load time. For capacity planning, add 8 bytes plus the header length to `tensor_bytes` for the file size, and multiply `kv_bytes_per_token` by context length and batch size to estimate KV cache memory.

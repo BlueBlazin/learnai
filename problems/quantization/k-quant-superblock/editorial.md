@@ -1,45 +1,16 @@
 ## The idea
 
-Group-wise 4-bit quantization (`groupwise-4bit`) stores, for every group, two floats
-next to the codes. With groups of 32 and float16 parameters that is
-$4 + 32 / 32 = 5$ bits per weight: a fifth of the file is metadata. K-quants attack
-the metadata with the same tool used on the weights: quantize it. The eight block
-scales of a superblock are positive numbers of similar size, so they are stored as
-6-bit multiples of one shared float16 unit, and likewise the eight minimums. Per
-superblock:
+Group-wise 4-bit quantization (`groupwise-4bit`) stores two floats alongside every group of codes. With 32 weights per group and float16 parameters, that costs $4 + 32 / 32 = 5$ bits per weight, meaning a fifth of the file is metadata. K-quants compress the metadata with quantization as well. Because the 8 block scales in a superblock are non-negative numbers of similar magnitude, they can be stored as 6-bit multiples of one shared float16 unit, and the same applies to the 8 block minimums. Across 256 weights, the bit budget is:
 
 $$
 \underbrace{256 \cdot 4}_{\text{codes}} + \underbrace{8 \cdot 6 + 8 \cdot 6}_{\text{block fields}} + \underbrace{2 \cdot 16}_{\text{units}} = 1152 \text{ bits} = 4.5 \text{ bits per weight}.
 $$
 
-**The sign convention.** The decoder computes $\hat w = D \cdot q - M$ with unsigned
-$q$, $D \ge 0$, and $M \ge 0$. The grid of a block is therefore
-$\{-M, -M + D, \dots, -M + 15 D\}$, and its bottom, $-M$, cannot be positive. A block
-whose weights are all positive cannot have its own minimum as the bottom of the
-grid; the best the format allows is 0. That is the clamp of step 1, and it costs
-such a block some resolution: its 16 levels cover $[0, \max]$ instead of
-$[\min, \max]$. Real weight blocks almost always straddle zero, so the format loses
-little, and in exchange the offset needs no sign bit.
+**The sign convention.** The decoder evaluates $\hat w = D \cdot q - M$ with unsigned integer $q$, $D \ge 0$, and $M \ge 0$. A block's grid is therefore $\{-M, -M + D, \dots, -M + 15 D\}$, so its lowest point $-M$ can never be positive. If all weights in a block are positive, the closest valid grid start is $0$. Clamping $lo_b$ to at most $0$ in step 1 enforces this constraint. It reduces resolution for all-positive blocks because their 16 levels must cover $[0, \max]$ instead of $[\min, \max]$, but real neural network weight blocks almost always straddle zero, and in return the offset needs no sign bit.
 
-**Two roundings, in the right order.** After step 1 every block has an ideal grid.
-Step 3 moves each grid: the step $D_b$ becomes the nearest multiple of $d$ and the
-offset $M_b$ the nearest multiple of $d_{\min}$, and the units themselves were
-rounded to float16. If the codes had been computed on the ideal grid, each would
-now be decoded on a different one, and the half-step guarantee would be gone. So
-the codes are computed **last**, against exactly the numbers the decoder will
-compute: float16 unit times 6-bit integer, in float32. Rounding a weight to the
-nearest point of the grid that will actually be used is optimal for that grid,
-whatever happened upstream.
+**Rounding in the right order.** Step 1 gives each block an ideal grid. Steps 2 and 3 quantize that grid by rounding `d` and `dmin` to float16 and rounding the per-block scales and minimums to 6-bit integers. If you computed the 4-bit codes on the ideal grid from step 1, the decoder would still reconstruct the quantized grid, breaking the half-step optimality guarantee. Computing the codes last, using the exact float32 products of the float16 units and 6-bit integers, maps every weight to the nearest point on the grid the decoder will actually use.
 
-**The error bound.** Inside the stored grid, a weight is at most $D_b / 2$ from a
-grid point. A weight can also fall outside it, because the stored grid's ends moved:
-the offset by at most $d_{\min} / 2$, and the top by that plus 15 times the step's
-rounding error, $15 \cdot d / 2$. Hence
-$|w - \hat w| \le \tfrac12 D_b + \tfrac{15}{2} d + \tfrac12 d_{\min}$, up to the
-float16 rounding of the units (one part in 2048). The second term is why a
-superblock should not mix blocks of very different range: $d$ is set by the largest
-block, and a small block's step is rounded to a multiple of it. A block whose scale
-is below $d / 2$ gets `scales = 0` and collapses to a single value.
+**The error bound.** Any weight inside the reconstructed grid lies within $D_b / 2$ of a grid point. A weight can also fall slightly outside the reconstructed grid because 6-bit rounding moves the bottom endpoint by at most $d_{\min} / 2$ and the top endpoint by at most $d_{\min} / 2 + 15 \cdot d / 2$. Combining these gives $|w - \hat w| \le \tfrac12 D_b + \tfrac{15}{2} d + \tfrac12 d_{\min}$, up to the float16 rounding of `d` and `dmin` (about one part in 2048). The $\tfrac{15}{2} d$ term shows why mixing blocks of very different ranges in one superblock hurts accuracy. The largest block sets $d$, and any block whose ideal scale falls below $d / 2$ rounds to `scales = 0` and collapses to a single constant value.
 
 ## Reference solution (PyTorch)
 
@@ -84,75 +55,33 @@ def q4k_decode(codes, scales, mins, d, dmin):
     return (step[..., None] * q - offset[..., None]).reshape(n, 256)
 ```
 
-The JAX and MLX versions are line-for-line translations; all three frameworks round
-a float32 to the nearest float16 identically, including in the subnormal range that
-small weights reach ($d$ below $6.1 \cdot 10^{-5}$).
+The JAX and MLX implementations are line-for-line translations. All three frameworks round float32 to the nearest float16 identically, including subnormal values reached by small weights ($d < 6.1 \cdot 10^{-5}$).
 
 ## Common mistakes
 
-- **A positive block minimum.** Without the clamp, a block of positive weights has
-  $\text{min}_b < 0$, and the "6-bit unsigned" field receives a negative number,
-  which wraps or saturates depending on the framework.
-- **Codes on the ideal grid.** Skipping the second pass is the classic error. The
-  result decodes almost right, off by a fraction of a step everywhere, which is
-  exactly the precision the format was supposed to keep.
-- **Float32 units in the second pass.** Computing the codes before the float16
-  cast is the same mistake at a smaller scale: the step differs by up to one part
-  in 2048, which over 15 steps is enough to change codes near a tie.
-- **Flooring the 6-bit fields.** Truncation biases every block's step and offset
-  downward; the top of every grid falls short and the largest weights are clipped.
-- **The unit from the first block.** The unit must come from the *largest* scale
-  (and minimum) of the superblock, or larger blocks need a field above 63.
-- **63 versus 64, 15 versus 16.** A 6-bit field has 64 values and its largest is
-  63; a 4-bit code has 16 values and 15 steps.
-- **No guard for zero.** A superblock without negative weights has
-  $\text{max\_min} = 0$, and an all-zero superblock has both maxima 0; the fields
-  are then 0 by definition, not $0/0$.
-- **Decoding in uint8.** `scales * codes` on byte tensors wraps at 256; the largest
-  product is 945.
-- **Adding the offset.** The stored minimum is the *negated* block minimum, and the
-  decoder subtracts it.
-- **Truncating the codes**, or returning `d` and `dmin` as float32.
+- **Allowing a positive block minimum.** Without clamping $lo_b$ to at most $0$, an all-positive block produces $\text{min}_b < 0$. Casting a negative value to `uint8` wraps or saturates depending on the framework.
+- **Computing codes on the ideal grid.** Using step 1's `block_scale` and `block_min` instead of the reconstructed grid leaves every weight slightly off after decoding, throwing away precision.
+- **Using float32 units in step 4.** Computing `step` and `offset` before casting `d` and `dmin` to float16 introduces up to a 1-in-2048 discrepancy in the step size, which over 15 steps is enough to flip codes near a rounding boundary.
+- **Flooring the 6-bit fields.** Truncating instead of rounding biases every block's step and offset downward, shrinking the grid and clipping the largest weights.
+- **Taking the unit from the first block.** Dividing by `block_scale[:, 0]` instead of `max_scale` causes larger blocks to exceed 63.
+- **Dividing by 64 or 16 instead of 63 or 15.** A 6-bit unsigned integer has 64 levels with maximum value 63. A 4-bit unsigned code has 16 levels spanning 15 intervals.
+- **Missing zero guards.** A superblock with no negative weights has $\text{max\_min} = 0$, and an all-zero superblock has both maxima equal to $0$. Guard divisions with `where` so these fields become $0$ instead of `NaN`.
+- **Decoding in `uint8`.** Multiplying `scales * codes` before casting to float32 overflows `uint8` at 256, while the maximum product is $63 \cdot 15 = 945$.
+- **Adding the offset instead of subtracting it.** The stored minimum is the negated lower bound, so `q4k_decode` must subtract $d_{\min} \cdot \text{mins}_b$.
+- **Truncating the codes or returning float32 units.** Codes must be rounded to the nearest integer, and `d` and `dmin` must be returned as float16.
 
 ## Complexity
 
-One pass over the weights for the block extremes and one for the codes:
-$O(S \cdot 256)$ time, with all the parameter work on `(S, 8)` tensors.
+The encoder makes one pass over the weights to find block extremes and a second pass to compute codes, taking $O(S \cdot 256)$ time. All intermediate parameter work operates on `(S, 8)` tensors.
 
 ## In the wild
 
-**llama.cpp** (`ggml/src/ggml-quants.c`). The block is
-`block_q4_K`: two float16 fields `d` and `dmin`, 12 bytes of `scales`, and 128 bytes
-of `qs`. `dequantize_row_q4_K` computes `d1 = d * sc`, `m1 = min * m`, and
-`d1 * (q[l] & 0xF) - m1`, which is `q4k_decode`. The reference quantizer
-`quantize_row_q4_K_ref` computes `inv_scale = 63.f/max_scale` and
-`ls = nearest_int(inv_scale*scales[j])` clamped to 63, stores
-`GGML_FP32_TO_FP16(max_scale/63.f)` and `GGML_FP32_TO_FP16(max_min/63.f)`, and then
-recomputes every code as `nearest_int((x + dm)/d)` clamped to $[0, 15]$ with `d` and
-`dm` rebuilt from the stored fields: steps 2 to 4 of this problem. In
-`make_qkx2_quants`, the per-block search, `if (min > 0) min = 0;` is the clamp of
-step 1, and the block minimum is returned negated (`*the_min = -min`).
+In **llama.cpp** (`ggml/src/ggml-quants.c`), the struct `block_q4_K` stores two float16 fields `d` and `dmin`, 12 bytes of packed 6-bit `scales` and minimums, and 128 bytes of packed 4-bit `qs`. The decoder `dequantize_row_q4_K` computes `d1 = d * sc`, `m1 = min * m`, and `d1 * (q[l] & 0xF) - m1`, which matches `q4k_decode`. The reference quantizer `quantize_row_q4_K_ref` computes `inv_scale = 63.f / max_scale` and `ls = nearest_int(inv_scale * scales[j])` clamped to 63, stores `GGML_FP32_TO_FP16(max_scale / 63.f)` and `GGML_FP32_TO_FP16(max_min / 63.f)`, and recomputes every code as `nearest_int((x + dm) / d)` clamped to $[0, 15]$ using the reconstructed `d` and `dm`. In `make_qkx2_quants`, `if (min > 0) min = 0;` is the clamp from step 1, and the minimum is returned negated (`*the_min = -min`).
 
-**What differs.**
+**What differs in llama.cpp:**
 
-- *The per-block search.* llama.cpp does not use min-max for a block. It weights
-  each element (by its magnitude in the reference path, by importance-matrix data in
-  the `imatrix` path) and tries a range of candidate scales, solving a small
-  least-squares problem for each, to minimize the weighted error. This problem's
-  step 1 is the simplest procedure with the same output type.
-- *Bit packing.* The 16 six-bit fields occupy 12 bytes: for blocks 0 to 3, the low
-  6 bits of byte `j` hold the scale and of byte `j + 4` the minimum; for blocks 4 to
-  7, byte `j + 4` holds the low 4 bits of the scale and of the minimum, and their
-  top 2 bits go into the two spare bits of bytes `j - 4` and `j`
-  (`get_scale_min_k4`). The codes are packed two blocks at a time: byte `l` of a
-  64-weight half-block pair holds weight `l` in its low nibble and weight `l + 32`
-  in its high nibble.
-- *A block with step 0.* llama.cpp skips the re-rounding for such a block and keeps
-  the codes of its search; here they are defined as 0. The decoded values are the
-  same, since the step is 0.
+- *Per-block parameter search.* Instead of plain min-max, llama.cpp weights each element (by magnitude in the default path, or by importance-matrix statistics in the `imatrix` path) and searches candidate scales using weighted least squares. Step 1 here is the simplest procedure with the same interface.
+- *Bit packing.* The 16 six-bit fields are packed into 12 bytes (`get_scale_min_k4`). For blocks 0 to 3, the low 6 bits of byte `j` hold the scale and byte `j + 4` holds the minimum. For blocks 4 to 7, byte `j + 4` holds the low 4 bits of both fields, while their top 2 bits sit in the unused upper bits of bytes `j - 4` and `j`. Codes are packed two blocks at a time, with byte `l` of each 64-weight pair holding weight `l` in the low nibble and weight `l + 32` in the high nibble.
+- *Zero-step blocks.* When a block's reconstructed step is $0$, llama.cpp skips re-rounding and keeps the search codes, whereas this problem sets them to $0$. Both decode to the same constant value.
 
-**The family.** `Q5_K` uses the same superblock with 5-bit codes; `Q6_K` uses 16
-blocks of 16 with 8-bit block scales and no minimum; `Q3_K` and `Q2_K` also use 16
-blocks of 16. The `_S`, `_M`, and `_L` suffixes of GGUF file names do
-not name block formats: they are recipes that assign different block formats to
-different tensors of a model, the problem of `bit-allocation`.
+**The K-quant family.** `Q5_K` uses the same superblock structure with 5-bit codes, while `Q6_K`, `Q3_K`, and `Q2_K` use 16 blocks of 16 weights (`Q6_K` uses 8-bit block scales and no minimum). The `_S`, `_M`, and `_L` suffixes in GGUF filenames are mixed-precision recipes that assign different block formats to different tensors, as covered in `bit-allocation`.

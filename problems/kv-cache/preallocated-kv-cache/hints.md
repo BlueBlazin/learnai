@@ -1,31 +1,18 @@
-Two questions settle the design. Where do `T` new tokens go, given `length`, and what
-is the length afterwards? And when `cache_attend` runs, which slots hold tokens and
-which do not? Answer both with slot indices before writing any code, for a buffer of
-capacity 8 with `length = 5` and `T = 2`.
+Two questions settle the design. Given `length`, where do `T` new tokens go and what is `length` afterwards? When `cache_attend` runs, which slots hold valid tokens and which do not? Work out the exact slot indices for a buffer of capacity 8 with `length = 5` and `T = 2` before writing code.
 
 ---
 
-`cache_write`: the new entries go to slots `length` to `length + T - 1`, one slice
-along axis 2, and the new length is `length + T` (not `length + 1`). Check
-`length + T > capacity` first and raise `ValueError`. The write itself is a slice
-assignment in PyTorch and MLX (`k[:, :, length:end] = k_new`) and
-`k.at[:, :, length:end].set(k_new)` in JAX; either way the buffer keeps its shape.
+In `cache_write`, the new entries go into slots `length` through `length + T - 1` along axis 2, and the new length is `length + T` (not `length + 1`). Check `length + T > capacity` first and raise `ValueError`. Write with slice assignment in PyTorch and MLX (`k[:, :, length : length + T] = k_new`) or `k.at[:, :, length : length + T].set(k_new)` in JAX so the buffer keeps its shape.
 
-`cache_attend`: the tokens are in slots `0` to `length - 1`. The simplest way to make
-the tail irrelevant is to never read it: slice both buffers to `[:, :, :length]`
-before doing any arithmetic. A slice is a view, so nothing is copied.
+In `cache_attend`, the valid tokens sit in slots `0` through `length - 1`. The simplest way to ignore the unused tail is to never read it. Slice both buffers to `[:, :, :length]` before doing any arithmetic. Slicing returns a view, so no data is copied.
 
 ---
 
-After slicing, the problem is the attention step of `kv-cache-append` with
-`S = length - T` earlier tokens: query `i` sits at position `length - T + i`, so
+After slicing, this is the attention step from `kv-cache-append` with `S = length - T` earlier tokens. Query `i` sits at position `length - T + i`, so:
 
 ```
 visible[i, j] = (j <= length - T + i)      # shape (T, length)
 out = ops.attention(q, k[:, :, :length], v[:, :, :length], visible)
 ```
 
-If you prefer to keep the buffers whole and mask instead, masking the scores is not
-enough. The tail of `v` still enters the weighted sum, and a weight of exactly 0
-times a NaN or an infinity is NaN. You would have to replace the tail of `v` as well
-(and use `where` on the scores, since NaN plus `-inf` is NaN).
+If you keep the buffers full-sized and mask instead, masking the scores alone is not enough. The unused tail of `v` still enters the weighted sum, and a weight of 0 times NaN or infinity produces NaN. You must also replace the unused tail of `v` (and use `where` on the scores, since `NaN + (-inf)` is still `NaN`).

@@ -1,27 +1,13 @@
 ## The idea
 
-The three controls act on one row of logits, and they are of two kinds.
+The three controls fall into two distinct categories.
 
-- A **bias** is arithmetic: `logits[v] += bias[v]`. It shifts a token's
-  log-probability and leaves the token in play.
-- The **allow-list** and the **banned sequences** are set membership: a token is
-  either removed or not. A removed token must have probability exactly 0, which in
-  logit space is `-inf`.
+- **Logit bias** is arithmetic (`logits[v] += bias[v]`). It shifts a token's log-probability while keeping the token available.
+- **The allow-list and banned sequences** are set membership. A removed token must have probability 0, which is `-inf` in logit space.
 
-Treating them as two kinds gives the combination rule for free. Compute the set of
-removed tokens from the allow-list and the banned sequences, compute the biased
-logits, and select between `-inf` and the biased logit. No order of operations can
-then let a `+100` bias resurrect a removed token, because the bias never touches the
-mask.
+Separating these two categories makes the precedence rules automatic. First build the boolean mask of removed tokens from the allow-list and banned sequences, and build the additive bias vector from `bias`. Then add the bias to `logits` and select `-inf` wherever the removal mask is true. Because the bias never modifies the mask, a `+100` bias can never revive a removed token.
 
-A banned sequence is a statement about text, and the logits processor sees one step
-at a time. The sequence $w_1 \ldots w_L$ would be completed at this step only if the
-last $L - 1$ tokens of the history are exactly $w_1 \ldots w_{L-1}$ and the model now
-emits $w_L$. So the processor removes $w_L$, and only under that condition. The
-earlier tokens are never touched: they are ordinary tokens that happen to start a
-banned sequence, and the model may still emit them and continue differently. A
-one-token sequence has an empty prefix, which every history ends with, so its token
-is removed at every step.
+A banned sequence describes multi-token text, while the logits processor runs one token at a time. A sequence $(w_0, \ldots, w_{L-1})$ would be completed on the current step only if the last $L - 1$ tokens of `history` equal $(w_0, \ldots, w_{L-2})$ and the model now emits $w_{L-1}$. The processor therefore removes only $w_{L-1}$, and only when that tail matches. Earlier tokens are left untouched so the model can still emit them and continue in a different direction. For a one-token sequence, the prefix is empty. Every history ends with the empty prefix, so the token is removed at every step.
 
 ## Reference solution (PyTorch)
 
@@ -47,68 +33,30 @@ def apply_bias(logits, bias, allowed_token_ids, bad_words, history):
     return torch.where(torch.tensor(removed), float("-inf"), biased)
 ```
 
-- The request data is tiny and irregular, so it is processed in Python; the logits
-  are touched by one addition and one select. The JAX and MLX references are the
-  same code with a different constructor, which is the point of building the tables
-  first: nothing is written into a tensor in place.
-- `start >= 0` rejects a prefix longer than the history. `history[start:]` with
-  `start == len(history)` is the empty list, which equals the empty prefix.
-- `-inf + delta` is `-inf`, so an input logit that was already masked stays masked.
+- Because the request metadata is small and irregular, building `delta` and `removed` in Python and touching the tensor with one addition and one `where` keeps the code simple. The JAX and MLX implementations are identical except for the tensor constructor, since nothing mutates a tensor in place.
+- Checking `start >= 0` rejects any prefix longer than `history`. When `prefix` is empty, `start == len(history)` and `history[start:]` is `[]`, which matches `prefix`.
+- Since `-inf + delta` is still `-inf`, any input logit that was already masked stays masked.
 
 ## Common mistakes
 
-- **Banning every token of a matching sequence.** If "New York Times" is banned and
-  the history ends with "New York", only "Times" must go. Removing "New" and "York"
-  as well changes what the model can say next for no reason; done unconditionally,
-  it deletes common word pieces from the vocabulary.
-- **Ignoring the history.** Removing the last token of every banned sequence at every
-  step is the one-token rule applied to all sequences. The word piece "Times" is then
-  never available.
-- **Matching the prefix out of order** (comparing sets, or sorted lists). After
-  "York New" the token "Times" is not completing anything.
-- **Matching the prefix anywhere in the history.** The condition is about the *end*
-  of the history. A substring search bans the last token for the rest of the
-  generation once the prefix has occurred.
-- **`history[-len(prefix):]`.** For a one-token sequence this is `history[-0:]`, the
-  whole history, which equals the empty prefix only when the history is empty: the
-  ban silently stops working after the first token.
-- **Bias after the mask.** `out[token] = logits[token] + bias[token]` on the masked
-  tensor writes a finite number over `-inf`. Adding in place would have been safe;
-  assigning is not.
-- **Assigning the bias** instead of adding it. OpenAI's parameter is documented as a
-  value added to the logit; `-100` and `+100` behave like a ban and a forced choice
-  only because the numbers are large.
-- **Letting the allow-list protect a token.** Recomputing the mask from the
-  allow-list after the banned sequences drops their removals.
+- **Banning every token of a banned sequence.** If "New York Times" is banned and `history` ends with "New York", only "Times" should be removed. Removing "New" and "York" restricts valid continuations, and banning them unconditionally deletes common subwords from the vocabulary.
+- **Ignoring the history.** Removing the last token of every banned sequence at every step applies the one-token rule to multi-token phrases, making "Times" unavailable everywhere.
+- **Matching the prefix out of order.** Comparing sets or sorted lists treats "York New" as matching "New York", even though "Times" would not complete the banned sequence.
+- **Matching the prefix anywhere in the history.** Searching for the prefix as a general sublist bans the final token for the rest of generation once the prefix appears anywhere earlier.
+- **Slicing with `history[-len(prefix):]`.** For a one-token sequence, `len(prefix)` is `0`, so `history[-0:]` returns the entire history instead of an empty list. The ban then silently stops working as soon as `history` is non-empty.
+- **Applying bias after masking via assignment.** Writing `out[token] = logits[token] + bias[token]` onto an already-masked tensor overwrites `-inf` with a finite value. Adding in place preserves `-inf`, whereas assigning from the original `logits` does not.
+- **Assigning the bias instead of adding it.** OpenAI's `logit_bias` is defined as an additive offset. Values like `-100` and `+100` act like bans or forced choices only because their magnitudes are large.
+- **Letting the allow-list override banned sequences.** Computing the allow-list mask after processing `bad_words` can accidentally un-mask tokens that complete a banned sequence.
 
 ## Complexity
 
-$O(V + |\text{bias}| + |\text{allowed}| + \sum_w |w|)$ per step: each banned sequence
-costs one comparison of at most $L - 1$ tokens against the tail of the history, and
-the history is never scanned. A server precomputes what does not depend on the
-history (the bias vector, the allow mask, the one-token bans) once per request and
-does only the multi-token comparison per step.
+Time and memory are $O(V + |\text{bias}| + |\text{allowed}| + \sum_w |w|)$ per step, where $V$ is the vocabulary size. Each banned sequence of length $L$ compares at most $L - 1$ tokens against the tail of `history`, so `history` is never scanned in full. Production servers precompute the history-independent parts (the bias vector, allow-list mask, and one-token bans) once per request and only run the multi-token tail checks on each step.
 
 ## In the wild
 
-vLLM implements the banned sequences as `NoBadWordsLogitsProcessor`
-(`vllm/logits_process.py` in the 0.8 series). It handles one-token sequences once,
-as a constant `-inf` bias vector, and for each longer sequence compares
-`past_tokens_ids[-prefix_length:]` with `bad_word_ids[:prefix_length]` after skipping
-sequences longer than the history plus one; on a match it adds `-inf` to the last
-token. Its own comments say the code is based on `NoBadWordsLogitsProcessor` and
-`SequenceBiasLogitsProcessor` of Hugging Face `transformers`, where banning is the
-special case of a sequence bias of `-inf`: the general form adds a finite bias to the
-last token of a matching sequence, which is how `transformers` can also *promote* a
-phrase. This problem follows those semantics.
+vLLM implements banned sequences in `NoBadWordsLogitsProcessor` (`vllm/logits_process.py` in the 0.8 series). It folds one-token bans into a constant `-inf` bias vector once per request. For longer sequences, it skips any sequence longer than `len(history) + 1`, compares `past_tokens_ids[-prefix_length:]` with `bad_word_ids[:prefix_length]`, and adds `-inf` to the final token on a match. Its comments credit `NoBadWordsLogitsProcessor` and `SequenceBiasLogitsProcessor` from Hugging Face `transformers`, where banning is a special case of applying a `-inf` sequence bias. The general `SequenceBiasLogitsProcessor` also supports finite biases to promote phrases.
 
-Where implementations differ:
+Real implementations differ in two main ways:
 
-- **Strings versus token ids.** vLLM's `bad_words` request parameter takes strings
-  and tokenizes each one with and without a leading space, since "word" and " word"
-  are different token sequences; `transformers` takes `bad_words_ids` and leaves that
-  to the caller. A ban on token ids cannot see the same text spelled with different
-  tokens, which is why string-level stop conditions exist as a separate mechanism.
-- **Range of the bias.** OpenAI documents `logit_bias` values from `-100` to `100`;
-  vLLM clamps each value to that range when it builds the sampling parameters, while
-  `transformers`' `sequence_bias` accepts any float.
+- **Strings versus token ids.** vLLM's `bad_words` API accepts strings and tokenizes each one both with and without a leading space, because `"word"` and `" word"` map to different token sequences. Hugging Face `transformers` takes `bad_words_ids` directly and leaves tokenization to the caller. Because token-id bans cannot catch alternative tokenizations of the same text, string-level stop conditions exist as a separate mechanism.
+- **Bias range.** OpenAI documents `logit_bias` values in `[-100, 100]`, and vLLM clamps inputs to that range when constructing sampling parameters. Hugging Face's `sequence_bias` accepts any float.

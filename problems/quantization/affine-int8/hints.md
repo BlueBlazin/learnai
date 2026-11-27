@@ -1,32 +1,17 @@
-Start from the two anchor points. The grid has 256 codes, so how many steps lie between
-the smallest code and the largest? And if the real number `lo` must land on code
-$-128$, what does the equation $r = \text{scale} \cdot (q - \text{zero\_point})$ say
-`zero_point` has to be, before any rounding?
+Start from the two anchor points of the grid. There are 256 codes from $-128$ to $127$, so how many intervals lie between the smallest and largest code? If the real value `lo` must map to $-128$, what does $r = \text{scale} \cdot (q - \text{zero\_point})$ require `zero_point` to be before rounding?
 
 ---
 
-`quant_params`: take the minimum and maximum of the whole tensor, then widen with
-`min(lo, 0)` and `max(hi, 0)`. Divide the width by 255, the number of steps, and handle
-the all-zero tensor (width 0) by returning scale 1 so that nothing divides by zero.
-Solving $\text{lo} = \text{scale} \cdot (-128 - \text{zero\_point})$ gives
-$\text{zero\_point} = -128 - \text{lo} / \text{scale}$, which must then be rounded to
-an integer.
+For `quant_params`, compute the global min and max of `x`, then widen them with `min(lo, 0)` and `max(hi, 0)`. Divide the width `hi - lo` by 255, and return `scale = 1.0` when `hi == lo` to avoid dividing by zero. Solving $\text{lo} = \text{scale} \cdot (-128 - \text{zero\_point})$ gives $\text{zero\_point} = -128 - \text{lo} / \text{scale}$, which you then round and clamp to $[-128, 127]$.
 
-`quantize`: divide, round, add the zero-point, clamp, and only then convert to int8.
-The order matters: what does your framework do when a float like `300.0` is cast to
-int8?
+For `quantize`, divide by `scale`, round, add `zero_point`, clamp to $[-128, 127]$, and cast to `int8` last. Check what your framework does if you cast an out-of-range float like `300.0` to `int8` before clamping.
 
 ---
 
-The last trap is in `dequantize`. With `q = 127` and `zero_point = -128` the
-difference is 255, which does not fit in int8, and integer arithmetic on an int8 tensor
-stays in int8 (in PyTorch even when the other operand is a 0-d int64 tensor). Convert
-`q` to a wider type first:
+The final trap is in `dequantize`. When `q = 127` and `zero_point = -128`, the difference is `255`, which overflows `int8`. In PyTorch, subtracting a 0-d integer tensor from an `int8` tensor stays in `int8`. Widen `q` first:
 
 $$
 r = \text{scale} \cdot \big(\operatorname{int32}(q) - \text{zero\_point}\big),
 $$
 
-then convert to float32 and multiply. Check yourself with the round trip of `0.0`:
-it quantizes to `zero_point`, and `(zero_point - zero_point) * scale` is exactly `0.0`
-for every scale.
+then cast the difference to float32 and multiply by `scale`. Verify your code with the round trip of `0.0`. It should quantize to `zero_point`, and `(zero_point - zero_point) * scale` must equal `0.0` for any scale.

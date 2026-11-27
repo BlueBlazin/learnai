@@ -1,19 +1,19 @@
-Every filter decides from the softmax of the logits it is handed. Take a row and a
-top-p of 0.9. Is the set of tokens holding 90% of the mass the same before and after
-you divide the logits by 2? What about before and after you subtract a penalty from
-the most likely token? Each stage's answer depends on what ran before it, so write
-the stages as a pipeline in which each one consumes the previous one's output, in
-the order the statement gives.
+Every filter decides from the softmax of the logits it receives. Take a row of logits
+and a `top_p` of `0.9`. Does the set of tokens holding 90% of the mass stay the same
+after you divide the logits by `2`? Does it stay the same after you penalize the top
+token? Because each stage depends on what ran before it, write the stages as a pipeline
+where each one consumes the previous stage's output in the exact order given in the
+specification.
 
 ---
 
-Because the kit's filters return logits with `-inf` for removed tokens, they chain
-directly, and "the distribution renormalized over the survivors" needs no code:
-`softmax` of logits with `-inf` entries already is that distribution. So stages 2 to
-4 are three calls, each on the result of the one before. Two details: the penalties
-need a per-row count of every vocabulary entry in `history` (compare
-`history[:, :, None]` with `arange(V)` and sum over the time axis), and a `top_p` of
-exactly `1.0` must skip the filter instead of calling it.
+The kit's filters return logits with `-inf` for removed tokens, so they chain directly.
+You do not need to write separate renormalization code because calling `softmax` on
+logits with `-inf` entries already produces the distribution renormalized over the
+survivors. That makes stages 2 to 4 three sequential calls. Keep two details in mind.
+First, compute per-row token counts from `history` by comparing `history[:, :, None]`
+with `arange(V)` and summing over the time axis. Second, skip `top_p_filter` when
+`top_p == 1.0` instead of calling it.
 
 ---
 
@@ -28,5 +28,5 @@ x = ops.min_p_filter(x, min_p)
 x = x / temperature                                               # chain_logits
 ```
 
-For the draw, `probs = ops.softmax(x)` and `cdf = cumsum(probs)`; the token is the
-number of entries with `cdf <= u[:, None] * cdf[:, -1:]`.
+For `sample_chain`, compute `probs = ops.softmax(x)` and `cdf = cumsum(probs)`. The
+sampled token index is the number of entries satisfying `cdf <= u[:, None] * cdf[:, -1:]`.

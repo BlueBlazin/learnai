@@ -1,19 +1,12 @@
-How many blocks does a sequence with $t$ tokens own? If you can answer that from $t$
-alone, you can also say how many *new* blocks an append of $n$ tokens needs, without
-tracking the fill level of the last block separately.
+How many blocks does a sequence with $t$ tokens own? If you can compute that directly from $t$, you can also compute how many *new* blocks an append of `n_tokens` needs without tracking empty slots in the last block separately.
 
 ---
 
-Keep three things: the free ids, and per sequence its block table and its token
-count. A sequence of $t$ tokens owns $\lceil t / \texttt{block\_size} \rceil$ blocks,
-so an append needs $\lceil (t + n) / \texttt{block\_size} \rceil$ minus the length of
-the block table. In integer arithmetic, $\lceil a / b \rceil$ is `(a + b - 1) // b`
-or `-(-a // b)`. Compare that number with the number of free blocks *before* you
-change anything.
+Keep three pieces of state: the free block ids, each live sequence's block table, and each live sequence's token count. A sequence with $t$ tokens owns $\lceil t / \texttt{block\_size} \rceil$ blocks, so appending $n = \texttt{n\_tokens}$ tokens needs $\lceil (t + n) / \texttt{block\_size} \rceil$ minus the current length of its block table. In integer arithmetic, $\lceil a / b \rceil$ is `(a + b - 1) // b` or `-(-a // b)`. Check that enough free blocks exist *before* changing any state.
 
 ---
 
-Order `append` as: compute, check, then commit.
+Structure `append` as compute, check, then commit:
 
 ```
 total  = tokens.get(seq_id, 0) + n_tokens
@@ -22,7 +15,4 @@ if needed > number of free blocks: raise OutOfBlocks      # nothing was touched 
 take the `needed` lowest free ids, extend the table, store total
 ```
 
-For "lowest free id first", a min-heap (`heapq`) of free ids gives the lowest in
-$O(\log n)$; in `free`, push each block back. A sorted list works too. Create the
-entry for a new sequence only in the commit step, or a refused append leaves an
-empty sequence behind.
+A min-heap (`heapq`) of free ids returns the lowest id in $O(\log \texttt{n\_blocks})$ time, and `free` pushes each released block id back into the heap. A sorted list works as well. Only insert a new `seq_id` into your dictionaries during the commit step so a refused append never leaves an empty sequence behind.

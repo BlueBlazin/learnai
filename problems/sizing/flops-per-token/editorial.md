@@ -1,36 +1,21 @@
 ## The idea
 
-A forward pass is a sequence of matrix products, and under the convention each one
-costs twice the number of scalar multiplications. There are three kinds.
+A transformer forward pass consists of three categories of matrix multiplications. Under the $2mnp$ convention, each multiplication costs twice its number of scalar multiply-accumulates.
 
-**Weight products.** A position's hidden state is multiplied by every weight matrix
-of every block: four projections and two or three MLP matrices. A $1 \times n$ row
-times an $n \times p$ matrix costs $2np$, which is twice the number of weights in the
-matrix. So the per-position cost of the blocks is twice their matrix parameters:
+**Weight products.** Every token position's hidden state of width $d$ is multiplied by every weight matrix in each of the $L$ blocks, which includes four attention projections and either two (`"gelu"`) or three (`"swiglu"`) MLP matrices. Multiplying a $1 \times n$ row by an $n \times p$ weight matrix costs $2np$ FLOPs, which is twice the number of entries in the matrix. With $H$ query heads, $H_{kv}$ key/value heads, head width $h$, and MLP hidden width $f$, the per-position weight cost of one block is
 
 $$
 P = 2 \cdot \big(\underbrace{d\,Hh}_{W_q} + \underbrace{2\,d\,H_{kv}h}_{W_k,\,W_v} +
 \underbrace{Hh\,d}_{W_o} + \underbrace{k\,d\,f}_{\text{MLP},\ k \in \{2, 3\}}\big).
 $$
 
-This is the origin of the rule of thumb "a forward pass costs about 2 FLOPs per
-parameter per token". It holds for matrices, not for the embedding table, which is
-indexed and never multiplied.
+This is where the rule of thumb "a forward pass costs about 2 FLOPs per parameter per token" comes from. It applies to weight matrices, not to the token embedding table, which is indexed rather than multiplied.
 
-**Attention products.** These involve no weights, only activations, so they do not
-show up in a parameter count. A query head multiplies its query by $n$ keys
-($2hn$ FLOPs) and then its $n$ attention weights by $n$ values ($2nh$). All $H$ query
-heads do this. Grouped-query attention makes several of them read the *same* keys and
-values, which shrinks the cache and the K/V projections, but not this work: the
-number of score rows is $H$, not $H_{kv}$.
+**Attention products.** Attention multiplies activations by activations, so it does not appear in a parameter count. Each of the $H$ query heads multiplies its query by $n$ keys ($2hn$ FLOPs) and then multiplies its $n$ attention weights by $n$ values ($2nh$ FLOPs), for $4Hh\,n$ FLOPs per query per block. Grouped-query attention shares keys and values across query heads, which shrinks the KV cache and the $W_k$ and $W_v$ projections, but every query head still computes its own score row and value mixture. The factor is therefore $H$, not $H_{kv}$.
 
-**The head.** $2dV$, once: logits are needed only for the position whose successor is
-being chosen.
+**Output head.** Projecting one hidden state onto the vocabulary of size $V$ costs $2dV$ FLOPs. It runs once per call because only one position's logits are needed to select the next token.
 
-**Prefill versus decode.** In a prefill of $t$ tokens there are $t$ positions and $t$
-queries, each against $t$ keys (engines compute the dense $t \times t$ product and
-mask it). With a KV cache, a decode step has one position and one query against
-`context` keys; the keys and values of earlier tokens are read, not recomputed.
+**Prefill versus decode.** In a prefill of $t$ tokens, all $t$ positions pass through the weight matrices and all $t$ queries attend densely over all $t$ keys before causal masking is applied. In a cached decode step at context length $c$, only one new position passes through the weights and its single query attends over all $c$ keys already in the cache (including its own). Earlier keys and values are read from the cache rather than recomputed.
 
 $$
 \text{prefill}(t) = L\,(tP + 4Hh\,t^2) + 2dV, \qquad
@@ -71,9 +56,7 @@ def decode_flops(cfg, context):
 
 ## Reading the numbers
 
-For Granite 4.2 3B (configuration from
-`https://huggingface.co/ibm-granite/granite-4.2-3b/raw/main/config.json`, read on
-2026-11-14):
+For Granite 4.2 3B (configuration from `https://huggingface.co/ibm-granite/granite-4.2-3b/raw/main/config.json`, read on 2026-11-14):
 
 | | weight products | attention | head | total |
 |---|---|---|---|---|
@@ -82,64 +65,28 @@ For Granite 4.2 3B (configuration from
 | decode, context 131,072 | 6.29 GFLOP | 53.7 GFLOP (89%) | 0.51 GFLOP | 60.5 GFLOP |
 | prefill, 4,096 tokens | 25.8 TFLOP | 6.87 TFLOP (21%) | 0.51 GFLOP | 32.6 TFLOP |
 
-- The weight products plus the head are $6{,}805{,}258{,}240$ FLOPs, exactly twice
-  the model's matrix parameters (3,659,737,600 total, minus 207,360 norm gains and
-  the 256,901,120-entry embedding table). `param-count` and this problem are the same
-  bookkeeping.
-- Attention overtakes the weight products when $4Hh \cdot c = P$, at a context of
-  15,360 tokens for this model. Below that, per-token cost is nearly flat; far above
-  it, cost per token is proportional to the context.
-- A dense prefill of $t$ tokens costs more than the $t$ cached decode steps that would
-  process the same tokens one at a time ($4Hh\,t^2$ against $4Hh\,t(t+1)/2$ for
-  attention), because it computes the masked half of the score matrix. It is still
-  far faster in practice, because one large product uses the hardware much better
-  than $t$ small ones.
-- Without a cache, generating token $c$ costs a prefill of $c$ tokens. For 1,000 new
-  tokens after a 1,000-token prompt that is $1.04 \cdot 10^{19}$ FLOPs against
-  $1.41 \cdot 10^{16}$ with the cache, about 740 times more.
+- The weight products plus the output head total $6{,}805{,}258{,}240$ FLOPs, which is exactly twice the model's matrix parameters (3,659,737,600 total parameters, minus 207,360 norm gains and the 256,901,120-entry embedding table).
+- Attention overtakes weight products when $4Hh \cdot c = P$, which happens at a context of 15,360 tokens for this model. Below that point, per-token cost is nearly flat. Far above it, cost per token grows linearly with context length.
+- A dense prefill of $t$ tokens performs more attention FLOPs than $t$ cached decode steps over the same tokens ($4Hh\,t^2$ versus $4Hh\,t(t+1)/2$) because it computes the masked half of the score matrix. Prefill is still much faster in practice because one large matrix multiplication uses hardware far more efficiently than $t$ small ones.
+- Without a KV cache, generating token $c$ costs a full prefill of $c$ tokens. Generating 1,000 new tokens after a 1,000-token prompt costs $1.04 \cdot 10^{19}$ FLOPs without a cache versus $1.41 \cdot 10^{16}$ FLOPs with a cache, about 740 times more.
 
 ## Common mistakes
 
-- **Charging decode the quadratic term.** Using `context * context` in
-  `decode_flops` describes a model with no KV cache. It is right at context 1 and
-  wrong by a factor that grows with the context.
-- **Charging the head at every position.** The head is the largest single matrix
-  ($2dV$ = 0.51 GFLOP here, more than three blocks). Multiplying it by `t` in prefill,
-  or by `context` in decode, inflates a 4096-token prefill by 6 percent and a decode
-  step at that context by a factor of 250.
-- **Counting scores for KV heads.** $H_{kv}$ in the attention term undercounts by the
-  grouping factor (5x for Granite). GQA shares keys and values between query heads;
-  it does not remove query heads.
-- **Counting K and V projections at full width.** The mirror image: $W_k$ and $W_v$
-  really are narrower under GQA, $d \times H_{kv}h$.
-- **One FLOP per multiply.** $mnp$ instead of $2mnp$ counts multiply-accumulates
-  (MACs). Both conventions are in use, and they differ by exactly 2, so always say
-  which one a number is in.
-- **Forgetting the mixing product.** $QK^\top$ is half of attention; the weighted sum
-  of the values costs the same again.
-- **Two matrices for a gated MLP.** SwiGLU has three; the MLP is 80 percent of $P$
-  here, so the error is large.
-- **Excluding the current token from `context`.** The new token attends to itself:
-  its own key and value are in the cache when its query runs.
+- **Charging decode the quadratic term.** Using `context * context` in `decode_flops` models decoding without a KV cache. It matches at context 1 and diverges by a factor that grows with `context`.
+- **Charging the output head at every position.** The head is the largest single matrix ($2dV = 0.51$ GFLOP for Granite 4.2 3B, more than three blocks). Multiplying it by `t` in prefill or by `context` in decode inflates a 4096-token prefill by 6 percent and a decode step at that context by a factor of 250.
+- **Counting attention scores with `n_kv_heads`.** Using $H_{kv}$ in the attention term undercounts by the grouping factor (5x for Granite 4.2 3B). GQA shares keys and values across query heads without removing query heads.
+- **Counting K and V projections at full width.** Under GQA, $W_k$ and $W_v$ really are narrower, with shape $d \times H_{kv}h$ rather than $d \times Hh$.
+- **Counting one FLOP per multiply.** Using $mnp$ instead of $2mnp$ counts multiply-accumulates (MACs). Both conventions exist and differ by a factor of 2, so the convention must always be explicit.
+- **Forgetting the value-mixing product.** Computing $QK^\top$ is only half of attention. Multiplying the attention weights by $V$ costs the same number of FLOPs again.
+- **Using two matrices for a gated MLP.** SwiGLU has three matrices (gate, up, down). Because the MLP accounts for 80 percent of $P$ in Granite 4.2 3B, dropping one matrix causes a large error.
+- **Excluding the current token from `context`.** The new token appends its own key and value to the cache before its query runs, so it attends over all `context` positions including itself.
 
 ## Complexity
 
-$O(1)$ arithmetic. The quantities themselves are $O(L\,t\,(P + Hh\,t))$ for prefill
-and $O(L\,(P + Hh\,c))$ per decoded token. Use integers: the example's
-$3.3 \cdot 10^{13}$ is below $2^{53}$, but a prefill of a million tokens is not.
+$O(1)$ arithmetic per call. The returned counts grow as $O(L\,t\,(P + Hh\,t))$ for prefill and $O(L\,(P + Hh\,c))$ per decoded token. Use integer arithmetic. The example's $3.3 \cdot 10^{13}$ fits in a 64-bit float, but a prefill of one million tokens exceeds $2^{53}$.
 
 ## In the wild
 
-- **Time to first token.** A GPU that sustained $10^{14}$ FLOP/s on this workload
-  would prefill 4,096 tokens of Granite 4.2 3B in about a third of a second. Prefill
-  is the regime where such an estimate is close, because large dense products keep
-  the arithmetic units busy.
-- **Decode is not compute-bound at small batch.** 8.5 GFLOP at the same rate would be
-  85 microseconds per token; no single stream decodes that fast, because each step
-  must first pull every weight through memory. That bound is the subject of
-  `memory-bandwidth-bound`, and the gap between the two is the headroom that batching
-  fills.
-- **Conventions differ between papers.** The $2N$ FLOPs-per-token estimate (Kaplan et
-  al., 2020) uses this convention for the weights; some profilers count MACs, some
-  count the masked half of attention and some do not, and many ignore attention
-  entirely, which is harmless at 1,000 tokens and wrong by 9x at 131,072.
+- **Time to first token.** A GPU sustaining $10^{14}$ FLOP/s on this workload prefills 4,096 tokens of Granite 4.2 3B in about a third of a second. Prefill estimates are close to measured latency because large dense matrix multiplications keep compute units saturated.
+- **Decode is not compute-bound at small batch sizes.** At $10^{14}$ FLOP/s, 8.5 GFLOP would take 85 microseconds per token. No single stream decodes that fast because each step must load every model weight from memory. That memory-bandwidth ceiling is analyzed in `memory-bandwidth-bound`, and batching exists to close the gap between the two limits.
+- **Conventions vary across papers and tools.** The $2N$ FLOPs-per-token estimate for an $N$-parameter model (Kaplan et al., 2020) uses this convention for weights. Some profilers count MACs instead of FLOPs, some exclude the masked half of attention, and many omit attention altogether, which is nearly exact at 1,000 tokens and off by 9x at 131,072 tokens.

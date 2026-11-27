@@ -1,23 +1,25 @@
 ## The idea
 
-Lay the probabilities end to end on the interval $[0, C)$, where $C$ is the row's
-total. Token $k$ owns the piece $[c_{k-1}, c_k)$, whose length is $p_k$. A point $t$
-uniform on $[0, C)$ lands in piece $k$ with probability $p_k / C$, and the piece it
-lands in is the first one whose right end is beyond it:
+Lay a row's probabilities $p_0, \ldots, p_{V-1}$ end to end on the interval
+$[0, C)$, where $C = c_{V-1}$ is the row's total. With $c_{-1} = 0$, token $k$ owns
+the sub-interval $[c_{k-1}, c_k)$ of length $p_k$. A point $t$ drawn uniformly from
+$[0, C)$ lands in token $k$'s interval with probability $p_k / C$. The interval
+containing $t$ is the first one whose right endpoint strictly exceeds $t$:
 
 $$
 \text{token} = \min \{\, k : c_k > t \,\}, \qquad t = u \cdot C .
 $$
 
-This is the inverse of the cumulative distribution function, evaluated at $u$. Both
-edge rules of the problem are properties of this picture, not special cases:
+This evaluates the inverse of the cumulative distribution function at $u$. Both edge
+rules follow directly from the geometry rather than special cases:
 
-- A token with $p_k = 0$ owns an empty piece $[c_{k-1}, c_{k-1})$. No point lands in
-  it. With a strict inequality the formula agrees: $c_k = c_{k-1}$, so if $c_k > t$
-  then already $c_{k-1} > t$ and $k$ is not the minimum.
-- $t = u \cdot C < C = c_{V-1}$ for every $u < 1$, so the set is never empty. The
-  pieces must cover $[0, C)$, not $[0, 1)$: if $C = 0.999$ and the point is drawn on
-  $[0, 1)$, one draw in a thousand lands beyond every piece.
+- A token with $p_k = 0$ owns an empty interval $[c_{k-1}, c_{k-1})$, so no point
+  can land in it. The strict inequality enforces this because $c_k = c_{k-1}$, so
+  whenever $c_k > t$ holds, $c_{k-1} > t$ already holds and $k$ is not the minimum.
+- Because $u < 1$, we have $t = u \cdot C < C = c_{V-1}$, so at least one index
+  satisfies $c_k > t$. Scaling by $C$ ensures the intervals cover $[0, C)$ rather
+  than $[0, 1)$. If $C = 0.999$ and you compare against $u$ directly, one draw in a
+  thousand falls past every interval.
 
 ## Reference solution (PyTorch)
 
@@ -28,62 +30,65 @@ def sample(probs, u):
     return (cdf <= threshold).sum(dim=-1)
 ```
 
-- The total is `cdf[:, -1:]`, the same float that the comparison uses. A separately
-  computed `probs.sum(-1)` adds the same numbers in a different order and may differ
-  from the last cumulative sum in the last bit, which is enough to break
-  `threshold < cdf[:, -1]`.
-- `u * C` rounds to a float32 strictly below `C` for every float32 `u < 1`: the
-  largest such `u` is $1 - 2^{-24}$, and $C \cdot 2^{-24}$ is at least half the
-  spacing of floats just below `C`.
-- Counting `cdf <= threshold` gives the first index that exceeds the threshold,
-  because `cdf` is non-decreasing. It needs no `argmax`, no `searchsorted`, and has
-  no "nothing found" case.
-- `u[:, None]` gives each row its own threshold.
+- Using `cdf[:, -1:]` as the row total guarantees that the threshold is scaled by
+  the exact float that appears in the last column of `cdf`. A separate
+  `probs.sum(-1)` sums the entries in a different order and can differ in the last
+  bit, which can break `threshold < cdf[:, -1]`.
+- For every float32 value `u < 1`, the product `u * C` rounds to a float32 strictly
+  below `C`. The largest float32 below 1 is $1 - 2^{-24}$, and $C \cdot 2^{-24}$ is
+  at least half the spacing of floats just below `C`.
+- Because `cdf` is non-decreasing, counting how many entries satisfy
+  `cdf <= threshold` gives the exact index of the first entry that exceeds
+  `threshold`. This avoids `argmax`, `searchsorted`, and any fallback logic.
+- Indexing `u[:, None]` gives `u` shape `(B, 1)` so each row gets its own threshold.
 
-`searchsorted(cdf, threshold, right=True)` is the same computation with a binary
-search, $O(\log V)$ per row after the cumulative sum. `right=True` is the strict
-inequality.
+Using `searchsorted(cdf, threshold, right=True)` performs the same lookup via binary
+search in $O(\log V)$ time per row after the cumulative sum, where `right=True`
+enforces the strict inequality.
 
 ## Common mistakes
 
-- **`>=` instead of `>`** (or counting `cdf < threshold`, or `searchsorted` with its
-  default `side="left"`). At `u = 0` the threshold is 0 and $c_0 \ge 0$ always holds,
-  so token 0 is returned even when its probability is 0. `u = 0` is not exotic: a
-  generator of 24-bit uniforms returns it once in 16.7 million draws.
-- **Comparing with the raw `u`.** If the row's total is below `u`, nothing exceeds it
-  and the count is `V`. The token id is out of range, and the failure appears one
-  step later, in the embedding lookup of the next forward pass.
-- **Clamping the index to `V - 1`.** It removes the crash and returns the last token
-  of the vocabulary, whatever its probability. After top-k or top-p that probability
-  is 0.
-- **`argmax` of the mask `cdf > u`.** When no entry is `True`, `argmax` returns 0:
-  the same bug, now on the first token.
-- **One uniform for the whole batch** (`u[0]`, or a scalar drawn once). Every row of
-  the batch is then driven by the same number: identical prompts give identical
-  continuations, and the samples are not independent.
-- **Using `1 - u`**, or any other reparameterization. The distribution of the output
-  is still right, which is why a statistical test alone would accept it, but the
-  function no longer computes what the specification says for a given `u`, and
-  results stop being reproducible across implementations.
-- **Drawing the randomness inside** (`torch.multinomial`). The function is then not
-  testable, not reproducible across frameworks, and cannot be replayed from a logged
-  seed.
+- **Using `>=` instead of `>`** (or counting `cdf < threshold`, or calling
+  `searchsorted` with its default `side="left"`). When `u = 0`, the threshold is 0
+  and $c_0 \ge 0$ always holds, so token 0 is returned even when its probability is
+  0. A 24-bit uniform generator produces `0.0` about once in 16.7 million draws.
+- **Comparing against raw `u`.** When a row's total is below `u`, no cumulative sum
+  exceeds `u` and the count is `V`. That out-of-range token ID fails one step later
+  during the embedding lookup of the next forward pass.
+- **Clamping the index to `V - 1`.** Clamping hides the out-of-range crash by
+  returning the last token of the vocabulary regardless of its probability, which is
+  0 after top-k or top-p filtering.
+- **Taking `argmax` of the mask `cdf > u`.** When every entry is `False`, `argmax`
+  returns 0, creating the same silent bug on token 0 instead of token `V - 1`.
+- **Sharing one uniform across the batch** (such as `u[0]` or a single scalar). All
+  rows in the batch then share the same draw, so identical prompts produce identical
+  continuations and batch samples are no longer independent.
+- **Reparameterizing with `1 - u`.** The marginal distribution stays correct, so a
+  statistical test alone would pass, but the function violates the specification for
+  a given `u` and breaks reproducibility across implementations.
+- **Drawing randomness inside the function** (such as calling `torch.multinomial`).
+  This breaks determinism, cross-framework reproducibility, and replay from logged
+  seeds.
 
 ## Complexity
 
-$O(B \cdot V)$ time and memory: one cumulative sum and one comparison. The binary
-search variant does not change the total, since the cumulative sum is already linear.
+$O(B \cdot V)$ time and memory for one cumulative sum and one elementwise
+comparison. Using binary search does not change the overall complexity because the
+cumulative sum is already linear in $V$.
 
 ## In the wild
 
-llama.cpp's final sampler (`llama_sampler_dist_apply`) is this algorithm: it draws a
-uniform number, multiplies it by the running total of the candidate probabilities
-(`sum_tgt = sum_cum * rnd`), walks the candidates accumulating probability until the
-running sum reaches the target, and falls back to the last candidate if the loop ends
-without a hit. Its candidates have already been filtered, so zero-probability entries
-are gone before this point. `jax.random.categorical` and `mx.random.categorical` take
-logits and use the Gumbel-max trick instead (add independent Gumbel noise, take the
-argmax), which needs $V$ random numbers per sample but no cumulative sum and no
-normalization; `gumbel-max-sample` covers it. Engines that must reproduce a stream of
-tokens exactly, for speculative decoding or for tests like these, prefer inverse-CDF
-sampling because it consumes exactly one uniform number per token.
+`llama.cpp` uses this algorithm in its final sampler (`llama_sampler_dist_apply`).
+It draws a uniform number, multiplies it by the running total of candidate
+probabilities (`sum_tgt = sum_cum * rnd`), walks the candidates until the running
+sum reaches the target, and falls back to the last candidate if the loop ends
+without a hit. Because its candidates are already filtered, zero-probability entries
+have already been removed.
+
+`jax.random.categorical` and `mx.random.categorical` take logits and use the
+Gumbel-max trick instead (add independent Gumbel noise and take the argmax). That
+approach avoids both the cumulative sum and normalization, at the cost of $V$ random
+numbers per sample (covered in `gumbel-max-sample`). Inference engines that must
+reproduce a token stream exactly, such as for speculative decoding or deterministic
+testing, prefer inverse-CDF sampling because it consumes exactly one uniform number
+per token.

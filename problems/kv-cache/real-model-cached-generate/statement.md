@@ -1,9 +1,4 @@
-Generate text with a real model, IBM's Granite 4.0 350M, the way a runtime does it:
-read the prompt in one forward pass, keep the attention keys and values of every
-layer, and then push **one** token at a time through the 28 layers. You wrote the
-forward pass in `real-model-logits`. Here it gets a memory, and the exercise is what
-the memory must hold: keys that are already rotated, at the width of the 4 key/value
-heads, with positions that continue where the cache ends.
+Implement cached autoregressive text generation for IBM's Granite 4.0 350M model. You will process the prompt in one forward pass (`prefill`), store each layer's attention keys and values in a KV cache, and then advance one token at a time (`decode_step`). Each cached key is already rotated for its position and stored at the width of the key/value heads, so new tokens continue seamlessly from where the cache ends.
 
 ![This problem is the whole loop, run on a real model.](assets/map.svg)
 
@@ -15,74 +10,28 @@ def decode_step(weights, cfg, token, cache): ...  # returns (logits, cache)
 def generate(weights, cfg, prompt_ids, max_new_tokens): ...  # returns a list of ints
 ```
 
-`weights` and `cfg` are those of `real-model-logits`: a mapping from checkpoint names
-to float32 tensors (shapes under [Shapes](#shapes); matrices are `(out, in)`, no
-biases), and a [`RealConfig`](../../../python/src/learnai/kit/realmodel.py) with the
-fields `n_layers`, `d_model`, `n_heads`, `n_kv_heads`, `head_dim`, `d_ff`,
-`vocab_size`, `norm_eps`, `rope_theta`, `attention_scale`, `embedding_multiplier`,
-`residual_multiplier`, `logits_scaling`, and `tied_embeddings`.
+`weights` and `cfg` follow the same format as `real-model-logits`. `weights` maps checkpoint tensor names to float32 tensors (linear weights have shape `(out, in)` with no biases; see [Shapes](#shapes)). `cfg` is a [`RealConfig`](../../../python/src/learnai/kit/realmodel.py) with fields `n_layers`, `d_model`, `n_heads`, `n_kv_heads`, `head_dim`, `d_ff`, `vocab_size`, `norm_eps`, `rope_theta`, `attention_scale`, `embedding_multiplier`, `residual_multiplier`, `logits_scaling`, and `tied_embeddings`.
 
-**The model.** For a sequence of tokens at positions $0, 1, 2, \dots$, with
-$E$ = `model.embed_tokens.weight`:
+**The model.** For a sequence of token IDs at positions $0, 1, 2, \dots$, let $E$ be `model.embed_tokens.weight`:
 
-1. $x = E[\text{tokens}] \cdot \texttt{embedding\_multiplier}$.
-2. For layer $i = 0, \dots, \texttt{n\_layers} - 1$, with
-   $r = \texttt{residual\_multiplier}$:
-   $x \leftarrow x + r \cdot \operatorname{Attn}_i(\operatorname{RMSNorm}(x))$, then
-   $x \leftarrow x + r \cdot \operatorname{MLP}_i(\operatorname{RMSNorm}(x))$.
-   - RMSNorm is $u / \sqrt{\operatorname{mean}(u^2) + \texttt{norm\_eps}} \cdot g$,
-     with the gains `input_layernorm.weight` and `post_attention_layernorm.weight`.
-   - Attention has `n_heads` query heads and `n_kv_heads` key/value heads of width
-     `head_dim`; query head $h$ uses key/value head
-     $\lfloor h / (\texttt{n\_heads} / \texttt{n\_kv\_heads}) \rfloor$. Queries and
-     keys (not values) are rotated with RoPE in the half-split layout: feature $j$ of a
-     head pairs with feature $j + \texttt{head\_dim}/2$, the angle of pair $j$ at
-     position $p$ is $p \cdot \texttt{rope\_theta}^{-2j/\texttt{head\_dim}}$, and
-     $(a, b)$ becomes $(a \cos - b \sin,\; a \sin + b \cos)$. Scores are
-     $q\,k^\top \cdot \texttt{attention\_scale}$; the token at position $p$ attends to
-     positions $\le p$; softmax; weighted sum of the values; heads merged; `o_proj`.
-   - The MLP computes $z = u\,W_{\text{in}}^\top$ with
-     `shared_mlp.input_linear.weight`; the first `d_ff` features of $z$ are the gate
-     and the rest are up; the output is
-     $(\operatorname{silu}(\text{gate}) \odot \text{up})\,W_{\text{out}}^\top$ with
-     `shared_mlp.output_linear.weight`.
-3. $x \leftarrow \operatorname{RMSNorm}(x)$ with `model.norm.weight`; the logits are
-   $x\,W_{\text{head}}^\top / \texttt{logits\_scaling}$, where $W_{\text{head}}$ is
-   $E$ if `cfg.tied_embeddings` and `lm_head.weight` otherwise.
+1. **Embedding.** Compute $x = E[\text{tokens}] \cdot \texttt{embedding\_multiplier}$.
+2. **Transformer layers.** For each layer $i = 0, \dots, \texttt{n\_layers} - 1$, let $r = \texttt{residual\_multiplier}$. Update $x \leftarrow x + r \cdot \operatorname{Attn}_i(\operatorname{RMSNorm}(x))$, then $x \leftarrow x + r \cdot \operatorname{MLP}_i(\operatorname{RMSNorm}(x))$.
+   - **RMSNorm.** For an input vector $u$ and gain vector $g$ (`input_layernorm.weight` or `post_attention_layernorm.weight`), compute $u / \sqrt{\operatorname{mean}(u^2) + \texttt{norm\_eps}} \cdot g$.
+   - **Attention.** Project the normalized input into `n_heads` query heads and `n_kv_heads` key/value heads, each of width `head_dim`. Under grouped-query attention, query head $h$ attends to key/value head $\lfloor h / (\texttt{n\_heads} / \texttt{n\_kv\_heads}) \rfloor$. Rotate queries and keys (not values) with RoPE in the half-split layout: feature $j$ pairs with feature $j + \texttt{head\_dim}/2$, using angle $\theta_{p,j} = p \cdot \texttt{rope\_theta}^{-2j/\texttt{head\_dim}}$ at position $p$, so $(a, b)$ becomes $(a \cos \theta_{p,j} - b \sin \theta_{p,j},\; a \sin \theta_{p,j} + b \cos \theta_{p,j})$. Compute attention scores $q\,k^\top \cdot \texttt{attention\_scale}$, apply a causal mask so position $p$ attends only to positions $\le p$, take the softmax, form the weighted sum of values, merge the heads back to `d_model`, and project with `o_proj`.
+   - **MLP.** Compute $z = u\,W_{\text{in}}^\top$ using `shared_mlp.input_linear.weight`. Split $z$ into `gate` (the first `d_ff` features) and `up` (the remaining `d_ff` features), then return $(\operatorname{silu}(\text{gate}) \odot \text{up})\,W_{\text{out}}^\top$ using `shared_mlp.output_linear.weight`.
+3. **Output head.** Apply RMSNorm with `model.norm.weight` to get the normalized final states, then compute logits $x\,W_{\text{head}}^\top / \texttt{logits\_scaling}$. Here $W_{\text{head}}$ is $E$ when `cfg.tied_embeddings` is `True`, and `lm_head.weight` otherwise.
 
-**`prefill(weights, cfg, prompt_ids)`** runs the model on the whole prompt, an integer
-tensor of shape `(P,)`, $P \ge 1$, in one pass. It returns `(logits, cache)`: the
-logits of the **last** position only, a float32 tensor of shape `(vocab_size,)`, and a
-cache.
+**`prefill(weights, cfg, prompt_ids)`** runs the model on the entire prompt `prompt_ids` (an integer tensor of shape `(P,)` with $P \ge 1$) in one pass. It returns `(logits, cache)`, where `logits` holds the float32 logits for the **last** prompt position only, shape `(vocab_size,)`.
 
-**`decode_step(weights, cfg, token, cache)`** takes one more token, a Python `int`,
-and a cache that holds $n$ tokens. The token is at position $n$. It returns
-`(logits, cache)`: the logits at position $n$, shape `(vocab_size,)`, equal to what
-the model computes for the whole sequence of $n + 1$ tokens, and a cache that holds
-$n + 1$ tokens.
+**`decode_step(weights, cfg, token, cache)`** takes a single next token (a Python `int`) and a cache holding $n$ prior tokens. The new token sits at position $n$. It returns `(logits, cache)`, where `logits` has shape `(vocab_size,)` and matches the logits at position $n$ of a full forward pass over all $n + 1$ tokens, and the returned cache holds $n + 1$ tokens.
 
-**The cache** is yours to design; the tests only hand it back to `decode_step`. What
-makes it a cache is the cost: `decode_step` runs one token through the layers and
-reads everything about earlier tokens from the cache. That fixes what it holds: for
-each layer, the keys and values of every token so far, at the width of the
-`n_kv_heads` key/value heads (expand them to the query heads when you use them, not
-when you store them). A key is rotated once, for its own position, when its token is
-new.
+**Cache design.** You choose the representation of `cache`; the tests treat it as opaque and only pass it back to `decode_step`. To achieve cached decode speed, `decode_step` must run only the single new token through the transformer layers and read all past keys and values from the cache. For each layer, store keys and values at the width of the `n_kv_heads` key/value heads (expand to `n_heads` when computing attention, not in storage). Rotate each key once for its own position when its token is processed.
 
-**The cache is a value.** `decode_step` must not change the cache it is given. The
-caller may continue from the same cache twice, with different tokens, and both
-continuations must be right (this is what beam search, speculative decoding, and a
-server that reuses a prompt's cache do).
+**Immutability.** `decode_step` must not mutate the cache passed to it. A caller may branch from the same cache twice with different tokens, and both continuations must produce exact results (as required by beam search, speculative decoding, and shared-prefix serving).
 
-**`generate(weights, cfg, prompt_ids, max_new_tokens)`** is greedy decoding:
-`prefill`, then `max_new_tokens` times the token with the largest logit, each fed to
-`decode_step` to get the logits for the next. It returns the generated tokens (not
-the prompt) as a list of `max_new_tokens` Python ints. There is no stop token here.
+**`generate(weights, cfg, prompt_ids, max_new_tokens)`** performs greedy decoding. Call `prefill`, then repeat `max_new_tokens` times: pick the token ID with the largest logit and pass it to `decode_step` to obtain the next logits (skipping `decode_step` after picking the final token). Return the generated tokens (excluding the prompt) as a list of `max_new_tokens` Python ints. There is no stop token.
 
-Write the forward pass and the cache yourself, in float32. From the kit,
-`ops.rms_norm` and `ops.softmax` are meant to be used. Not allowed: the kit's `RealLM`
-and `RealModel`, the `transformers` and `mlx_lm` packages, and MLX's built-in rotary
-embedding (`nn.RoPE`, `mx.fast.rope`).
+Write the forward pass and cache yourself in float32. You may use `ops.rms_norm` and `ops.softmax` from the kit. You may not use the kit's `RealLM` or `RealModel`, the `transformers` or `mlx_lm` packages, or MLX's built-in rotary embeddings (`nn.RoPE`, `mx.fast.rope`).
 
 ## Shapes
 
@@ -105,60 +54,28 @@ embedding (`nn.RoPE`, `mx.fast.rope`).
 
 ## Example
 
-The first public case is a three-layer model with random weights in Granite's layout
-and Granite's constants: vocabulary 64, `d_model = 128`, 4 query heads on 2 key/value
-heads of width 32, `d_ff = 96`, a tied head.
+The first public test uses a random three-layer model with Granite's layout and constants: `vocab_size = 64`, `d_model = 128`, 4 query heads, 2 key/value heads of width 32, `d_ff = 96`, and a tied output head.
 
 ```python
 generate(weights, cfg, [41], 8)  # [10, 10, 16, 16, 16, 16, 30, 38]
 ```
 
-`prefill` reads the single token 41 at position 0 and returns logits whose largest
-entry is at 10. Its cache holds one token: per layer, keys and values of shape
-`(2, 1, 32)` if you store them as (KV heads, tokens, head width). `decode_step(…, 10,
-cache)` computes the query, key, and value of token 10 at **position 1**, attends over
-two keys, and returns logits with their maximum at 10 again; the cache now holds two
-tokens. Seven steps after the prefill produce the eight tokens; the eighth token is
-not fed, because nobody would read its logits.
+`prefill` processes token 41 at position 0 and returns logits whose argmax is 10. Its cache holds one token per layer (for example, keys and values of shape `(2, 1, 32)`). Next, `decode_step(..., 10, cache)` computes the query, key, and value of token 10 at **position 1**, attends over the two cached keys, and returns logits whose argmax is 10 again, along with a cache of two tokens. Seven `decode_step` calls after `prefill` yield all eight tokens. The eighth token is not passed back into `decode_step` because its logits are not needed.
 
-On the real model, the 12 tokens of `"A B C D E F G H I J K L"` are continued with
-`" M N O P Q R S T U V W X"`. A cache of 24 tokens holds, per layer, keys and values
-of 4 KV heads times 24 tokens times 64 numbers: about 1.4 MB over the 28 layers. At
-the width of the 16 query heads it would be four times that.
+On the real Granite 4.0 350M model, the 12 tokens of `"A B C D E F G H I J K L"` continue with `" M N O P Q R S T U V W X"`. A 24-token cache stores, per layer, keys and values for 4 KV heads × 24 tokens × 64 floats, totaling about 1.4 MB across all 28 layers. Storing all 16 expanded query heads instead would use four times as much memory.
 
 ## Constraints
 
-- Logits are compared with `transformers` (float32, computed without a cache) to a
-  relative tolerance of `1e-3` and an absolute tolerance of `1e-3`: on the small
-  models everywhere, on the real model at 64 fixed vocabulary columns. Tokens are
-  compared exactly; every test prompt's greedy tokens win by a clear margin.
-- $1 \le P \le 768$, and at most 12 tokens are generated. The cases without a
-  download use two random three-layer models: the one of the example, and one with
-  other multipliers, `rope_theta = 1e4`, `norm_eps = 1e-2`, and an untied head.
-- **Speed.** After a `prefill` of 768 real tokens, four calls of `decode_step` are
-  timed against the reference in the same framework, and may take at most **3 times**
-  as long. A step that reads its cache costs one token through 28 layers; a step that
-  runs the 769 tokens again costs about eight times that on a CPU, and more on a GPU.
-- The time limit per case is 30 seconds (120 for the speed case). The first real-model
-  case decodes all 352 M weights (1 to 2 seconds, once per run).
+- Logits are compared against `transformers` (float32, without a cache) with relative tolerance `1e-3` and absolute tolerance `1e-3`. All vocabulary entries are checked on the small models, and 64 fixed vocabulary columns are checked on the real model. Generated token IDs are compared exactly; every test prompt's greedy tokens win by a clear margin.
+- $1 \le P \le 768$, and at most 12 tokens are generated. The download-free tests use two random three-layer models: the example model above, and a second model with different multipliers, `rope_theta = 1e4`, `norm_eps = 1e-2`, and an untied output head.
+- **Speed.** After a `prefill` of 768 real tokens, four calls to `decode_step` are timed against the reference in the same framework and must take at most **3 times** as long. A cached step runs one token through 28 layers, whereas recomputing all 769 tokens takes roughly eight times as long on CPU (and even more on GPU).
+- The time limit is 30 seconds per case (120 seconds for the speed case). The first real-model test decodes all 352 M weights once per run (about 1 to 2 seconds).
 
 > [!NOTE]
-> JAX compiles every operation once per combination of input shapes. A cache that
-> grows by one slot per token changes the shapes of the attention at every step, and a
-> first run then spends most of its time compiling. Keeping the cache in buffers
-> whose capacity grows in larger steps (with a mask over the unused slots) avoids it.
-> In PyTorch and MLX, appending is fine.
+> JAX compiles every operation once per combination of input shapes. If a cache grows by one slot per token, the attention shapes change on every step, and the first run spends most of its time compiling. Storing the cache in buffers whose capacity grows in larger chunks (with a mask over unused slots) avoids repeated recompilation. In PyTorch and MLX, appending directly is fine.
 
 ## Why this matters
 
-This is the loop every LLM runtime spends its life in, and the split into `prefill`
-and `decode_step` is the split behind the two numbers every benchmark reports: time
-to first token is the prefill, tokens per second is the decode step. The cache is
-what makes the second number independent of the length of the conversation. Its bugs
-are quiet. A new token rotated for position 0 instead of position $n$, or cached keys
-rotated a second time, still produce fluent text for a few tokens, because nearby
-positions rotate almost alike; the text degrades with length, and the bug is filed as
-"the model loses the thread in long chats". A cache updated in place works until the
-first feature that needs to branch from it. And a runtime with no cache at all
-produces exactly the right tokens, which is why the only test that finds it is a
-clock.
+Every LLM serving engine is built around this exact split between `prefill` and `decode_step`. Those two functions directly determine the two headline serving metrics. Time to first token (TTFT) is `prefill`, and tokens per second is `decode_step`. The KV cache is what keeps decode cost nearly independent of conversation length.
+
+Cache bugs are notoriously silent. Rotating a new token at position 0 instead of position $n$, or rotating cached keys a second time, still produces fluent text for several tokens because nearby RoPE angles are close. Quality degrades gradually with length, looking like a model issue rather than a cache bug. Mutating a cache in place passes single-sequence tests and breaks only when a caller branches from an earlier state. Skipping the cache altogether produces identical tokens and can only be caught by timing.

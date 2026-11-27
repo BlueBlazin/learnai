@@ -1,21 +1,12 @@
-Look at what one call gives you: `logits[-1]` scores the token that comes *after* the
-last token you passed in. After the prompt has gone through the model, you already
-know the first generated token without any further call. Which tokens has the model
-not yet seen at that point, and which of them does it need to see before you can pick
-the second token?
+Consider what a single call to `lm` returns. `logits[-1]` scores the token that comes *after* the last token you passed in. Once the prompt passes through the model, you already have the first generated token without making another call. At that point, which tokens has the model not seen yet, and which one does it need before you can pick the second token?
 
 ---
 
-Prefill, then decode. Call `lm(prompt)` once and keep the cache. Each step then takes
-the argmax of the last row of logits, appends it to the result, and passes only that
-one token together with the cache: `lm([token], cache)`. Always keep the cache that
-the call returns; the one you passed in is unchanged and no longer covers the newest
-token.
+Split the work into prefill and decode. Call `lm(prompt)` once and save the returned `cache`. In each decode step, take the argmax of `logits[-1]`, append it to your result, and pass only that single token with the cache by calling `lm([token], cache)`. Always replace your `cache` variable with the new cache returned by the call, because the previous cache is unchanged and does not include the newest token.
 
 ---
 
-Order the loop body so that the stop check comes between choosing a token and feeding
-it:
+Place the stop check between choosing a token and feeding it to the model:
 
 ```
 logits, cache = lm(prompt)
@@ -26,5 +17,4 @@ loop:
     logits, cache = lm([token], cache)
 ```
 
-A token that ends generation is returned but never fed, which is where the limits of
-$g$ calls and $P + g - 1$ tokens come from.
+This guarantees that the final token is returned without being fed back into `lm`, matching the exact limits of $g$ calls and $P + g - 1$ tokens processed for a prompt of length $P$ and $g$ generated tokens.

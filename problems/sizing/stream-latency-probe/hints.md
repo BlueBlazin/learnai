@@ -1,23 +1,12 @@
-There are exactly two places where the clock is read, and for each the question is
-"before or after which await?". Everything that takes time in this problem is an
-`await`: opening the stream, receiving a chunk, the sink. Decide for each timestamp
-which of those waits belong to the server and must be inside the measured interval,
-and which belong to the client and must stay outside it.
+You only read the clock in two places, and the key question for each is whether it goes before or after an `await`. Everything that consumes time in this problem is an `await` (opening the stream, receiving a chunk, or running `sink`). Decide which waits belong to the server and must be inside the measured interval, and which belong to the client and must stay outside it.
 
 ---
 
-In `probe`: read `t_start` on the first line. Wrap the opening and the `async for` in
-one `try`/`except OSError`, so a refusal and a broken stream end up in the same
-place. Inside the loop read the clock first, append it once per token of the chunk
-(`[arrived] * len(chunk)`), then `await sink(chunk)`. After the loop the status
-follows from two facts: did an exception occur, and is `token_times` empty. Compute
-the latencies only for `"ok"`, from `token_times` alone, as in `latency-metrics`.
+In `probe`, read `t_start` on the first line. Wrap both `await open_stream()` and the `async for` loop in a single `try`/`except OSError` block so connection failures and mid-stream failures follow the same path. Inside the loop, read the clock first, append `[arrived] * len(chunk)` to `token_times`, and then call `await sink(chunk)`. After the loop, determine `"status"` from whether an `OSError` occurred and whether `token_times` is empty. Compute latencies only when `"status" == "ok"`, using `token_times` alone.
 
 ---
 
-For the closed loop, start `min(concurrency, n)` workers that share a counter; each
-takes the next index, awaits a probe, stores the record at that index, and repeats
-until the counter reaches `n`:
+For `run_closed_loop`, launch `min(concurrency, n)` worker coroutines that share a counter. Each worker claims the next request index, awaits `probe`, writes the record to `results[i]`, and repeats until the counter reaches `n`:
 
 ```python
 async def worker():
@@ -31,6 +20,4 @@ async def worker():
 await asyncio.gather(*(worker() for _ in range(min(concurrency, n))))
 ```
 
-Do not `gather` the requests in groups of `concurrency`: a group waits for its slowest
-member. For `summarize`, pool the `"itl"` lists of the ok records into one list before
-taking the percentile, and return `None` for an empty list.
+Do not call `asyncio.gather` on fixed chunks of size `concurrency`, because each batch would wait for its slowest request. For `summarize`, pool the `"itl"` lists from all `"ok"` records into one flat list before computing the percentile, and return `None` whenever a metric has no values.

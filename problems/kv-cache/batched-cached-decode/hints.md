@@ -1,20 +1,12 @@
-One call now returns logits of shape `(B, T, vocab_size)`: the next token of every
-row is the argmax over the *last* axis of `logits[:, -1, :]`, which gives `B` tokens
-at once. The single-sequence loop had one question per step ("am I done?"). What does
-each row need to remember so that the batch can answer two different questions: "may
-this row still collect tokens?" and "may the loop end?"
+Each model call now returns logits of shape `(B, T, vocab_size)`. Taking the argmax over the last axis of `logits[:, -1, :]` gives the next token for all `B` rows at once. The single-sequence loop only had to ask "am I done?" at each step. What per-row state do you need so the batch can answer both "should this row still collect tokens?" and "can the loop end?"
 
 ---
 
-Keep a `finished` flag per row, next to the per-row list of tokens. After each
-argmax, visit the rows: a finished row is skipped entirely (its argmax is noise); a
-running row appends its token and becomes finished if that token is `eos_id` or if it
-now has `max_new_tokens` tokens. The flag only ever goes from false to true. The loop
-ends when *all* flags are true, and that check comes before the next model call.
+Keep a `finished` boolean flag per row alongside each row's list of generated tokens. After each argmax, inspect every row. Skip finished rows completely (their argmax is noise). For each active row, append its new token and mark it finished if that token equals `eos_id` or if the row now has `max_new_tokens` tokens. Once `finished[b]` becomes `True`, it never changes back. End the loop when *all* flags are `True`, and run that check before making the next model call.
 
 ---
 
-The shape of the loop:
+The loop has this structure:
 
 ```
 logits, cache = lm(prompts)                      # (B, P) in one call
@@ -27,5 +19,4 @@ loop:
     logits, cache = lm(feed, cache)              # (B, 1)
 ```
 
-Because the "all finished" check sits between choosing and feeding, the last token of
-the longest row is never fed: $g_{\max}$ calls in total.
+Because the `all(finished)` check sits between selecting tokens and feeding them back, the last token of the longest row is never fed into `lm`, giving $g_{\max}$ calls in total.

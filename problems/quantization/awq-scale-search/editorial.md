@@ -1,48 +1,25 @@
 ## The idea
 
-A linear layer does not care about a per-channel rescaling of its input, as long as
-the weight undoes it:
+A linear layer is invariant to per-channel rescaling of its inputs as long as the weight matrix applies the inverse scaling:
 
 $$
 x W^\top = \sum_j x_j W_{\cdot j} = \sum_j \frac{x_j}{s_j}\,\big(s_j W_{\cdot j}\big)
-= (x / s)\,(W s)^\top .
+= (x / s)\,(W s)^\top.
 $$
 
-Quantization breaks the symmetry, and that is the opening. The quantizer spends a
-fixed number of levels between the minimum and the maximum of each group, so the
-*absolute* rounding error of every weight in a group is about the same: up to half a
-step. Scaling column $j$ up by $s_j > 1$ before quantizing and dividing by $s_j$
-afterwards divides that column's absolute error by $s_j$. If the scaled column does
-not become the new extreme of its group, the step is unchanged, and the column
-simply got more precise for free. If it does stretch the group's range, the step
-grows for everyone in the group, and the neighbors pay.
+Quantization breaks this invariance, which creates room to reduce output error. A group-wise quantizer spreads a fixed number of levels between the minimum and maximum of each group, so every weight in the group incurs an absolute rounding error of at most half a step. Scaling column $j$ up by $s_j > 1$ before quantization and dividing by $s_j$ afterward reduces that column's effective rounding error by a factor of $s_j$. If the scaled column stays inside the group's existing range, the step size does not change and the extra precision is free. If it expands the group's range, the step size grows and neighboring columns pay the cost.
 
-Which columns deserve the precision? The output error of one row is
-$\sum_j x_j (W_{ij} - \hat W_{ij})$: each weight's error is multiplied by its
-activation. So the columns to protect are the ones with large activations, and the
-natural scale is a power of the channel magnitude, $s_j = a_j^\alpha$:
+Because the output error of row $i$ is $\sum_j x_j (W_{ij} - \hat W_{ij})$, each weight's error is amplified by its input activation. Protecting channels with large activations therefore reduces output error the most. AWQ parameterizes the scale vector as a power of the mean absolute activation, $s_j = a_j^\alpha$:
 
-- $\alpha = 0$: $s = 1$, plain quantization;
-- $\alpha = 1$: full scaling by the magnitude, which usually stretches the groups so
-  far that the quiet columns collapse onto one or two levels (the worked example's
-  last row);
-- in between: the trade-off, searched on a grid, because the best exponent depends
-  on the layer.
+- $\alpha = 0$ gives $s = 1$, which is plain quantization.
+- $\alpha = 1$ scales fully by activation magnitude, which often stretches group ranges so far that low-activation weights collapse onto one or two grid points (as in the last row of the worked example).
+- Values between $0$ and $1$ balance protecting loud channels against distorting quiet ones.
 
-The objective is evaluated where it counts, on the layer's output for calibration
-inputs, with the actual quantizer in the loop. There is nothing to differentiate:
-the search is $G$ forward passes of one layer.
+Because the optimal $\alpha$ varies by layer, AWQ evaluates the actual quantized output error on calibration inputs across a small grid of exponents. No gradients are needed—only $G$ forward passes of the layer.
 
-**The normalization.** Multiplying all of $s$ by a constant changes nothing: the
-group's minimum, maximum, and step scale with it, the codes are the same, and the
-constant cancels in $Q(W s) / s$. Dividing by $\sqrt{\max s \cdot \min s}$ fixes that
-freedom by centering the scales around 1 in log space ($\max s \cdot \min s = 1$),
-which keeps the scaled weights and the rescaled activations in a sane numeric range.
-It affects the returned vector, not the loss.
+**Normalization.** Multiplying the entire vector $s$ by any positive constant leaves quantization unchanged. Every group's minimum, maximum, and step scale by the same constant, so the integer codes stay identical and the constant cancels in $Q(W s) / s$. Dividing by $\sqrt{\max s \cdot \min s}$ removes this scale ambiguity by centering $s$ around $1$ in log space ($\max s \cdot \min s = 1$), keeping both scaled weights and rescaled activations in a well-conditioned numeric range. It changes the returned `scales` tensor without changing the loss.
 
-**The clamp.** A channel that is always zero has $a_j = 0$ and $a_j^\alpha = 0$ for
-$\alpha > 0$; the floor of $10^{-4}$ keeps the later division finite. The weights of
-such a channel end up with a large error, which is multiplied by an activation of 0.
+**Clamping.** A dead channel that is always zero has $a_j = 0$, giving $a_j^\alpha = 0$ for $\alpha > 0$. Clamping $s_j$ from below at $10^{-4}$ prevents division by zero in $Q(W s) / s$. The weights in that column may incur a large error, which is harmless because they are multiplied by zero activations.
 
 ## Reference solution (PyTorch)
 
@@ -72,79 +49,34 @@ def awq_scales(w, x_calib, bits, group_size, grid):
     return candidates[best], grid[best]
 ```
 
-`argmin` returns the first minimum in all three frameworks, which implements the tie
-rule. The JAX and MLX versions differ only in spelling.
+`argmin` returns the index of the first minimum in PyTorch, JAX, and MLX, which satisfies the tie-breaking rule. The JAX and MLX implementations differ only in API names.
 
 ## Common mistakes
 
-- **Scaling the weights only.** Comparing $X W^\top$ with $X\,Q(W s)^\top$ forgets
-  the inverse scale. Every $\alpha > 0$ then looks catastrophic, because the
-  compared layer computes a different function, and the search returns "no scaling".
-- **Measuring the error on the weights.** $\lVert W - Q(W s)/s \rVert$ ignores the
-  activations, which are the whole point; scaling a column up always hurts its
-  neighbors' weight error, so this objective also drifts to $\alpha = 0$.
-- **A signed mean.** `mean(x)` is near zero for the zero-mean activations inside a
-  transformer and negative for half the channels; a negative number to a fractional
-  power is NaN. It works on post-ReLU test data and nowhere else.
-- **RMS for the mean magnitude.** $\sqrt{\operatorname{mean}(x^2)}$ is a reasonable
-  statistic and a different one: it weights outliers more, changes the scales, and
-  can change the winning exponent. The method specifies the mean of $|x|$.
-- **Skipping or changing the normalization.** The loss is unaffected, so nothing
-  looks wrong until the scales are folded into the previous layer and compared.
-- **No clamp.** One dead channel gives $s_j = 0$, $W_{\cdot j} \cdot 0 / 0$ is NaN,
-  the loss of every $\alpha > 0$ is NaN, and comparisons with NaN are false.
-- **Quantizing before scaling.** $Q(W) \cdot s / s$ is $Q(W)$: every exponent gives
-  the same loss.
-- **Returning the last scales.** After the loop, `s` belongs to the last grid entry,
-  not to the best one. Keep the candidates.
-- **Ties to the later entry**, from `<=` in the comparison. With equal channel
-  magnitudes every entry ties, and the first one is the specified answer.
-- **Absolute instead of squared error.** A different objective picks a different
-  exponent when a few calibration samples are much larger than the rest.
+- **Scaling the weights without unscaling.** Comparing $X W^\top$ against $X\,Q(W s)^\top$ omits the inverse scale. Every $\alpha > 0$ then computes a different linear map with huge error, so the search always picks $\alpha = 0$.
+- **Measuring error on weights instead of outputs.** Minimizing $\lVert W - Q(W s)/s \rVert$ ignores activations. Because scaling any column up increases group step sizes for its neighbors, weight-space error almost always favors $\alpha = 0$.
+- **Using a signed mean.** `mean(x)` is near zero for zero-mean transformer activations and negative for roughly half of the channels. Raising a negative number to a fractional power produces NaN. This bug passes on post-ReLU data and breaks everywhere else.
+- **Using RMS instead of mean absolute value.** $\sqrt{\operatorname{mean}(x^2)}$ weights outliers more heavily than $\operatorname{mean}(|x|)$, producing different scales and sometimes a different winning $\alpha$.
+- **Skipping or altering normalization.** Because normalization does not change the loss, the chosen $\alpha$ looks right, but the returned `scales` fail numerical checks and cannot be folded cleanly into the previous layer.
+- **Omitting the $10^{-4}$ clamp.** A dead channel yields $s_j = 0$, causing $W_{\cdot j} \cdot 0 / 0$ to produce NaN. Every $\alpha > 0$ then has a NaN loss and loses all comparisons.
+- **Quantizing before scaling.** Computing $Q(W) \cdot s / s$ just returns $Q(W)$, giving every $\alpha$ the exact same loss.
+- **Returning the loop variable `s`.** After the loop finishes, `s` holds the scales from the last entry in `grid`, not the best one. Save each candidate or recompute `s` for the winning `alpha`.
+- **Breaking ties toward the later entry.** Using `<=` instead of `<` when updating the best loss returns the last tied entry instead of the first.
+- **Using absolute error instead of squared error.** Mean absolute output error weights large calibration errors differently and can pick a different exponent.
 
 ## Complexity
 
-$G$ candidates, each one quantization, $O(\text{out} \cdot \text{in})$, and one
-matrix product, $O(N \cdot \text{out} \cdot \text{in})$. With the usual grid of 20
-and a few hundred calibration rows, that is a few thousand layer evaluations for a
-whole model: minutes, with no backward pass and no need to hold more than one block
-in memory.
+For $G$ grid values, each step runs one group-wise quantization in $O(\text{out} \cdot \text{in})$ time and one matrix multiplication in $O(N \cdot \text{out} \cdot \text{in})$ time. With a typical grid of 20 exponents and a few hundred calibration rows, calibrating an entire model takes a few thousand layer forward passes—a few minutes on GPU, with no backward pass and only one block in memory at a time.
 
 ## In the wild
 
-**The method and its reference code.** "AWQ: Activation-aware Weight Quantization
-for LLM Compression and Acceleration" (arXiv 2306.00978, MLSys 2024). In the
-authors' repository (`mit-han-lab/llm-awq`, `awq/quantize/auto_scale.py`), the
-channel statistic is `x.abs().view(-1, x.shape[-1]).mean(0)`; the grid is
-`n_grid = 20` with `ratio = ratio * 1 / n_grid`, so the exponents are
-$0, 0.05, \dots, 0.95$ and never reach 1; the scales are
-`x_max.pow(ratio).clamp(min=1e-4)` divided by `(scales.max() * scales.min()).sqrt()`;
-the weights are multiplied by the scales, pseudo-quantized, and divided by them; the
-loss is the mean squared difference of the outputs; and a candidate replaces the best
-only if its loss is strictly lower, so ties go to the earlier ratio. This problem
-follows each of those choices. `mlx-lm`'s `mlx_lm/quant/awq.py` (version 0.32) has
-the same loop in MLX.
+**Reference implementation.** AWQ was introduced in "AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration" (arXiv 2306.00978, MLSys 2024). In the authors' repository (`mit-han-lab/llm-awq`, `awq/quantize/auto_scale.py`), channel magnitudes are computed with `x.abs().view(-1, x.shape[-1]).mean(0)`. The grid uses `n_grid = 20` with `ratio = ratio * 1 / n_grid`, testing $0, 0.05, \dots, 0.95$. Scales are computed as `x_max.pow(ratio).clamp(min=1e-4)` and normalized by `(scales.max() * scales.min()).sqrt()`. Weights are scaled, pseudo-quantized, and unscaled, and the loss is the mean squared output error with strict `<` updates so earlier ratios win ties. `mlx-lm` (`mlx_lm/quant/awq.py`, version 0.32) uses the same search loop in MLX.
 
-**What is simplified here.**
+**Simplifications in this problem.**
 
-- The reference searches one scale vector for a *set* of linear layers that share an
-  input (for example the query, key, and value projections of an attention block),
-  and measures the error on the output of the whole sub-module they feed, not on one
-  matrix product.
-- The scale is not kept as a separate tensor at inference. Its inverse is folded
-  into whatever produces the input: the preceding normalization layer's weight, or
-  the preceding linear layer. That requires nothing but a linear operation in
-  between, which is why the method lists the layer pairs it scales for each
-  architecture.
-- Its quantizer rounds the zero point to an integer so that 0.0 is exactly
-  representable. This problem uses the track's `groupwise-4bit` quantizer, which has
-  a float minimum.
-- After the scales, AWQ runs a second grid search over clipping ranges per group
-  (`auto_clip.py`), the idea of `clipping-calibration` with the output error as the
-  objective.
+- Full AWQ searches a single shared scale vector for a *group* of linear layers sharing an input (such as the Q, K, and V projections in an attention block) and evaluates output error on the entire sub-module rather than one linear layer.
+- At inference time, the scale vector is not stored separately. Its inverse is folded into the preceding normalization weight or linear layer, which is why AWQ defines architecture-specific layer pairs.
+- The original AWQ quantizer rounds zero points to integers so that `0.0` is represented exactly, whereas this problem uses the track's `groupwise-4bit` quantizer with a float minimum.
+- After scale search, AWQ runs a second grid search for per-group weight clipping (`auto_clip.py`), applying clipping calibration directly to output error.
 
-**Where it sits.** AWQ changes which numbers get quantized and keeps the storage
-format, so its output is an ordinary group-wise 4-bit checkpoint. GPTQ, the other
-calibration-based method of this track, keeps the grid and changes the rounding,
-compensating each weight's error in the weights not yet quantized. The two use the
-same input: a few hundred rows of activations.
+**How it compares.** AWQ transforms the weights before quantization while keeping the standard group-wise 4-bit storage format. GPTQ, the other calibration-based method in this track, keeps the unscaled quantization grid and adjusts the rounding of remaining weights to compensate for earlier quantization errors. Both methods require the same calibration input: a few hundred rows of activations.

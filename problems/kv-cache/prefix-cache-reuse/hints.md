@@ -1,28 +1,18 @@
-Two prompts that start with the same $n$ tokens produce the same keys and values for
-those $n$ positions, whatever comes after: a causal model never looks ahead. So a
-cache computed for one prompt is valid for another *up to the point where they first
-differ*. How do you find that point, and what must happen to the part of the stored
-cache that lies beyond it?
+In a causal model, the keys and values for the first $n$ tokens depend only on those $n$ tokens and never on what follows. A cached prompt is therefore valid for a new prompt up to the first position where they differ. How can you find that position, and what must you do with any cached tokens beyond it?
 
 ---
 
-Write a helper that counts the leading tokens two sequences share. Run it against
-every key of the store and remember the key with the largest count $m$. Then decide
-how much to reuse: all $m$ tokens, unless that is the whole prompt. A model call
-needs at least one token and you need the logits of the last prompt token, so reuse
-at most $P - 1$. `store[key].truncate(r)` gives a cache for exactly the first `r`
-tokens, whether the entry was longer, diverged, or matched completely.
+Write a helper that counts the leading matching tokens between two sequences, and run it against every key in `store` to find the maximum match length $m$ and its key. You can reuse up to $m$ tokens, except when $m$ equals the prompt length $P$, because `lm` requires at least one token and you need logits for the last prompt token. Cap the reused length at $r = \min(m, P - 1)$, then call `store[best_key].truncate(r)` to get a cache covering exactly the first $r$ tokens.
 
 ---
 
-```
-r = min(longest common prefix over the keys, len(prompt) - 1)
-if r > 0:  logits, cache = lm(prompt[r:], store[best_key].truncate(r))
-else:      logits, cache = lm(prompt)
-new_store = {**store, tuple(prompt): cache}     # this cache covers exactly the prompt
+```python
+r = min(longest_common_prefix, len(prompt) - 1)
+if r > 0:
+    logits, cache = lm(prompt[r:], store[best_key].truncate(r))
+else:
+    logits, cache = lm(prompt)
+new_store = {**store, tuple(prompt): cache}  # covers exactly the prompt
 ```
 
-Take the entry for the new store right here, before the decode loop: at this moment
-the cache covers the prompt and nothing else. The decode loop is the one from
-`cached-greedy-decode` without the stop token; because every call returns a new
-cache, continuing to decode does not change the cache you stored.
+Capture the cache for `new_store` right after the prefill call, before starting the decode loop. The decode loop is the same as in `cached-greedy-decode` without a stop token, and because every `lm` call returns a new cache, decoding will not mutate the stored entry.

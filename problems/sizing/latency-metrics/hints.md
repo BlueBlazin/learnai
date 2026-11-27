@@ -1,16 +1,8 @@
-Draw the request as a timeline: the send time, then one mark per token. Which metrics
-measure from the send time, and which measure only between marks? How many gaps are
-there between `n` marks?
+Draw the request on a timeline with `t_start` followed by one mark per token. Decide which metrics start at `t_start` and which measure only between token marks. Then count how many gaps exist between `n` marks.
 
 ---
 
-`ttft` and `e2e` start at `t_start` and end at the first and the last token. `itl` is
-the list of differences between neighbors, `token_times[i] - token_times[i - 1]` for
-`i` from 1, so it has `n - 1` entries and never involves `t_start`. `tpot` is the mean
-of those gaps; their sum telescopes to `token_times[-1] - token_times[0]`, so no loop
-is needed. `tokens_per_s` is the only metric that counts all `n` tokens, and it divides
-by the whole wait, `e2e`. Handle the empty list first, then the two divisions that can
-have a zero denominator.
+`ttft` and `e2e` both start at `t_start` and end at the first and last tokens. `itl` holds the consecutive differences `token_times[i] - token_times[i - 1]` for `i` starting at 1, giving `n - 1` values without using `t_start`. `tpot` is the mean of those gaps, and their sum telescopes to `token_times[-1] - token_times[0]`. `tokens_per_s` counts all `n` tokens and divides by `e2e`. Check for an empty list first, then guard the two divisions whose denominators can be zero.
 
 ---
 
@@ -21,6 +13,4 @@ tpot = (last - first) / (n - 1) if n > 1 else None
 tokens_per_s = n / e2e if e2e > 0 else None
 ```
 
-The time *and* the count in `tpot` both leave the first token out: `n - 1` gaps over
-the time from the first token to the last. Raise `ValueError` when `n == 0`, and build
-`itl` as a new list so that `token_times` stays untouched.
+Both the numerator and denominator of `tpot` exclude the first token, using `n - 1` gaps over the span from `first` to `last`. Raise `ValueError` when `n == 0`, and build `itl` as a new list so `token_times` is not modified.

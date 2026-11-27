@@ -1,25 +1,15 @@
 ## The idea
 
-Rows of a batch are independent inside the model: row `b` of the logits depends on
-row `b` of the tokens and of the cache, and on nothing else. So batched greedy
-decoding is the single-sequence loop of `cached-greedy-decode` run on `B` rows in
-lockstep, and the only new thing is that the rows disagree about when to stop.
+Rows of a batch are independent inside the model, so row `b` of the logits depends only on row `b` of the input tokens and the cache. Batched greedy decoding is therefore the single-sequence loop from `cached-greedy-decode` run across `B` rows in lockstep, except that rows can finish at different steps.
 
-That disagreement is resolved with one bit of state per row, `finished[b]`, and two
-rules that use it differently:
+You resolve that with one boolean flag per row, `finished[b]`, and two rules:
 
-- **Per row:** a finished row collects nothing. Its slot in the batch is still fed
-  (a filler token, `eos_id`) because the cache and the token tensor must stay
-  rectangular, and the model still returns logits for it, but they are ignored.
-- **For the batch:** the loop ends when *every* row is finished, and it checks this
-  before the next call, so no call is made whose outputs nobody reads.
+- **Per row:** A finished row collects no more tokens. Its batch slot still receives a filler token (`eos_id`) so the cache and token tensor stay rectangular, and its output logits are ignored.
+- **For the batch:** The loop terminates as soon as *every* row is finished. Checking this before the next model call avoids running a forward pass whose outputs nobody reads.
 
-The invariant of the loop: *before each argmax, the cache covers, for every running
-row, exactly its sequence so far; and `rows[b]` is final for every finished row.*
+This maintains a clear loop invariant: *before each argmax, the cache holds the exact sequence generated so far for every active row, and `rows[b]` is final for every finished row.*
 
-The cost follows. The prompts go in once ($B \cdot P$ tokens). The longest row needs
-$g_{\max} - 1$ further calls, and each of them carries all $B$ rows:
-$B \cdot (P + g_{\max} - 1)$ tokens in $g_{\max}$ calls.
+The cost follows directly. All prompts enter in the first call ($B \cdot P$ tokens). The longest row then needs $g_{\max} - 1$ additional calls, each carrying all $B$ rows, for a total of $g_{\max}$ calls and $B \cdot (P + g_{\max} - 1)$ tokens processed.
 
 ## Reference solution (PyTorch)
 
@@ -41,51 +31,23 @@ def batched_greedy(lm, prompts, max_new_tokens, eos_id):
         logits, cache = lm(feed, cache)
 ```
 
-One `argmax` and one `.tolist()` per step move the `B` tokens to Python; the per-row
-bookkeeping is a loop over `B` small integers, which is nothing next to a forward
-pass. A row can only be finished at the `feed` line if it emitted EOS (rows that run
-out of budget do so together, and then the function has returned), so `eos_id` is
-never `None` there. Engines keep `finished` as a boolean tensor and write
-`torch.where(finished, eos_id, tokens)`; the logic is the same.
+Each step runs one `argmax` and one `.tolist()` to move the `B` token IDs to Python. The per-row bookkeeping loops over `B` small integers, which is negligible compared to a forward pass. Note that at the `feed` line, a row can only be finished if it emitted `eos_id` (if rows hit `max_new_tokens`, they all do so together and `all(finished)` returns first), so `eos_id` is never `None` there. Production engines keep `finished` as a boolean tensor and compute `torch.where(finished, eos_id, tokens)`, which implements the same logic.
 
 ## Common mistakes
 
-- **`any` instead of `all`.** Ending the loop when the first row emits EOS cuts every
-  other row short. With one row the two are the same, which is how this survives
-  testing with batch size 1.
-- **No sticky per-row flag.** If "finished" is recomputed from the current step's
-  tokens, or rows keep appending until the loop ends, a row that emitted EOS at step 2
-  returns `[16, 18, 33, 56, 31, ...]`: the model's continuation past EOS. In a real
-  server this is the response that ends properly and then goes on with garbage.
-- **Never stopping early.** A `for` loop over `max_new_tokens` steps returns the right
-  tokens when the rows are trimmed afterwards, but calls the model long after the
-  last row finished: 40 calls instead of 9 in one of the tests.
-- **Checking "all finished" after the forward call.** One wasted batched call per
-  generation; with short answers that is a noticeable share of the work.
-- **Decoding the rows one at a time.** Right tokens, and the number of tokens
-  processed is even lower, but the number of calls is $\sum_b g_b$ instead of
-  $\max_b g_b$. On a GPU the calls are what cost time; this throws the batch away.
-- **Feeding a finished row its own argmax.** The model then generates a real
-  continuation for a row nobody is reading. The other rows are unaffected, which is
-  why it goes unnoticed, but the convention matters as soon as anything inspects the
-  batch: padding tokens are what attention masks, logging, and token accounting
-  expect to see in a finished slot.
+- **Using `any` instead of `all`.** Ending the loop when the first row emits EOS truncates every other row. With batch size 1 the two behave identically, so this bug easily survives single-row tests.
+- **No sticky per-row flag.** Recomputing "finished" from only the current step's tokens, or appending until the loop ends, causes a row that emitted EOS at step 2 to return `[16, 18, 33, 56, 31, ...]`. In a real server, the response finishes cleanly and then appends garbage.
+- **Never stopping early.** Running a `for` loop for all `max_new_tokens` steps and trimming afterwards returns the right tokens, but keeps calling the model long after every row has finished (40 calls instead of 9 in one of the tests).
+- **Checking `all(finished)` after the forward call.** This wastes one full batched call on every generation, which is a noticeable overhead for short responses.
+- **Decoding rows one at a time.** This produces the right tokens and even processes fewer total tokens, but makes $\sum_b g_b$ forward calls instead of $\max_b g_b$. On a GPU, forward calls dominate latency, so this throws away the benefit of batching.
+- **Feeding a finished row its own argmax.** The model then generates a real continuation for a slot nobody reads. Other rows are unaffected, so the mistake is easy to miss, but downstream attention masks, logging, and token accounting expect filler tokens in finished slots.
 
 ## Complexity
 
-$g_{\max}$ forward calls and $B \cdot (P + g_{\max} - 1)$ tokens processed. Of
-those, $\sum_b (g_{\max} - g_b)$ tokens are filler: work spent on rows that had
-already finished. In the worked example that is $7 + 3 + 0 = 10$ of 36 tokens.
+The loop makes $g_{\max}$ forward calls and processes $B \cdot (P + g_{\max} - 1)$ tokens. Of those tokens, $\sum_b (g_{\max} - g_b)$ are filler spent on rows that have already finished. In the worked example, that is $7 + 3 + 0 = 10$ of the 36 tokens.
 
 ## In the wild
 
-This is static batching. Hugging Face `generate` keeps an `unfinished_sequences`
-vector, overwrites the next tokens of finished rows with `pad_token_id`
-(`next_tokens * unfinished + pad * (1 - unfinished)`), and stops when the vector is
-all zeros. Most offline batch-inference scripts do the same. The filler work is the price of the rectangle, and it grows with the spread of
-the answer lengths. Serving engines (vLLM, TGI, llama.cpp's server slots) therefore
-do not wait for the longest row: with *continuous batching* a finished row's slot is
-given to the next waiting request at the following step, which needs a cache that
-can drop and add rows between calls. Real prompts also differ in length, which adds
-padding and attention masks on the prompt side; that is `padded-batch-invariance`
-and, on MLX, `mlx-batched-generate`.
+This pattern is static batching. Hugging Face `generate` tracks an `unfinished_sequences` vector, overwrites the next tokens of finished rows with `pad_token_id` (`next_tokens * unfinished + pad * (1 - unfinished)`), and stops when the vector is all zeros. Most offline batch-inference scripts do the same.
+
+Filler work is the cost of keeping a rectangular batch, and it grows with the spread in response lengths. Serving engines such as vLLM, TGI, and `llama.cpp`'s server slots avoid waiting for the longest row by using *continuous batching*, which reassigns a finished row's slot to a waiting request on the very next step. That requires a cache that can drop and add rows between calls. Real prompts also vary in length, which adds prompt-side padding and attention masks—covered in `padded-batch-invariance` and, on MLX, `mlx-batched-generate`.

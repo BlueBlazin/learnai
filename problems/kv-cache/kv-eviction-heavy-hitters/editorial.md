@@ -1,33 +1,14 @@
 ## The idea
 
-The policy has two parts, and each answers a different question.
+Heavy-hitter eviction combines two rules, each serving a distinct purpose.
 
-**Which old tokens matter?** The ones the model keeps coming back to. A token's
-accumulated score is the sum of the attention it has received from every later query
-(and itself), which for a prompt is a column sum of the attention matrix and for a
-decode step is one more row added to the totals. The H2O paper's observation is that
-these totals are heavily skewed: a few tokens collect most of the mass, and the
-score computed online, from past steps only, selects nearly the same tokens as a
-score that could see the future.
+**Keeping high-value older tokens.** A token's accumulated score is the sum of the attention it has received from every query since it entered the cache. For a prompt prefill, this is the column sum of the attention matrix. For a single-token decode step, it adds one new row of attention weights to the running totals. The H2O paper observed that these totals are strongly skewed. A small set of tokens collects most of the attention mass, and selecting them online from past steps closely matches an oracle that can see future attention.
 
-**Why protect the newest tokens?** Because the score is a sum over time, and a token
-that has existed for one step has had one chance to collect anything. Ranking by
-score alone evicts the newest entries first. The recent window gives a token time to
-prove itself, and it is also where the next query looks most. The paper splits the
-budget evenly between the two parts; here `recent` is a parameter.
+**Protecting recent tokens.** Because scores accumulate over time, a token that arrived one step ago has had only one query to receive attention. Ranking purely by accumulated score would evict the newest tokens immediately. Reserving `recent` slots gives new tokens time to accumulate attention and keeps the immediate context that the next query attends to most strongly. The original paper splits the budget evenly between recent tokens and heavy hitters, while here `recent` is passed as a parameter.
 
-Everything else is alignment. After the first eviction the cache of a head is an
-arbitrary increasing subsequence of the tokens, different in every head. So the
-function never reasons about token numbers. It works with positions in the cache it
-was handed, produces one index tensor `kept` of shape `(B, H, N)`, and applies that
-same tensor to keys, values, and scores. As long as `kept` is increasing, sequence
-order survives every step by induction, and with it the meaning of "the last
-`recent` positions".
+**Keeping keys, values, and scores aligned.** After the first eviction, each head holds its own increasing subsequence of original tokens. The function therefore never tracks original token IDs. Instead, it operates purely on positions in the current cache, builds a single index tensor `kept` of shape `(B, H, N)`, and gathers `k`, `v`, and `scores` with that same tensor. Because `kept` is sorted in increasing order, sequence order is preserved by induction at every step, ensuring the last `recent` positions always correspond to the newest tokens.
 
-For one token per step at a full cache ($S = \text{budget} + 1$) the rule evicts
-exactly one entry per head, the lowest-scoring one outside the window, which is the
-greedy step of the paper's Algorithm 1. Handling a chunk of `T` tokens with the same
-code is what cuts a long prompt down to the budget after the prefill.
+When decoding one token at a time from a full cache ($S = \text{budget} + 1$), this rule evicts the single lowest-scoring entry outside the recent window per head, matching the greedy step in Algorithm 1 of the H2O paper. Using the same logic for any chunk size `T` also trims a long prompt down to `budget` in a single call.
 
 ## Reference solution (PyTorch)
 
@@ -53,58 +34,28 @@ def h2o_step(cache, scores, attn_weights, budget, recent):
     return cache, torch.gather(scores, 2, kept), kept
 ```
 
-The stable descending sort is the tie rule: equal scores keep their original order,
-so the older position ranks first. `torch.topk` would be shorter and makes no
-promise about ties. In JAX and MLX `argsort` is stable, so the ranking is
-`argsort(-scores)`, and the gathers are `take_along_axis`.
+A stable descending sort enforces the tie-breaking rule because equal scores keep their original position order, placing the older position first. `torch.topk` is shorter but does not guarantee tie order. In JAX and MLX, `argsort` is stable, so you can rank with `argsort(-scores)` and gather with `take_along_axis`.
 
-`recent = budget` and `recent = 0` need no special cases: the slices
-`ranked[:, :, :0]` and `arange(S, S)` are empty and concatenate to nothing.
+Neither `recent = budget` nor `recent = 0` needs a special case because `ranked[:, :, :0]` and `arange(s, s)` are empty tensors that concatenate cleanly.
 
 ## Common mistakes
 
-- **Ranking by the latest attention.** The newest row is one sample. A token that
-  the model reads every few steps has a high total and, at most steps, a low latest
-  weight; it is exactly the token this policy exists to keep.
-- **Scores not gathered.** Returning the first `N` scores, or the full tensor, leaves
-  them attached to positions, not tokens. After one eviction every score to the
-  right of the hole belongs to the wrong entry, and every later decision is made on
-  shifted data.
-- **Order not preserved.** `topk` returns positions by score. Gathering in that
-  order scrambles the sequence; the window is then no longer "the last `recent`
-  positions" on the next call, and anything that assumes order (a causal mask over a
-  multi-token step, position-dependent logic) breaks.
-- **No recent window.** Pure top-`budget` evicts the token that was just appended.
-- **One ranking for all heads.** Summing the scores over heads keeps the same
-  positions everywhere. It is simpler to store, and it discards what the per-head
-  scores know: heads specialize, and one head's heavy hitter is another's noise.
-- **Ties broken the other way.** A reversed or unstable sort keeps the newer of two
-  equal tokens. Ties are common at the start, when many scores are still 0.
-- **Only the last query of a chunk.** For a prefill, `attn_weights[:, :, -1]` is one
-  row of the matrix; the score is the sum of all `T` rows.
+- **Ranking by the latest attention weights.** A single query row is noisy. A token that the model consults every few steps has a high accumulated score even when its latest weight is zero.
+- **Not gathering `scores`.** Returning an un-gathered slice of `scores` leaves scores attached to slot indices rather than tokens. After the first eviction, every score after the evicted slot points to the wrong entry.
+- **Scrambling sequence order.** `topk` and `argsort` return positions sorted by score rather than position. Gathering in score order breaks causal order and invalidates "the last `recent` positions" on the next step.
+- **Omitting the recent window.** Taking pure top-`budget` scores evicts newly appended tokens before they can accumulate attention.
+- **Sharing one ranking across all heads.** Summing scores across heads simplifies storage, but heads specialize in different tokens and one head's heavy hitter is irrelevant to another.
+- **Breaking ties toward newer tokens.** An unstable or reversed sort can keep the higher position index on a tie. Exact ties are common early on when multiple entries have score `0`.
+- **Using only the last query row of a chunk.** During prefill, `attn_weights[:, :, -1]` ignores the first `T - 1` queries. The accumulated score must sum over all `T` rows.
 
 ## Complexity
 
-Per step, the accumulation is $O(B\,H\,T\,S)$, the sort $O(B\,H\,S \log S)$, and the
-gathers $O(B\,H\,N\,D)$, which copy the whole kept cache. A production implementation
-avoids both the sort and the copy for single-token steps: only one entry leaves, so
-it finds the minimum outside the window and overwrites that slot. The paper's
-implementation notes describe a preallocated buffer whose last entries are a circular
-queue for the recent tokens.
+Each step takes $O(B\,H\,T\,S)$ to accumulate scores, $O(B\,H\,S \log S)$ to sort the older positions, and $O(B\,H\,N\,D)$ to gather the kept cache. Production implementations avoid sorting and copying on single-token decode steps by finding the single minimum-scoring slot outside the recent window and overwriting it in place, using a preallocated buffer with a circular queue for the recent window.
 
-Memory is `budget` entries per head and layer whatever the sequence length, plus one
-float per entry for the score.
+Memory usage is fixed at `budget` entries per head and layer regardless of sequence length, plus one float per entry for its accumulated score.
 
 ## In the wild
 
-The method is from "H2O: Heavy-Hitter Oracle for Efficient Generative Inference of
-Large Language Models" (arXiv 2306.14048, NeurIPS 2023). The paper defines heavy
-hitters by the accumulated attention score, retains "a balance of recent and H2
-tokens", assigns the budget evenly to the two groups in its experiments, and evicts
-per head: its implementation notes say that at each decoding step "one heavy hitter
-will be evicted for each head". One property of the policy is worth knowing: an
-evicted token is gone for good. The policy cannot bring it back if the model would
-have attended to it later, which is why the window and the budget are tuned per
-task. Related policies choose the survivors differently (a sliding window with
-attention sinks, see `sliding-window-cache`; a one-shot selection from the prompt's
-last tokens, see `snapkv-compress`).
+This method comes from "H2O: Heavy-Hitter Oracle for Efficient Generative Inference of Large Language Models" (arXiv 2306.14048, NeurIPS 2023). The paper defines heavy hitters by accumulated attention, balances recent tokens and heavy hitters (splitting the budget evenly in its experiments), and evicts independently per head so that one heavy hitter is evicted per head at each decode step.
+
+Because eviction is permanent, a discarded token cannot be recovered if the model later needs it, which is why the budget and window size are tuned per task. Related KV eviction policies select survivors differently, such as a sliding window with attention sinks (see `sliding-window-cache`) or one-shot prompt compression from the last prompt tokens (see `snapkv-compress`).

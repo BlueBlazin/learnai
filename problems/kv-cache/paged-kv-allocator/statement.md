@@ -1,7 +1,4 @@
-Write the bookkeeping of a paged KV cache: a pool of fixed-size physical blocks, and
-for every sequence a *block table* that lists the blocks holding its keys and
-values. A sequence gets a new block only when the ones it has are full, so no
-sequence ever wastes more than one partly filled block.
+Implement the block allocator for a paged KV cache. The allocator manages a pool of fixed-size physical blocks and maintains a *block table* for each live sequence listing the blocks that hold its keys and values. A sequence receives a new block only when its existing blocks are full, so no sequence wastes more than one partly filled block.
 
 ![This problem is the Block pool, which hands fixed-size blocks to the sequences.](assets/map.svg)
 
@@ -18,42 +15,24 @@ class BlockAllocator:
     def free_blocks(self): ...                   # -> int
 ```
 
-The pool has `n_blocks` physical blocks with ids `0` to `n_blocks - 1`. Each block
-has room for the keys and values of `block_size` tokens. Initially every block is
-free and no sequence exists. The allocator stores no tensors; it only decides which
-block belongs to whom.
+The pool holds `n_blocks` physical blocks with ids `0` through `n_blocks - 1`. Each block has room for the keys and values of `block_size` tokens. Initially every block is free and no sequence exists. The allocator stores no tensors. It only tracks which blocks belong to each sequence.
 
-A **live sequence** has a token count $t \ge 1$ and a block table: the ids of the
-blocks it owns, in the order it received them. Token $i$ of the sequence (counting
-from 0) lives in slot `i % block_size` of the block `table[i // block_size]`, so a
-live sequence always owns exactly $\lceil t / \texttt{block\_size} \rceil$ blocks, and
-only the last of them can have empty slots.
+A **live sequence** has a token count $t \ge 1$ and a block table `table` containing the ids of the blocks it owns, in the order it received them. Token $i$ of the sequence (counting from `0`) lives in slot `i % block_size` of block `table[i // block_size]`. Because slots fill in order, a live sequence always owns exactly $\lceil t / \texttt{block\_size} \rceil$ blocks, and only the last block can have empty slots.
 
-- `append(seq_id, n_tokens)` adds `n_tokens` tokens to the sequence `seq_id`. A
-  `seq_id` that is not live starts a new sequence with zero tokens. The tokens first
-  fill the empty slots of the sequence's last block; only what does not fit there
-  gets new blocks. With $t$ tokens before the call, the number of new blocks is
+- `append(seq_id, n_tokens)` adds `n_tokens` tokens to sequence `seq_id`. If `seq_id` is not live, this call starts a new sequence with `0` existing tokens. The new tokens first fill any empty slots in the sequence's last block, and only the remaining tokens require new blocks. If the sequence has $t$ tokens before the call and $n = \texttt{n\_tokens}$, the number of new blocks needed is
 
   $$
   \left\lceil \frac{t + n}{\texttt{block\_size}} \right\rceil - \left\lceil \frac{t}{\texttt{block\_size}} \right\rceil .
   $$
 
-  New blocks are taken from the free blocks **lowest id first** and appended to the
-  block table in that order. Returns the list of newly allocated block ids, in
-  allocation order; the list is empty if everything fit in the last block.
+  Take new blocks from the free pool **lowest id first** and append them to the block table in that order. Return the list of newly allocated block ids in allocation order. Return an empty list if all new tokens fit in the last block.
 
-  If the call needs more blocks than are free, it raises `OutOfBlocks` and **changes
-  nothing**: no block is taken, the token count and block table of the sequence stay
-  as they were, and a `seq_id` that was not live is still not live.
-- `free(seq_id)` returns all blocks of the sequence to the pool and forgets the
-  sequence: `seq_id` is no longer live, and may be used again later for a new
-  sequence. Returns `None`. Raises `KeyError` if `seq_id` is not live.
-- `block_table(seq_id)` returns the block table as a new list (changing the returned
-  list must not affect the allocator). Raises `KeyError` if `seq_id` is not live.
-- `free_blocks()` returns the number of blocks that no sequence owns.
+  If the call needs more blocks than are free, raise `OutOfBlocks` and **change nothing**. Do not remove any block from the pool, leave the sequence's token count and block table unchanged, and do not create a live sequence if `seq_id` was not live.
+- `free(seq_id)` returns all blocks of the sequence to the pool and removes the sequence. Afterward `seq_id` is no longer live and may be reused later for a new sequence. Return `None`. Raise `KeyError` if `seq_id` is not live.
+- `block_table(seq_id)` returns a new list containing the sequence's block table, so mutating the returned list does not affect the allocator. Raise `KeyError` if `seq_id` is not live.
+- `free_blocks()` returns the number of free blocks in the pool.
 
-`seq_id` is any hashable value (an int, a string, a tuple). `n_tokens` is an int
-$\ge 1$.
+`seq_id` can be any hashable value (such as an `int`, `str`, or `tuple`), and `n_tokens` is an `int` $\ge 1$.
 
 ![The pool after the first four calls of the example. The blocks of sequence `a` are not adjacent, and only its last block has empty slots.](assets/block-table.svg)
 
@@ -80,37 +59,21 @@ alloc.block_table("a")   # [0, 1, 3, 2]
 alloc.free_blocks()      # 2
 ```
 
-The third call shows the rule that gives paging its value: `a` had 5 tokens in two
-blocks, so three slots of block 1 were empty, and three more tokens cost no memory.
-The refused call shows the other rule. Three of the four tokens would have fit in
-block 3, but an append is all or nothing: after the exception `a` still has 9
-tokens, and the same call succeeds once a block is free.
+In the third call, `a` already holds 5 tokens across two blocks, leaving 3 empty slots in block `1`. Appending 3 more tokens fills those slots and allocates no new blocks.
+
+In the refused call, 3 of the 4 new tokens would fit in block `3`, but the fourth token needs a new block while the pool is empty. Because `append` is all-or-nothing, `a` stays at 9 tokens with table `[0, 1, 3]`, and the same call succeeds once blocks are freed.
 
 ## Constraints
 
-- $1 \le$ `n_blocks` $\le 1000$, $1 \le$ `block_size` $\le 64$, and at most a few
-  hundred calls per allocator.
-- Results are compared exactly: the ids returned by `append`, every block table, and
-  `free_blocks()` after every operation.
-- Property checks after every operation of random workloads: no block is in two
-  block tables (or twice in one), every id is in `[0, n_blocks)`, each live sequence
-  owns exactly $\lceil t / \texttt{block\_size} \rceil$ blocks, and `free_blocks()`
-  plus the lengths of all block tables equals `n_blocks`.
-- `OutOfBlocks` must be an exception class defined by your solution, as in the
-  starter.
+- $1 \le \texttt{n\_blocks} \le 1000$, $1 \le \texttt{block\_size} \le 64$, and at most a few hundred calls per allocator.
+- Outputs are checked for exact equality, including the ids returned by `append`, every block table, and `free_blocks()` after each operation.
+- Property checks run after every operation on random workloads. No block may appear in two block tables or twice in one table. Every block id must lie in `[0, n_blocks)`. Every live sequence must own exactly $\lceil t / \texttt{block\_size} \rceil$ blocks. `free_blocks()` plus the lengths of all block tables must equal `n_blocks`.
+- `OutOfBlocks` must be an exception class defined by your solution, as in the starter code.
 
 ## Why this matters
 
-Before paging, a server reserved one contiguous slab of KV cache per request, sized
-for the longest output the request might produce. Most requests stop far earlier, so
-most of that memory held nothing, and the number of requests that fit in a batch,
-which is what throughput comes from, was a fraction of what the GPU could hold. vLLM's
-PagedAttention (Kwon et al., 2023) borrowed the answer from operating systems: cut
-the cache into fixed-size blocks, give each sequence a block table that maps its
-logical blocks to physical ones anywhere in the pool, and allocate a block only when
-the previous ones are full. The waste per sequence drops to at most one partly
-filled block. The allocator is a few lines, and its bugs are the bugs of every
-allocator: a block handed to two sequences makes one request attend to another
-request's keys and values, a leaked block shrinks the server's capacity until
-restart, and an allocation that fails half-way leaves a sequence holding memory that
-nothing accounts for.
+Before paged KV caches, serving engines reserved one contiguous slab of memory per request, sized for the maximum output length. Most requests finish much earlier, so most of that reserved memory stayed empty and limited the batch size that could fit on the GPU.
+
+vLLM's PagedAttention (Kwon et al., 2023) adapted virtual memory paging from operating systems. The cache is split into fixed-size physical blocks, each sequence keeps a block table mapping logical blocks to physical ones anywhere in the pool, and a new block is allocated only when previous blocks are full. Waste drops to at most one partly filled block per sequence.
+
+Allocator bugs fail silently in serving engines. Handing the same block to two sequences makes one request attend to another request's keys and values. Leaking a freed block shrinks serving capacity until restart. Failing halfway through an append leaves a sequence holding memory that nothing accounts for.

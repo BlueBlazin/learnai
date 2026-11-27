@@ -1,31 +1,20 @@
-Two questions, one per function. For the quantizer: the textbook grid runs from the
-minimum to the maximum of a group, so it contains both ends and, in general, not
-zero. If you could move one end of the grid a little, which value would you most want
-on it, and which end can you afford to lose? For the report: what does the file on
-disk contain besides the codes, and what in the model is not a matrix?
+Think about one question for each function. For `quantize_dequantize`, the textbook grid spans from a group's minimum to its maximum, so it hits both endpoints and usually misses zero. If you could shift one end of the grid slightly, which value would you want on the grid, and which endpoint can you afford to clip? For `quantize_report`, what does the quantized checkpoint store besides the integer codes, and which tensors in the model are not 2-D matrices?
 
 ---
 
-`quantize_dequantize`: reshape to `(out, in // group_size, group_size)` and compute
-everything per group with `keepdim`, then reshape back. In order: `lo`, `hi`;
-`from_low = |lo| > |hi|`; `step = max((hi - lo) / L, 1e-7)`;
-`scale = where(from_low, step, -step)`; `edge = where(from_low, lo, hi)`;
-`q0 = round(edge / scale)`; where `q0 != 0`, `scale = edge / q0` and `bias = edge`,
-elsewhere `bias = 0`; `codes = clamp(round((w - bias) / scale), 0, L)`; return
-`codes * scale + bias`. Guard the division by `q0` so that the unused branch does not
-divide by zero.
+For `quantize_dequantize`, reshape `w` to `(out, in // group_size, group_size)`, compute each step per group with `keepdim=True`, and reshape back at the end. Follow this order:
 
-`quantize_report`: one loop over `weights`. For a tensor that is not 2-D, add its
-size to the parameter count and 16 bits per element to the bit count, and move on.
-For a matrix, add its size, its `bits * size + 32 * size / group_size` bits, its
-signal power and its noise power to four running totals, and store its SQNR.
+1. Compute `lo` and `hi` along the last axis, and `from_low = |lo| > |hi|`.
+2. Compute `step = max((hi - lo) / L, 1e-7)`.
+3. Set `scale = where(from_low, step, -step)` and `edge = where(from_low, lo, hi)`.
+4. Compute `q0 = round(edge / scale)`. Where `q0 != 0`, replace `scale = edge / q0` and set `bias = edge`. Elsewhere, set `bias = 0`. Guard the denominator so the unused branch never divides by zero.
+5. Compute `codes = clamp(round((w - bias) / scale), 0, L)` and return `codes * scale + bias`.
+
+For `quantize_report`, iterate once over `weights`. If a tensor is not 2-D, add its element count to the parameter total and `16 * numel` to the bit total, then continue. If it is 2-D, quantize it, add its element count, its `bits * numel + 32 * numel // group_size` bits, its signal power, and its noise power to four running totals, and record its per-layer SQNR.
 
 ---
 
-Keep the running totals as Python numbers (`float(...)`, `int`), not as float32 or
-int32 tensors: the real model has 3.5e8 weights and occupies 3e9 bits. Sum the
-squares of a large matrix in two stages (`.sum(-1).sum()`), so that the float32 sum
-never adds a tiny square to a huge partial sum. Then
+Keep the running totals as Python `float` and `int` values rather than float32 or int32 tensors, because the real model has $3.5 \times 10^8$ weights and occupies about $3 \times 10^9$ bits. Sum the squares of large matrices in two stages (`.sum(-1).sum()`) so float32 accumulation does not lose small squares against a large running total. Then compute the outputs directly:
 
 ```python
 sqnr_db[name] = 10.0 * math.log10(signal / noise)

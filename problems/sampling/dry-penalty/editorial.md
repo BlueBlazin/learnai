@@ -1,39 +1,46 @@
 ## The idea
 
-DRY asks one question per decoding step: *if I emit token $x$ now, how long is the
-verbatim repeat it would extend?* The history ends in some run of tokens. Wherever
-that run occurred before, the token that came next is the one that would continue
-the repeat, and the length of the shared run measures how deep into a loop the
-generation already is. The penalty $\text{multiplier} \cdot \text{base}^{M -
-\text{allowed}}$ is zero for short repeats (names, idioms, list markers shorter
-than `allowed_length`), mild at the threshold, and multiplies by `base` with every
-further token, so no loop survives more than a few tokens, whatever the logits.
+DRY asks one question at each decoding step: *if the model emits token $x$ next, how
+long is the verbatim repeat it would extend?* Wherever the window's trailing tokens
+appeared earlier in the window, the token immediately following that earlier
+occurrence is the one that would continue the repeat. The length of the matched run
+measures how deep into a loop the model already is. For a match of length $M$,
+repeats shorter than `allowed_length` (such as names, idioms, or list markers)
+receive no penalty. At `allowed_length` or above, the penalty
+$\text{multiplier} \cdot \text{base}^{M - \text{allowed\_length}}$ starts mild and
+multiplies by `base` with each additional repeated token so no loop can survive long.
 
-Two refinements make it usable:
+Two rules make this practical on real text:
 
 - **Sequence breakers.** Chat templates, newlines, and quotation marks repeat
-  legitimately and separate units of text. A match may not contain a breaker, and a
-  breaker is never penalized. Since a match is always a run at the *end* of the
-  window, "may not contain a breaker" is the same as "is at most as long as the
-  run of non-breakers at the end of the window": one number, `limit`, computed
-  once.
-- **The longest match per token.** A token can follow several earlier occurrences
-  of the current suffix; the longest one decides.
+  legitimately and separate units of text. A match cannot contain a breaker, and a
+  breaker is never penalized. Because every match is a suffix of the window, "cannot
+  contain a breaker" is equivalent to capping every match length at the number of
+  non-breaker tokens at the end of the window. That cap, `limit`, is computed once in
+  a single scan from the back.
+- **Longest match per token.** If a candidate token follows multiple earlier
+  occurrences of the current suffix, only the longest match determines its penalty.
 
-**The matching.** The match length at position $i$ is the length of the longest
-common suffix of $w_0 \ldots w_i$ and the whole window. Reverse the window and it
-becomes the longest common prefix of `rev` and `rev[k:]` with $k = n - 1 - i$: the
-**Z-array**. The Z-algorithm computes all of it in $O(n)$ by remembering the
-rightmost matched stretch `[left, right)`: inside it, `rev[k:]` looks like
-`rev[k - left:]`, whose answer is already known. If that answer ends before the
-stretch does, it is the answer for $k$ too. Otherwise the match reaches at least to
-`right`, and only there do new comparisons start. Each successful comparison
-advances `right`, which never moves back, so the total work is linear.
+**Linear-time matching.** For each position $i$, the match length $m_i$ is the
+longest common suffix of the prefix $w_0 \ldots w_i$ and the full window
+$w_0 \ldots w_{n-1}$. Reversing the window into `rev` turns that into the longest
+common prefix of `rev` and `rev[k:]`, where $k = n - 1 - i$. That array of longest
+common prefix lengths is the **Z-array**.
 
-The naive scan compares backward from every position. On ordinary text that is
-fine, since almost every comparison fails at once. On a loop of period $p$ every
-$p$-th position matches all the way back to the start of the loop, and the cost is
-$n^2 / (2p)$.
+The Z-algorithm computes the entire Z-array in $O(n)$ time by tracking the rightmost
+matched interval `[left, right)` that equals a prefix of `rev`. When visiting a
+position `k` inside `[left, right)`, the substring starting at `k` matches the
+substring starting at `k - left`, whose Z-value is already known. If `z[k - left]`
+stays strictly inside the remaining interval (`z[k - left] < right - k`), then `z[k]`
+equals `z[k - left]` with no new character comparisons. Otherwise, at least
+`right - k` tokens already match, and direct comparisons resume from `right`. Every
+successful comparison advances `right`, which never decreases, so the total work is
+linear.
+
+By contrast, a naive scan compares backward from every earlier occurrence of the last
+token. That is fast on ordinary text where most comparisons fail immediately, but on
+a loop of period $p$, every $p$-th position matches all the way back to the start of
+the loop, costing $O(n^2 / p)$ comparisons.
 
 ## Reference solution (Python)
 
@@ -84,78 +91,75 @@ def dry_penalties(history, multiplier, base, allowed_length, breakers, last_n=No
     return penalties
 ```
 
-`k + length < n` in the inner loop is what bounds $m_i \le i + 1$: the earlier run
-may not start before the window. Overlap needs no code: the Z-array of `a a a a`
-is `[_, 3, 2, 1]`.
+The guard `k + length < n` in the inner loop enforces $m_i \le i + 1$, ensuring an
+earlier match never extends past the start of the window. Overlapping matches need no
+special case, since the Z-array of `a a a a` is `[0, 3, 2, 1]`.
 
 ## Common mistakes
 
-- **The quadratic scan.** Correct, and the first thing everyone writes: for each
-  earlier occurrence of the last token, walk backward while the tokens agree. It
-  is the original implementation (see below), which bounds the damage by capping
-  the match length at 50. Without a cap, a 20,000-token history in a loop costs
-  $10^7$ comparisons per step.
-- **Not keeping the longest match per token.** Writing `longest[token] = length`
-  lets whichever occurrence is visited last decide. In `1 2 3 4 9 3 4 8 1 2 3`
-  the token `4` follows a match of length 3 and one of length 1; the penalty must
-  come from the 3.
-- **Ignoring breakers**, or checking only the last token. The second is subtle:
-  with the breaker two tokens from the end, matches must stop at length 1, but a
-  check of `window[-1]` alone lets them run through it.
-- **Penalizing a breaker.** A breaker can be the candidate (the token that
-  followed an earlier occurrence). It is exempt: DRY must never stop the model
-  from ending a line or closing a turn.
-- **Counting the candidate.** The match length is the number of tokens already in
-  the window. Adding one for the token about to be emitted shifts every exponent,
-  and a match of exactly `allowed_length` then costs `multiplier * base` instead of
+- **Quadratic backward scan.** Walking backward from every earlier occurrence of the
+  last token is correct, and it is what the original implementation did (mitigating
+  the worst case by capping match length at 50). Without a cap, a 20,000-token
+  looping history requires around $10^7$ comparisons per step.
+- **Overwriting instead of taking the max per token.** Assigning
+  `longest[token] = length` lets whichever occurrence is visited last win. In
+  `1 2 3 4 9 3 4 8 1 2 3`, token `4` follows both a match of length 3 and a match of
+  length 1, and its penalty must come from the 3.
+- **Ignoring breakers or only checking the last token.** Checking `window[-1]` alone
+  misses a breaker sitting two tokens from the end, where matches must stop at length
+  1 instead of running through the breaker.
+- **Penalizing a breaker.** When a breaker follows an earlier match, it must be
+  skipped so DRY never blocks the model from ending a line or closing a turn.
+- **Counting the candidate in the match length.** The match length counts only tokens
+  already in the window. Adding 1 for the candidate shifts every exponent up by one,
+  making a match of `allowed_length` cost `multiplier * base` instead of
   `multiplier`.
-- **`>` instead of `>=`.** A match of exactly `allowed_length` tokens is penalized
-  (with exponent 0).
-- **Forbidding overlap.** Requiring the earlier occurrence to end before the
-  current run starts halves the measured length of the tightest loops (`a a a a`,
-  `a b a b a b`), which are the commonest.
-- **The window applied late.** `last_n` cuts the history *before* matching. If
-  matches are measured on the full history and only the candidates are filtered
-  by position, a match extends past the start of the window.
-- **No exponent clamp.** `1.75 ** 3000` raises `OverflowError` in Python and is
-  `inf` in float32, and `logit - inf` for the one token the loop wants is fine,
-  but `inf` penalties on several tokens followed by a softmax are how NaNs start.
-- **A Z-box bug.** Copying `z[k - left]` without checking it against `right - k`
-  is the classic error in the algorithm: when the mirrored match reaches the end
-  of the stretch, the true match may be longer (or the copy may claim more than
-  was ever compared). It passes every test that has no nested repeats.
+- **Using `>` instead of `>=`.** A match of exactly `allowed_length` tokens is
+  penalized with exponent 0.
+- **Forbidding overlapping matches.** Requiring the earlier match to end before the
+  trailing match begins cuts the measured length in half for the tightest and most
+  common loops (`a a a a`, `a b a b a b`).
+- **Applying `last_n` too late.** Slicing `history` to the last `last_n` tokens must
+  happen before matching. If you match on the full history and only filter candidate
+  positions afterward, matches can extend past the start of the window.
+- **Omitting the exponent clamp.** `1.75 ** 3000` raises `OverflowError` in Python
+  and overflows to `inf` in float32. Subtracting `inf` from multiple logits before a
+  softmax can produce NaNs.
+- **Z-box boundary bug.** Copying `z[k - left]` without checking
+  `z[k - left] < right - k` is the classic Z-algorithm bug. When the mirrored match
+  reaches or passes the end of `[left, right)`, the true match may be longer (or the
+  copy may overclaim beyond `right`). This bug often slips past tests without nested
+  repeats.
 
 ## Complexity
 
-$O(n)$ time and memory in the window length: one pass for `limit`, the
-Z-algorithm, and one pass over the Z-array. The naive scan is $O(n)$ on text
-without repeats and $O(n^2 / p)$ on a loop of period $p$.
+$O(n)$ time and memory in the window length $n$, using one backward pass for `limit`,
+the Z-algorithm, and one pass over `z`. The naive scan is $O(n)$ on non-repeating
+text but degrades to $O(n^2 / p)$ on a loop of period $p$.
 
 ## In the wild
 
-- **The original.** DRY was introduced by p-e-w in text-generation-webui (pull
-  request #5677, "DRY: A modern repetition penalty that reliably prevents
-  looping"). Its `DRYLogitsProcessor` (`modules/sampler_hijack.py`) finds every
-  earlier occurrence of the last token and extends each match backward token by
-  token: skip when the last token is a breaker, skip a candidate that is a
-  breaker, stop at a breaker inside the match, keep the maximum per candidate,
-  and penalize by `multiplier * base ** (match_length - allowed_length)` when
-  `match_length >= allowed_length`. The lookback is its `_range` argument
+- **The original.** DRY was introduced by p-e-w in text-generation-webui (PR #5677,
+  "DRY: A modern repetition penalty that reliably prevents looping"). Its
+  `DRYLogitsProcessor` (`modules/sampler_hijack.py`) scans backward from every
+  earlier occurrence of the last token, skips when the last token is a breaker,
+  skips breaker candidates, stops at breakers inside a match, keeps the maximum match
+  per candidate, and applies `multiplier * base ** (match_length - allowed_length)`
+  for `match_length >= allowed_length`. The lookback window is controlled by `_range`
   (`input_ids[:, -self._range:]`).
-- **llama.cpp** (`llama_sampler_dry_apply` in `src/llama-sampler.cpp`) computes
-  the same match lengths with the Z-algorithm run backward over the last
-  `dry_penalty_last_n` tokens, capped at `rep_limit`, the number of tokens after
-  the last breaker; this problem follows it, including the comment's example
+- **llama.cpp.** `llama_sampler_dry_apply` in `src/llama-sampler.cpp` computes the
+  same match lengths by running the Z-algorithm backward over the last
+  `dry_penalty_last_n` tokens, capped at `rep_limit` (the count of trailing
+  non-breakers). This problem follows llama.cpp, including its comment example
   `a b c c b c y a b c` with repeat counts `0 0 3 1 0 2 0 0 0 0`.
-- **Where the two differ.** (1) *Overflow*: the webui caps the match length at 50
-  tokens ("to prevent exponent overflow", which also bounds its scan);
-  llama.cpp leaves lengths uncapped and clamps the exponent at
-  `FLOAT_MAX_LOG / log(base)`. This problem uses llama.cpp's rule. (2) *Breakers*:
-  the webui's breakers are single tokens; llama.cpp's are strings (default `\n`,
-  `:`, `"`, `*`) that may tokenize to several tokens, matched as head token plus
-  tail, and only single-token breakers are exempt from the penalty. This problem
-  has single-token breakers, where the two agree. llama.cpp's defaults
-  (`common/common.h`) are multiplier 0 (disabled), base 1.75, and allowed length
-  2.
-- **Position in the chain.** DRY edits logits, so it runs before temperature and
-  the truncation samplers (`sampler-chain`).
+- **Differences between the two.** First, for overflow, text-generation-webui caps
+  match length at 50 tokens (which also bounds its backward scan), whereas llama.cpp
+  leaves match lengths uncapped and clamps the exponent at
+  `FLOAT_MAX_LOG / log(base)`. This problem uses llama.cpp's rule. Second,
+  text-generation-webui uses single-token breakers, whereas llama.cpp uses string
+  breakers (default `\n`, `:`, `"`, `*`) that may span multiple tokens and exempts
+  only single-token breakers from penalty. This problem uses single-token breakers,
+  where both implementations agree. llama.cpp's defaults (`common/common.h`) are
+  multiplier 0 (disabled), base 1.75, and allowed length 2.
+- **Position in the chain.** Because DRY modifies logits directly, it runs before
+  temperature scaling and truncation samplers (see `sampler-chain`).

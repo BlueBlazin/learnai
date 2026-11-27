@@ -1,41 +1,25 @@
 ## The idea
 
-Every layer picks exactly one item from its own short menu; each item has a cost
-(`params * bits`) and a penalty (its error); the total cost is capped. This is the
-**multiple-choice knapsack problem**. It is NP-hard in general, and like the ordinary
-knapsack it has an exact dynamic program whose running time depends on the number of
-distinct total costs rather than on the number of assignments.
+Each layer chooses one option from its own menu of bit widths. Each option has a cost (`params * bits`) and a penalty (its error), and the sum of costs must stay within a budget. This is the **multiple-choice knapsack problem**. Although it is NP-hard in general, it has an exact dynamic program whose runtime depends on the number of distinct reachable bit totals rather than the number of assignments $K^L$.
 
-The dynamic program rests on one observation. Process the layers in order. After the
-first $i$ layers, the only things the rest of the computation needs to know are how
-many bits have been used and how much error has accumulated. Two partial assignments
-that have used the same number of bits face exactly the same choices from here on, so
-the one with the higher error can never be part of an optimum and is dropped. What
-remains is one entry per reachable size:
+Process the layers in order from $0$ to $L - 1$. After deciding the first $i$ layers, the remaining layers only depend on two numbers: how many bits have been used so far and how much error has accumulated. Two partial assignments that use the exact same number of bits face identical choices for layers $i$ through $L - 1$, so the one with higher error can never be part of an optimal solution and can be discarded.
+
+Define $\text{best}_i[c]$ as the minimum error achievable by layers $0 \dots i - 1$ using exactly $c$ bits:
 
 $$
-\text{best}_{i}[c] = \min \big\{ \text{error of layers } 0..i{-}1 \ :\ \text{they use exactly } c \text{ bits} \big\},
+\text{best}_{i}[c] = \min \big\{ \text{error of layers } 0..i{-}1 \ :\ \text{they use exactly } c \text{ bits} \big\}.
 $$
 
+When processing layer $i$, each reachable size $c$ transitions to $c' = c + n_i b$ for every $b \in \text{options}$ with $c' \le \text{budget}$, keeping the minimum error at each target size:
+
 $$
-\text{best}_{i+1}[c + n_i b] = \min_{b \in \text{options}} \ \text{best}_{i}[c] + e_{i,k(b)}
-\qquad \text{for } c + n_i b \le \text{budget}.
+\text{best}_{i+1}[c'] = \min_{\substack{c,\, b \in \text{options} \\ c + n_i b = c'}} \big(\text{best}_{i}[c] + e_{i,k(b)}\big)
+\qquad \text{for } c' \le \text{budget}.
 $$
 
-**The discretized budget.** Sizes are sums of $n_i b_i$, so every reachable size is a
-multiple of $g = \gcd(n_0, n_1, \dots)$. Counted in units of $g$ the budget is a
-small integer, at most $\text{target\_bpw} \cdot N / g$, however many billions of
-bits it stands for. This discretization is exact: nothing is rounded. A dict keyed by
-the size gets it for free, because only reachable sizes are ever stored; an array
-indexed by `size // g` is the same table. The size is a whole number of bits, so the
-budget itself is $\lfloor \text{target\_bpw} \cdot N \rfloor$.
+**Exact discretization.** Every reachable size is a sum of $n_i b_i$, so every size is a multiple of $g = \gcd(n_0, n_1, \dots, n_{L-1})$. Measured in units of $g$, the budget is at most $\text{target\_bpw} \cdot N / g$, which is small even when $N$ is in the billions. Nothing is rounded. A dictionary keyed by total bits gets this compression automatically because it only stores reachable sizes. An array indexed by `size // g` represents the same table. Because every valid size is a whole number of bits, the integer bit budget is $\lfloor \text{target\_bpw} \cdot N \rfloor$.
 
-**Ties.** The tie rules fit the same structure. Two partial assignments with the same
-size and the same error are interchangeable for the layers that follow, so keeping
-the lexicographically smaller prefix keeps the lexicographically smallest complete
-assignment. Storing `(error, chosen)` tuples and comparing them does exactly that.
-The second rule, fewest bits, only applies between entries of different size, at the
-very end.
+**Tie-breaking.** The tie rules fit the same DP state. Two partial assignments with the same size and the same error are interchangeable for all later layers, so keeping the lexicographically smaller prefix always yields the lexicographically smallest full assignment. Storing `(error, chosen)` tuples and using Python's tuple comparison enforces both the error and lexicographic rules at once. The second rule (fewest total bits) only compares entries of different sizes, so it is applied once at the end.
 
 ## Reference solution (Python)
 
@@ -66,80 +50,34 @@ def allocate_bits(layers, options, target_bpw):
     return list(chosen)
 ```
 
-If any assignment is feasible, the all-smallest one is, and it survives every layer;
-so an empty table at the end means nothing fits. (Once the table is empty it stays
-empty, so there is no need to stop early.)
+If any assignment is feasible, the all-smallest assignment is also feasible and survives every iteration. An empty table at the end therefore guarantees that no assignment fits. Once `best` becomes empty it stays empty, so an early exit is not needed.
 
-Carrying the chosen tuple in every entry costs $O(L)$ per candidate. A production
-version stores only the error and the option taken, in one array per layer, and
-walks back from the best final entry; with the tie rules of this problem the walk
-has to prefer the smaller bit width at each step, which is why the simpler form is
-used here.
+Storing the `chosen` tuple in every state costs $O(L)$ per transition. A production implementation can store only the error and backpointer in one array per layer and reconstruct the path at the end, taking care to prefer smaller bit widths on ties. Keeping the tuple directly makes tie-breaking trivial and fast enough for $L \le 48$.
 
 ## Why greedy fails
 
-The greedy allocator starts every layer at the smallest option and repeatedly takes
-the upgrade with the best ratio of error removed to bits added. It is the right
-algorithm for the *fractional* problem, where a layer could be upgraded partially and
-the errors are convex in the bits. Neither holds here.
+The greedy allocator starts every layer at the smallest bit width and repeatedly applies the upgrade with the highest error reduction per extra bit. That strategy is optimal only for the *fractional* problem, where layers can be upgraded partially and errors are convex in bit width. Neither condition holds here:
 
-- **Lumpy sizes.** In the worked example the best ratio belongs to a layer of size 2;
-  taking it leaves room that the layer of size 3 no longer fits in. The optimum skips
-  the best ratio.
-- **Non-convex errors.** A layer whose error barely moves from 3 to 4 bits and
-  collapses from 4 to 5 has a poor first step and an excellent second one. Greedy
-  never looks past the first step.
+- **Uneven layer sizes.** In the worked example, the best ratio belongs to a layer of size 2. Taking it leaves too little room for the layer of size 3, so the exact optimum skips the best ratio.
+- **Non-convex errors.** A layer whose error barely drops from 3 to 4 bits and then plunges from 4 to 5 bits has a weak first step and a strong second step. Greedy never looks past the first step.
 
-Greedy is still what most tools do, because the instances are large, the measured
-errors are noisy, and a near-optimal answer is good enough. It should be a decision,
-not an accident.
+Many real tools still use greedy allocation because their models are huge, sensitivity estimates are noisy, and near-optimal answers suffice. That trade-off should be a deliberate choice rather than an accidental bug.
 
 ## Common mistakes
 
-- **Greedy by error per bit.** See above. It passes every instance where all layers
-  have the same size and convex errors, which is what a first test tends to use.
-- **An unweighted average.** `mean(bits) <= target` treats a 300-million-parameter
-  embedding and a 4-million-parameter projection alike. The file size is
-  $\sum n_i b_i$, and the constraint must be on that.
-- **Rounding the budget.** `round(target_bpw * N)` admits one bit more than the
-  budget whenever the fractional part is at least one half; `<` instead of `<=`
-  rejects an assignment that fits exactly. Both are invisible until a budget is
-  tight.
-- **Rounded costs.** Dividing the budget into a fixed number of buckets and rounding
-  each layer's cost to buckets makes the table small for any input, and wrong: the
-  rounding errors of several layers add up to more than a bucket, so the result can
-  exceed the budget or miss the optimum. Discretize by the gcd, which rounds nothing.
-- **Ignoring the tie rules.** With integer errors, ties are common (two identical
-  blocks, a layer that does not care). An implementation that keeps the first or the
-  last candidate it meets returns a valid optimum but not *the* answer, and its
-  output changes when the iteration order does.
-- **Returning something when nothing fits.** If even the smallest option is over
-  budget, the caller asked for the impossible and must be told.
+- **Using greedy by error per bit.** Greedy passes tests with equal layer sizes and convex errors, which are the easiest tests to write, then fails on uneven sizes or non-convex curves.
+- **Using an unweighted average.** Checking `mean(bits) <= target_bpw` treats a 300M-parameter embedding layer the same as a 4M-parameter projection. The actual size constraint is on $\sum n_i b_i$.
+- **Rounding the budget or using strict inequality.** `round(target_bpw * N)` allows one extra bit whenever the fractional part is at least $0.5$. Using `<` instead of `<=` rejects assignments that hit the budget exactly. Both bugs hide until a budget is tight.
+- **Rounding costs into fixed buckets.** Quantizing layer costs into a fixed number of buckets shrinks the DP table, but rounding errors accumulate across layers. The resulting assignment can exceed the true budget or miss the optimum. Use exact sizes (which naturally discretize by $g$).
+- **Ignoring the tie-breaking rules.** Integer errors frequently produce ties, such as identical transformer blocks or insensitive layers. Keeping the first or last candidate seen depends on iteration order and fails exact checks.
+- **Not raising `ValueError` when infeasible.** When even the smallest bit width everywhere exceeds the budget, the function must raise `ValueError` instead of returning an invalid assignment or crashing with a different exception.
 
 ## Complexity
 
-With $S$ the number of reachable sizes, at most $\text{budget} / g$, the dynamic
-program evaluates $O(L \cdot S \cdot K)$ candidates. For 48 layers, 6 options, and
-$N / g = 1000$ that is a few hundred thousand, against $6^{48}$ assignments. The time
-is pseudo-polynomial: it grows with the numeric value of the budget in units of $g$,
-which is why the layer sizes sharing a large divisor matters. For sizes with no
-common structure, real tools round the sizes (accepting an approximate budget) or
-fall back to greedy.
+Let $S$ be the number of reachable bit totals, which is at most $\text{budget} / g$. The dynamic program evaluates $O(L \cdot S \cdot K)$ candidates. With 48 layers, 6 options, and $N / g \le 1000$, this is a few hundred thousand transitions instead of $6^{48}$ assignments. The runtime is pseudo-polynomial in $\text{budget} / g$, which is why the large common divisor among layer sizes makes exact DP practical. When layer sizes have no common structure, production tools either round costs (accepting an approximate budget) or use greedy heuristics.
 
 ## In the wild
 
-`mlx_lm.dynamic_quant` (checked against the source of mlx-lm 0.32.2) works with two
-options, a low and a high bit width. It estimates one sensitivity per layer: the
-gradient of a KL-divergence loss against the unquantized model, taken at the low-bit
-weights and projected on the difference between the layer's low-bit and high-bit
-weights, divided by the layer's parameter count. It then searches by bisection for a
-sensitivity threshold such that giving the high bit width to every layer above it
-meets `--target-bpw`. That is the greedy rule: layers are upgraded in order of gain per
-parameter until the budget is reached. With two options and a single threshold it is
-a reasonable approximation, and it inherits greedy's blind spot for lumpy sizes.
+`mlx_lm.dynamic_quant` (checked in `mlx-lm` 0.32.2) uses two options: a low bit width and a high bit width. It estimates one sensitivity score per layer by taking the gradient of a KL-divergence loss against the unquantized model at the low-bit weights, projecting it onto the difference between low-bit and high-bit weights, and dividing by the layer's parameter count. It then runs bisection to find a sensitivity threshold such that upgrading every layer above the threshold meets `--target-bpw`. That is the greedy rule by gain per parameter, so it inherits greedy's weakness on uneven layer sizes.
 
-The size model of this problem counts `bits` per weight exactly. Group-wise formats
-add a fixed overhead per weight (a scale and a bias per group: half a bit for groups
-of 64 with float16 metadata), which changes the cost of an option from `bits` to an
-effective figure such as $4.5$; multiplying all costs by a common factor keeps them
-integers and leaves the algorithm unchanged.
+This problem models size as exact `bits` per weight. Group-wise formats add fixed metadata overhead per weight, such as a float16 scale and bias per group of 64 weights (0.5 bits per weight), turning a 4-bit option into an effective 4.5 bits. Multiplying all effective bit widths by a common integer factor keeps all costs integral and leaves the DP unchanged.

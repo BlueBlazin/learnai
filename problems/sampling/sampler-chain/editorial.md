@@ -1,40 +1,42 @@
 ## The idea
 
 A sampler chain is function composition, and its stages do not commute. Each filter
-makes its decision from the *current* distribution:
+decides what to keep from the *current* distribution:
 
-- top-k looks at the order of the logits;
-- top-p looks at cumulative probability mass;
-- min-p looks at probability ratios to the best token.
+- **top-k** looks at the rank order of the logits.
+- **top-p** looks at cumulative probability mass.
+- **min-p** looks at probability ratios relative to the top token.
 
-Anything that changes those quantities changes what a later filter keeps.
+Anything that changes those quantities changes what later filters keep.
 
-**Penalties first.** A penalty is a correction to the model's opinion ("this token
-was just used, make it less likely"). It has to be in place before any filter ranks
-the tokens. Otherwise a token that was repeated five times still holds its slot in
-the top-k and its share of the nucleus, the filters cut tokens that should have
-moved up, and the penalty arrives too late to bring them back.
+**Penalties first.** A penalty adjusts the model's raw scores to discourage recently
+used tokens, so it must run before any filter ranks them. If penalties ran after the
+filters, a heavily repeated token would still occupy a top-k slot and a share of the
+top-p nucleus. Other tokens that should have moved up would already be removed, and the
+penalty would arrive too late to bring them back.
 
-**Top-k, then top-p, then min-p**, each on the renormalized survivors of the one
-before. Top-k is the cheap, coarse cut (in a real engine it is also what makes the
-later sorts affordable). Top-p then measures its mass on the survivors: after
-`top_k = 3` leaves probabilities 0.4, 0.33, 0.27, a `top_p` of 0.7 keeps two tokens,
-although the same three tokens held only 0.3, 0.25, 0.2 of the original
-distribution. Min-p is a ratio to the largest probability, so renormalizing does not
-change it; it removes what is left of the tail.
+**Top-k, then top-p, then min-p.** Each filter runs on the renormalized survivors of the
+previous one. Top-k makes a cheap coarse cut (and in real engines, it keeps later sorts
+affordable). Top-p then measures cumulative mass over the surviving tokens. For example,
+if `top_k = 3` leaves renormalized probabilities `0.4`, `0.33`, and `0.27`, then
+`top_p = 0.7` keeps two tokens, even though those same three tokens might have held only
+`0.3`, `0.25`, and `0.2` of the original distribution. Min-p compares each probability
+as a ratio to the largest probability, which is invariant to renormalization, and trims
+the remaining tail.
 
-**Temperature last.** Dividing logits by $T$ is monotone, so it never changes the
-ranking, and top-k does not care where it runs. Top-p and min-p do. With
-$\pi_i \propto e^{x_i}$, the tempered distribution is $\pi_i^{1/T}$ renormalized:
-for $T > 1$ it is flatter, more tokens are needed to reach mass $p$, and ratios to
-the top token rise toward 1; for $T < 1$ the opposite. Applying the temperature
-after the filters separates the two decisions: the filters decide *which* tokens are
-acceptable, from the model's own distribution, and the temperature decides only
-*how evenly* to choose among them. That is why llama.cpp can run with temperatures
-well above 1 without sampling the tail.
+**Temperature last.** Dividing logits by the temperature $\tau$ is strictly monotone, so
+it preserves the ranking and leaves top-k unchanged. Top-p and min-p do change. When
+$\pi_i \propto e^{x_i}$, scaling logits by $1/\tau$ produces the tempered distribution
+$\pi_i^{1/\tau}$ (renormalized). For $\tau > 1$, the distribution flattens, more tokens
+are needed to reach mass `top_p`, and ratios to the top token move closer to `1`. For
+$\tau < 1$, the opposite happens. Applying temperature after the filters separates two
+decisions. The filters choose *which* tokens are acceptable under the model's own
+distribution, while temperature controls *how evenly* to sample among them. That is why
+llama.cpp can use temperatures well above `1` without pulling in the low-probability
+tail.
 
-Because every stage hands on logits with `-inf` for removed tokens, "renormalize the
-survivors" never has to be written: the next stage's softmax does it.
+Because every stage passes logits with `-inf` for removed tokens, renormalization
+happens automatically whenever the next stage calls `softmax`.
 
 ## Reference solution (PyTorch)
 
@@ -60,53 +62,52 @@ def sample_chain(logits, cfg, history, u):
     return (cdf <= u[:, None] * cdf[:, -1:]).sum(dim=-1)
 ```
 
-A masked logit survives all of this as `-inf`: `-inf * penalty`, `-inf - c`, and
-`-inf / T` are all `-inf`, and the filters never revive an entry. The count is a
-`(B, T, V)` comparison; for long histories a scatter-add into a `(B, V)` buffer does
-the same in $O(BT)$.
+Masked logits remain `-inf` through every stage because `-inf * penalty`, `-inf - c`,
+and `-inf / temperature` all evaluate to `-inf`, and the filters never revive a `-inf`
+entry. The history count above uses a `(B, T, V)` comparison. For longer histories, a
+scatter-add into a `(B, V)` buffer computes the same counts in $O(B(T + V))$ time.
 
 ## Common mistakes
 
-- **Temperature first.** The order of Hugging Face transformers and vLLM, and the
-  natural one to write ("scale, then filter"). With $T = 2$ in the worked example it
-  keeps three tokens instead of two. Neither order is wrong in the abstract; this
-  problem, like llama.cpp, specifies temperature last, and the two are not
-  interchangeable.
-- **Temperature in the middle.** Moving only min-p behind the temperature looks
-  harmless because min-p is "just a ratio", but ratios are what the temperature
-  changes: $(\pi_i / \pi_{\max})^{1/T}$.
-- **Top-p on the unrenormalized survivors.** Computing the nucleus from the original
-  probabilities (or computing all masks from the original logits and intersecting
-  them) makes top-p see less mass than there is after top-k, so it keeps too many
-  tokens. Chaining through logits avoids it.
-- **Penalties after the filters.** The penalized token keeps its slot; the token it
-  should have made room for is already `-inf`.
-- **Dividing negative logits by the repetition penalty.** The formula in the CTRL
-  paper divides always, which makes a repeated token with a negative logit *more*
-  likely. llama.cpp's comment on this line calls it "obviously wrong"; multiply when
-  the logit is not positive.
-- **Presence penalty per occurrence.** That is the frequency penalty. Presence is
-  charged once per distinct token.
-- **Calling top-p with `p = 1.0`.** In exact arithmetic it keeps everything. In
-  float32 the cumulative mass reaches exactly 1.0 before the last tokens of a peaked
-  distribution, and "mass before < 1.0" fails for them, so a stage that is switched
-  off trims the tail. Engines skip the stage (`if (p >= 1.0f) return;`).
-- **Sampling before the temperature.** Computing the probabilities from the filtered
-  logits and applying the temperature only to what is returned leaves the draw at
-  temperature 1.
-- **Drawing your own random numbers.** `torch.multinomial` gives a valid sample that
-  no test can reproduce; the uniform is an argument.
+- **Applying temperature first.** This is the order used by Hugging Face transformers
+  and vLLM, and it is natural to write "scale, then filter." With `temperature = 2.0` in
+  the worked example, it keeps three tokens instead of two. Neither order is wrong in
+  general, but this problem specifies llama.cpp's temperature-last order, and the two are
+  not equivalent.
+- **Applying temperature in the middle.** Placing min-p after temperature looks harmless
+  because min-p uses ratios, but temperature changes every ratio to
+  $(\pi_i / \pi_{\max})^{1/\tau}$.
+- **Running top-p on unrenormalized survivors.** Computing the nucleus from the original
+  probabilities (or computing all masks from the original logits and intersecting them)
+  makes top-p see less mass than remains after top-k, so it keeps too many tokens.
+  Chaining through `-inf`-masked logits avoids this bug.
+- **Applying penalties after the filters.** The penalized token keeps its slot, while
+  the tokens it should have made room for are already `-inf`.
+- **Dividing negative logits by the repetition penalty.** The original CTRL formula
+  always divides, which makes a repeated token with a negative logit *more* likely.
+  Multiply by the penalty whenever the logit is non-positive.
+- **Charging presence penalty per occurrence.** Scaling by the count turns presence
+  penalty into a second frequency penalty. Presence is charged once per distinct token.
+- **Calling `top_p_filter` when `top_p == 1.0`.** In exact arithmetic this keeps every
+  token, but in float32 the cumulative sum of a peaked distribution reaches `1.0` before
+  the last tokens. The test "mass before < 1.0" then fails for those tail tokens even
+  though the stage is switched off. Skip the filter whenever `top_p >= 1.0`.
+- **Sampling before applying temperature.** Computing probabilities from the filtered
+  logits and dividing by temperature only for the return value leaves `sample_chain`
+  drawing at temperature `1.0`.
+- **Drawing your own random numbers.** Calling `torch.multinomial` or similar produces a
+  valid sample that tests cannot reproduce. Always use the provided uniform input `u`.
 
 ## Complexity
 
-The filters sort each row: $O(B\,V \log V)$ time and $O(BV)$ memory. The history
-count is $O(BTV)$ as written. Engines avoid sorting the whole vocabulary: llama.cpp
-partially sorts only as many candidates as top-k or the nucleus needs, and vLLM
-fuses top-k and top-p into one kernel.
+The filters sort each row in $O(B\,V \log V)$ time and $O(BV)$ memory. The history count
+takes $O(BTV)$ time as written (or $O(B(T + V))$ with scatter-add). Production engines
+avoid sorting the entire vocabulary. llama.cpp partially sorts only as many candidates
+as top-k or the nucleus requires, and vLLM fuses top-k and top-p into a single kernel.
 
 ## In the wild
 
-The order differs between engines (sources read in November 2026):
+Sampling stage order differs across engines (sources read in November 2026):
 
 | engine | order |
 |---|---|
@@ -115,19 +116,18 @@ The order differs between engines (sources read in November 2026):
 | vLLM (`v1/worker/gpu/sample/sampler.py`) | logits processors (bias, penalties), **temperature**, **min-p**, then **top-k** and **top-p** |
 | Hugging Face transformers (`generation/utils.py`) | repetition penalty and other processors, then **temperature**, **top-k**, **top-p**, **min-p** |
 
-So llama.cpp and mlx-lm filter the model's own distribution and apply the
-temperature last, while vLLM and transformers temper first. mlx-lm also runs top-k
-*after* top-p and min-p, which means its nucleus is measured on the full
-distribution, not on the top-k survivors: the "unrenormalized" variant above is a
-real engine's behavior. In llama.cpp the order is a parameter (`--samplers`), and a
-temperature of 0 replaces the draw by an argmax.
+llama.cpp and mlx-lm filter the model's unscaled distribution and apply temperature
+last, whereas vLLM and transformers apply temperature first. mlx-lm also runs top-k
+*after* top-p and min-p, measuring its nucleus on the full distribution rather than on
+the top-k survivors. In llama.cpp, the order is configurable via `--samplers`, and a
+temperature of `0` replaces sampling with argmax.
 
-The penalties differ too. This problem uses llama.cpp's formula
-(`llama_sampler_penalties_apply`), which counts only the last `penalty_last_n`
-tokens (64 by default) and is off by default (`penalty_repeat = 1.0`). The OpenAI
-definition of frequency and presence penalties counts generated tokens only, and
-transformers' `repetition_penalty` also covers the prompt.
+Penalty definitions also vary. This problem uses llama.cpp's formula
+(`llama_sampler_penalties_apply`), which in llama.cpp counts only the last
+`penalty_last_n` tokens (64 by default) and is off by default (`penalty_repeat = 1.0`).
+OpenAI's frequency and presence penalties count generated tokens only, while
+transformers' `repetition_penalty` also includes the prompt.
 
-The practical consequence: sampling parameters do not transfer between engines.
-"Temperature 1.2, top-p 0.9" tuned on one stack is a different distribution on
-another.
+Because of these differences, sampling parameters do not transfer cleanly across
+engines. A setting like `temperature=1.2, top_p=0.9` tuned on one stack defines a
+different distribution on another.

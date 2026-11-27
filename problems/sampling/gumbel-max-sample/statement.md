@@ -1,8 +1,4 @@
-Draw one token per row from a batch of logits with the Gumbel-max trick: add
-independent Gumbel noise to every logit and take the argmax. No softmax, no cumulative
-sum, and the winner is distributed exactly as the softmax of the logits. The noise is
-made from uniform numbers that the caller supplies, and the care goes into the two
-ends of the unit interval, where the transformation blows up.
+Implement the Gumbel-max trick to sample one token per row from a batch of raw logits. Add independent Gumbel noise derived from caller-supplied uniform numbers to every logit, then take the argmax in each row.
 
 ![This problem is Softmax and Sample, done together as one argmax over noisy logits.](assets/map.svg)
 
@@ -12,46 +8,32 @@ ends of the unit interval, where the transformation blows up.
 def gumbel_sample(logits, uniforms): ...
 ```
 
-Randomness is an input: the function is deterministic, and entry `[b, v]` of `logits`
-gets its own uniform number `uniforms[b, v]`.
+The input `logits` is a 2D tensor with one row per sequence in a batch of size `B` and one column per token in a vocabulary of size `V`. Entries may be `-inf` to indicate masked tokens, and every row has at least one finite entry. Neither `+inf` nor NaN appears. The logits are unnormalized, so no softmax is applied before or inside this function.
 
-For each entry, clamp the uniform number into the open unit interval and turn it into
-standard Gumbel noise:
+Randomness is passed in as `uniforms`, making the function deterministic. Entry `uniforms[b, v]` is a float32 value $u \in [0, 1]$ paired with `logits[b, v]`. Both endpoints `0.0` and `1.0` occur in practice. A float32 generator returns `0.0` about once in $2^{24}$ draws, and uniform values generated in float64 can round up to `1.0` when cast to float32.
+
+For each entry, clamp $u$ into the open unit interval and convert it into standard Gumbel noise $g$:
 
 $$
 \tilde u = \min\big(\max(u,\ u_{\min}),\ u_{\max}\big), \qquad
 g = -\log(-\log \tilde u),
 $$
 
-with $u_{\min} = 1.1754944 \times 10^{-38}$ (the smallest positive normal float32)
-and $u_{\max} = 0.99999994 = 1 - 2^{-24}$ (the largest float32 below 1). The token of
-row $b$ is
+where $u_{\min} = 1.1754944 \times 10^{-38}$ is the smallest positive normal float32 and $u_{\max} = 0.99999994 = 1 - 2^{-24}$ is the largest float32 below `1.0`. Select the winning token index for each row `b` by taking the argmax over noisy logits:
 
 $$
 \text{token}_b = \operatorname*{argmax}_v \big( \text{logits}[b, v] + g[b, v] \big).
 $$
 
-- `logits`: a float32 tensor of shape `(B, V)`. Entries may be `-inf` (a masked
-  token); every row has at least one finite entry. `+inf` and NaN never appear. The
-  logits are unnormalized: no softmax is applied before or inside this function.
-- `uniforms`: a float32 tensor of shape `(B, V)` with $0 \le u \le 1$. **Both ends
-  occur**: a float32 generator returns exactly 0 once in $2^{24}$ draws, and uniform
-  numbers computed in float64 and stored as float32 round up to exactly 1.
-- Returns an integer tensor of shape `(B,)` with values in $[0, V)$.
+The function returns a 1D integer tensor of length `B` with token indices in $[0, V)$.
 
-Things that follow from the definition, and that the tests check:
+Several properties follow from this definition and are checked by the tests:
 
-- **A masked token is never returned.** The clamp keeps the noise finite,
-  $-4.47 \le g \le 16.64$, so a logit of `-inf` has a score of `-inf` whatever its
-  uniform number is, also for `u = 1`, and a finite logit has a finite score, also for
-  `u = 0`.
-- **The result is never NaN-driven.** Without the upper clamp, `u = 1` gives
-  $g = +\infty$, and on a masked entry $-\infty + \infty$ is NaN.
-- With `uniforms` independent and uniform on $[0, 1)$, token $v$ is returned with
-  probability $\operatorname{softmax}(\text{logits}[b])_v$.
+- **A masked token is never returned.** Clamping bounds the noise to $-4.47 \le g \le 16.64$. A masked logit (`-inf`) therefore always scores `-inf`, even when `u = 1.0`, while a finite logit always has a finite score, even when `u = 0.0`.
+- **Scores are never NaN.** Without the upper clamp, `u = 1.0` produces $g = +\infty$, and adding $+\infty$ to a masked `-inf` logit produces NaN.
+- **Exact categorical distribution.** When `uniforms` contains independent samples from $[0, 1)$, token $v$ wins with probability $\operatorname{softmax}(\text{logits}[b])_v$.
 
-Do not draw random numbers yourself, and do not call your framework's categorical,
-multinomial, or Gumbel sampler.
+Do not draw random numbers inside this function, and do not call your framework's categorical, multinomial, or Gumbel sampler.
 
 ## Shapes
 
@@ -76,41 +58,21 @@ gumbel_sample(logits, uniforms)  # [0, 2, 1]
 | 1 | $[-0.4759, 0.6717, 2.9702, 0.3665]$ | $[-0.4759, 0.6717, 2.9702, 0.3665]$ | 2 |
 | 2 | $[1.0309, -4.4698, 16.6355, 0.3665]$ | $[-\infty, -1.4698, -\infty, -\infty]$ | 1 |
 
-Row 0: token 1 has the largest logit, but token 0 drew more noise and wins; that is
-the sampling. Token 3 drew the most noise of all and is masked, so it cannot win.
+In row 0, token 1 has the largest logit, but token 0 draws higher Gumbel noise and wins. Token 3 draws the largest noise of all, yet remains `-inf` because it is masked.
 
-Row 1: with equal logits the largest uniform number wins.
+In row 1, all logits are equal, so the token with the largest uniform value wins.
 
-Row 2: the only unmasked token has `u = 0`, which is clamped to $u_{\min}$ and gives
-the smallest possible noise, $-\log(87.34) = -4.47$; its score is still finite. Token
-2 has `u = 1`, which is clamped to $u_{\max}$ and gives the largest possible noise,
-$16.64$; its score is still `-inf`. Unclamped, the scores would be
-`[-inf, -inf, nan, -inf]`.
+In row 2, token 1 is the only unmasked entry and has `u = 0.0`. Clamping to $u_{\min}$ yields the smallest possible noise, $-\log(87.34) = -4.47$, keeping its score finite. Token 2 has `u = 1.0`, which clamps to $u_{\max}$ and yields the largest possible noise, `16.64`, so its score stays `-inf`. Without clamping, the scores would be `[-inf, -inf, nan, -inf]`.
 
 ## Constraints
 
-- $1 \le B \le 20000$, $1 \le V \le 1000$, $0 \le u \le 1$. Finite logits lie in
-  $[-1000, 1000]$.
-- Tokens are compared with the reference exactly. Float32 rounding cannot decide a
-  test: in every row the best score exceeds the second best by at least $10^{-3}$, and
-  by at least 1 in rows where the best or second-best token has a uniform number of
-  exactly 0 or 1.
-- **Statistical cases.** The function is called once with 20,000 identical rows of
-  logits and independent uniforms, and the empirical distribution of the tokens is
-  compared with the softmax of the row using a finite-sample (Chernoff) bound. A
-  correct solution fails with probability below $10^{-9}$, and since the seeds are
-  fixed, it either always passes or always fails.
+- $1 \le B \le 20000$, $1 \le V \le 1000$, $0 \le u \le 1$. Finite logits lie in $[-1000, 1000]$.
+- Output tokens must match the reference exactly. In every test row, the top score exceeds the second-best score by at least $10^{-3}$ (and by at least `1.0` when either token has `u = 0.0` or `u = 1.0`), so float32 rounding cannot flip a result.
+- **Statistical cases.** The function is called once on 20,000 identical rows of logits with independent uniforms, and the empirical token frequencies are checked against the row's softmax probabilities using a finite-sample Chernoff bound. A correct solution fails with probability below $10^{-9}$, and fixed seeds make the check deterministic.
 - No Python loop over rows or tokens is needed.
 
 ## Why this matters
 
-`jax.random.categorical` and `mx.random.categorical` are this function, and so is
-every sampler that must run inside a compiled graph or on a GPU: an argmax over
-independent per-entry noise parallelizes trivially, needs no sort and no sequential
-cumulative sum, and takes logits as they are, masked entries included. The same trick
-underlies Gumbel-softmax, Gumbel top-k (sampling without replacement), and several
-watermarking schemes. Its numerical edges are where it fails in production: one decoding
-step at batch size 128 over a 150,000-token vocabulary consumes more than $2^{24}$
-uniform numbers, so a float32 generator is expected to return an exact 0 about once
-per step, and a single NaN score makes an argmax return a token that a grammar had
-masked.
+Both `jax.random.categorical` and `mx.random.categorical` use this exact algorithm, as do most samplers that run on GPUs or inside compiled computation graphs. Taking an argmax over independent per-entry noise parallelizes cleanly without sorting, sequential cumulative sums, or softmax normalization, and it handles masked `-inf` entries directly. The same trick underpins Gumbel-softmax, Gumbel top-k sampling without replacement, and several LLM watermarking schemes.
+
+The numerical boundaries are where production implementations break. A single decoding step with batch size 128 and a 150,000-token vocabulary consumes over $2^{24}$ uniform draws, so a float32 generator is expected to emit an exact `0.0` roughly once per step. Similarly, a single unclamped `1.0` on a masked token creates a NaN score that can cause `argmax` to return a token forbidden by a grammar.

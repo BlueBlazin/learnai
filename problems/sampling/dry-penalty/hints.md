@@ -1,39 +1,38 @@
-The quantity you need at every position $i$ is "how many tokens ending at $i$ equal
-the tokens ending at the end of the window". Reverse the window. What is that
-quantity called for a string and its own suffixes, and which classical algorithm
-computes it for all positions at once in linear time?
+At every position $i$, you need to know how many tokens ending at $i$ match the
+tokens ending at the end of the window. If you reverse the window, what is that
+quantity called for a string and its suffixes, and which classical algorithm computes
+it for all positions in linear time?
 
 ---
 
-In the reversed window `rev`, a run that ended at position $i$ starts at
-$k = n - 1 - i$, and the match length is the length of the longest common prefix of
-`rev` and `rev[k:]`. The array of those lengths is the **Z-array** of `rev`. The
-candidate for position $k$ is the token that followed the earlier run in the
-original order, `rev[k - 1]`.
+In the reversed window `rev`, a match that ended at position $i$ starts at
+$k = n - 1 - i$. Its match length is the longest common prefix of `rev` and
+`rev[k:]`. The array of these lengths is the **Z-array** of `rev`, and the candidate
+token that followed the earlier run in original order is `rev[k - 1]`.
 
-Breakers need no special handling inside the matching: a match is a run at the end
-of the window, so count how many tokens at the end of the window are not breakers
-and cap every match length at that number.
+Breakers do not need special handling inside the Z-algorithm. Because every match is
+a suffix of the window, count how many trailing tokens of the window are not breakers
+and cap every match length at that count.
 
 ---
 
-The Z-algorithm keeps the rightmost stretch `[left, right)` of `rev` that is known
-to equal a prefix of `rev`. For a new position `k` inside it, the answer at the
-mirrored position `k - left` is reused:
+The Z-algorithm tracks the rightmost interval `[left, right)` of `rev` that is known
+to match a prefix of `rev`. For a new index `k` inside that interval, reuse the
+already-computed value at the mirrored index `k - left`:
 
 ```
 z = [0] * n; left = right = 0
 for k in 1 .. n-1:
     if k < right and z[k - left] < right - k:
-        z[k] = z[k - left]                 # the mirrored match ends inside the stretch
+        z[k] = z[k - left]                 # the mirrored match ends inside the interval
     else:
-        length = max(0, right - k)         # this much is known to match
+        length = max(0, right - k)         # this much is already known to match
         while k + length < n and rev[length] == rev[k + length]: length += 1
         z[k] = length; left, right = k, k + length
 ```
 
-`right` never moves backward and every comparison that succeeds moves it forward,
-so the whole loop is $O(n)$. Then:
+Because `right` never decreases and every successful comparison advances it, the loop
+runs in $O(n)$ time. Afterward, apply the breaker limit and compute the penalties:
 
 ```
 limit = number of trailing non-breakers of the window

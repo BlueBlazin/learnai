@@ -1,25 +1,14 @@
-Write the decoder first: it is the specification of the format, and the encoder's
-last step is "choose the codes that this decoder turns into the nearest values". For
-the encoder, notice that there are two levels of quantization. Level 1 turns 32
-weights into codes plus a float scale and minimum. Level 2 turns 8 float scales and
-8 float minimums into 6-bit integers plus one float16 unit each. Which of the two
-levels must be finished before the codes can be computed?
+Write `q4k_decode` first because it defines the exact grid the format represents, and the encoder's final step is to pick codes for that grid. Notice that the encoder performs two levels of quantization. Level 1 summarizes each block of 32 weights with a float scale and minimum, and level 2 quantizes the 8 scales and 8 minimums into 6-bit integers plus two float16 units. Which level must finish before you compute the 4-bit weight codes?
 
 ---
 
-Decoder: widen everything to float32 before multiplying (a block scale of 63 times
-a code of 15 does not fit in a byte). Reshape the codes to `(S, 8, 32)` so that the
-per-block step and offset, of shape `(S, 8)`, broadcast with a trailing axis.
+For `q4k_decode`, cast all inputs to float32 before multiplying, because a block scale of 63 times a code of 15 overflows `uint8`. Reshape `codes` to `(S, 8, 32)` so the per-block step and offset of shape `(S, 8)` broadcast cleanly along the last axis.
 
-Encoder, in the same shape: `lo = minimum(min(blocks, -1), 0)`, `hi = max(blocks,
--1)`, block scale `(hi - lo) / 15`, block minimum `-lo`. Take the maximum of each
-over the 8 blocks (keep the axis). The 6-bit fields are `round(63 * value /
-largest)`, guarded by a `where` for a largest value of 0. The units are `largest /
-63`, cast to float16.
+For `q4k_encode`, reshape `w` to `(S, 8, 32)` and compute `lo = minimum(min(blocks, -1), 0)`, `hi = max(blocks, -1)`, `block_scale = (hi - lo) / 15`, and `block_min = -lo`. Take the maximum of each over the 8 blocks with `keepdim=True`. Compute the 6-bit fields as `round(63 * value / largest)`, using `where` to return `0` when `largest == 0`. Compute `d` and `dmin` as `largest / 63` cast to float16.
 
 ---
 
-The codes come last, from the values the decoder will see:
+Compute the 4-bit codes last, using the exact step and offset that `q4k_decode` will reconstruct:
 
 ```python
 step = d.astype(float32) * scales  # d is already float16 here
@@ -29,7 +18,4 @@ codes = clip(round((blocks + offset[..., None]) / safe[..., None]), 0, 15)
 codes = where(step[..., None] > 0, codes, 0)
 ```
 
-Using the level-1 `block_scale` and `block_min` here, or the float32 units from
-before the float16 cast, gives codes for a grid that no decoder will ever rebuild.
-Cast the three integer fields to uint8 at the very end, and return `d` and `dmin`
-with shape `(S,)`.
+Using the level-1 `block_scale` and `block_min`, or using float32 `d` and `dmin` before casting to float16, produces codes for a grid that the decoder will never reconstruct. Cast `codes`, `scales`, and `mins` to `uint8` at the end, and return `d` and `dmin` with shape `(S,)`.

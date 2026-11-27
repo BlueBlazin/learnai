@@ -1,8 +1,4 @@
-Stop generation when the output contains a stop string, while the text is streamed to
-the user piece by piece. A stop string rarely arrives as one token: it is spread over
-several pieces, so the filter must hold back text that *might* be the beginning of a
-stop string, release it when it turns out not to be, and never show any part of a
-stop string that completes.
+Filter a streaming text output so that generation stops as soon as any stop string completes. Because a stop string rarely arrives as a single token, the filter must hold back trailing text that could begin a stop string, release that text if the match fails, and never emit any part of a completed stop string.
 
 ## Specification
 
@@ -11,55 +7,29 @@ def stop_step(state, piece, stops): ...     # returns (state, emit, stopped)
 def stop_flush(state): ...                  # returns a str
 ```
 
-A stream is processed by calling `stop_step` once per piece, in order. The first call
-gets `state = None`; each later call gets the state the previous call returned. The
-state is yours: any Python value. `stops` is the same list on every call.
+A caller processes a stream by invoking `stop_step` once per incoming `piece`, in order. The first call passes `state = None`, and each subsequent call passes the `state` returned by the previous call. You may use any Python value for `state`. The caller passes the same `stops` list on every call.
 
-**The text and its cut.** Let `text` be the concatenation of all pieces so far. A
-*match* is an occurrence of a stop string in `text`: a stop `s` and a start index `i`
-with `text[i : i + len(s)] == s`. Its *end* is `i + len(s)`.
+**Text and match selection.** Let `text` be the concatenation of all pieces received so far. A *match* is an occurrence of a stop string `s` in `text` at start index `i`, meaning `text[i : i + len(s)] == s`. Its *end* is `i + len(s)`.
 
-Generation stops at the first character that completes a match. So among all
-matches, the one that counts is the one with the **smallest end**; if several matches
-end at the same character, the one with the **smallest start** (the longest stop
-string). With that match starting at `i`, the visible output of the stream is
-`text[:i]`: everything before the stop string, nothing of it, nothing after it.
+Generation stops at the first character that completes any match. Among all matches in `text`, the winning match is the one with the **smallest end**. If multiple matches end at the same character, the winning match is the one with the **smallest start** (the longest stop string). If the winning match starts at `i`, the visible output of the stream is `text[:i]`. Nothing from the stop string or after it is emitted.
 
-**`stop_step(state, piece, stops)`** returns a tuple `(state, emit, stopped)`:
+**`stop_step(state, piece, stops)`** returns `(state, emit, stopped)`:
 
-- If `text` now contains a match, `stopped` is `True` and `emit` is the part of
-  `text[:i]` that earlier calls have not emitted yet (possibly empty). The stream is
-  over: neither function is called again for it.
-- Otherwise `stopped` is `False`. Let `h` be the length of the longest suffix of
-  `text` that is a **proper prefix** of some stop string (a prefix shorter than the
-  stop string itself; `h = 0` if there is none). `emit` is the part of
-  `text[: len(text) - h]` that earlier calls have not emitted yet. The last `h`
-  characters are held back.
+- If `text` contains a match, `stopped` is `True` and `emit` is the unemitted portion of `text[:i]` (which may be empty). The stream then ends, and neither function is called again for it.
+- Otherwise, `stopped` is `False`. Let `h` be the length of the longest suffix of `text` that is a **proper prefix** of some stop string (strictly shorter than that stop string, or `0` if none exists). `emit` is the unemitted portion of `text[: len(text) - h]`, and the last `h` characters remain held back.
 
-So after every call that does not stop, exactly the text that can still become part
-of a stop string is held back: not a character more (ordinary text must reach the
-user immediately) and not a character less (text that was shown cannot be
-retracted).
+After every non-stopping call, the filter holds back only the characters that can still become part of a stop string. Holding fewer risks emitting text that cannot be retracted, while holding more delays ordinary output unnecessarily.
 
-**`stop_flush(state)`** is called once if the stream ends without a stop (the model
-emitted EOS or ran out of budget), with the state of the last `stop_step` call, or
-`None` if there was no call. It returns the held-back text, which is ordinary output
-after all.
+**`stop_flush(state)`** is called once if the stream finishes without hitting a stop string (for example, after EOS or a token limit). It receives the `state` from the last `stop_step` call, or `None` if `stop_step` was never called, and returns the held-back text.
 
-Parameters:
+Parameters and return types:
 
-- `piece`: a `str`, the text of the newest token or tokens. It may be empty (special
-  tokens and incomplete UTF-8 sequences detokenize to nothing); an empty piece emits
-  nothing and changes nothing. It may also be long, and contain a whole stop string,
-  or several.
-- `stops`: a list of non-empty `str`. It may be empty (then everything is emitted at
-  once and nothing ever stops), and its strings may overlap or be prefixes of each
-  other. The order of the list has no influence on the result.
-- `emit` is a `str`, `stopped` a `bool`.
+- `piece`: a `str` containing the text of the newest token or tokens. It may be empty (as with special tokens or incomplete UTF-8 sequences), in which case it emits nothing and leaves the state unchanged. It may also be long and contain one or more complete stop strings.
+- `stops`: a list of non-empty `str`. It may be empty, in which case all text is emitted immediately and nothing stops. Stop strings may overlap or be prefixes of each other, and their order in the list does not affect the result.
+- `emit`: a `str`.
+- `stopped`: a `bool`.
 
-The concatenation of every `emit`, plus the flushed text if the stream ended without
-a stop, is the visible output defined above, **whatever way the text was split into
-pieces**.
+Concatenating every `emit` (plus the return value of `stop_flush` if the stream did not stop) must equal the visible output defined above, **regardless of how `text` was split into pieces**.
 
 ## Example
 
@@ -77,42 +47,22 @@ stops = ["\nUser:", "###"]
 | `".\nUser"` | `"."` | `"\nUser"` | `False` |
 | `":"` | `""` | | `True` |
 
-The newline of the second piece could begin `"\nUser:"`, so it is held; `"Us"` extends
-the partial match. `"e #"` breaks it: `"\nUse "` is released, and the trailing `"#"`
-is held because it could begin `"###"`. `"#1"` breaks that one as well. The last two
-pieces complete `"\nUser:"`; nothing of it is emitted, and the piece `" next"` that
-the model would have produced afterwards is never processed. The emitted text is
-`"Sure.\nUse ##1."`.
+In piece 2, the newline can start `"\nUser:"`, so it is held back. Piece 3 (`"Us"`) extends that partial match. Piece 4 (`"e #"`) breaks it, so `"\nUse "` is released while the trailing `"#"` is held as a prefix of `"###"`. Piece 5 (`"#1"`) breaks that partial match too. Pieces 6 and 7 complete `"\nUser:"`, so nothing from it is emitted and any subsequent piece such as `" next"` is never processed. The total emitted text is `"Sure.\nUse ##1."`.
 
 ![The stream after pieces 2, 3, 4, and 7 of the table. Filled cells are held back, and the stop string is never emitted.](assets/stream-steps.svg)
 
-If the stream had ended after `".\nUser"` instead, `stop_flush` would return
-`"\nUser"`.
+If the stream had ended after `".\nUser"` instead, `stop_flush` would return `"\nUser"`.
 
-A stop inside a stop. With `stops = ["abcd", "bc"]` and the text `"xabcd"`, the match
-`"bc"` ends at character 4 and `"abcd"` at character 5, so `"bc"` completes first and
-the output is `"xa"`. That holds whether the text arrives as `["xabcd"]` (one call:
-`emit = "xa"`, stopped) or as `["xab", "cd"]` (`emit = "x"`, holding `"ab"`; then
-`emit = "a"`, stopped).
+**A stop inside a stop.** Consider `stops = ["abcd", "bc"]` and the text `"xabcd"`. The match `"bc"` ends at character 4 while `"abcd"` ends at character 5, so `"bc"` completes first and the visible output is `"xa"`. This holds whether the text arrives as `["xabcd"]` (one call returning `emit = "xa"`, `stopped = True`) or as `["xab", "cd"]` (first `emit = "x"` while holding `"ab"`, then `emit = "a"` with `stopped = True`).
 
 ## Constraints
 
-- At most 8 stop strings of at most 32 characters each; a stream has at most a few
-  thousand pieces. Strings are Python `str`: lengths and indices count characters.
-- `emit`, `stopped`, and the flushed text are compared exactly, at every step, with
-  the definition above.
-- No cost limit is judged, but nothing requires keeping the whole text: the state
-  never needs more than the held-back characters.
+- At most 8 stop strings of at most 32 characters each, and at most a few thousand pieces per stream. Strings are Python `str`, so lengths and indices count characters.
+- `emit`, `stopped`, and the flushed text are compared exactly at every step against the specification.
+- No memory or runtime limit is judged, though the state never needs to store more than the held-back characters.
 
 ## Why this matters
 
-Every chat API has a `stop` parameter, and every chat template ends a turn with a
-marker that some model, sooner or later, spells out as ordinary text instead of
-emitting the special token. Stop strings are matched on text, not on tokens, because
-the same characters can be tokenized in many ways: `"\nUser:"` may be one token or
-four, and may begin in the middle of a token. A server that checks each token's text
-alone misses most stops. One that streams first and matches later shows the user
-`"\nUs"` and then goes silent, with half a stop string on the screen. And one that
-solves this by delaying everything by the length of the longest stop string makes
-every response stutter. The few lines you write here sit between the detokenizer and
-the network in every streaming server.
+Every chat API exposes a `stop` parameter, and chat templates end turns with markers that models sometimes emit as plain text instead of special tokens. Stop strings must be matched on decoded text rather than token IDs because the same string can be tokenized in many ways. For example, `"\nUser:"` may span one token or four, and it may start mid-token.
+
+Checking each token in isolation misses split stop strings. Streaming first and checking later leaves partial markers like `"\nUs"` stuck on the user's screen. Delaying every response by the maximum stop-string length avoids leaks but makes output stutter. This small filter sits between the detokenizer and the network in every streaming inference server.

@@ -1,8 +1,4 @@
-Implement the two percentile definitions that latency reports use, nearest-rank and
-linear interpolation, and the percentile of measurements that arrive split across
-shards. Each is a few lines; the substance is that "p99" is not one number until the
-rule is stated, and that percentiles of parts cannot be combined into the percentile
-of the whole.
+Implement nearest-rank percentiles, linearly interpolated percentiles, and exact percentile merging across sharded latency measurements.
 
 ## Specification
 
@@ -12,51 +8,35 @@ def percentile_linear(values: list[float], q: float) -> float: ...
 def merge_percentile(shards: list[list[float]], q: float) -> float: ...
 ```
 
-Throughout, `values` is a non-empty list of $n$ finite floats in **any order**,
-possibly with duplicates, and `q` is the percentile, $0 \le q \le 100$. Write
-$s_1 \le s_2 \le \dots \le s_n$ for the values in ascending order (1-based).
+In the first two functions, `values` is a non-empty list of $n$ finite floats in any order, possibly containing duplicates. In all three functions, `q` is a percentile in $0 \le q \le 100$. Write $s_1 \le s_2 \le \dots \le s_n$ for the values sorted in ascending order using 1-based indexing.
 
-**`percentile_nearest_rank(values, q)`** returns the observation of rank
+**`percentile_nearest_rank(values, q)`** returns the observation at 1-based rank
 
 $$
 r = \max\!\big(1, \lceil q \cdot n / 100 \rceil\big),
 $$
 
-that is, $s_r$. The result is always one of the values: the smallest observation
-such that at least $q$ percent of the samples are less than or equal to it. `q = 0`
-gives the minimum and `q = 100` the maximum.
+which is $s_r$. The result is always one of the input values, specifically the smallest observation such that at least $q$ percent of the samples are less than or equal to it. Passing `q = 0` returns the minimum and passing `q = 100` returns the maximum.
 
 > [!WARNING]
-> Compute the rank as `math.ceil(q * n / 100)`, multiplying first. `q / 100 * n`
-> rounds `q / 100` before the multiplication and can land just above a whole number:
-> `99.9 / 100 * 1000` is `999.0000000000001`, whose ceiling is 1000, while
-> `99.9 * 1000 / 100` is exactly `999.0`. The tests include such inputs.
+> Compute the rank as `math.ceil(q * n / 100)` so the multiplication happens before the division. Computing `q / 100 * n` rounds `q / 100` first and can overshoot an integer by a tiny amount. For example, `99.9 / 100 * 1000` evaluates to `999.0000000000001` (ceiling `1000`), whereas `99.9 * 1000 / 100` is exactly `999.0`. The test suite includes inputs that trigger this difference.
 
-**`percentile_linear(values, q)`** returns the percentile with linear interpolation
-between neighboring observations, the default method of `numpy.percentile`. With
-0-based sorted values $x_0 \le \dots \le x_{n-1}$ (so $x_i = s_{i+1}$):
+**`percentile_linear(values, q)`** computes the percentile by linear interpolation between neighboring sorted observations, matching the default method of `numpy.percentile`. Using 0-based sorted values $x_0 \le \dots \le x_{n-1}$ (so $x_i = s_{i+1}$), compute the fractional index $h$, its integer floor $i$, and the interpolated value:
 
 $$
 h = (n - 1) \cdot \frac{q}{100}, \qquad i = \lfloor h \rfloor, \qquad
-\text{result} = x_i + (h - i)\,(x_{i+1} - x_i),
+\text{result} = x_i + (h - i)\,(x_{i+1} - x_i).
 $$
 
-and the result is $x_{n-1}$ when $i = n - 1$. It returns a float, which in general is
-not one of the observations.
+When $i = n - 1$, return $x_{n-1}$. The return value is a Python `float` and is generally not one of the original observations.
 
-**`merge_percentile(shards, q)`** takes one list of raw samples per shard (per
-server, per load-generator worker, per time window) and returns the nearest-rank
-percentile of **all samples together**: exactly
-`percentile_nearest_rank(pooled, q)`, where `pooled` contains every sample of every
-shard. Individual shards may be empty; there is at least one sample in total. How the
-samples are distributed over the shards, and the order of the shards, do not affect
-the result.
+**`merge_percentile(shards, q)`** takes a list of sample lists (such as measurements from separate servers, load-generator workers, or time windows) and returns the nearest-rank percentile of all samples pooled together. That is, it returns `percentile_nearest_rank(pooled, q)`, where `pooled` contains every sample from every shard. Individual shards may be empty, and there is at least one sample in total. Neither the order of shards nor how samples are split across them affects the result.
 
-None of the functions modifies its arguments.
+None of the functions may modify its input arguments.
 
 ## Example
 
-Ten request latencies in milliseconds, in arrival order:
+Consider ten request latencies in milliseconds, given in arrival order:
 
 ```python
 latencies = [120.0, 95.0, 110.0, 2300.0, 105.0, 98.0, 130.0, 101.0, 99.0, 115.0]
@@ -72,12 +52,9 @@ percentile_linear(latencies, 90)         # 347.0    h = 8.1: 130 + 0.1 * (2300 -
 percentile_linear(latencies, 99)         # 2104.7   h = 8.91: 130 + 0.91 * 2170
 ```
 
-The two definitions report a p90 of 130 ms and 347 ms for the same ten requests.
-Neither is wrong, but 347 ms is a latency no request had: it is a point on the line
-between the ninth and tenth observations.
+For the same ten requests, nearest-rank reports a p90 of 130 ms while linear interpolation reports 347 ms. Neither is wrong, though 347 ms was never observed because it lies on the line between the ninth and tenth values.
 
-Two servers, one that handled eight fast requests and one that handled two slow
-ones:
+Now consider two servers, where one handled eight fast requests and the other handled two slow requests:
 
 ```python
 a = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0]
@@ -88,30 +65,18 @@ percentile_nearest_rank(b, 90)   # 900.0
 merge_percentile([a, b], 90)     # 100.0   rank 9 of the ten pooled samples
 ```
 
-The mean of the two shard values is 458.5 and the mean weighted by shard size is
-193.6. The p90 of the ten requests is 100.0.
+The unweighted mean of the two shard p90s is 458.5, and the mean weighted by shard size is 193.6. The true p90 of all ten requests is 100.0.
 
 ## Constraints
 
-- `1 <= n <= 100,000` samples in total per call; values are finite and lie in
-  $[0, 10^6]$.
-- `q` is an int or a float with at most two decimal places (`50`, `99`, `99.9`,
-  `99.99`), $0 \le q \le 100$. For every input in the tests,
-  `math.ceil(q * n / 100)` evaluates to the mathematically exact rank.
+- `1 <= n <= 100,000` samples in total per call, with finite floats in $[0, 10^6]$.
+- `q` is an `int` or `float` with at most two decimal places (such as `50`, `99`, `99.9`, or `99.99`), with $0 \le q \le 100$. For every test input, `math.ceil(q * n / 100)` evaluates to the exact mathematical rank.
 - `percentile_nearest_rank` and `merge_percentile` are compared exactly.
-- `percentile_linear` is compared with a relative tolerance of `1e-9` and an absolute
-  tolerance of `1e-9`.
-- Sorting is expected; there is no speed requirement beyond the time limit.
+- `percentile_linear` is compared with a relative tolerance of `1e-9` and an absolute tolerance of `1e-9`.
+- Sorting is expected. There is no speed requirement beyond the time limit.
 
 ## Why this matters
 
-Latency objectives are written as percentiles ("p99 time to first token under 500
-ms") because the mean hides the slow requests that users notice. Whether a system
-meets such an objective can depend on the definition: on a small sample, nearest-rank
-and interpolated p99 differ by as much as the gap between the two slowest requests,
-and two benchmark tools run on the same data will disagree for that reason alone.
-Aggregation is the costlier mistake. A dashboard that averages each replica's p99
-produces a number that is not the p99 of anything, and it is usually too low when it
-matters most, because one overloaded replica's tail is averaged with healthy ones.
-Percentiles must be computed from pooled samples, or from mergeable summaries such as
-histograms, and never from other percentiles.
+Latency SLOs are written as percentiles (such as p99 time to first token under 500 ms) because averages hide the slow tail requests that users notice. On small samples, nearest-rank and linear interpolation can differ by nearly the full gap between the two slowest requests, so two benchmark tools run on the same trace can disagree simply because they use different rules.
+
+Incorrect aggregation is an even costlier mistake. A dashboard that averages each replica's p99 produces a number that is not the p99 of any population. Worse, it usually understates tail latency when it matters most, because one overloaded replica's tail gets diluted by healthy replicas. Global percentiles must be computed from pooled samples or from mergeable summaries such as histograms, never by combining precomputed percentiles.

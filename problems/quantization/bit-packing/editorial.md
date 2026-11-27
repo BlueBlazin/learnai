@@ -1,8 +1,6 @@
 ## The idea
 
-A word is a number in base 16 with eight digits, and each 4-bit code is one digit.
-"Lowest index in the lowest bits" means that code $i$ of a group is the digit with
-weight $16^i$, so it is moved to its place by a left shift of $4i$ bits:
+A 32-bit word can be viewed as an eight-digit base-16 number where each 4-bit code is a single digit. Putting the lowest index in the lowest bits gives code $i$ in a group a weight of $16^i$, which corresponds to a left shift of $4i$ bits:
 
 $$
 \text{word} = \sum_{i=0}^{7} c_i \ll 4i,
@@ -10,16 +8,9 @@ $$
 c_i = (\text{word} \gg 4i) \mathbin{\&} \texttt{0xF} .
 $$
 
-Both directions vectorize as one broadcast against the vector of shifts
-`[0, 4, ..., 28]`. For packing, reshape the padded codes to `(m, 8)` so that the shift
-vector lines up with the positions inside a group, and reduce over that axis. The
-shifted codes occupy disjoint bits, so a sum is the same as a bitwise OR and cannot
-carry. For unpacking, add an axis to the words, shift, mask, and flatten: row-major
-order puts the codes back in sequence, with the padding at the very end, where slicing
-to `n` removes it.
+Both operations vectorize cleanly by broadcasting against the shift vector `[0, 4, 8, 12, 16, 20, 24, 28]`. To pack, pad the codes with zeros to a multiple of 8, reshape them to `(m, 8)` so each column aligns with its shift amount, shift left, and sum across the columns. Because the shifted nibbles occupy disjoint bit ranges, addition cannot carry and gives the same result as a bitwise OR. To unpack, add a trailing axis to `words`, broadcast the right shifts, mask with `0xF`, and flatten in row-major order. All padding lands at the end of the flattened vector, where slicing to `[:n]` removes it.
 
-Padding with zeros and passing `n` separately is what makes the format self-consistent:
-the words alone cannot say whether a trailing zero is a code or a filler.
+Passing `n` alongside `words` is essential because the packed words alone cannot distinguish a genuine trailing zero code from zero padding.
 
 ## Reference solution (PyTorch)
 
@@ -38,57 +29,23 @@ def unpack4(words, n):
     return nibbles.reshape(-1)[:n].to(torch.uint8)
 ```
 
-`-n % 8` is the number of codes missing to the next multiple of 8 (0 when `n` already
-is one). PyTorch's uint32 is a storage type without shifts, so the arithmetic is done
-in int64, which holds every 32-bit word as a non-negative number; the conversion
-`uint32 -> int64` zero-extends. The JAX and MLX versions do the same in `uint32`
-throughout, with `jnp.pad` / `mx.pad`.
+The expression `-n % 8` gives the exact number of padding elements needed to reach the next multiple of 8 (and evaluates to 0 when `n` is already a multiple of 8). Because PyTorch's `uint32` type does not support bit shifts, the arithmetic runs in `int64`, which represents every unsigned 32-bit word as a non-negative integer. Converting `uint32` to `int64` zero-extends the value. The JAX and MLX implementations follow the same structure directly in `uint32` using `jnp.pad` and `mx.pad`.
 
 ## Common mistakes
 
-- **High nibble first.** Putting the first code in bits 28 to 31, the way one writes
-  digits, gives a consistent pair of functions that round-trips perfectly and reads
-  everyone else's files as garbage. A round-trip test alone can never catch a layout
-  bug, which is why the tests also compare the words themselves.
-- **The right bytes, the wrong nibbles.** Filling each byte high nibble first
-  (`byte = c0 << 4 | c1`) while keeping the bytes in order. It looks natural because
-  it is how a byte is written in hex.
-- **Shifting before widening.** The codes are uint8. In PyTorch `codes << 12` with a
-  Python integer stays uint8, and the bits are gone. NumPy, JAX, and MLX behave the
-  same way. In C the operand would be promoted to `int` first, which is why code
-  ported from C has this bug.
-- **Sign extension.** In a signed 32-bit type, a word whose position-7 code is 8 or
-  more is negative, and `>>` is an arithmetic shift that fills with copies of the sign
-  bit. `word >> 28` is then a number from $-8$ to $-1$, not from 8 to 15. A mask on
-  every position repairs it; assuming that "nothing lies above the top nibble" does
-  not. Unsigned types avoid the question.
-- **Returning the padding.** Without the slice to `n`, the result has up to seven
-  extra zeros, which downstream becomes a shape error at best and seven phantom
-  weights at worst.
-- **Dropping the last partial word**, by truncating to a multiple of 8 instead of
-  padding.
+- **Putting the high nibble first.** Placing the first code in bits 28 to 31 (the way hex digits are written left to right) yields a pair of functions that round-trip cleanly with each other but read standard checkpoints as garbage. Round-trip tests alone cannot catch layout mismatches, which is why the test suite checks the packed word values directly.
+- **Right byte order, wrong nibble order.** Packing each byte high nibble first (`byte = (c0 << 4) | c1`) while keeping bytes in little-endian order is a common slip because it matches how single bytes are written in hex.
+- **Shifting before widening.** Input codes have dtype `uint8`. In PyTorch, NumPy, JAX, and MLX, shifting a `uint8` tensor left by 12 stays in `uint8` and discards the bits. Unlike C, tensor libraries do not promote small unsigned integers to `int` before shifting.
+- **Sign extension on right shifts.** In a signed 32-bit integer, any word whose position-7 code is 8 or greater is negative. An arithmetic right shift fills the top bits with ones, turning `word >> 28` into a value between $-8$ and $-1$ instead of 8 to 15. Applying `& 0xF` to every position (including the last) masks away those sign bits, and using an unsigned type or `int64` avoids the issue altogether.
+- **Returning the padding.** Omitting the `[:n]` slice leaves up to seven extra zeros at the end, causing shape mismatches or injecting phantom weights downstream.
+- **Dropping the final partial word.** Truncating `codes` to a multiple of 8 instead of padding silently loses up to seven weights.
 
 ## Complexity
 
-$O(n)$ time. The packed vector takes $4 \lceil n / 8 \rceil$ bytes, half a byte per
-code, against one byte per code before.
+Both functions run in $O(n)$ time. The packed output occupies $4 \lceil n / 8 \rceil$ bytes (half a byte per code), cutting memory usage in half compared to `uint8`.
 
 ## In the wild
 
-This is the layout of MLX's quantized weights. The documentation of `mx.quantize`
-states that for 4-bit quantization "we fit 8 elements in an unsigned 32 bit integer
-where the 1st element occupies the 4 least significant bits, the 2nd bits 4-7 etc.",
-and the second public test is a row packed by `mx.quantize` itself. MLX packs each row
-of a weight matrix separately and requires the row length to be a multiple of the
-group size, so real rows never need padding. Its other bit widths follow the same
-rule, code $i$ of a row at bit offset $b \cdot i$ of one long little-endian bit string
-that is then cut into 32-bit words. For widths that do not divide 32 (3, 5, and 6
-bits) a code can therefore straddle two words, which the 4-bit case never has to
-handle.
+This is the exact 4-bit layout used by MLX. The `mx.quantize` documentation specifies that 4-bit quantization packs 8 elements into an unsigned 32-bit integer with the first element in the 4 least significant bits, the second in bits 4 through 7, and so on. The second public test is a row packed directly by `mx.quantize`. MLX packs each weight matrix row independently and requires row lengths to be multiples of the group size, so real weight matrices need no padding. Its other bit widths follow the same rule, placing code $i$ at bit offset $b \cdot i$ in a little-endian bitstream split into 32-bit words. For widths that do not divide 32 (3, 5, and 6 bits), a single code can straddle two adjacent words.
 
-GGUF's `Q4_0` blocks also store 4-bit codes low nibble first, but arrange them
-differently: within a block of 32 weights, byte $j$ holds weight $j$ in its low nibble
-and weight $j + 16$ in its high nibble, so that a SIMD kernel can split a block into
-its two halves with one mask and one shift. The lesson of both formats is the same:
-the layout is chosen for the unpacking kernel, and the only way to know it is to read
-the specification, then test against bytes that the real writer produced.
+GGUF's `Q4_0` format also uses little-endian nibbles within each byte, but arranges elements across a 32-weight block differently. Byte $j$ stores weight $j$ in its low nibble and weight $j + 16$ in its high nibble, letting SIMD kernels unpack both halves of the block with a single mask and shift. In every quantized format, the packing layout is designed around the unpacking kernel, so you must read the specification and verify against real packed words.

@@ -1,13 +1,17 @@
 ## The idea
 
-Top-k and top-p use a budget that ignores the shape of the distribution: always 40
-tokens, always 95% of the mass. Min-p asks a question about each token instead: is it
-within a factor `min_p` of the best candidate? When one token has probability 0.9,
-only tokens above $0.9 \cdot \text{min\_p}$ survive, usually a handful. When the best
-token has 0.05, the bar drops to $0.05 \cdot \text{min\_p}$ and hundreds may pass. The
-filter is tight when the model is confident and loose when it is not.
+Top-k and top-p enforce a fixed budget regardless of distribution shape, always
+keeping a set number of tokens or a set fraction of total probability mass. Min-p
+instead tests each token relative to the best candidate in the same row: is this
+token at least `min_p` times as likely as the top token? When one token has
+probability 0.9, only tokens above $0.9 \cdot \text{min\_p}$ survive, usually a
+handful. When the best token has probability 0.05, the bar drops to
+$0.05 \cdot \text{min\_p}$ and hundreds may pass. The filter tightens when the model
+is confident and relaxes when it is uncertain.
 
-Because the test is a ratio of two probabilities of the same row, the softmax
+Let $x_i$ denote the logits of a row, $x_{\max} = \max_j x_j$ the row's largest
+logit, and $\pi = \operatorname{softmax}(x)$ the resulting probabilities. Because
+the filter compares a ratio of two probabilities from the same row, the softmax
 normalizer cancels:
 
 $$
@@ -15,11 +19,11 @@ $$
 \iff x_i \ge x_{\max} + \ln(\text{min\_p}).
 $$
 
-So min-p is a fixed-width band below the top logit, of width $-\ln(\text{min\_p})$
-(about 3.0 for `min_p = 0.05`). That is why renormalizing, shifting a row by a
-constant, or masking other tokens never changes who survives: none of them changes a
-difference of logits. It also shows why the top token cannot be lost: its ratio is 1,
-and $\text{min\_p} \le 1$.
+In logit space, min-p keeps a fixed-width band of size $-\ln(\text{min\_p})$ below
+the top logit (about 3.0 for `min_p = 0.05`). Because shifting a row by a constant,
+renormalizing, or masking other tokens never changes logit differences, none of
+those operations change which tokens survive. This form also shows why the top token
+can never be lost, since its ratio is 1 and $\text{min\_p} \le 1$.
 
 ## Reference solution (PyTorch)
 
@@ -30,15 +34,16 @@ def min_p_filter(logits, min_p):
     return torch.where(probs >= threshold, logits, float("-inf"))
 ```
 
-- `keepdim=True` leaves the row maximum with shape `(B, 1)`, one cutoff per row.
-- `>=` handles both ends without a special case. For `min_p = 1` the top token equals
-  the cutoff and passes. For `min_p = 0` the cutoff is 0 and every probability passes,
-  including the 0 of a masked token, whose logit is copied as `-inf`.
-- The mask comes from probabilities and is applied to logits. Removed tokens become
-  `-inf`, so the next stage's softmax gives them probability 0 and renormalizes the
-  rest by itself.
+- `keepdim=True` gives the row maximum shape `(B, 1)`, producing one cutoff per row.
+- Using `>=` handles both boundary values without special cases. When `min_p = 1`,
+  the top token equals the cutoff and passes. When `min_p = 0`, the cutoff is 0 and
+  every probability passes, including 0 for already-masked tokens whose logits copy
+  through as `-inf`.
+- The mask is computed from probabilities and applied to `logits`. Setting removed
+  entries to `-inf` lets the next stage's softmax assign them probability 0 and
+  renormalize the remaining tokens automatically.
 
-The logit-space form avoids the softmax entirely:
+The equivalent logit-space form avoids computing softmax altogether:
 
 ```python
 def min_p_filter(logits, min_p):
@@ -50,42 +55,43 @@ def min_p_filter(logits, min_p):
 
 ## Common mistakes
 
-- **An absolute cutoff**, `probs >= min_p`. This is a different sampler (sometimes
-  called epsilon sampling). For a confident row it behaves much like min-p, which is
-  why it survives casual testing; for a flat row over a large vocabulary every
-  probability is below the cutoff and the row is emptied.
-- **The ratio applied to logits**, `logits >= min_p * logits.max()`. Logits are
-  log-probabilities up to a constant, so a ratio of probabilities is a *difference* of
-  logits. The scaled version depends on where zero happens to be: shift the row by a
-  constant and the survivors change, and for a negative top logit the cutoff is above
-  the top logit itself.
-- **`>` instead of `>=`.** Invisible for most inputs, and with `min_p = 1` it removes
-  the top token and leaves nothing.
-- **A top probability shared by the batch**, `probs.max()` with no axis. A confident
-  row sets the bar for a flat row batched with it.
-- **Zeroing removed entries.** Writing 0 where the mask is false is right for a
-  probability vector and wrong for logits, where 0 is an ordinary value: the "removed"
-  tokens can end up among the most likely ones.
-- **Filtering after temperature when the chain says before.** Not part of this
-  function, but the reason order matters in a sampler chain: temperature changes
-  $x_i - x_{\max}$, so the band catches different tokens depending on which runs first.
+- **Using an absolute cutoff (`probs >= min_p`).** This implements a different
+  sampler (sometimes called epsilon sampling). On a confident row it looks similar
+  to min-p and can slip past casual testing, but on a flat row over a large
+  vocabulary every probability falls below `min_p` and the entire row is masked out.
+- **Applying the ratio directly to logits (`logits >= min_p * logits.max()`).**
+  Logits are log-probabilities up to an additive constant, so a ratio of
+  probabilities corresponds to a *difference* of logits. Scaling logits breaks shift
+  invariance, and when the maximum logit is negative the cutoff ends up above the
+  maximum logit itself.
+- **Using `>` instead of `>=`.** This goes unnoticed on most inputs, but when
+  `min_p = 1` it masks out the top token and leaves an empty row.
+- **Sharing a single maximum across the batch (`probs.max()` with no axis).** A
+  confident row then sets a high cutoff for any flat row batched alongside it.
+- **Zeroing out removed entries.** Writing `0` where the mask is false works for
+  probabilities, not logits. In logit space, `0` is an ordinary score, so "removed"
+  tokens can become some of the most likely candidates.
+- **Filtering after temperature when the pipeline expects it before.** Although not
+  part of this function, sampler order matters because temperature scales
+  $x_i - x_{\max}$, changing which tokens fall inside the band.
 
 ## Complexity
 
-$O(B \cdot V)$ time and memory: one softmax (or one max), one comparison, one select.
-No sort is needed, which makes min-p cheaper than top-p.
+$O(B \cdot V)$ time and memory for one softmax (or one row-wise maximum), one
+comparison, and one masked select. No sort is needed, which makes min-p cheaper than
+top-p.
 
 ## In the wild
 
 Min-p was introduced by Nguyen et al., "Turning Up the Heat: Min-p Sampling for
-Creative and Coherent LLM Outputs" (arXiv 2407.01082, 2024; ICLR 2025), with exactly
-this rule: the base value is scaled by the top token's probability to give the
-truncation threshold. llama.cpp implements the logit-space form
-(`min_logit = max_logit + logf(p)`, keep `logit >= min_logit`), skips the sampler for
-`p <= 0`, and enables it by default with `min_p = 0.05`, after top-k and top-p and
-before temperature in its default chain. mlx-lm's `apply_min_p` works on
-log-probabilities the same way (`logprobs < top_logprobs + log(min_p)` is removed) and
-is off by default (`min_p = 0.0`). Hugging Face's `MinPLogitsWarper` uses the
-probability form of the reference. All three add a `min_keep` /
-`min_tokens_to_keep` floor; with the default of 1 it changes nothing, since the top
-token always passes.
+Creative and Coherent LLM Outputs" (arXiv 2407.01082, 2024; ICLR 2025), using this
+exact rule of scaling `min_p` by the top token's probability.
+
+`llama.cpp` implements the logit-space form (`min_logit = max_logit + logf(p)`,
+keeping `logit >= min_logit`), skips the filter when `p <= 0`, and enables it by
+default with `min_p = 0.05` after top-k and top-p and before temperature. `mlx-lm`'s
+`apply_min_p` operates on log-probabilities in the same way (removing tokens where
+`logprobs < top_logprobs + log(min_p)`) and is disabled by default (`min_p = 0.0`).
+Hugging Face's `MinPLogitsWarper` uses the probability form shown in the reference.
+All three include a `min_keep` or `min_tokens_to_keep` floor, which changes nothing
+at its default of 1 because the top token always passes.

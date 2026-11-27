@@ -1,7 +1,6 @@
-Implement min-p filtering for a batch of logits: in every row, remove the tokens whose
-probability is less than a fraction `min_p` of the most likely token's probability.
-Unlike top-k and top-p, the cutoff is relative to how confident the model is, so the
-one thing to get right is what the fraction is a fraction *of*.
+Implement min-p filtering for a batch of logits. For each row, mask out every token
+whose probability is less than `min_p` times the probability of that row's most
+likely token.
 
 ![This problem is Min-p, which removes tokens far less probable than the top one.](assets/map.svg)
 
@@ -11,15 +10,22 @@ one thing to get right is what the fraction is a fraction *of*.
 def min_p_filter(logits, min_p): ...
 ```
 
-Each row of `logits` is treated independently. For one row, let
-$\pi = \operatorname{softmax}(\text{logits})$ and $\pi_{\max} = \max_j \pi_j$. Token
-$i$ is kept exactly when
+The input `logits` contains `B` rows over a vocabulary of `V` tokens. Entries may be
+`-inf` to represent already-masked tokens with probability 0, and every row has at
+least one finite entry. `+inf` and NaN never appear. The threshold factor `min_p` is
+a Python float with $0 \le \text{min\_p} \le 1$, shared across all rows.
+
+Each row $b$ is filtered independently. Let $\pi = \operatorname{softmax}(\text{logits}[b])$
+be the row's probabilities (masked `-inf` entries contribute probability 0), and let
+$\pi_{\max} = \max_j \pi_j$ be the largest probability in that row. Token $v$ is
+kept when
 
 $$
-\pi_i \;\ge\; \text{min\_p} \cdot \pi_{\max},
+\pi_v \;\ge\; \text{min\_p} \cdot \pi_{\max}.
 $$
 
-and the result is the logits with every other token masked:
+The output has the same shape as `logits`. Kept tokens retain their exact input
+logit values, and removed tokens are replaced with `-inf`:
 
 $$
 \text{out}[b, v] =
@@ -29,22 +35,16 @@ $$
 \end{cases}
 $$
 
-- `logits`: a float32 tensor of shape `(B, V)`. Entries may be `-inf` (a masked token,
-  probability 0); every row has at least one finite entry. `+inf` and NaN never appear.
-- `min_p`: a Python float with $0 \le \text{min\_p} \le 1$, the same for every row.
-- Returns a float32 tensor of shape `(B, V)`: logits, not probabilities. A kept entry
-  has exactly its input value; a removed entry is exactly `-inf`.
+The following properties follow from this definition:
 
-Consequences of the definition:
-
-- The comparison is `>=`, so **the most likely token always survives**, together with
-  every token tied with it. With `min_p = 1` those are the only survivors.
-- With `min_p = 0` every token is kept and the logits are returned unchanged. A masked
-  entry is `-inf` in the input and stays `-inf`.
-- $\pi_{\max}$ is the largest probability of **that row**. The softmax is over all
-  entries of the row, masked ones included (they contribute 0).
-- The number of survivors differs from row to row, and nothing is renormalized: the
-  kept logits are passed through untouched for the next sampler stage.
+- Because the comparison is `>=`, **the most likely token always survives**, along
+  with every token tied with it. When `min_p = 1`, those are the only survivors.
+- When `min_p = 0`, every token is kept and the input logits are returned unchanged.
+  Existing `-inf` entries remain `-inf`.
+- $\pi_{\max}$ is computed per row over all `V` entries of that row.
+- The number of surviving tokens can vary from row to row. Return unnormalized
+  logits (not probabilities) so kept values pass untouched to the next sampler
+  stage.
 
 You may use your framework's built-in `softmax`.
 
@@ -70,42 +70,44 @@ min_p_filter(logits, 0.2)
 #  [-1.7148, -1.7148, -1.7720, -1.8326, -1.8326, -1.8971]]
 ```
 
-Row 0 is confident: its top probability is 0.60, so the cutoff is
-$0.2 \times 0.60 = 0.12$. Tokens 0 and 1 pass; the three tokens at 0.05 and below are
-removed, and the masked token stays masked.
+Row 0 is confident, with a top probability of 0.60, so its cutoff is
+$0.2 \times 0.60 = 0.12$. Tokens 0 and 1 pass, the three tokens at 0.05 and below
+are masked to `-inf`, and the already-masked token stays `-inf`.
 
-Row 1 is flat: its top probability is 0.18, so the cutoff is $0.2 \times 0.18 = 0.036$
-and all six tokens pass. Note that every probability in this row is below 0.2: using
-`min_p` as an absolute cutoff would remove the whole row.
+Row 1 is flat, with a top probability of 0.18, so its cutoff is
+$0.2 \times 0.18 = 0.036$ and all six tokens pass. Every probability in this row is
+below 0.2, so an absolute cutoff of 0.2 would have removed the entire row.
 
-The same `min_p` kept two tokens in one row and six in the other. Sampling from the
-result means taking its softmax: row 0 becomes `[0.6667, 0.3333, 0, 0, 0, 0]`.
+The same `min_p` keeps two tokens in row 0 and six in row 1. Taking the softmax of
+the filtered output renormalizes row 0 to `[0.6667, 0.3333, 0, 0, 0, 0]`.
 
 ## Constraints
 
-- $1 \le B \le 64$, $1 \le V \le 2000$. `min_p` is either exactly `0` or lies in
+- $1 \le B \le 64$ and $1 \le V \le 2000$. `min_p` is either `0` or lies in
   $[10^{-4}, 1]$. Finite logits lie in $[-1000, 1000]$.
-- Kept entries are compared with the reference to a relative tolerance of `1e-4` and
-  an absolute tolerance of `1e-6` (they are copies of the input); removed entries must
-  be exactly `-inf`.
-- The test $\pi_i \ge \text{min\_p} \cdot \pi_{\max}$ is equivalent to
-  $x_i \ge x_{\max} + \ln(\text{min\_p})$ on the logits $x$, and you may implement
-  either. Float32 rounds the two differently, so the tests never make the comparison
-  close: every finite logit differs from $x_{\max} + \ln(\text{min\_p})$ by at least
-  `1e-3`. The one exception is exact in both forms: with `min_p = 1`, logits equal to
-  the row maximum are kept.
+- Kept entries are compared with the reference using a relative tolerance of `1e-4`
+  and an absolute tolerance of `1e-6`. Removed entries must be exactly `-inf`.
+- The probability test $\pi_v \ge \text{min\_p} \cdot \pi_{\max}$ is equivalent to
+  $x_v \ge x_{\max} + \ln(\text{min\_p})$ on a row's logits $x$ with row maximum
+  $x_{\max}$, and you may implement either form. Because float32 rounds the two
+  differently, every finite test logit differs from $x_{\max} + \ln(\text{min\_p})$
+  by at least `1e-3`. The only exception is `min_p = 1`, where logits equal to the
+  row maximum are kept in both forms.
 - No Python loop over rows or tokens is needed.
 
 ## Why this matters
 
-Min-p (Nguyen et al., 2024) is the truncation sampler that local inference engines
-reach for first: llama.cpp enables it by default with `min_p = 0.05`, and mlx-lm,
-Hugging Face `transformers`, and vLLM all ship it. Its appeal is that one setting
-behaves sensibly in both regimes. When the model is sure, a fixed top-k or top-p still
-lets a long tail of unlikely tokens through, which is where incoherent output at high
-temperature comes from; when the model is unsure, they cut off reasonable candidates.
-A cutoff proportional to the top probability does neither. That property is the entire
-method, and it is lost by the two most common ways of getting it wrong: an absolute
-cutoff (which empties flat rows, so the sampler has nothing to choose from) and a top
-probability shared across the batch (which makes one request's output depend on how
-confident the model is about a neighbor's).
+Min-p (Nguyen et al., 2024) is a standard truncation sampler in modern inference
+engines. `llama.cpp` enables it by default with `min_p = 0.05`, and `mlx-lm`,
+Hugging Face `transformers`, and `vLLM` all ship it.
+
+A single `min_p` setting adapts to how confident the model is. When the model is sure,
+fixed top-k or top-p can still admit a long tail of unlikely tokens that cause
+incoherent output at high temperature. When the model is unsure, they can cut off
+reasonable candidates. Scaling the cutoff by the top probability avoids both
+problems.
+
+Two common bugs destroy this property. Using an absolute probability cutoff empties
+flat rows so the sampler has nothing to choose from. Taking the maximum probability
+across the entire batch couples unrelated requests, making one prompt's output
+depend on how confident the model is on another prompt in the same batch.
