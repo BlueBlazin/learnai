@@ -451,7 +451,8 @@ interface ProblemDetail extends ProblemSummary {
   statement: string;            // Markdown
   hints: string[];              // Markdown each
   editorial: string | null;     // null while locked
-  editorialUnlocked: boolean;   // true once solved or explicitly revealed
+  editorialUnlocked: boolean;   // true once solved or explicitly revealed; the workspace
+                                // opens the Editorial tab after every accepted submit
   entry: string[];
   timeLimitS: number;
 }
@@ -684,7 +685,8 @@ Rules:
   `start_review` fails when the problem has no active review or reviews are off. A review
   need not be due to be run. A normal accepted submit does not advance a review.
 - While a review is in progress the workspace hides hints, the editorial, the reference,
-  and the learner's earlier submissions' code until the learner chooses `forgot`.
+  and the learner's earlier submissions' code until the learner chooses `forgot`. An
+  accepted review submit ends the review, so the workspace opens the editorial then too.
 - `Stats` gains `reviewsDue: number`. Review submits count toward the streak. Reviews can
   be turned off in Settings (stored setting `reviews_enabled`, default on); when off,
   nothing is scheduled or shown, and existing schedules are kept. Turning reviews on

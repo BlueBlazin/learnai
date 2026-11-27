@@ -247,24 +247,38 @@ function ProblemScreen({ problemId }: { problemId: string }) {
     if (searchReview && reviewKnown && !review) setReviewMode(false);
   }, [searchReview, reviewKnown, review, setReviewMode]);
 
+  const accepted =
+    run.state.phase === "done" && run.state.mode === "submit" && run.state.verdict === "accepted";
+  const acceptedRun = accepted ? run.state.runId : null;
+
   // An accepted review submit completes the review: the attempt is gone from disk,
   // so drop any unsaved edit to it and return to the normal workspace.
-  const reviewAccepted =
-    run.state.phase === "done" &&
-    run.state.review &&
-    run.state.mode === "submit" &&
-    run.state.verdict === "accepted";
+  const reviewAccepted = accepted && run.state.review;
   const { discard } = editor;
-  const acceptedRun = reviewAccepted ? run.state.runId : null;
+  const acceptedReviewRun = reviewAccepted ? acceptedRun : null;
   /** The accepted review run that review mode was already left for: once per run. */
   const leftFor = useRef<string | null>(null);
   useEffect(() => {
-    if (acceptedRun === null || leftFor.current === acceptedRun) return;
-    leftFor.current = acceptedRun;
+    if (acceptedReviewRun === null || leftFor.current === acceptedReviewRun) return;
+    leftFor.current = acceptedReviewRun;
     discard();
     setReviewMode(false);
-  }, [acceptedRun, discard, setReviewMode]);
+  }, [acceptedReviewRun, discard, setReviewMode]);
   const outcome = reviewAccepted && reviewed ? reviewOutcome(reviewed, reviews.data) : null;
+
+  // An accepted submit opens the editorial, with the statement side showing. A
+  // first solve waits for the problem to reload with the editorial unlocked, so
+  // the tab never opens on the locked notice. It follows the effect above: after
+  // a review the address it sets (the editorial, outside review mode) is the last.
+  const editorialUnlocked = problem.data?.editorialUnlocked === true;
+  /** The accepted run the editorial was already opened for: once per run. */
+  const openedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (acceptedRun === null || !editorialUnlocked || openedFor.current === acceptedRun) return;
+    openedFor.current = acceptedRun;
+    showStatement();
+    go(routes.problem(problemId, { tab: "editorial" }), { replace: true });
+  }, [acceptedRun, editorialUnlocked, go, problemId, showStatement]);
 
   const endReview = async (action: ReviewAction) => {
     // A snoozed attempt is kept for tomorrow; the other two discard it.
