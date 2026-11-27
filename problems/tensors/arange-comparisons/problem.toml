@@ -1,0 +1,13 @@
+id = "arange-comparisons"
+title = "Masks from `arange`"
+track = "tensors"
+order = 80
+difficulty = "easy"
+level = 2
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["arange", "mask", "comparison", "broadcasting"]
+prerequisites = ["broadcast-align"]
+requires = "cpu"
+entry = ["length_mask", "band_mask", "same_segment"]
+time_limit_s = 10

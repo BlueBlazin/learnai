@@ -1,0 +1,13 @@
+id = "masks-and-where"
+title = "Masks and `where`"
+track = "tensors"
+order = 70
+difficulty = "easy"
+level = 2
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["mask", "where", "padding", "nan"]
+prerequisites = ["broadcast-align"]
+requires = "cpu"
+entry = ["fill_masked", "masked_mean", "masked_max"]
+time_limit_s = 10

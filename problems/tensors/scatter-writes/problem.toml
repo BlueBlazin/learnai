@@ -1,0 +1,14 @@
+id = "scatter-writes"
+title = "Scatter and Indexed Writes"
+track = "tensors"
+order = 60
+difficulty = "easy"
+level = 3
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["scatter", "indexed-assignment", "one-hot", "counting"]
+prerequisites = ["gather-along-axis"]
+requires = "cpu"
+entry = ["one_hot_rows", "token_counts", "write_at"]
+time_limit_s = 10
+forbidden = ["torch.nn.functional.one_hot", "jax.nn.one_hot"]

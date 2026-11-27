@@ -1,0 +1,13 @@
+id = "cumsum-tricks"
+title = "Cumulative Sums as Control Flow"
+track = "tensors"
+order = 100
+difficulty = "easy"
+level = 3
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["cumsum", "mask", "eos", "prefix"]
+prerequisites = ["masks-and-where"]
+requires = "cpu"
+entry = ["exclusive_cumsum", "first_true", "through_first_eos"]
+time_limit_s = 10

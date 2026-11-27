@@ -1,0 +1,13 @@
+id = "sort-and-unsort"
+title = "Sorting and Unsorting"
+track = "tensors"
+order = 90
+difficulty = "easy"
+level = 3
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["argsort", "permutation", "stable-sort", "scatter"]
+prerequisites = ["gather-along-axis", "scatter-writes"]
+requires = "cpu"
+entry = ["rank_descending", "inverse_permutation", "keep_to_original_order"]
+time_limit_s = 10
