@@ -1,59 +1,20 @@
 ## The idea
 
-A regular expression is built from choices: this branch or that one, another
-repetition or stop. A deterministic automaton has none. The classical route keeps
-the two concerns apart: first build an automaton that is allowed to guess
-(a nondeterministic one, where the translation of each construct is a three-line
-rule), then remove the guessing mechanically.
+A regular expression describes choices, such as picking between branches or deciding whether to repeat an atom. A deterministic finite automaton (DFA) cannot make guesses. The classical compilation pipeline separates these two concerns by first building a nondeterministic finite automaton (NFA) that is allowed to guess via empty (epsilon) transitions, then determinizing and minimizing it mechanically.
 
-**Parsing.** The grammar has four precedence levels, and recursive descent gives
-each its own function: `alternation` splits at `|`, `concatenation` collects pieces
-until `|` or `)`, `repetition` reads one atom and at most one quantifier, `atom`
-reads a literal, an escape, a class, or a parenthesized `alternation`. Precedence
-is nothing but which function calls which. Everything an atom can match is reduced
-to one node type, "one byte out of this set", so later stages never hear about
-classes or escapes.
+**Parsing.** The grammar has four precedence levels, so recursive descent maps each level to its own function. `alternation` splits on `|`, `concatenation` collects pieces until `|` or `)`, `repetition` reads an atom followed by an optional quantifier, and `atom` reads a literal, escape, character class, or parenthesized `alternation`. Precedence falls directly out of this call hierarchy. Every basic atom reduces to a single node type representing "one byte from this set", so downstream stages do not need to handle classes or escapes.
 
-**Characters over bytes.** The only construct that is not a byte set is "one
-character except ...". Written out as a tree, it is an alternation of the ASCII
-bytes that are not excluded and the three multi-byte shapes: a lead byte `C2`–`DF`
-and one continuation, `E0`–`EF` and two, `F0`–`F4` and three. After that the
-automaton knows UTF-8 structurally: after `E2` it is in a state that accepts only
-a continuation byte, which is exactly the state a token ending in the middle of `€`
-leaves the decoder in.
+**Characters over bytes.** The only constructs that do not reduce to a single byte set are the "any character except ..." forms (`.`, `[^...]`, `\D`, `\W`, `\S`). Each expands into an alternation of the allowed ASCII bytes and the three multi-byte UTF-8 shapes: a lead byte in `C2`–`DF` plus one continuation byte (`80`–`BF`), `E0`–`EF` plus two continuation bytes, and `F0`–`F4` plus three continuation bytes. This encodes UTF-8 directly into the automaton structure. After reading `E2`, the DFA enters a state that only accepts a continuation byte, which matches what happens when an LLM token ends in the middle of `€`.
 
-**Thompson's construction.** Every node becomes a fragment with one entry and one
-exit, connected by transitions that read nothing (epsilon moves): a byte set is one
-edge; a concatenation chains fragments exit to entry; an alternation fans out from
-the entry and back into the exit; `x{m,n}` is `m` copies in a row, then `n - m`
-copies, each with a bypass to the exit; `x{m,}` is `m` copies and one copy with a
-loop. The fragment count is linear in the size of the pattern with bounds
-expanded.
+**Thompson's construction.** Each AST node becomes an NFA fragment with one entry state and one exit state, linked by epsilon transitions that consume no input. A byte set is a single labeled edge. Concatenation chains fragments from exit to entry. Alternation fans out from the new entry to each branch and merges their exits into the new exit. A bounded repetition `x{m,n}` chains `m` required copies followed by `n - m` optional copies, each with an epsilon bypass to the exit. An unbounded repetition `x{m,}` chains `m` required copies followed by one looping copy. The number of NFA states is linear in the size of the pattern after expanding bounds.
 
-**Subset construction.** After reading some input, the guessing automaton could be
-in any of a set of states. That set is the deterministic state. The start is the
-epsilon closure of the entry; on a byte, take every edge whose set contains the
-byte and close again. Sets are explored breadth-first and numbered as they are
-found. A set containing the exit is accepting. A byte that leads nowhere gets no
-entry, which is how the result comes out without a dead state: every fragment
-state lies on some path to the exit, so every non-empty set can still accept.
+**Subset construction.** After reading a byte prefix, an NFA could be in any subset of its states. Each reachable subset becomes a single DFA state. The DFA start state is the epsilon closure of the NFA entry. From any subset and any byte, follow all NFA edges matching that byte and take the epsilon closure of the targets. Exploring subsets breadth-first ensures every DFA state is reachable. A DFA state is accepting if its subset contains the NFA exit. Omitting transitions for bytes that lead to no NFA states automatically avoids creating a dead state, because every NFA fragment state lies on a path to the exit and therefore every non-empty subset can still reach an accepting state.
 
-**Minimization.** The subset automaton can distinguish histories that the language
-does not: for `-?(0|[1-9]\d*)` it has one state for "just read the first digit" and
-another for "read more digits", with identical futures. Two states are equivalent
-when the same strings are accepted from both. Moore's algorithm computes that
-relation from the coarse side: assume all accepting states are equivalent and all
-others too, then split any block in which two states disagree on some byte about
-the block they move to (or about whether they move at all). Each round either
-splits a block or proves the partition stable; a stable partition is the
-equivalence. One state per block is the minimal automaton, and by the Myhill–Nerode
-theorem it is the same automaton whichever correct construction produced the input,
-up to state names. That is why the tests can demand an exact state count.
+**Minimization.** The subset DFA can keep distinct states that have identical future behavior. In `-?(0|[1-9]\d*)`, it creates separate states for "just read the first digit" and "read more digits", even though both are accepting and loop on all digits. Two states are equivalent if they accept the exact same remaining byte strings. Moore's partition refinement algorithm starts with two blocks (accepting and non-accepting) and repeatedly splits any block whose states disagree on which block a byte transitions to, or whether a transition exists at all. When a full pass splits no blocks, the partition is stable and defines the equivalence classes. Merging each block into one state yields the minimal DFA. By the Myhill–Nerode theorem, this minimal DFA is unique up to state numbering regardless of how the input DFA was built, which is why the tests can check for an exact state count.
 
 ## Reference solution (Python)
 
-The stages after parsing, in full (the parser is the recursive descent described
-above, about a hundred lines, in the reference file):
+Here are the NFA, determinization, and minimization stages in full. The recursive-descent parser described above is about a hundred lines in the reference file.
 
 ```python
 class NFA:
@@ -156,66 +117,28 @@ def minimize(table, accepting):
     return merged, block[0], {block[s] for s in accepting}
 ```
 
-Two details carry weight. In `minimize`, a state's own block is part of its
-signature, so a round can only split blocks, never merge them, and "the count did
-not grow" means "nothing changed". In `determinize`, the closure is computed once
-per distinct target set and not once per byte: for `.` there are 127 ASCII bytes
-with the same target.
+Two implementation details are worth noting. In `minimize`, including a state's current block ID in its signature guarantees that each round can only split blocks and never merge them, so stopping when `len(ids) == count` proves convergence. In `determinize`, caching closures by `frozenset(targets)` avoids recomputing the same closure for every byte in a large set, such as the 127 ASCII bytes matched by `.`.
 
-Other constructions reach the same automaton. Brzozowski derivatives work on the
-expression itself (the state after reading a byte is the derivative of the
-expression by that byte) and need no nondeterministic stage; with the expressions
-normalized well they produce few states directly, and a minimization pass still
-guarantees the minimum.
+Other constructions produce the same minimal DFA. Brzozowski derivatives differentiate the regex directly with respect to each byte and skip the NFA stage. With good expression normalization they stay compact directly, though a minimization pass is still needed to guarantee the exact minimum.
 
 ## Common mistakes
 
-- **`{m,n}` off by one.** `n - m + 1` optional copies, or a loop bound that is
-  exclusive where the syntax is inclusive. `a{2,4}` must have exactly five states.
-- **Wrong precedence.** Splitting at `|` inside the loop that collects pieces makes
-  `ab|cd` mean `a(b|c)d`. Applying a quantifier to "everything so far" makes `ab*`
-  mean `(ab)*`.
-- **Negated classes as byte sets.** `[^"]` as "the 255 other bytes" accepts `C3`
-  with nothing after it, and accepts a continuation byte with nothing before it.
-  The language then contains byte strings that are not text, and a decoder
-  following it can end its output mid-character.
-- **`.` matching a newline.** It is "any character except `0A`"; a negated class is
-  not restricted that way unless it lists `\n`.
-- **Ranges that stop early.** `range(low, high)` drops the last member.
-- **`{m,}` as `{m}`**, or `+` as `*`: the loop or the required copy is missing.
-- **No minimization.** The language is right and the state count is not. The cost
-  appears downstream, in the size of the token index.
-- **A dead state.** A complete table with a sink is a correct automaton for
-  matching and the wrong object for masking: "the walk is still alive" no longer
-  means "this is a prefix of a match", which is the test `dfa-token-mask` relies on.
-- **Accepting unsupported syntax.** A compiler that skips the `?` of `a*?` or treats
-  `^` as a literal turns a pattern it does not understand into a constraint nobody
-  asked for. Refusing is the correct behavior.
+- **`{m,n}` off by one.** Creating `n - m + 1` optional copies or treating `n` as exclusive breaks bounded repetitions. `a{2,4}` must have exactly five states.
+- **Wrong precedence.** Splitting on `|` inside the concatenation loop turns `ab|cd` into `a(b|c)d`. Applying a quantifier to the accumulated concatenation turns `ab*` into `(ab)*`.
+- **Negated classes as raw byte sets.** Implementing `[^"]` as the other 255 bytes accepts a lone `C3` lead byte or an isolated continuation byte. The automaton then accepts invalid UTF-8 and allows a decoder to stop mid-character.
+- **`.` matching a newline.** `.` must exclude the newline byte `0A`. Negated classes do match `\n` unless `\n` is listed inside them.
+- **Exclusive character ranges.** Using `range(low, high)` omits the upper endpoint `high`.
+- **Broken unbounded quantifiers.** Compiling `{m,}` as `{m}` or `+` as `*` drops either the loop or the required copy.
+- **Skipping minimization.** The automaton accepts the right language, but redundant states fail the exact state-count check and bloat downstream token indexes.
+- **Keeping a dead sink state.** A complete transition table with a sink state matches strings correctly, but breaks token masking because `dfa-token-mask` assumes any existing transition leads to a live prefix of a valid match.
+- **Silently accepting unsupported syntax.** Ignoring the `?` in `a*?` or treating `^` as a literal silently compiles a different constraint than requested. Raise `ValueError` instead.
 
 ## Complexity
 
-Parsing and Thompson's construction are linear in the size of the pattern with
-bounds expanded (`x{100}` is a hundred copies). The subset construction is
-exponential in the worst case, and the worst case is real: `(a|b)*a(a|b){k}` has
-to remember the last $k + 1$ bytes and needs $2^{k+1}$ states, minimal or not. For
-the patterns constrained decoding uses (formats with little ambiguity) the number
-of sets stays close to the number of fragment states. Each Moore round costs
-$O(\text{transitions} \cdot \log)$ for the sorted signatures, and there are at most
-as many rounds as states; Hopcroft's algorithm brings the total to
-$O(n \log n)$ per byte class and is what production libraries use.
+Parsing and Thompson's construction run in linear time in the size of the pattern with repetition bounds expanded (for example, `x{100}` creates 100 copies). Subset construction is exponential in the worst case. For example, `(a|b)*a(a|b){k}` must track the last $k + 1$ bytes and requires $2^{k+1}$ states even after minimization. For typical structured-output patterns with low ambiguity, the number of subset states stays close to the NFA size. With $n$ DFA states and $m$ transitions, each round of Moore's algorithm takes $O(m \log m)$ time to sort signatures, for at most $n$ rounds. Production libraries use Hopcroft's algorithm, which runs in $O(n \log n)$ time per byte class.
 
-A practical optimization the reference leaves out: bytes that no part of the
-pattern distinguishes can be grouped into classes first, so that rows have a dozen
-entries, not 256.
+A practical optimization omitted in the reference is grouping bytes into equivalence classes before determinization. Bytes that no part of the pattern distinguishes share transitions, shrinking each row from up to 256 entries to a few dozen.
 
 ## In the wild
 
-The automaton-plus-vocabulary design is from "Efficient Guided Generation for Large
-Language Models" (arXiv 2307.09702), the paper behind Outlines: a regular
-expression is compiled to a finite-state machine, and the machine's states index
-the sets of allowed tokens. The kit's `CharDFA.from_regex`, which the other
-problems of this track use, is this problem's function with the same subset and the
-same pipeline. Its character table (and this problem's) is deliberately loose: a
-strict UTF-8 automaton also excludes overlong encodings (`E0` followed by `80`–`9F`),
-surrogates (`ED` followed by `A0`–`BF`), and code points above U+10FFFF (`F4`
-followed by `90`–`BF`), at the cost of a few more states.
+This automaton-plus-vocabulary pipeline comes from "Efficient Guided Generation for Large Language Models" (arXiv 2307.09702), the paper behind Outlines. A regular expression compiles into a DFA, and each DFA state indexes the set of allowed tokens. The kit's `CharDFA.from_regex` used by other problems in this track implements this exact subset and pipeline. Its UTF-8 byte table (and this problem's) is intentionally permissive. A strict UTF-8 automaton also rejects overlong encodings (`E0` followed by `80`–`9F`), surrogates (`ED` followed by `A0`–`BF`), and code points above U+10FFFF (`F4` followed by `90`–`BF`), at the cost of a few extra states.

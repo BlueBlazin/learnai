@@ -1,25 +1,13 @@
-Build the pattern recursively: one function per schema type, each returning the
-pattern of its documents, with the patterns of nested schemas pasted in. Every type
-but one is a direct transcription of its grammar. For the object, write down every
-document of a schema with three optional properties `a`, `b`, `c` before writing
-any pattern. What decides whether a member has a comma in front of it?
+Build the pattern recursively with one helper per schema type, pasting the compiled patterns of nested sub-schemas into the parent pattern. Every type except `object` translates directly from its grammar. For `object`, write out every valid document for a schema with three optional properties `a`, `b`, and `c` before writing any regex. What determines whether a member has a comma in front of it?
 
 ---
 
-A member has a comma in front of it exactly when some member was written before it.
-So there are two situations, and each has a simple pattern for "the members from
-position `i` on":
+A member has a leading comma if and only if at least one member was written before it. That gives two cases for matching the suffix of members starting at index `i`:
 
-- **Something was already written.** Every remaining member brings its own leading
-  comma: `,member` if it is required, `(,member)?` if it is optional. Concatenate.
-- **Nothing was written yet.** If member `i` is required, it comes without a comma,
-  followed by the first situation for the members after it. If it is optional,
-  either it is present (the same, in a group) or it is absent and the question
-  repeats for member `i + 1`: an alternation of the two.
+- **At least one member was already written.** Every remaining member carries its own leading comma: `,member` if required, or `(,member)?` if optional. Concatenate them in order.
+- **No member has been written yet.** If member `i` is required, emit it without a comma and follow it with the first case for `i + 1`. If member `i` is optional, form an alternation between emitting it (followed by the first case for `i + 1`) and skipping it (recursing in this second case at `i + 1`).
 
-An array is the same idea in its simplest form: one item, then `(,item)` repeated,
-so the number of commas is always one less than the number of items; the empty
-array is a separate, optional case.
+Arrays use the same idea in a simpler form: match one item followed by repeated `(,item)` pairs so the number of commas is always one less than the number of items. Handle the empty array `[]` separately when `minItems` is `0`.
 
 ---
 
@@ -35,7 +23,4 @@ array    = "\[" item "(," item "){lo-1,hi-1}" "\]"        with minItems >= 1
 string   = '"' ITEM '{lo,hi}"'   ITEM = ([^"\\\x00-\x1f]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})
 ```
 
-where `M_j` is the escaped `json.dumps(name)`, a colon, and the pattern of the
-property's schema. Escape every regex metacharacter in names and enum values
-(`. ^ $ * + ? { } [ ] ( ) | \`), write digits as `[0-9]`, and wrap every
-alternation in a group so that it cannot capture its neighbors.
+Here `M_j` is the escaped `json.dumps(name)`, followed by `:`, followed by the property's compiled schema pattern, and `lo` and `hi` are the lower and upper bounds (`minItems`/`maxItems` or `minLength`/`maxLength`, omitting `hi` when unbounded). Escape every regex metacharacter (`. ^ $ * + ? { } [ ] ( ) | \`) in property names and enum values, write digits as `[0-9]` instead of `\d`, and wrap every alternation in parentheses so it cannot capture adjacent characters.

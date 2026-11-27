@@ -1,33 +1,14 @@
-In `speculative-decode-loop` the draft model and the target were separate, each
-with its own cache, and the target started from the token ids. Here the "draft
-model" is layers `0..E-1` of the target. When verification begins, what has
-already been computed for the drafted positions, and what is the first layer that
-still has work to do? What must you keep from the draft loop so that this layer
-can start?
+In `speculative-decode-loop`, the draft model and the target model were separate, each with its own cache, and the target started from token ids. Here the draft model is layers `0..E-1` of the target itself. When verification begins, what has already been computed for the drafted positions, and which layer still has work to do? What must you save during drafting so that verification can pick up from that layer?
 
 ---
 
-Keep the exit states. Every draft step is
-`h, cache = lm.layers(lm.embed(feed, offset=position), 0, E, cache)`: store `h`,
-take the argmax of `lm.head(lm.norm(h[-1:]))` as the next draft, and feed that
-token next. Feed the last draft too (one more early step) so that its exit state
-exists. Then verification is a single call:
-`lm.layers(concatenation of the stored states, E, L, cache)`. Its last `k' + 1`
-rows, through `lm.norm` and `lm.head`, are the full model's tokens `g_0 .. g_k'`.
-One cache object serves all layers: the early ones run ahead during the draft,
-and the late ones catch up in that one call.
+Save the exit hidden states from the draft loop. Each draft step runs `h, cache = lm.layers(lm.embed(feed, offset=position), 0, E, cache)`. Append `h` to a list, take `argmax(lm.head(lm.norm(h[-1:])))` as the next draft token, and feed it on the next step. Run one final early-layer step on the last draft token so its exit state is also saved. Verification is then a single call to `lm.layers(concatenation of saved states, E, L, cache)`. Passing the last `k' + 1` rows through `lm.norm` and `lm.head` gives the full model's greedy tokens `g_0 .. g_k'`. One cache object serves all layers. The early layers advance during drafting, and the late layers catch up in that single verification call.
 
 ---
 
-Bookkeeping per round, with `seen = cache.length` at its start (0 in the first
-round, `len(seq) - 1` afterwards):
+Track the per-round bookkeeping using `seen = cache.length` at the start of each round (`0` in the first round, `len(seq) - 1` afterwards):
 
-- first feed: `seq[seen:]` at `offset=seen`; each later feed: the previous draft
-  at the next position;
-- `n_draft = min(k, max_new_tokens - generated - 1)`, and with `n_draft == 0` the
-  draft loop is just the one early step for the unprocessed tokens;
-- accept the longest prefix with `drafts[j] == greedy[j]`, then append
-  `greedy[n]`;
-- `cache = cache.truncate(len(seq) - 1)`: every layer back to the verified
-  tokens that have been processed. The newest token has not been through any
-  layer; it is the first feed of the next round.
+- Start the draft loop by feeding `seq[seen:]` at `offset=seen`, then feed each new draft token one at a time at the next position.
+- Set `n_draft = min(k, max_new_tokens - generated - 1)`. When `n_draft == 0`, the draft loop runs just the single early-layer step on the unprocessed tokens.
+- Accept the longest prefix where `drafts[j] == greedy[j]`, then append `greedy[n]` (the correction or bonus token).
+- Roll every layer back with `cache = cache.truncate(len(seq) - 1)` so only processed verified tokens remain. The newest emitted token has not passed through any layer yet and becomes the first input of the next round.

@@ -1,9 +1,4 @@
-Build the inputs that let a target model verify a whole **tree** of draft tokens in
-one forward pass, and then read the verdict off its output. The tree is flattened
-into one sequence behind the prefix; an attention mask and position ids make every
-node see exactly the sequence it would see if its own root path were the only
-continuation. The mask is the easy half to get almost right: the test is that the
-model's logits at every node are those of its path run alone.
+Build the attention mask and position IDs that let a target model verify a whole **tree** of draft tokens in one forward pass, then read the accepted path from the model's greedy predictions. Flattening the tree into a single sequence behind the prefix avoids recomputing shared branches. The mask and position IDs must ensure that every node produces the exact same logits it would produce if its own root-to-node path were run alone.
 
 ![This problem is the single target call, which here checks a whole tree of drafts.](assets/map.svg)
 
@@ -14,74 +9,50 @@ def tree_inputs(parents, prefix_len): ...  # -> (mask, position_ids)
 def verify_tree(parents, tokens, target_argmax): ...  # -> (path, next_token)
 ```
 
-**The tree.** A draft tree has $N \ge 1$ nodes, numbered in topological order.
-Node $i$ carries the draft token `tokens[i]` and has parent `parents[i]`:
+**The draft tree.** A draft tree has $N \ge 1$ nodes numbered in topological order, sitting behind a prefix of length $P = \texttt{prefix\_len} \ge 1$. Node $i$ carries the draft token `tokens[i]` and has parent `parents[i]`:
 
-- `parents[i] = -1`: node $i$ continues the prefix directly (depth 0);
-- otherwise $0 \le$ `parents[i]` $< i$: node $i$ continues node `parents[i]`.
+- If `parents[i] == -1`, node $i$ continues the prefix directly (depth 0).
+- Otherwise, $0 \le \texttt{parents[i]} < i$, and node $i$ continues node `parents[i]`.
 
-The *root path* of node $i$ is the chain of nodes from depth 0 down to $i$; its
-*ancestors* are the nodes on that path other than $i$; its depth $d_i$ is the
-number of ancestors. The model input is the $P$ prefix tokens followed by the $N$
-node tokens in index order: node $i$ sits at flat index $P + i$.
+The *root path* of node $i$ is the chain of nodes from depth 0 down to $i$. Its *ancestors* are all nodes on that path other than $i$, and its depth $d_i$ is the number of ancestors. The flattened model input consists of the $P$ prefix tokens followed by the $N$ node tokens in index order, so node $i$ sits at flat index $P + i$.
 
 ![The example tree behind a prefix of two tokens, and the mask of the flattened sequence. A node's row is filled for the prefix, itself, and its ancestors only.](assets/tree-mask.svg)
 
 ### `tree_inputs`
 
-Returns the boolean attention mask and the position ids of the flattened sequence.
-`mask[r, c]` is `True` when the token at flat index `r` (the query) may attend to
-the token at flat index `c` (the key):
+Returns the boolean attention mask and integer position IDs for the flattened sequence of length $P + N$. Entry `mask[r, c]` is `True` when the query token at flat index `r` may attend to the key token at flat index `c`.
 
 | row | may attend to |
 |---|---|
-| prefix row $r < P$ | prefix columns $c \le r$ (ordinary causal attention); no node |
-| node row $P + i$ | every prefix column; column $P + i$ itself; column $P + j$ for every ancestor $j$ of $i$; nothing else |
+| prefix row $r < P$ | prefix columns $c \le r$ (ordinary causal attention) and no tree nodes |
+| node row $P + i$ | all prefix columns, column $P + i$ itself, and column $P + j$ for every ancestor $j$ of $i$ |
 
-`position_ids[r]` is $r$ for a prefix row and $P + d_i$ for node $i$: the position
-the node would have if the prefix and its root path were one ordinary sequence.
-Siblings share a position.
-
-- `parents`: integer tensor of shape `(N,)`.
-- `prefix_len`: a Python int, $P \ge 1$.
-- Returns `mask`, a bool tensor of shape `(P + N, P + N)`, and `position_ids`, an
-  integer tensor of shape `(P + N,)`.
+For position IDs, `position_ids[r]` is $r$ for each prefix row $r < P$, and $P + d_i$ for each node $i$ at flat index $P + i$. This matches the position node $i$ would occupy if the prefix and its root path were one ordinary sequence. Siblings share the same position ID.
 
 ### `verify_tree`
 
-The target model has been run once on the flattened sequence with those inputs,
-and its greedy token has been read at the last prefix position and at every node:
+Assume the target model ran once on the flattened sequence using the mask and position IDs above, and its greedy next-token predictions were collected into `target_argmax`:
 
-- `target_argmax[0]`: the target's greedy next token after the prefix;
-- `target_argmax[i + 1]`: its greedy next token after node $i$, that is, given the
-  prefix and the root path of node $i$.
+- `target_argmax[0]` is the target's greedy next token after the prefix.
+- `target_argmax[i + 1]` is the target's greedy next token after node $i$ (conditioned on the prefix and the root path of node $i$).
 
-Verification walks down from the prefix. Start with *current* $= -1$ (the end of
-the prefix) and *want* $=$ `target_argmax[0]`. Repeat: if some node $c$ has
-`parents[c] == current` and `tokens[c] == want`, it is accepted; append $c$ to the
-path, set *current* $= c$ and *want* $=$ `target_argmax[c + 1]`. Otherwise stop.
+Verification walks down the tree starting from the prefix. Set `current = -1` (the end of the prefix) and `want = target_argmax[0]`. Repeat the following step:
 
-- Returns `(path, next_token)`: the accepted node indices in order from depth 0
-  down, as a list of Python `int`s (empty if no depth-0 node carries
-  `target_argmax[0]`), and the final *want* as a Python `int`: the target's own
-  token after the last accepted node, which is the correction where the tree was
-  wrong, or the bonus token when the walk ends at a leaf.
+- If some node $c$ satisfies `parents[c] == current` and `tokens[c] == want`, accept $c$. Append $c$ to `path`, set `current = c`, and set `want = target_argmax[c + 1]`.
+- Otherwise, stop.
 
-The children of one parent always carry distinct tokens, so at most one child can
-match. A node is accepted only through its parent: a node whose own token equals
-the target's token after its parent is worth nothing if that parent was not
-accepted.
+Return `(path, next_token)`, where `path` is the list of accepted node indices from depth 0 down (empty if no depth-0 node matches `target_argmax[0]`), and `next_token` is the final value of `want`. That final token is the target's correction when the walk stops at a mismatch, or a bonus token when the walk reaches a leaf.
 
-The tokens emitted by the round are `[tokens[i] for i in path] + [next_token]`,
-which is what the target's own greedy decode produces after the prefix. (In an
-engine, the cache entries at flat indices `P + path[j]` are then moved to
-positions `P + j`; everything else behind the prefix is dropped.)
+Children of the same parent always carry distinct tokens, so at most one child can match at each step. A node can only be accepted through its parent. Even if a node's token matches the target's prediction after its parent, that node is ignored unless its parent was accepted.
+
+Together, the round emits `[tokens[i] for i in path] + [next_token]`, which matches the target model's own greedy decoding after the prefix. In a serving engine, the KV-cache entries at flat indices `P + path[j]` are then compacted into positions `P + j`, and all other tree entries are discarded.
 
 ## Shapes
 
 | name | shape | dtype |
 |---|---|---|
 | `parents`, `tokens` | `(N,)` | integer |
+| `prefix_len` | scalar | Python `int` ($P \ge 1$) |
 | `mask` | `(P + N, P + N)` | bool |
 | `position_ids` | `(P + N,)` | integer |
 | `target_argmax` | `(N + 1,)` | integer |
@@ -89,7 +60,7 @@ positions `P + j`; everything else behind the prefix is dropped.)
 
 ## Example
 
-The tree of Figure 2, with $P = 2$:
+Using the tree from the second figure with $P = 2$:
 
 ```python
 parents = [-1, -1, 0, 0, 1, 2]
@@ -108,9 +79,7 @@ mask, position_ids = tree_inputs(parents, 2)
 # position_ids = [0, 1, 2, 2, 3, 3, 3, 4]
 ```
 
-Node 3 does not see node 2 (its sibling) although node 2 comes earlier in the flat
-sequence, and node 4 does not see node 0. Nodes 2, 3, and 4 are all the second
-token after the prefix, so all three have position 3.
+Node 3 cannot attend to its sibling node 2 even though node 2 appears earlier in the flattened sequence, and node 4 cannot attend to node 0. Nodes 2, 3, and 4 are all the second token after the prefix, so all three have position ID 3.
 
 ```python
 # target_argmax: the target's token after the prefix, then after node 0, 1, ..., 5
@@ -119,42 +88,20 @@ verify_tree(parents, tokens, [7, 4, 8, 6, 2, 5, 1])  # ([0, 2, 5], 1)
 verify_tree(parents, tokens, [5, 9, 8, 6, 2, 5, 1])  # ([], 5)
 ```
 
-First call. After the prefix the target says 7, the token of node 0: accepted.
-After node 0 it says 9, the token of node 3, a child of node 0: accepted. Node 3
-is a leaf, so the walk ends and the target's token after node 3, `2`, is a bonus.
-The round emits `[7, 9, 2]`. Note that node 4 carries 8, exactly what the target
-says after node 1; that is irrelevant, because node 1 was not accepted.
-
-Second call. After node 0 the target says 4 (node 2), after node 2 it says 6
-(node 5), and node 5 is a leaf: the round emits `[7, 4, 6, 1]`.
-
-Third call. The target's first token is 5, which no depth-0 node carries: nothing
-is accepted, and the round emits the single token 5.
+- **First call:** After the prefix, the target predicts `7`, which matches depth-0 node 0. After node 0, the target predicts `9`, which matches its child node 3. Node 3 is a leaf, so the walk ends and the target's token after node 3 (`2`) becomes the bonus token. The round emits `[7, 9, 2]`. Node 4 also matches the target's prediction after node 1 (`8`), but node 1 was never accepted, so node 4 is ignored.
+- **Second call:** After node 0, the target predicts `4` (node 2). After node 2, it predicts `6` (node 5). Node 5 is a leaf, so the round emits `[7, 4, 6, 1]`.
+- **Third call:** The target's first token is `5`, which matches no depth-0 node. Nothing is accepted, and the round emits `[5]`.
 
 ## Constraints
 
-- $1 \le N \le 64$ and $1 \le P \le 64$; `parents[i] < i` always holds.
-- `tree_inputs` is compared exactly with the definition, entry by entry.
-- **Equivalence.** A small decoder with rotary position embeddings (the kit's
-  [`decoder_block_ref`](../../../python/src/learnai/kit/decoder.py)) is run once
-  over the prefix and the flattened tree with your mask and position ids. The
-  logits at every node must equal, within `1e-4`, the logits at the last position
-  of an ordinary causal run over the prefix followed by that node's root path; the
-  logits at the prefix must be unchanged by the tree.
-- `verify_tree` is compared exactly. Sibling tokens are distinct in every test.
-- No Python loop over pairs of nodes is needed for the mask: climbing the parent
-  pointers of all nodes at once takes as many steps as the tree is deep.
+- $1 \le N \le 64$ and $1 \le P \le 64$, and `parents[i] < i` always holds.
+- `tree_inputs` is checked entry by entry against the specification.
+- **Equivalence check:** A small decoder with rotary position embeddings (the kit's [`decoder_block_ref`](../../../python/src/learnai/kit/decoder.py)) runs once over the prefix and flattened tree with your mask and position IDs. The logits at every node must match, within `1e-4`, the logits at the last position of an ordinary causal run over the prefix followed by that node's root path. The prefix logits must remain unchanged by the tree.
+- `verify_tree` is checked for exact equality. Sibling tokens are distinct in every test.
+- You do not need a Python loop over pairs of nodes to build the mask. Climbing the parent pointers of all nodes at once takes as many steps as the depth of the tree.
 
 ## Why this matters
 
-A single draft chain dies at its first wrong token. A tree hedges: several
-candidates per position, so that some path usually survives a few levels. That
-only pays off if the target can check all branches for the price of one forward
-pass, and the tree attention mask is what makes it possible. Medusa builds exactly
-these buffers for the candidates of its extra heads, and SpecInfer, Sequoia, and
-EAGLE verify their token trees the same way. The construction fails silently in
-both directions. Let a node see a sibling, or number positions by flat index, and
-the target scores every node in a context that never existed: its argmax still
-looks plausible, acceptance still happens, and the output is no longer the
-target's. Accept a node whose parent was rejected, and the same is true without
-any error in the mask at all.
+A single draft chain stops at its first wrong token. A draft tree hedges by proposing several candidates per position so that at least one branch usually survives multiple levels. That only pays off when the target model can verify all branches in a single forward pass, which is what the tree attention mask enables. Medusa, SpecInfer, Sequoia, and EAGLE all build these buffers to verify token trees.
+
+Bugs in tree verification fail silently. If a node attends to a sibling or uses flat indices as position IDs, the target scores that node in a context that never existed. Its predictions still look plausible and tokens still get accepted, but the output no longer matches the target model. Accepting a node whose parent was rejected causes the same silent corruption even when the mask is completely right.

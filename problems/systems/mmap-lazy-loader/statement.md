@@ -1,9 +1,4 @@
-Open a safetensors checkpoint without loading it: read the header, and hand out each
-tensor only when it is asked for, as an array that points into the memory-mapped file
-wherever that is possible. Parsing the header is the `safetensors-parse` problem. The
-work here is in what is read and when, and in the two cases where a view of the file
-is not an array you can give to anyone: bfloat16, and a tensor that starts at an odd
-offset.
+Implement `LazyCheckpoint`, a safetensors loader that reads only the file header on open and materializes each tensor on demand. Whenever possible, return a zero-copy NumPy view directly into the memory-mapped file, falling back to a new array only for `bfloat16` tensors or tensors stored at unaligned file offsets.
 
 ## Specification
 
@@ -15,39 +10,26 @@ class LazyCheckpoint:
     def load_subset(self, names) -> dict[str, np.ndarray]: ...
 ```
 
-**The file.** `file` is a kit `CountingFile` opened on a safetensors file. It is a
-read-only memory map that counts what is read from it:
+**The file.** `file` is a read-only memory-mapped `CountingFile` wrapper around a safetensors file that counts bytes read:
 
-- `len(file)` is the size of the file in bytes, and costs nothing;
-- `file[a:b]` is a zero-copy `memoryview` of bytes `a` to `b - 1`, and counts as
-  reading `b - a` bytes: `file.counters.bytes_read` grows by `b - a`. The memory of
-  the view is the mapped file itself, so `np.frombuffer(file[a:b], dtype)` is an
-  array over the file's pages without a copy.
+- `len(file)` returns the file size in bytes and reads nothing.
+- `file[a:b]` returns a zero-copy `memoryview` of bytes `a` through `b - 1` and adds `b - a` to `file.counters.bytes_read`. Because this view points directly to the mapped pages, `np.frombuffer(file[a:b], dtype)` constructs an array over the file's memory without copying.
 
-Everything you read goes through `file`; it has no path to open a second time.
+Read all data through `file`. It has no path to open a second time.
 
-**The format** (as in `safetensors-parse`). Bytes 0 to 7 hold the header length $n$,
-an unsigned 64-bit little-endian integer. Bytes 8 to $8 + n - 1$ are UTF-8 JSON, an
-object that maps each tensor name to `{"dtype", "shape", "data_offsets": [begin,
-end]}`; the key `"__metadata__"`, if present, is not a tensor. The tensor occupies
-bytes `begin` to `end - 1` of the **data section**, which starts at byte $8 + n$ of
-the file, as little-endian elements in row-major order.
+**The format.** (Same as `safetensors-parse`.) Bytes 0 through 7 store the header length $n$ as an unsigned 64-bit little-endian integer. Bytes 8 through $8 + n - 1$ hold a UTF-8 JSON object mapping each tensor name to `{"dtype", "shape", "data_offsets": [begin, end]}`. If `"__metadata__"` is present, it is metadata rather than a tensor. The **data section** starts at byte $8 + n$, and each tensor occupies bytes `begin` through `end - 1` of that section as little-endian elements in row-major order.
 
-**`LazyCheckpoint(file)`** reads the header and nothing else: when the constructor
-returns, `bytes_read` is at most $8 + n$.
+**`LazyCheckpoint(file)`** reads only the header. When the constructor returns, `file.counters.bytes_read` must be at most $8 + n$.
 
-**`keys()`** returns the tensor names as a list, in the order of the header, without
-`"__metadata__"`. It reads nothing.
+**`keys()`** returns the tensor names as a list in header order, excluding `"__metadata__"`. It reads nothing.
 
-**`get(name)`** returns the tensor as a numpy array with the shape given in the
-header. The first call for a name reads exactly that tensor's `end - begin` bytes;
-what it returns depends on the dtype and on where the tensor lies:
+**`get(name)`** returns the tensor as a NumPy array with the shape from the header. The first call for `name` reads exactly that tensor's `end - begin` bytes. What it returns depends on the dtype and file offset:
 
 | stored as | returned |
 |---|---|
-| `BF16` | a **float32** array with the decoded values (new memory: numpy has no bfloat16) |
-| any other dtype, at a file offset that is a multiple of its element size | a **view** of the mapped file with the dtype below: no copy |
-| any other dtype, at any other file offset | a **copy** with the dtype below, in aligned memory |
+| `BF16` | a **float32** array with the decoded values in new memory (NumPy has no bfloat16 dtype) |
+| any other dtype, at a file offset that is a multiple of its element size | a **view** of the mapped file with the dtype below (no copy) |
+| any other dtype, at any other file offset | a **copy** with the dtype below in aligned memory |
 
 | `dtype` | numpy | | `dtype` | numpy | | `dtype` | numpy |
 |---|---|---|---|---|---|---|---|
@@ -57,29 +39,17 @@ what it returns depends on the dtype and on where the tensor lies:
 | `U16` | `<u2` | | `I64` | `<i8` | | | |
 | `I16` | `<i2` | | | | | | |
 
-- The file offset of a tensor is $8 + n + \texttt{begin}$. The map starts at a page
-  boundary, so a view is an aligned array exactly when that offset is a multiple of
-  the element size. Every array `get` returns has `array.flags.aligned == True`.
-- A bfloat16 value is the upper 16 bits of the float32 with the same value: the
-  pattern `b` decodes to the float32 whose bits are `b << 16`.
-- **The result is cached.** A later `get(name)` returns the *same array object* and
-  reads nothing.
-- A tensor with zero elements is returned with its shape and dtype; there is
-  nothing to read and nothing to share.
-- `KeyError` if `name` is not a tensor of the file (`"__metadata__"` is not one).
-  Nothing is read.
+- A tensor's file offset is $8 + n + \texttt{begin}$. Because the memory map begins at a page boundary, a view is aligned if and only if this offset is a multiple of the element size. Every array returned by `get` must have `array.flags.aligned == True`.
+- A `bfloat16` value holds the upper 16 bits of a `float32` value. A 16-bit pattern `b` decodes to the `float32` whose 32-bit pattern is `b << 16`.
+- **Caching.** Cache each materialized tensor. Any subsequent `get(name)` returns the *same array object* (`is`) and reads nothing.
+- A tensor with zero elements returns an array with its shape and dtype, reading nothing and sharing nothing.
+- If `name` is not a tensor in the file (including `"__metadata__"`), raise `KeyError` without reading anything.
 
-**`load_subset(names)`** takes an iterable of names and returns the dict
-`{name: get(name)}`, with the keys in the order the names were given (a repeated name
-appears once, at its first position). If **any** name is not a tensor of the file it
-raises `KeyError` **before reading anything**: a load that fails halfway has paid for
-tensors nobody will use.
+**`load_subset(names)`** takes an iterable of names and returns `{name: get(name)}`, keeping keys in the order the names were given (a repeated name appears once, at its first position). If **any** name is not a tensor in the file, raise `KeyError` **before reading anything** so a failing request never pays for tensors that will not be used.
 
 ## Example
 
-`example.safetensors` has 291 bytes. Its header is $n = 256$ bytes of JSON (shown
-here on several lines; in the file it is one line), so the data section starts at
-byte 264:
+`example.safetensors` is 291 bytes long. Its header is $n = 256$ bytes of JSON (formatted across multiple lines below for readability), so the data section starts at byte 264:
 
 ```
 {"__metadata__":{"format":"pt"},
@@ -100,38 +70,21 @@ ckpt.get("v")  # int16 [-2, 300]; 288
 ckpt.load_subset(["flag", "w"])  # {"flag": uint8 [1, 0, 1], "w": w}; 291
 ```
 
-- `w` starts at file offset 264, a multiple of 4: it is a view of the map.
-- `flag` starts at offset 280; its elements are single bytes, so any offset is
-  aligned: a view.
-- `b` is BF16, the patterns `0x3F80` and `0xC020`: decoded to `[1.0, -2.5]` in new
-  memory.
-- `v` starts at offset $264 + 23 = 287$, which is odd, and its elements are 2 bytes:
-  a view would be an unaligned array, so `v` is a copy.
-- `load_subset(["flag", "w", "nope"])` on a fresh checkpoint raises `KeyError` with
-  `bytes_read` still 264.
+- `w` starts at file offset 264, which is a multiple of 4, so it is returned as a view of the map.
+- `flag` starts at offset 280. Its elements are 1 byte each, so every offset is aligned and it is returned as a view.
+- `b` is `BF16` with bit patterns `0x3F80` and `0xC020`, which decode to `[1.0, -2.5]` in new memory.
+- `v` starts at offset $264 + 23 = 287$. Because 287 is odd and `int16` elements are 2 bytes, a view would be unaligned, so `v` is returned as a copy.
+- Calling `load_subset(["flag", "w", "nope"])` on a fresh checkpoint raises `KeyError` with `bytes_read` still at 264.
 
 ## Constraints
 
-- Files are well formed: valid JSON, known dtypes, offsets that match the shapes and
-  lie inside the file. Shapes have at most 4 dimensions. Test files are a few
-  kilobytes; write the loader as if they were 100 GB.
-- Arrays are compared exactly: dtype, shape, and bytes.
-- **Cost.** At every moment `file.counters.bytes_read` is at most
-  $8 + n$ plus the stored sizes (`end - begin`) of the distinct tensors requested so
-  far. `file.read()`, `file[:]`, or a slice that spans several tensors is charged in
-  full and exceeds it.
-- The standard library and numpy are available.
+- Files are well formed, with valid JSON, known dtypes, and offsets that match the shapes and lie within the file. Shapes have at most 4 dimensions. Test files are a few kilobytes, but write the loader as if they were 100 GB.
+- Arrays are compared exactly by dtype, shape, and bytes.
+- **Cost.** At every moment, `file.counters.bytes_read` must be at most $8 + n$ plus the stored sizes (`end - begin`) of the distinct tensors requested so far. Calling `file.read()`, `file[:]`, or slicing across multiple tensors is charged in full and violates this bound.
+- The Python standard library and NumPy are available.
 
 ## Why this matters
 
-Starting a model server is mostly a matter of getting weights from disk to where they
-are used. A loader that reads the file into memory and then builds tensors from it
-holds the checkpoint twice at its peak and makes the process wait for every byte, also
-for the layers that are about to be sent to another device or are not needed at all
-(one LoRA adapter out of a hundred, the vision tower of a text-only request, one
-shard's share of a model split across machines). Mapping the file and materializing
-tensors on first use makes the open instantaneous, lets the operating system page
-weights in as they are touched, and shares those pages between processes that open
-the same file. The two exceptions in the table are where real loaders have had bugs:
-bfloat16 checkpoints that come back as integers, and unaligned views that work on one
-machine and crash, or crawl, in the extension that receives them.
+Starting a model server is largely about moving weights from disk to where they are executed. A loader that reads an entire checkpoint into memory before constructing tensors doubles peak RAM usage and blocks startup on every byte, even for layers that belong on another device or are never needed (such as unused LoRA adapters, a vision tower during a text-only request, or other shards of a distributed model).
+
+Memory-mapping the file and materializing tensors on first use makes opening instantaneous, lets the OS page weights in on demand, and shares physical pages across worker processes. The two copy cases in this problem are common sources of real-world bugs: returning raw `bfloat16` bits as integers, and handing unaligned views to C extensions or GPU upload paths that silently slow down or crash.

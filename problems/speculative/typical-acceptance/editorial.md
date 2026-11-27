@@ -1,39 +1,19 @@
 ## The idea
 
-Speculative decoding has three verifiers, and they differ in what they promise.
-Greedy verification accepts a draft token only if it is the target's argmax, and
-reproduces the target's greedy decode. Speculative sampling accepts with probability
-$\min(1, p/q)$ and reproduces the target's sampling distribution. Typical acceptance
-promises neither. It asks a weaker question, "would the target plausibly have said
-this?", and answers it with the target's own probability of the token:
+Speculative decoding uses three main verifiers, each with a different guarantee. Greedy verification accepts a draft token only when it matches the target's argmax, reproducing greedy decoding. Speculative sampling accepts with probability $\min(1, p/q)$ for target probability $p$ and draft probability $q$, reproducing exact sampling from the target distribution. Typical acceptance guarantees neither. Instead, it asks whether the target model considers the draft token plausible and checks its target probability against an adaptive threshold:
 
 $$
 p(x) > \min\big(\epsilon,\ \delta\, e^{-H(p)}\big).
 $$
 
-The two terms cover two regimes.
+The two terms inside the minimum handle two regimes.
 
-- **The target is confident.** The entropy $H$ is small, $\delta e^{-H}$ is close to
-  $\delta$, and the hard threshold $\epsilon$ decides: tokens with a probability
-  above $\epsilon$ are meaningful continuations.
-- **The target is uncertain.** $e^{-H}$ is the reciprocal of the *perplexity* of the
-  distribution, the effective number of choices: a uniform distribution over $n$
-  tokens has $e^{-H} = 1/n$. When the target spreads its mass over many tokens, none
-  of them reaches $\epsilon$, yet each is a reasonable continuation. Scaling the bar
-  with $1/\text{perplexity}$ accepts a token that has at least a fraction $\delta$
-  of the probability of a "typical" choice.
+- **Confident target.** When entropy $H$ is small, $\delta e^{-H}$ is close to $\delta$, so the hard threshold $\epsilon$ usually governs. Any token with probability above $\epsilon$ is a plausible continuation.
+- **Uncertain target.** The quantity $e^{-H}$ is the inverse of the distribution's *perplexity*, which measures the effective number of choices. For a uniform distribution over $n$ tokens, $e^{-H} = 1/n$. When the target spreads probability mass across many tokens, no single token may exceed $\epsilon$, yet many are reasonable. Scaling the threshold by $1/\text{perplexity}$ accepts tokens whose probability is at least a fraction $\delta$ of a typical choice.
 
-The `min` makes the entropy term a relaxation only: it can lower the bar below
-$\epsilon$ and never raises it above. The criterion comes from the truncation
-sampling literature, where the same expression decides which tokens are too unlikely
-to sample; here it decides which draft tokens are likely enough to keep.
+Using `min` ensures the entropy term can only relax the bar below $\epsilon$ and never raise it above $\epsilon$. This expression originates from truncation sampling, where it filters out unlikely tokens. Here it selects which draft tokens are plausible enough to keep.
 
-Everything else is the prefix logic of greedy verification. Rows after the first
-failure were conditioned on a token that is no longer part of the sequence, so they
-say nothing about it. And the row at the first failure is still valid, so the target
-contributes its own greedy token there. In Medusa's formulation that token is the
-first element of the next round's candidate and is "unconditionally accepted", which
-guarantees progress: a round yields at least one token even if every draft fails.
+After testing each draft token, verification applies the same prefix rule as greedy verification. Rows after the first failure were conditioned on a rejected token and are no longer valid. The row at the first failure is still valid, so the target contributes its greedy token there. In Medusa's formulation, that token is unconditionally accepted at the start of the next step, guaranteeing at least one token of progress per round.
 
 ## Reference solution (PyTorch)
 
@@ -48,73 +28,32 @@ def typical_accept(p, draft_tokens, epsilon, delta):
     return n_accepted, int(torch.argmax(p[n_accepted]))
 ```
 
-The JAX and MLX versions are the same lines with `jnp.minimum` / `mx.minimum`.
+The JAX and MLX implementations follow the same structure, using `jnp.minimum` or `mx.minimum` for the threshold clamp.
 
-**The zero probabilities.** $\lim_{p \to 0} p \ln p = 0$, but in floating point
-`0 * log(0)` is `0 * -inf`, which is NaN. Replacing the argument of the logarithm by
-1 where `p` is 0 makes the term `0 * 0`. Adding a small constant inside the
-logarithm also avoids the NaN, at the price of a biased entropy; with a mask no
-constant has to be chosen.
+**Handling zero probabilities.** Although $\lim_{p \to 0} p \ln p = 0$, floating-point `0 * log(0)` evaluates to `0 * -inf`, which is `NaN`. Replacing `p` with `1` inside the logarithm wherever `p == 0` turns those terms into `0 * 0 = 0`. Adding a small constant inside `log` also avoids `NaN`, but introduces entropy bias and requires choosing a constant.
 
-**The running product.** `cumprod` of the pass flags is 1 up to the first failure
-and 0 afterwards, so its sum is the length of the accepted prefix, and it doubles as
-the index of the row that supplies the next token.
+**Computing the accepted prefix.** Taking `cumprod` over the 0/1 pass flags produces `1` up to the first failure and `0` thereafter. Summing that cumulative product gives `n_accepted`, which is also the row index that supplies `next_token`.
 
 ## Common mistakes
 
-- **Entropy in bits.** `log2` gives $H / \ln 2$, about 1.44 times too large, so
-  $e^{-H}$ is too small and uncertain rows accept tokens they should reject. The
-  formula's $e^{-H}$ is the inverse perplexity only with the natural logarithm.
-- **`max` for `min`.** $\max(\epsilon, \delta e^{-H})$ never drops below $\epsilon$,
-  so the bar is not relaxed when the target is uncertain, and with $\delta > \epsilon$
-  it is raised when the target is confident: the opposite of the intent.
-- **Counting after a failure.** `accepted.sum()` counts every token that passes. The
-  tokens after the first failure were scored in a context that no longer exists.
-- **`>=`.** The criterion is a strict inequality. It matters exactly when a
-  probability equals $\epsilon$, which is not exotic with quantized or rounded
-  probabilities.
-- **`0 * log(0)`.** One masked token turns the row's entropy, its threshold, and
-  therefore every comparison into NaN, and a comparison with NaN is false: the row
-  silently rejects everything.
-- **The threshold of the wrong row.** Row `i + 1` is the distribution *after* draft
-  token `i`. The token must be tested against the distribution it was proposed for,
-  row `i`.
-- **Testing the argmax.** Comparing draft tokens with `argmax(p)` is greedy
-  verification. It passes every case in which the draft equals the target's choice,
-  and never accepts the plausible alternatives this scheme exists for.
-- **One entropy for the matrix.** A reduction without an axis gives a single number
-  for all rows; each position has its own distribution and its own bar.
-- **Returning the draft token.** The token after the accepted prefix comes from the
-  target (`argmax` of row `n`), never from the draft.
+- **Computing entropy in bits.** Using `log2` produces $H / \ln 2$, roughly $1.44\times$ too large. That makes $e^{-H}$ too small and causes uncertain rows to accept tokens they should reject. The factor $e^{-H}$ equals inverse perplexity only when $H$ is in nats.
+- **Using `max` instead of `min`.** $\max(\epsilon, \delta e^{-H})$ never relaxes the threshold below $\epsilon$. When $\delta > \epsilon$, it even raises the bar on confident rows, doing the opposite of what is intended.
+- **Counting passes after a failure.** Calling `accepted.sum()` directly counts passing tokens beyond the first rejection, even though those rows were computed under an invalid context.
+- **Using `>=` instead of `>`.** The pass condition is a strict inequality. Equality matters whenever a probability lands exactly on $\epsilon$, which happens routinely with quantized or rounded probabilities.
+- **Evaluating `0 * log(0)`.** A single masked zero probability turns a row's entropy and threshold into `NaN`. Because any comparison with `NaN` is `False`, the row silently rejects every draft token.
+- **Indexing the wrong row for the threshold.** Row `i + 1` is the distribution *after* `draft_tokens[i]`. Each draft token must be tested against row `i`, the distribution it was proposed for.
+- **Testing `argmax(p)` instead of the probability threshold.** Comparing `draft_tokens` to `argmax(p)` implements greedy verification, never accepting plausible non-greedy alternatives.
+- **Reducing entropy over the entire matrix.** Omitting `dim=-1` collapses all rows into one scalar entropy instead of computing one threshold per position.
+- **Returning a draft token as `next_token`.** The token following the accepted prefix always comes from the target model (`argmax` of row `n_accepted`), never from `draft_tokens`.
 
 ## Complexity
 
-$O(K V)$ time and memory for the entropies; everything else is $O(K)$. The cost that
-matters, the target's forward pass over the `K` draft tokens, has already been paid.
+Computing row-wise entropies takes $O(K V)$ time and memory. All remaining operations take $O(K)$ time. Both are negligible compared to the target model's forward pass over the `K` draft tokens.
 
 ## In the wild
 
-**Medusa** ("Medusa: Simple LLM Inference Acceleration Framework with Multiple
-Decoding Heads", arXiv 2401.10774, section 2.3.1) introduces the scheme with exactly
-this condition, the strict inequality, the unconditionally accepted greedy first
-token, and the longest accepted prefix. Its reference code
-(`evaluate_posterior` in `medusa/model/utils.py`) computes
-`threshold = minimum(posterior_threshold, exp(-entropy) * posterior_alpha)` and
-`candidates_prob > threshold`, takes `cumprod(...).sum()` as the accepted length, and
-uses defaults $\epsilon = 0.09$ and $\delta = 0.3$ in `medusa_generate`, with the
-comment that $\delta$ is recommended to be $\sqrt{\epsilon}$. Three things differ
-from this problem. Medusa verifies **several** candidates at once (the paths of a
-token tree) and keeps the one with the longest accepted prefix, breaking ties by
-likelihood; this problem is one candidate. Its probabilities are the softmax of the
-logits divided by the sampling temperature; here `p` is given. And its entropy adds
-`1e-5` inside the logarithm instead of masking zeros.
+**Medusa.** The paper *Medusa: Simple LLM Inference Acceleration Framework with Multiple Decoding Heads* (arXiv 2401.10774, Section 2.3.1) defines typical acceptance with this exact condition, strict inequality, longest accepted prefix, and unconditionally accepted greedy token. In the reference implementation (`evaluate_posterior` in `medusa/model/utils.py`), the threshold is computed as `minimum(posterior_threshold, exp(-entropy) * posterior_alpha)` and checked via `candidates_prob > threshold`, with `cumprod(...).sum()` giving the accepted length. `medusa_generate` defaults to $\epsilon = 0.09$ and $\delta = 0.3$, noting $\delta \approx \sqrt{\epsilon}$ as a rule of thumb.
 
-**What "lossy" means in practice.** With a temperature of 0 the target's
-distribution is one-hot, only the argmax has a non-zero probability, and the scheme
-reduces to greedy verification. As the temperature rises, more tokens clear the bar
-and accepted runs get longer, which is the regime in which exact speculative
-sampling slows down. The output is then a mixture: drafted tokens that the target
-found typical, and the target's greedy token after each failure. The Medusa paper
-reports generation quality similar to the baseline at its chosen thresholds; that is
-an empirical statement about two hyperparameters, not a guarantee, so a system that
-ships this needs an evaluation of output quality next to its speedup number.
+Three details differ between full Medusa and this problem. Medusa verifies multiple candidate paths from a token tree at once and selects the longest accepted prefix (breaking ties by likelihood), whereas this problem verifies a single candidate sequence. Medusa also computes `p` by applying softmax to temperature-scaled logits, and avoids `log(0)` by adding `1e-5` inside the logarithm instead of masking zeros.
+
+**What "lossy" means in practice.** At temperature 0, the target distribution is one-hot, only the argmax has non-zero probability, and typical acceptance reduces to greedy verification. At higher temperatures, more tokens clear the threshold and accepted prefixes grow longer, precisely where exact speculative sampling slows down. The resulting output mixes draft tokens the target found typical with greedy target tokens after each rejection. While the Medusa paper reports baseline-comparable quality at its default thresholds, that is an empirical result for specific hyperparameters rather than a mathematical guarantee, so deployments must evaluate output quality alongside speedup.

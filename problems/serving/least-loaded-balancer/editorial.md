@@ -1,18 +1,8 @@
 ## The idea
 
-**Two choices.** Send each request to a uniformly random replica and the loads
-spread like balls thrown into bins: the fullest bin holds far more than the average.
-Look at two random bins and use the emptier one, and the imbalance collapses: the
-gap between the fullest bin and the average grows only doubly logarithmically in the
-number of bins, an exponential improvement over one choice ("The Power of Two Choices
-in Randomized Load Balancing", IEEE Transactions on Parallel and Distributed Systems,
-2001). A third choice improves on two only by a constant factor, and a full scan of
-all replicas is barely better than two. The second lookup is where the gain is.
+**Power of two choices.** Under uniform random routing, load spreads like balls thrown independently into bins, leaving the busiest bin far above the average. Sampling two random bins and choosing the emptier one collapses this imbalance so that the gap between the fullest bin and the average grows only doubly logarithmically in the number of bins ("The Power of Two Choices in Randomized Load Balancing", IEEE Transactions on Parallel and Distributed Systems, 2001). Adding a third choice improves only by a constant factor, and scanning all replicas is barely better than checking two.
 
-**Two *distinct* choices.** Drawing both indices independently returns the same
-replica twice with probability $1/n$, and that request is routed at random. Drawing
-the second from the other $n - 1$ avoids the waste. One uniform number is enough:
-choose a position among the $n - 1$ remaining and step over the first choice,
+**Two distinct choices.** If both indices are drawn independently from all $n$ replicas, the same replica is picked twice with probability $1/n$, wasting the comparison. Drawing the second index from the remaining $n - 1$ replicas avoids duplicates without a retry loop. Pick an index in $\{0, \dots, n - 2\}$ and shift it past the first choice `i`:
 
 ```python
 j = int(u2 * (n - 1))
@@ -20,30 +10,17 @@ if j >= i:
     j += 1
 ```
 
-which maps $\{0, \dots, n-2\}$ one-to-one onto the indices other than $i$.
+This maps $\{0, \dots, n - 2\}$ bijectively onto the $n - 1$ indices other than `i`.
 
-**Ties.** With token counts as load, exact ties look rare, and they are not: every
-idle replica has load 0, and a balancer's own estimates all start at 0. If a tie goes
-to the lower id, then among $n$ idle replicas the lowest id wins every pair it
-appears in, probability $2/n$, and the highest id never wins: it receives no traffic
-until the others have work. Giving the tie to the first draw is fair without any
-extra randomness, because each of the two tied replicas is equally likely to have
-been drawn first.
+**Breaking ties fairly.** Exact ties happen constantly in practice because idle replicas all have load `0`, and a new `Balancer` initializes every estimate to `0`. Breaking ties in favor of the lower replica ID starves higher IDs. Among $n$ idle replicas, the lowest ID wins every pair it appears in (probability $2/n$), while the highest ID never wins. Breaking ties in favor of the first random draw is fair with no extra randomness because either tied replica is equally likely to be drawn first.
 
-**Stale load.** A balancer learns the replicas' load from reports that arrive
-periodically, or from a metrics scrape, and in between it knows nothing new. If it
-routes on the last report alone, every request until the next report sees the same
-picture, and the replicas that looked idle receive everything: load information of
-age $T$ turns "least loaded" into "least loaded $T$ seconds ago, and most loaded
-now". The repair is to add what the balancer itself knows: it sent these tokens to
-that replica since the report. The estimate is then
+**Handling stale reports.** Between periodic load reports or metrics scrapes, the balancer receives no feedback from replicas. If it routes solely on the last report, every request until the next report sees the same stale snapshot and piles onto whichever replicas looked empty at the last report. Adding locally routed tokens to each replica's estimate fixes this:
 
 $$
-\text{estimate} = \text{last report} + \text{tokens routed since},
+\text{estimate} = \text{last report} + \text{tokens routed since}
 $$
 
-and a new report replaces it wholesale, because the report already includes those
-requests (or they have finished).
+When a fresh report arrives, it replaces the estimate completely because the replica's true count already reflects all unfinished requests.
 
 ## Reference solution (Python)
 
@@ -76,67 +53,38 @@ class Balancer:
 
 ## What staleness does
 
-One seeded run on the kit's `SimCluster` (8 replicas, 800 requests at 40 per second,
-a report every 4 seconds; a different seed from the test's):
+Here is a seeded simulation run on the kit's `SimCluster` with 8 replicas, 800 requests at 40 requests per second, and a report every 4 seconds (using a different seed from the test suite):
 
-| policy | peak outstanding tokens on one replica | p99 TTFT |
+| Policy | Peak outstanding tokens on one replica | p99 TTFT |
 |---|---|---|
-| least loaded of all, on the last report only | 26,432 | 24.2 s |
-| two choices, on the last report only | 3,939 | 3.5 s |
-| uniform random | 1,915 | 1.5 s |
-| two choices, with its own routing added (this problem) | 1,062 | 0.63 s |
-| least loaded of all, with its own routing added | 906 | 0.40 s |
+| Least loaded of all, on the last report only | 26,432 | 24.2 s |
+| Two choices, on the last report only | 3,939 | 3.5 s |
+| Uniform random | 1,915 | 1.5 s |
+| Two choices, with local accounting (this problem) | 1,062 | 0.63 s |
+| Least loaded of all, with local accounting | 906 | 0.40 s |
 
-The first row is the herd: for four seconds at a time every request goes to the
-replica that was emptiest at the last report. Stale information used greedily is
-much worse than no information. Two choices on the same stale reports is already
-six times better, because the randomness spreads the herd over the replicas that
-compare well; with local accounting it beats random routing by a wide margin. The
-last row is a reminder of what this simulation does not contain: one balancer that
-accounts for all of its own traffic can afford a full scan. With several balancer
-instances, none of which sees the others' decisions, the greedy rule herds again
-and two choices does not, which is why it is the default.
+The first row shows the herd effect. For four seconds at a time, every arriving request goes to the single replica that looked emptiest at the last report, making greedy routing on stale data far worse than random routing. Power-of-two-choices on the same stale reports is already six times better because random sampling spreads traffic across several lightly loaded replicas. Adding local accounting beats uniform random routing by a wide margin.
+
+In the last row, a single centralized balancer that tracks all of its own traffic can afford a full scan. However, production systems run multiple independent balancer instances that cannot see each other's in-flight decisions. In that setting, greedy routing herds again while power-of-two-choices stays balanced.
 
 ## Common mistakes
 
-- **The same replica drawn twice.** `int(u2 * n)` for the second index. One request
-  in $n$ gets no comparison, and the most loaded replica can be chosen (when it is
-  drawn twice), which with distinct draws is impossible.
-- **Forgetting the shift.** `int(u2 * (n - 1))` without `if j >= i: j += 1` can
-  repeat the first choice and can never select the last replica.
-- **Ties to the lower id.** Deterministic, reproducible, and biased: the highest id
-  is starved whenever replicas are idle or equally loaded.
-- **Ties to the second draw.** Equally fair in distribution, but not the specified
-  rule: with the uniforms given the decision is determined, and `<=` flips it.
-- **Routing at random.** Returning the first draw passes every test of the draws and
-  ignores the load.
-- **Sorting the replicas.** The caller's order defines which replica a uniform
-  selects.
-- **No local accounting.** Routing on the last report alone; see the table.
-- **Counting requests.** Adding 1 per routed request instead of its tokens makes a
-  4,000-token prompt weigh as much as a 20-token one. (It also mixes units with the
-  reports, which are in tokens.)
-- **Adding reports to the estimate.** A report is a new measurement, not an
-  increment. Accumulating it counts every outstanding request twice.
+- **Drawing the same replica twice.** Computing `int(u2 * n)` for the second index skips the comparison on $1/n$ of requests and allows the single busiest replica to be chosen.
+- **Forgetting the index shift.** Using `int(u2 * (n - 1))` without `if j >= i: j += 1` can still repeat `i` and can never pick the last replica.
+- **Breaking ties by lower ID.** This is deterministic but biased, starving the highest replica ID whenever replicas are idle or equally loaded.
+- **Breaking ties in favor of the second draw.** Using `<=` instead of `<` is statistically fair, but it violates the specification and fails exact deterministic checks.
+- **Ignoring load and returning the first draw.** This passes distribution checks on uniform draws while failing load-balancing tests.
+- **Sorting `replicas`.** The caller's list order defines which replica each uniform value selects, so reordering changes the output.
+- **Omitting local accounting.** Routing solely on the last report causes herding between updates, as shown in the table above.
+- **Counting requests instead of tokens.** Adding `1` per routed request treats a 4,000-token prompt the same as a 20-token prompt and mixes units with token-based reports.
+- **Accumulating reports onto existing estimates.** Each report is a full snapshot rather than a delta, so adding it double-counts every outstanding request.
 
 ## Complexity
 
-`pick` and `route` are $O(1)$; `report` is $O(n)$.
+`pick` and `route` run in $O(1)$ time, and `report` runs in $O(n)$ time to refresh all $n$ replica estimates.
 
 ## In the wild
 
-- **Envoy**'s least-request load balancer uses power of two choices when all hosts
-  have equal weight: `choice_count` random hosts (2 by default), the one with the
-  fewest active requests wins. Its implementation draws each host independently, so
-  the same host can be drawn twice, and a later draw replaces the candidate only if
-  it has strictly fewer active requests, so ties go to the first drawn, as here
-  (`source/extensions/load_balancing_policies/least_request/least_request_lb.cc`).
-  Its full-scan mode breaks ties uniformly at random. Envoy counts requests; its
-  counts are its own local accounting and are never stale within one proxy.
-- **Stale information** was analyzed in "How Useful Is Old Information?" (IEEE
-  Transactions on Parallel and Distributed Systems, 2000): with load reports of age
-  $T$, sending to the apparently least loaded server can be worse than choosing at
-  random, and choosing the better of two random servers remains effective.
-- **LLM gateways** combine this with what is specific to inference: load in tokens or
-  in queue depth scraped from the engine's metrics, and a preference for the replica
-  that already holds the prompt's prefix in its KV cache, traded against load.
+- **Envoy.** Envoy's least-request load balancer uses power-of-two-choices when hosts have equal weight (`choice_count` defaults to 2). Its implementation (`source/extensions/load_balancing_policies/least_request/least_request_lb.cc`) draws hosts independently (so duplicates can occur) and replaces the candidate only when a later draw has strictly fewer active requests, breaking ties in favor of the first draw just like this problem. In full-scan mode, it breaks ties uniformly at random. Because Envoy counts active requests locally within each proxy, its counts are never stale for that proxy's own traffic.
+- **Stale metrics.** Mitzenmacher analyzed delayed load reports in "How Useful Is Old Information?" (IEEE Transactions on Parallel and Distributed Systems, 2000), showing that greedy routing on metrics of age $T$ can perform worse than uniform random routing, whereas power-of-two-choices remains effective.
+- **LLM gateways.** Inference routers extend power-of-two-choices with LLM-specific signals, combining token load or queue depth scraped from engine metrics with KV-cache prefix affinity so requests prefer replicas that already cache their prompt prefix without overloading them.

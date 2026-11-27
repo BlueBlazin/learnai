@@ -1,40 +1,21 @@
 ## The idea
 
-Server-sent events are the simplest streaming protocol on the web: an ordinary HTTP
-response that never has to end, whose body is lines of text. The format (from the
-WHATWG HTML standard) has four rules that matter here:
+Server-Sent Events (SSE) is a lightweight streaming protocol built on a standard HTTP response whose body consists of text lines. Four rules from the WHATWG HTML specification matter here:
 
-- the content type is `text/event-stream` and the encoding is always UTF-8;
-- a line `data: something` adds `something` to the current event (one space after the
-  colon is optional and is stripped);
-- a **blank line dispatches the event**; without it the client keeps accumulating, and
-  an event that is still incomplete when the stream ends is discarded;
-- several `data:` lines in one event are joined with newlines, which is why a payload
-  must never contain a raw line break. `json.dumps` escapes them, so one JSON document
-  per event is always safe.
+- The content type is `text/event-stream`, and the encoding is always UTF-8.
+- A line `data: something` appends `something` to the current event's payload (one optional space after the colon is stripped).
+- A **blank line dispatches the event**. Without it, the client keeps buffering, and any incomplete event left when the stream closes is discarded.
+- Multiple `data:` lines in one event are joined with newlines. Payloads must therefore never contain raw line breaks. Using `json.dumps` escapes newlines automatically, so one JSON object per event is always safe.
 
-`[DONE]` is not part of the standard. It is the convention OpenAI's API established for
-"the stream ended on purpose", which a client cannot otherwise tell apart from a
-dropped connection.
+`[DONE]` is not part of the SSE standard. It is the convention popularized by the OpenAI API to signal that generation finished normally, letting the client distinguish a clean completion from a dropped connection.
 
-On the server side, ASGI maps this directly onto messages: one `http.response.start`,
-then any number of `http.response.body` messages with `more_body: True`. The server
-writes each one to the socket when it is sent (with chunked transfer encoding, since
-there is no content length), so "send one message per token" *is* the flush.
+ASGI maps SSE streaming directly onto messages. Send one `http.response.start`, followed by `http.response.body` messages with `more_body: True`. Because there is no `Content-Length` header, the ASGI server uses chunked transfer encoding and writes each body message to the socket immediately. Sending one message per token is what flushes the stream.
 
-That leaves two decisions with consequences:
+Two architectural choices make the handler reliable:
 
-**Validate before the first byte.** The status line goes out with
-`http.response.start`. Everything that can produce a 4xx (path, method, body) must be
-decided before that, and only then is the generator created.
+**Validate before the first byte.** The HTTP status line is committed when you send `http.response.start`. All checks that can produce a 4xx response (path, method, and request body) must finish before that call, and `token_source` should only be invoked once the request is valid.
 
-**Listen for the disconnect concurrently.** A handler blocked in `async for` on a slow
-model cannot notice anything. The disconnect arrives as a message on `receive()`, so
-the stream and a watcher run as two tasks, and the first to finish cancels the other.
-Canceling the pump throws `CancelledError` into whatever it is awaiting, including the
-generator's own `await`, which unwinds the generator; `aclose()` afterwards covers the
-case where the generator was suspended at a `yield`. In a real server, that
-cancellation is what frees the request's slot in the running batch.
+**Watch for disconnects concurrently.** A coroutine blocked in `async for` waiting on a slow model cannot notice a closed connection on its own. Because disconnects arrive as messages from `receive()`, run the token pump and a disconnect watcher as two concurrent tasks and cancel the loser as soon as either finishes. Canceling the pump injects `CancelledError` into whatever it is awaiting, unwinding the generator. Calling `await tokens.aclose()` in a `finally` block also cleans up the generator if it was paused at a `yield`. In a production server, that cleanup releases the request's slot in the running batch.
 
 ## Reference solution (Python)
 
@@ -115,58 +96,28 @@ def sse_message(data, *, more_body):
     }
 ```
 
-`read_body`, `send_json`, and the `BadRequest` exception are those of the starter. `json.loads` accepts
-bytes and raises a `ValueError` subclass both for bad JSON and for bytes that are not
-UTF-8, so one `except` covers both.
+`DEFAULT_MAX_TOKENS`, `read_body`, `send_json`, and `BadRequest` are provided in the starter file. `json.loads` accepts `bytes` directly and raises a `ValueError` subclass for both invalid JSON and invalid UTF-8, so a single `except ValueError` handles both cases.
 
 ## Common mistakes
 
-- **Buffering.** Collecting the events and sending them in one body message (or
-  returning a list to a framework's non-streaming response) gives a correct body that
-  arrives all at once. The same symptom appears in production with every byte of the
-  app correct, when a proxy or a compression middleware buffers the response; that is
-  why streaming servers also send `cache-control: no-cache` and often
-  `x-accel-buffering: no`.
-- **Wrong content type.** A browser's `EventSource` refuses a response that is not
-  `text/event-stream`, and proxies use the type to decide whether to buffer.
-- **Missing blank line.** `data: ...\n` with a single newline never dispatches; the
-  client sees one giant event at the end, with all payloads joined by newlines.
-- **No terminal event.** Without `[DONE]` the client cannot distinguish a finished
-  generation from a connection that dropped after the fourth token.
-- **Ignoring the disconnect.** The stream "works" in every demo. Under load, each
-  closed browser tab keeps generating to `max_tokens`.
-- **Trusting `send` to fail.** Depending on the server and version, sending to a
-  closed connection raises, or does nothing. Only `http.disconnect` is reliable.
-- **200 on bad input.** Coercing a missing prompt to `""` or `"max_tokens": "3"` to
-  `3` hides client bugs. A cousin of this mistake: `isinstance(True, int)` is true, so
-  `"max_tokens": true` passes a naive type check and becomes 1.
-- **500 on bad JSON.** Forgetting to catch the decoding error turns a client mistake
-  into a server error, with a stack trace in the logs for every malformed request.
-- **Hand-built JSON.** `f'{{"token": "{token}"}}'` breaks on the first token with a
-  quote or a newline, and newline tokens are common.
-- **404 for a wrong method.** Matching on the pair (method, path) loses the
-  distinction between "no such resource" and "wrong verb"; a 405 must also say which
-  methods are allowed.
+- **Buffering events.** Collecting events in a list and sending them in one body message produces the right bytes but delivers them all at once after generation ends. The same symptom happens in production when a reverse proxy or compression middleware buffers the stream, which is why servers also send `cache-control: no-cache` and often `x-accel-buffering: no`.
+- **Wrong content type.** Browsers' `EventSource` rejects responses that do not use `text/event-stream`, and proxies rely on that header to disable buffering.
+- **Missing blank line.** Sending `data: ...\n` with only one newline prevents the client from dispatching each event. Instead, the client accumulates every payload into one giant event separated by newlines.
+- **Missing terminal event.** Without `data: [DONE]\n\n`, the client cannot tell whether generation completed normally or the connection dropped mid-stream.
+- **Ignoring client disconnects.** The endpoint appears to work in simple demos, but under real traffic every closed browser tab keeps generating until `max_tokens`.
+- **Relying on `send()` to raise.** Depending on the ASGI server and version, writing to a closed connection may raise an error or silently do nothing. Listening for `http.disconnect` on `receive()` is the only reliable signal.
+- **Returning 200 on invalid input.** Coercing a missing prompt to `""` or `"max_tokens": "3"` to `3` masks client bugs. In Python, `isinstance(True, int)` is `True`, so `"max_tokens": true` passes a naive `isinstance(x, int)` check and silently becomes `1`.
+- **Returning 500 on malformed JSON.** Letting `json.loads` raise unhandled turns a client mistake into an internal server error and floods server logs with tracebacks.
+- **Building JSON with string formatting.** Formatting `f'{{"token": "{token}"}}'` breaks on the first token containing a quote or newline, both of which occur frequently in LLM output.
+- **Returning 404 for a wrong HTTP method.** Matching on `(method, path)` together collapses "resource does not exist" and "method not allowed" into one status. A `405` response must also include the `allow` header.
 
 ## Complexity
 
-Constant work and memory per token; nothing is accumulated. The handler holds two
-tasks per open stream, so the cost of an idle connection is a few kilobytes.
+The handler uses $O(1)$ work and $O(1)$ memory per token because nothing is buffered. Each open stream holds two lightweight `asyncio` tasks, costing only a few kilobytes per idle connection.
 
 ## In the wild
 
-- **vLLM**'s OpenAI-compatible server and **llama.cpp**'s server stream exactly this
-  shape: `data: {json}` chunks and a final `data: [DONE]`.
-- **TGI** (text-generation-inference) streams SSE events with one token per event and
-  marks the end inside the last event (it carries the full generated text) instead of
-  using `[DONE]`.
-- **Starlette**'s `StreamingResponse`, which FastAPI servers such as vLLM's use, is the
-  same structure as the reference: it runs the body iterator and a
-  `receive()`-listener side by side and cancels the stream on `http.disconnect`.
-- Two things real servers add: a **comment line** (a line starting with `:`) every
-  15 seconds or so as a keep-alive, so that idle proxies do not cut a slow stream, and
-  **backpressure**: `await send(...)` waits while the client's socket buffer is full, so
-  a slow reader slows the pump instead of growing a queue. One more subtlety when the
-  tokens come from a byte-level tokenizer: a token can end in the middle of a
-  multi-byte character, so servers hold back incomplete UTF-8 sequences until the next
-  token completes them.
+- **vLLM**'s OpenAI-compatible server and **llama.cpp**'s server stream this exact wire format: `data: {json}` chunks followed by `data: [DONE]`.
+- **TGI** (Text Generation Inference) also streams one token per SSE event, but signals completion inside the final JSON event (carrying the full generated text) instead of sending `[DONE]`.
+- **Starlette**'s `StreamingResponse`, used under the hood by FastAPI servers including vLLM, follows the same two-task architecture. It runs the response iterator alongside a `receive()` listener and cancels the stream on `http.disconnect`.
+- Production servers add two more mechanisms. First, they send an SSE **comment line** (starting with `:`) every 15 seconds or so as a keep-alive so idle proxies do not close slow streams. Second, they rely on **backpressure**. When the client's socket buffer fills up, `await send(...)` pauses, slowing the producer rather than growing an unbounded queue. When using byte-level tokenizers, servers also buffer incomplete multi-byte UTF-8 sequences until the next token completes the character.

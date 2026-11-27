@@ -1,8 +1,4 @@
-Find the `k` nearest corpus vectors of every query by brute force: score each query
-against every vector, and keep the best `k`. Exact search is one matrix product and a
-selection. What needs care is the selection: it should not sort what it throws away,
-and when two vectors score the same, the answer must not depend on the mood of the
-selection routine.
+Implement exact brute-force vector search to find the `k` closest corpus vectors for each query under cosine similarity or inner product. Compute all query-corpus scores using vectorized tensor operations and return the top `k` results in descending score order with deterministic tie-breaking.
 
 ## Specification
 
@@ -10,7 +6,9 @@ selection routine.
 def search(queries, corpus, k, metric="cosine"): ...
 ```
 
-The **score** of query $q$ and corpus vector $c$ is
+`queries` contains $Q$ query vectors of dimension $D$, and `corpus` contains $N$ corpus vectors of dimension $D$. Every vector is nonzero. `k` is a Python integer with $k \ge 1$, and $K = \min(k, N)$ is the number of results returned per query. `metric` is either `"cosine"` (default) or `"dot"`. No other metric is passed.
+
+The similarity score between query vector $q$ and corpus vector $c$ is
 
 $$
 s(q, c) = \begin{cases}
@@ -19,31 +17,22 @@ q \cdot c & \texttt{metric == "dot"}
 \end{cases}
 $$
 
-and a higher score means a closer vector.
+Higher scores indicate closer matches.
 
-- `queries`: float32, shape `(Q, D)`. `corpus`: float32, shape `(N, D)`. No vector
-  is zero.
-- `k`: a Python int, $k \ge 1$. Let $K = \min(k, N)$.
-- `metric`: `"cosine"` (the default) or `"dot"`. No other value is passed.
+The function returns a tuple `(indices, scores)`:
 
-The function returns the tuple `(indices, scores)`:
+- Row `i` of `indices` contains the corpus indices of the $K$ highest-scoring vectors for query `i`, ordered from best to worst.
+- `scores[i, j]` equals $s(\texttt{queries}[i], \texttt{corpus}[\texttt{indices}[i, j]])$.
 
-- `indices`: an integer tensor of shape `(Q, K)`. Row $i$ holds the indices of the
-  $K$ corpus vectors with the highest scores for query $i$, **best first**.
-- `scores`: a float32 tensor of shape `(Q, K)` with
-  `scores[i, j]` $= s(\texttt{queries}[i], \texttt{corpus}[\texttt{indices}[i, j]])$.
+### Tie-breaking
 
-**Ties.** Vectors with equal scores are ranked by index, lower first. This decides
-both the order inside a row and which of several equal vectors make it into the top
-$K$: the result is the first $K$ entries of the list of all $N$ indices sorted by
-(score descending, index ascending).
+When two corpus vectors have the exact same score for a query, the vector with the lower corpus index ranks first. This rule governs both the order within a row and which tied vectors make the top-$K$ cutoff. Equivalently, row `i` is the first $K$ entries of all $N$ corpus indices sorted by `(score descending, index ascending)`.
 
-The scores come from tensor operations over the whole corpus; a Python loop over
-corpus vectors is too slow (see Constraints).
+Compute scores using vectorized tensor operations over the full corpus. A Python loop over corpus vectors is too slow (see Constraints).
 
 ## Shapes
 
-| name | shape | dtype |
+| Name | Shape | Dtype |
 |---|---|---|
 | `queries` | `(Q, D)` | float32 |
 | `corpus` | `(N, D)` | float32 |
@@ -65,38 +54,17 @@ search(queries, corpus, k=2, metric="dot")
 # scores  [[3.0, 2.0], [6.0, 2.0]]
 ```
 
-For the query `[1, 0]`, vectors 0 and 3 point in the same direction as the query:
-both have cosine 1, and the lower index comes first. Under `"dot"` the long vectors
-win instead: `[3, 3]` scores 3 and `[2, 0]` scores 2.
-
-For the query `[1, 1]`, vector 2 has cosine 1. Vectors 0, 1, and 3 all have cosine
-$1/\sqrt{2}$; only one place is left, and it goes to index 0. Under `"dot"` vector 2
-scores 6, and vectors 1 and 3 both score 2: the second place goes to index 1.
+- For query `[1, 0]`, corpus vectors 0 (`[1, 0]`) and 3 (`[2, 0]`) both point in the same direction as the query and have cosine similarity 1.0. Because they tie, index 0 comes before index 3. Under `"dot"`, vector length matters, so `[3, 3]` scores 3.0 and `[2, 0]` scores 2.0.
+- For query `[1, 1]`, corpus vector 2 (`[3, 3]`) has cosine similarity 1.0. Vectors 0, 1, and 3 all tie at cosine similarity $1/\sqrt{2} \approx 0.7071$, and the remaining slot goes to the lowest index, 0. Under `"dot"`, vector 2 scores 6.0, while vectors 1 and 3 tie at 2.0, so the second slot goes to index 1.
 
 ## Constraints
 
-- $1 \le Q \le 64$, $1 \le N \le 20{,}000$, $1 \le D \le 64$, $1 \le k \le 100$; `k`
-  may exceed `N`.
-- Scores are compared with the reference to a relative tolerance of `1e-4` and an
-  absolute tolerance of `1e-5`. Indices are compared exactly. Where two vectors'
-  scores differ by less than float32 can resolve (`1e-6`), either order is accepted;
-  the tie cases use vectors whose scores are exact (small integers, halves), and
-  there the tie rule is enforced.
-- **Speed.** For 4 queries against 20,000 vectors of 64 dimensions with `k = 10`,
-  the function must run within 10 times the reference's time in the same framework.
-  The reference is one matrix product and a selection. Computing the scores one
-  corpus vector at a time is about 90 times slower. Sorting every row in full is
-  within the limit (2 to 4 times slower on a CPU), but selecting is the better
-  habit: at a million vectors the sort is what you wait for.
+- $1 \le Q \le 64$, $1 \le N \le 20{,}000$, $1 \le D \le 64$, and $1 \le k \le 100$. `k` may exceed `N`.
+- `scores` is compared against the reference with a relative tolerance of `1e-4` and an absolute tolerance of `1e-5`. `indices` is compared exactly. When two vectors have scores within `1e-6` (below float32 resolution), either ordering is accepted. Tie-breaking test cases use exact scores (small integers or halves), where the tie rule is strictly enforced.
+- **Speed.** On 4 queries against 20,000 vectors of dimension 64 with `k = 10`, your implementation must run within 10x of the reference time in the same framework. The reference uses one matrix multiplication and a top-k selection. Scoring one corpus vector at a time in Python is roughly 90x slower. A full sort of every row stays within the limit (2x to 4x slower on CPU), though top-k selection scales much better as `N` grows.
 
 ## Why this matters
 
-Every retrieval system starts here. Below a few hundred thousand vectors, exact
-search over a matrix that fits in memory is the right index: it has perfect recall,
-no build step, and nothing to tune, and one matrix product per batch of queries is
-what the hardware does best. Above that size it is the ground truth that every
-approximate index (IVF, HNSW, quantized codes) is measured against, and the
-reranking step that those indexes end with. The tie rule is not pedantry: document
-chunks are often duplicated, duplicates score identically, and a search whose
-answer changes between runs or between a CPU and a GPU makes a retrieval bug
-impossible to reproduce.
+Exact brute-force search is the foundation of every vector retrieval system. Up to a few hundred thousand vectors, a matrix multiplication over an in-memory corpus gives exact recall with no index build time and no tuning parameters. At larger scales, exact search serves both as the ground truth for evaluating approximate indexes (such as IVF, HNSW, or quantized indexes) and as the final reranking stage over candidate results.
+
+Deterministic tie-breaking matters in production because real corpora frequently contain duplicate or near-duplicate chunks that receive identical scores. If tied rankings vary across runs, hardware backends, or library versions, retrieval regressions become impossible to reproduce.

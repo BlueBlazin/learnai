@@ -1,30 +1,12 @@
 ## The idea
 
-A language model assigns a score to every token at every step. A constraint
-partitions the vocabulary, at every step, into tokens that keep the output inside
-the language and tokens that do not. Constrained decoding removes the second group
-*before* a token is chosen, so the choice is the best token among the valid ones.
-Since each chosen token keeps the output a valid prefix, the output is valid at
-every length, by induction; and since EOS is offered only in accepting states, an
-output that ends with EOS is a complete member of the language.
+At every step, a language model scores every token in the vocabulary, while the constraint partitions the vocabulary into tokens that keep the output valid and tokens that do not. Constrained decoding masks out the invalid tokens *before* selecting the next token, so greedy decoding always picks the highest-scoring valid continuation. By induction, every prefix stays valid, and because `eos_id` is permitted only in accepting states, any sequence ending with `eos_id` is a complete member of the target language.
 
-The loop carries two pieces of state that must describe the same sequence: the KV
-cache (what the model has seen) and the constraint state (where the output is in the
-language). Each generated token updates both, the constraint immediately through
-`advance`, the model lazily when the next step needs logits.
+The loop maintains two pieces of state that must describe the exact same prefix: the KV cache (what the model has processed) and the constraint state (where the generated output sits in the grammar). Each generated token updates both. The constraint advances immediately via `advance`, while the model receives the token lazily on the next step when new logits are needed.
 
-End-of-sequence is the one token the constraint does not list, because it has no
-text. The loop adds it to the permitted set exactly when `is_accepting` holds. That
-single rule yields three behaviors: EOS is impossible in the middle of the
-structure; EOS competes with the other tokens where the output may end or go on
-(`12` is a complete number, and so is `123`); and EOS is forced where the output is
-complete and nothing can follow.
+Because `eos_id` has no text, `constraint.allowed(state)` never includes it. Adding `eos_id` to the permitted set whenever `constraint.is_accepting(state)` is `True` handles all three stopping cases cleanly. It blocks `eos_id` mid-structure, lets `eos_id` compete with continuation tokens when a complete output can still grow (such as `12` vs. `123`), and forces `eos_id` when the output is complete and no extension is legal.
 
-The remaining case, nothing allowed and not accepting, cannot occur for a
-well-formed constraint over a vocabulary that covers the language. It does occur in
-practice when the vocabulary lacks a needed character or a grammar has a hole, and a
-loop that calls argmax on an all-masked row then emits token 0 forever. Stopping is
-the honest outcome.
+The remaining case, where `allowed(state)` is empty and `is_accepting(state)` is `False`, cannot happen for a well-formed grammar over a complete vocabulary. It can still occur in practice when a vocabulary lacks a required character or a grammar has a dead state. Calling `argmax` on an all-$-\infty$ row would silently emit token `0` forever, so breaking out of the loop is the right behavior.
 
 ## Reference solution (PyTorch)
 
@@ -54,66 +36,26 @@ def constrained_greedy(lm, prompt, constraint, max_new_tokens, eos_id):
     return generated
 ```
 
-The cost limits follow from the order of the loop body. The permitted set depends
-only on the constraint state, so it is known before the model runs; checking it
-first means a dead end costs nothing. Feeding a token only at the top of the next
-iteration means the last token, whatever ended the generation, is never fed. So $g$
-tokens cost $g$ calls and $P + g - 1$ tokens, as without a constraint: the mask is
-free in model work. The JAX and MLX versions differ
-only in the names of `where` and `argmax`. The boolean mask always has the shape of
-the vocabulary, whatever the number of permitted tokens, which also keeps JAX from
-compiling a new gather for every list length.
+The order of operations inside the loop guarantees both cost limits. Because the permitted set depends only on `state`, checking for an empty set before calling `lm` ensures a dead end costs zero forward calls. Deferring each new token in `pending` until the next iteration ensures the final token is never fed back to `lm`, regardless of why the loop ended. Producing $g$ tokens from a prompt of length $P$ therefore takes $g$ forward calls and $P + g - 1$ processed tokens (or $0$ when $g = 0$), matching unconstrained cached decoding. The JAX and MLX implementations differ only in their `where` and `argmax` calls. Building a fixed-shape boolean mask of length `vocab_size` also prevents JAX from recompiling for every distinct length of `permitted`.
 
 ## Common mistakes
 
-- **Not advancing the state.** The first token is right, and every later step is
-  masked as if it were the first: `[[[[[`. Advancing a *copy* and discarding it, or
-  advancing only on some branches, fails the same way.
-- **EOS always permitted.** Leaving EOS out of the mask (or adding it
-  unconditionally) lets the model stop wherever it likes. Models like to stop: the
-  result is truncated JSON that was promised to be valid.
-- **EOS never permitted, or only when nothing else is.** Masking with `allowed`
-  alone gives a loop that cannot end a number or a string of unbounded length and
-  runs to the token limit; permitting EOS only when forced does the same for every
-  language in which a complete output can be extended.
-- **Multiplying by the mask.** `logits * mask` is the probability-space operation
-  applied to logits: a forbidden token gets logit 0, which beats every permitted
-  token with a negative logit. Masking logits means `-inf`.
-- **Validating after the fact.** Choosing the unconstrained argmax, running the
-  model on it, and only then asking the constraint turns every rejection into a
-  wasted forward call (173 calls instead of 9 in the worked example). Checking the
-  candidate *before* feeding it and retrying with the next-best logit is correct and
-  costs no model work, which is the difference between the two orders.
-- **Running the model before the dead-end check.** One wasted call per dead end, and
-  with an empty permitted set at the start, a whole prefill for an empty answer.
-- **Advancing on EOS.** `advance(state, eos_id)` raises `ValueError`: EOS is not a
-  token of the language. Check for EOS first.
+- **Not advancing the state.** The first token is valid, and every later step masks as if it were still at the start, producing outputs like `[[[[[`. Discarding the return value of `advance` or advancing only on some branches fails the same way.
+- **Always permitting EOS.** Leaving `eos_id` unmasked (or adding it unconditionally) lets the model stop early, producing truncated JSON that was supposed to be valid.
+- **Never permitting EOS, or permitting it only when nothing else is allowed.** Masking with `allowed` alone prevents the model from ending any extensible output (such as a number or string), forcing it to run to `max_new_tokens`. Permitting `eos_id` only when `allowed` is empty has the same bug whenever a complete output can still be extended.
+- **Multiplying logits by a 0/1 mask.** `logits * mask` is a probability-space operation applied to logits. It sets forbidden tokens to `0.0`, which beats any permitted token whose logit is negative. Logit masking must set forbidden entries to $-\infty$.
+- **Validating after the forward pass.** Feeding the unconstrained argmax into the model and checking validity afterward wastes a forward call on every rejected token (173 calls instead of 9 in the worked example). Checking candidates *before* feeding them to the model avoids extra model calls.
+- **Calling the model before the dead-end check.** This wastes a forward call on every dead end, including a full prompt prefill when nothing is permitted at the start.
+- **Calling `advance` on EOS.** `eos_id` is not a grammar token, so `constraint.advance(state, eos_id)` raises `ValueError`. Break on `token == eos_id` before advancing.
 
 ## Complexity
 
-$g$ forward calls and $P + g - 1$ tokens processed, plus one `allowed` and at most
-one `advance` per step. Building the mask is $O(V)$ per step here. With a real
-vocabulary of 100,000 or more tokens, computing `allowed` is the expensive part,
-which is why engines precompute it per automaton state (`dfa-token-index`) and store
-masks as bitsets.
+Let $P$ be the prompt length, $g$ be the number of generated tokens, and $V$ be `lm.vocab_size`. The loop makes $g$ forward calls and processes $P + g - 1$ tokens (or $0$ if $g = 0$), along with one `allowed` call and at most one `advance` call per step. Constructing the dense mask takes $O(V)$ time per step. For real vocabularies with 100,000+ tokens, computing `allowed` dominates the overhead, which is why serving engines precompute allowed token sets per automaton state (`dfa-token-index`) and store masks as bitsets.
 
 ## In the wild
 
-- Outlines (Willard and Louf, 2023) compiles a regex or JSON schema to a finite
-  automaton and indexes, for every state, the tokens that keep it alive; each step is
-  then a dictionary lookup and a mask, as with `DFAConstraint` here.
-- vLLM's structured outputs choose among several backends (xgrammar, guidance,
-  outlines, lm-format-enforcer); each produces a token bitmask per step that the
-  engine applies to the logits before sampling.
-- llama.cpp's sampler takes the other order by default as an optimization: it
-  samples a token from the unconstrained distribution, checks that one token against
-  the grammar, and only if it is rejected applies the grammar to all candidates and
-  samples again. No model call is repeated, since the logits are already there.
-- Greedy choice under a mask is local. It yields the best *next* valid token, not
-  the most probable valid string, and a mask can push the model into a continuation
-  it finds unlikely; engines accept that for the guarantee. The token limit remains
-  outside the guarantee: a response cut by `max_tokens` can be invalid JSON under
-  any constraint.
-- Steps with a single permitted token need no logits at all. Skipping the forward
-  call for such forced tokens and feeding them together is jump-forward decoding
-  (`jump-forward-decode`).
+- **Outlines** (Willard and Louf, 2023) compiles a regex or JSON Schema into a finite automaton and precomputes the allowed token set for every state. Each decode step reduces to a table lookup and a logit mask, just like `DFAConstraint` here.
+- **vLLM** supports multiple structured-output backends (XGrammar, Guidance, Outlines, and lm-format-enforcer). Each backend produces a per-step token bitmask that the engine applies to the logits before sampling.
+- **llama.cpp** optimizes the common case by sampling first from the unconstrained distribution, checking that single token against the grammar, and applying the full vocabulary mask only if the token is rejected. Because the logits are already computed, no extra model forward pass is needed.
+- **Local vs. global optimality.** Constrained greedy decoding picks the highest-scoring valid *next* token, not the highest-probability valid string overall. A tight mask can force the model down a low-probability path, which engines accept in exchange for syntactic validity. The `max_tokens` limit remains outside the guarantee, so a truncated response can still be invalid JSON.
+- **Jump-forward decoding.** Steps where only a single token is permitted do not need logits from the model. Skipping those forward calls and feeding the forced tokens together as one chunk is the optimization implemented in `jump-forward-decode`.

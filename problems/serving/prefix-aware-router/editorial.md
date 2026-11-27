@@ -1,43 +1,15 @@
 ## The idea
 
-A replica's prefix cache is only useful to requests that reach that replica. With
-$n$ replicas behind a load-only balancer, a request finds its prefix cached with
-probability roughly $1/n$ of what a single server would give, unless the cache is
-large enough to hold every prefix everywhere. So the router should send requests
-with the same beginning to the same place: *affinity*.
+A replica's prefix cache only helps requests that actually land on that replica. Behind a load-only balancer with $n$ replicas, a request finds its prefix cached roughly $1/n$ as often as on a single server, unless every replica's cache is large enough to hold all active prefixes. Sending requests with the same beginning to the same replica (*prefix affinity*) restores those cache hits.
 
-**What to match on.** The KV cache stores keys and values per position, and position
-$i$ depends on all tokens before it. Two prompts can therefore share cached work
-only up to the first token at which they differ. The useful quantity is the length
-of the longest common prefix, measured in tokens, and its fraction of the prompt
-(the *match rate*): a 30-token match on a 4000-token prompt saves nothing worth
-giving up balance for, which is what the threshold expresses.
+**What to match on.** A KV cache stores keys and values at each token position, and position $i$ attends to all tokens before it. Two prompts can therefore reuse cached KV entries only up to the first position where they differ. The right metric is the length of the longest common prefix in tokens, expressed as a fraction of the prompt length (the *match rate*). A 30-token match on a 4000-token prompt saves too little prefill work to justify hurting load balance, which is why `match_threshold` filters out weak matches.
 
-**An index of your own.** The router cannot ask the replicas what they hold on
-every request. It knows what it sent where, and a prompt that was routed to a
-replica will be in that replica's cache shortly. So it keeps, per replica, the
-recent prompts it routed there and matches against those. This index is an
-approximation in two ways, and both matter:
+**Keeping a local index.** The router cannot query every replica's cache on every request. Instead, it tracks what it recently sent to each replica, because a routed prompt will soon be in that replica's cache. This local index is an approximation in two deliberate ways:
 
-- It is early: the prompt is recorded when it is routed, before the replica has
-  prefilled it. That is deliberate. Two requests with the same prefix arriving
-  together should go to the same replica even though the first has not been cached
-  yet; an index fed only by confirmations from the replicas would split them.
-- It must forget. The replica evicts; an index that remembers everything believes
-  in cache entries that are long gone and follows them. Bounding the record to
-  about what the replica's cache can hold keeps the two in step.
+- **It updates early.** The prompt is recorded at routing time, before the replica finishes prefilling it. When two requests with the same prefix arrive back to back, both route to the same replica. An index that waited for replica confirmations would split them.
+- **It forgets old entries.** Replicas evict old prefixes from their caches. An unbounded index would keep chasing cache entries that were evicted long ago. Capping each replica's record to `index_size` (roughly what its cache holds) keeps the router's view aligned with the replica.
 
-**Bounded load.** Pure affinity turns popularity into overload: with skewed
-traffic the hottest prefix is a large share of all requests, and they all go to
-one replica. The repair is to let affinity choose only among replicas whose load is
-within a bound of the least loaded one. When the preferred replica is over the
-bound, the request goes elsewhere, and, because the index records it there, the
-prefix now has a second home. Later requests choose between the two homes by load.
-A hot prefix thus spreads over exactly as many replicas as its traffic needs, and a
-cold one stays on one. This is the idea of consistent hashing with bounded loads
-("Consistent Hashing with Bounded Loads", arXiv:1608.01350: no server above
-$\lceil c \cdot m / n \rceil$ for a chosen $c > 1$, overflow goes to the next
-server), applied to a longest-prefix match instead of a hash.
+**Bounded load.** Pure affinity turns traffic skew into overload. If one prefix dominates traffic, every request using it piles onto a single replica. Restricting affinity to replicas within `imbalance` requests of the least loaded replica fixes this. Once the preferred replica exceeds the bound, the request overflows to a less busy replica. Because the index records that overflow, the prefix now has two homes, and subsequent requests pick whichever home has the shorter queue. Hot prefixes spread across just enough replicas to absorb their load, while cold prefixes stay on one replica. This applies the idea of consistent hashing with bounded loads ("Consistent Hashing with Bounded Loads", arXiv:1608.01350, where distributing $m$ requests across $n$ servers caps each server at $\lceil c \cdot m / n \rceil$ for a chosen $c > 1$ and overflows to the next server) to longest-prefix matching instead of hashing.
 
 ## Reference solution (Python)
 
@@ -79,11 +51,9 @@ class Router:
 
 ## What the bound buys
 
-One seeded run on the cluster of the statement (600 requests, 8 prefixes; a
-different seed from the tests'). "Gap" is the largest difference, at a routing
-decision, between the queue of the chosen replica and the shortest queue.
+The table below shows one seeded run on the cluster from the statement (600 requests, 8 prefixes, using a different seed from the test suite). "Gap" is the largest difference, at any routing decision, between the chosen replica's queue length and the shortest queue length.
 
-| workload | router | cache-hit tokens | p95 TTFT | gap |
+| workload | router | cache-hit tokens | p95 time to first token | gap |
 |---|---|---|---|---|
 | uniform, 30/s | load only | 56,592 | 1.41 s | 0 |
 | | this problem | 151,792 | 0.28 s | 4 |
@@ -94,64 +64,24 @@ decision, between the queue of the chosen replica and the shortest queue.
 | | affinity, no bound | 180,288 | 9.15 s | 166 |
 | | index that never forgets | 142,336 | 0.31 s | 4 |
 
-With evenly popular prefixes, unbounded affinity is harmless: the prefixes
-themselves balance the load. With one hot prefix it has the best hit rate of all
-and a tail latency thirty times worse, because cache hits do not help a request
-that waits behind 160 others. Note also the first row of each block: the load-only
-router is not at zero. It hits whenever a replica happens to still hold the prefix,
-which for a hot prefix is often.
+When prefixes are equally popular, unbounded affinity looks harmless because the prefixes naturally balance the load. With one hot prefix, unbounded affinity gets the highest cache-hit count but 30 times worse tail latency, because a cache hit cannot save a request stuck behind 160 queued requests. Notice also that the load-only router is not at zero hits. It still gets hits whenever a replica happens to retain a prefix, which happens often for a hot prefix.
 
 ## Common mistakes
 
-- **Affinity never broken.** No eligibility test, or one that is never false. Passes
-  every uniform benchmark and fails in production on the day one tenant's system
-  prompt becomes popular.
-- **The bound applied to the queue itself.** `queue_len <= imbalance` instead of
-  `queue_len - least <= imbalance`: under load nobody is eligible and the router
-  silently degrades to load-only. The bound is about imbalance, not about load.
-- **The index not updated**, or updated only when the match was used. Then the
-  first request of a prefix leaves no trace and the second cannot follow it.
-- **Matching tokens in common rather than a prefix**: counting equal positions
-  without stopping at the first difference, or requiring identical prompts. The
-  first over-counts (templates repeat), the second never matches chat traffic,
-  where the last message always differs.
-- **Ties among equal matches by position.** Once a prefix lives on two replicas, the
-  choice between them is the load-balancing decision for that prefix.
-- **An index that never forgets**; see the table.
-- **Falling back to something other than the least loaded replica** when the match
-  is low.
+- **Never breaking affinity.** Omitting the eligibility check, or writing one that is always true, passes uniform benchmarks and fails in production as soon as one tenant's system prompt becomes popular.
+- **Comparing absolute queue length to `imbalance`.** Checking `queue_len <= imbalance` instead of `queue_len - least <= imbalance` makes every replica ineligible under high load, silently degrading the router to load-only. The bound constrains queue imbalance, not absolute queue depth.
+- **Not updating the index on every route.** Updating the index only when a prefix match wins leaves the first request of a new prefix unrecorded, so the second request cannot follow it.
+- **Counting matching tokens instead of a common prefix.** Counting equal positions without stopping at the first mismatch over-counts shared template tokens. Conversely, requiring exact prompt equality fails on chat workloads where the latest turn always differs.
+- **Breaking equal-match ties by list position.** Once a hot prefix spreads to two replicas, breaking ties by `queue_len` is what balances load between them.
+- **Never evicting from the index.** Keeping every historical prompt degrades hit rate and latency, as shown in the table above.
+- **Wrong fallback on low match.** When the best match is below `match_threshold * len(tokens)`, the router must fall back to the least loaded replica across all of `replicas`, not an arbitrary candidate.
 
 ## Complexity
 
-`route` compares the prompt with up to `index_size` prompts per replica:
-$O(R \cdot S \cdot L)$ token comparisons for $R$ replicas, index size $S$ and prompt
-length $L$. Production routers replace the scan with a prefix tree whose nodes
-record which replicas hold them, or with hashes of fixed-size token blocks chained
-from the start of the prompt (the same block hashes the engine's prefix cache
-uses), which makes the lookup $O(L)$ regardless of $R$ and $S$.
+`route` compares the incoming prompt against up to `index_size` prompts for each replica. For $R$ replicas, index size $S$, and prompt length $L$, this takes $O(R \cdot S \cdot L)$ token comparisons. Production routers replace this linear scan with a prefix tree (whose nodes record which replicas hold each prefix) or with chained hashes of fixed-size token blocks matching the engine's prefix cache, reducing lookup time to $O(L)$ independent of $R$ and $S$.
 
 ## In the wild
 
-- **Ray Serve LLM**'s `PrefixCacheAffinityRouter` keeps a prefix tree of the prompts
-  routed to each replica (on the prompt's characters, not tokens). If the difference
-  between the longest and shortest replica queue exceeds `imbalanced_threshold`, it
-  routes by power of two choices; otherwise it finds the best prefix match and uses
-  it when the match rate reaches `match_rate_threshold` (default 0.1), and sends
-  low-match requests to the replica with the lowest cache usage. Its imbalance test
-  is global (the whole cluster is balanced or not), where this problem's is per
-  candidate (Ray documentation, "Prefix-aware routing").
-- The **SGLang router**'s cache-aware policy keeps an approximate radix tree per
-  worker, mirroring the radix tree of the worker's prefix cache, with periodic LRU
-  eviction. It is in load-balancing mode when the load difference exceeds both an
-  absolute and a relative threshold (`balance_abs_threshold`,
-  `balance_rel_threshold`), and otherwise routes to the best prefix match if the
-  match ratio exceeds `cache_threshold`, else to the worker with the most free
-  cache (SGLang documentation, "SGLang Router").
-- **llm-d** (on the Kubernetes Gateway API Inference Extension) scores pods by
-  prefix-cache match and combines that score with queue-depth and KV-utilization
-  scorers. Its approximate mode tracks routing decisions, like this problem; its
-  precise mode builds the index from cache events published by the model servers,
-  and adds "speculative" entries at routing time for exactly the reason given
-  above: confirmed events arrive after back-to-back requests have already been
-  routed (llm-d documentation, "Prefix-Cache Aware Routing" and "Precise Prefix
-  Cache Routing").
+- **Ray Serve LLM** (`PrefixCacheAffinityRouter`) maintains a character-level prefix tree of prompts routed to each replica. When the gap between the longest and shortest replica queues exceeds `imbalanced_threshold`, it switches to power-of-two-choices load balancing. Otherwise it picks the best prefix match if the match rate reaches `match_rate_threshold` (default 0.1), and sends low-match requests to the replica with the lowest cache usage. Unlike this problem's per-candidate eligibility check, Ray's imbalance check is global across the cluster (Ray documentation, "Prefix-aware routing").
+- **SGLang Router** keeps an approximate radix tree per worker with periodic LRU eviction, mirroring each worker's prefix cache. It switches to load-balancing mode when the load difference exceeds both an absolute threshold (`balance_abs_threshold`) and a relative threshold (`balance_rel_threshold`). Otherwise it routes to the best prefix match if the match ratio exceeds `cache_threshold`, or falls back to the worker with the most free cache (SGLang documentation, "SGLang Router").
+- **llm-d** (built on the Kubernetes Gateway API Inference Extension) scores pods by prefix-cache match and combines that score with queue-depth and KV-utilization scorers. Its approximate mode tracks routing decisions just like this problem. Its precise mode builds the index from cache events published by the model servers, and inserts speculative entries at routing time so back-to-back requests with the same prefix land on the same replica before the confirmation event arrives (llm-d documentation, "Prefix-Cache Aware Routing" and "Precise Prefix Cache Routing").

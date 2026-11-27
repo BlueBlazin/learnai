@@ -1,38 +1,21 @@
 ## The idea
 
-A request now has a life cycle with three exits, and two of them are triggered from
-outside the scheduling loop: `cancel()` is called by a client, and a deadline is
-reached by the clock. Both can happen at any moment, including while the loop is
-suspended in `await engine.step(...)`.
+A request can end in three ways, and two of them happen outside the scheduling loop: a client calls `cancel()`, or the clock hits a deadline. Either event can fire while `run()` is suspended inside `await engine.step(...)`.
 
-The design that makes this manageable has two parts.
+Two design principles keep the state consistent:
 
-**One exit door.** A single method ends a request, whatever the reason:
+**One exit path.** Route every ending—normal completion, cancellation, and expiration—through a single `_end(handle, outcome)` method:
 
-1. if it has already ended, do nothing and say so (this makes every race harmless:
-   cancel after finish, a second cancel, a deadline after a cancel);
-2. disarm its deadline timer;
-3. take it out of the structure it is in: the waiting list, or the running list, and
-   for an early end also out of the engine with `engine.release(id)`;
-4. resolve its future, which wakes the client.
+1. If the handle has already ended, return `False` immediately. This makes every race harmless (a cancel after completion, a duplicate cancel, or a deadline after a cancel).
+2. Cancel the handle's deadline timer if one is active.
+3. Remove the handle from `_waiting` or `_running`. If it was running and ended early with an exception, call `engine.release(id)`.
+4. Resolve the handle's future so the waiting client wakes up.
 
-Because step 3 runs immediately, inside `cancel()` or the timer callback, the engine's
-rule does the rest: a sequence released during a step gets nothing from that step. No
-token can appear at or after the instant the request ended, and the slot count is
-right when the loop plans the next step.
+Because step 3 runs immediately inside `cancel()` or the timer callback, the engine drops any mid-step sequence before that step finishes. No token is produced at or after the termination instant, and the slot is free when the next step is planned.
 
-**The loop trusts current state.** Between starting a step and resuming after it, the
-running list may have shrunk. So after the `await` the loop looks handles up in the
-running list as it is *now*, and it relies on the engine's report (`result.tokens`,
-`result.finished`), which never mentions a released sequence. It never assumes that
-what it put into the step is still there.
+**Trust current state after `await`.** While `run()` is suspended in `engine.step(...)`, `_running` may shrink due to cancellations or deadlines. When the step resumes, the loop builds its `id -> handle` lookup from `_running` as it exists *now* and iterates over `result.tokens` and `result.finished`, which never include released sequences. It never assumes that every sequence passed into `engine.step(...)` is still running.
 
-The tie rule deserves a sentence. The engine completes a step after all ordinary
-timers of the same instant, so a deadline at time $d$ beats a token due at $d$.
-`loop.call_at` creates such a timer and its callback runs in that timer slot. A task
-doing `await asyncio.sleep(...)` is also woken by a timer, but the task itself only
-resumes afterwards, when the step's completion has already run: one line of difference
-in the code, one token (or one wrongly "finished" request) of difference in the trace.
+The same-instant tie rule depends on how `asyncio` schedules timers. The engine completes a step after all ordinary timers for that timestamp have run, so a deadline at time $d$ fires before a token due at $d$. `loop.call_at` schedules an ordinary timer whose callback runs in that slot. By contrast, a coroutine doing `await asyncio.sleep(...)` is woken by a timer, but the coroutine itself only resumes after the step completion callback has already run, producing an extra token or marking an expired request as finished.
 
 ## Reference solution (Python)
 
@@ -112,58 +95,25 @@ class Scheduler:
                 self._end(by_id[seq_id], by_id[seq_id]._tokens)
 ```
 
-A finished sequence needs no `release`: the engine dropped it with its last token.
-That is why `_end` releases only when the outcome is an exception.
+A normally finished sequence is already dropped by the engine when its last token is produced, so `_end` calls `engine.release` only when `outcome` is an exception.
 
 ## Common mistakes
 
-- **Cancellation honored only while waiting.** Removing a request from the queue is
-  the easy half. If a running request is merely marked as canceled for its client, it
-  keeps its slot and generates to the end; the trace shows tokens after the cancel.
-- **Leaking the slot.** A separate "slots in use" counter that is decremented where
-  sequences *finish* misses the two other exits. Each canceled request then costs a
-  slot forever, and after `max_running` of them the server accepts requests and never
-  runs them. Derive the count from the running list instead.
-- **Expiry checked only at admission.** `if now >= deadline: reject` at the head of
-  the queue handles requests that waited too long, tells them late, and lets a running
-  request generate past its deadline. A deadline is an event with its own timer.
-- **Deferring the release to the next step boundary.** Setting a flag that the loop
-  acts on later is the natural asyncio pattern and is one step late: the step in
-  flight still produces the token, and its KV memory stays allocated meanwhile.
-- **A stale timer.** If the deadline timer is not canceled when the request ends, and
-  its callback does not check, it releases a sequence that finished long ago. The
-  engine reports `unknown_sequence`; in a real server, where ids are reused, this
-  kills somebody else's request.
-- **Admitting a request that is already late.** `loop.call_at` with a time in the past
-  fires soon, but not before the loop has admitted the request and started a step for
-  it. Check in `submit`.
-- **A deadline as a sleeping task.** See the tie rule above: the task resumes after the
-  step's completion, so a token due at the deadline is produced.
+- **Honoring cancellation only while waiting.** Removing a waiting request from the queue is not enough. If a running request is only marked canceled for its client without calling `engine.release`, it keeps its slot and continues decoding after cancellation.
+- **Leaking slots.** Maintaining a separate `slots_in_use` counter and decrementing it only when sequences finish misses cancellations and deadlines. After `max_running` early exits, the server stops admitting new requests. Derive occupancy directly from `len(self._running)`.
+- **Checking deadlines only at admission.** Rejecting expired requests at the head of the queue notifies waiting clients late and allows running requests to decode past their deadlines. Deadlines need their own timers.
+- **Deferring `engine.release` to the next step boundary.** Setting a flag for the loop to handle after `await engine.step(...)` is one step too late. The in-flight step still emits a token and holds KV memory until it finishes.
+- **Leaving stale timers armed.** If a deadline timer is not canceled when a request finishes or is canceled, and the callback does not guard against already-ended handles, it later calls `engine.release` on a finished sequence. Here that raises `unknown_sequence`; in a real server that reuses request ids, it aborts someone else's request.
+- **Admitting an already-expired request.** Scheduling `loop.call_at` with a past timestamp fires soon, not immediately, so the loop can admit the request first. Reject `deadline_s <= loop.time()` inside `submit`.
+- **Implementing deadlines with a sleeping task.** As noted above, `await asyncio.sleep(...)` resumes after the step completion callback, letting a token due at the exact deadline slip through.
 
 ## Complexity
 
-`_end` is $O(W + R)$ for the `in` and `remove` on the waiting and running lists; the
-loop is unchanged from continuous batching. If cancellations of long queues mattered,
-a per-handle state field plus lazy deletion (skip ended handles when popping) makes
-every operation $O(1)$. One timer per pending deadline is $O(\log n)$ in the event
-loop's heap.
+`_end` takes $O(W + R)$ time for membership checks and removal on `_waiting` ($W$ items) and `_running` ($R$ items). The scheduling loop itself has the same cost as basic continuous batching. For very large queues, adding a per-handle state field and using lazy deletion (skipping ended handles when popping from `_waiting`) makes every operation $O(1)$. Each active deadline timer costs $O(\log n)$ in the event loop's timer heap, where $n$ is the number of active timers.
 
 ## In the wild
 
-- **vLLM** watches the HTTP connection; on a disconnect the API server calls
-  `abort(request_id)` on the engine, and the scheduler frees the request's KV blocks
-  and drops it from `running` or `waiting` before the next step. Tokens of an aborted
-  request that an in-flight step still computes are discarded, the same contract as
-  `engine.release` here.
-- **TGI** gives each request a channel to its client; when the client goes away the
-  send fails and the router filters the request out of the running batch at the next
-  iteration. **Triton** has per-request queue timeouts and a cancellation API that
-  backends must poll.
-- **gRPC** propagates a deadline with every call, and its status codes `CANCELLED` and
-  `DEADLINE_EXCEEDED` are the two exceptions of this problem. OpenAI-style HTTP APIs
-  have no deadline field; servers there rely on disconnect detection plus a
-  server-side maximum request time.
-- A production scheduler goes one step further and uses the deadline *before* it
-  passes: a request that cannot finish in time even if admitted now is shed
-  immediately (`slo-deadline-scheduler`), and on shutdown running requests are given a
-  grace period before they are canceled (`graceful-drain`).
+- **vLLM** monitors each client's HTTP connection. On disconnect, the API server calls `abort(request_id)` on the engine, and the scheduler frees the request's KV blocks and removes it from `running` or `waiting` before the next step. Any tokens computed by an in-flight step for an aborted request are discarded, matching `engine.release` here.
+- **TGI** attaches a channel to each client; when a send fails, the router removes the request from the running batch on the next iteration. **Triton** provides per-request queue timeouts and a cancellation API that backends poll.
+- **gRPC** propagates a deadline on every RPC, and its `CANCELLED` and `DEADLINE_EXCEEDED` status codes correspond directly to the two exceptions here. OpenAI-style HTTP APIs lack a standard deadline field, so servers combine disconnect detection with a server-side maximum request duration.
+- Production schedulers build on this by checking feasibility before a deadline passes, shedding requests that cannot finish in time (`slo-deadline-scheduler`), and giving running requests a grace period during shutdown (`graceful-drain`).

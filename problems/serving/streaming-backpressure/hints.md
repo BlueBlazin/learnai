@@ -1,36 +1,20 @@
-There are two tempting designs. One appends every token to a per-request list
-forever. The other gives each request an `asyncio.Queue(maxsize=...)` and does
-`await queue.put(token)` in the engine loop. What does each of them do when one
-client out of eight stops reading? What would the loop have to do instead of
-appending, and instead of awaiting?
+Consider two common designs. The first appends every token to an unbounded per-request list. The second uses a bounded `asyncio.Queue(maxsize=...)` per request and calls `await queue.put(token)` inside the engine loop. What happens in each design when one client out of eight stops reading? How can the engine loop stop producing for that one client without blocking on it?
 
 ---
 
-Make "is this sequence paused" a pure function of its buffer, and ask it when
-planning a step:
+Make pausing a planning decision based on the buffer length:
 
 ```python
 decode = [s.request.id for s in self._running if len(s._buffer) < self.max_buffered]
 ```
 
-A paused sequence simply is not in the step, so appending after the step can never
-overflow, and nothing ever awaits a client. Then handle the case this creates: with
-no prefill and no decode there is no step to run, so wait on one `asyncio.Event`
-that `submit`, `take`, `close`, and the stall callback all set.
+A paused sequence is omitted from the step, so appending after the step can never exceed `max_buffered`, and the loop never awaits a client. When both `prefill` and `decode` are empty, do not call `engine.step`. Instead, clear and wait on a single `asyncio.Event` that is set by `submit`, `take`, `close`, and the stall callback.
 
 ---
 
-The remaining pieces:
+Wire up the remaining pieces:
 
-- After the step, for each stream that is still running and whose buffer is now
-  full, arm `loop.call_at(loop.time() + stall_ms, self._end, stream, "stalled")` and
-  keep the handle on the stream. Do this after handling `result.finished`, so a
-  finished stream never gets a timer.
-- `take()` swaps the buffer for an empty list, cancels the stream's stall timer, and
-  sets the event.
-- One method ends a stream early, for both reasons: return if the state is not
-  `"open"`; set the state; drop the buffer; cancel the timer; remove the stream from
-  the running list and `engine.release` it, or remove it from the waiting list; set
-  the event. `close()` calls it with `"closed"`.
-- After `await engine.step(...)`, look streams up in the running list as it is then:
-  a stream closed or stalled during the step is in neither it nor `result.tokens`.
+- After handling `result.finished`, check every stream still in `self._running`. If its buffer is full and it has no stall timer yet, schedule `loop.call_at(loop.time() + self.stall_ms, self._end, stream, "stalled")` and store the handle on the stream. Doing this after `result.finished` ensures a finished stream never arms a stall timer.
+- In `take()`, swap the buffer for a new empty list, cancel any active stall timer on that stream, and set the wake event.
+- Use one helper method to end a stream early for both `"stalled"` and `"closed"`. Return immediately if `stream.state != "open"`. Otherwise set `stream.state`, clear the buffer, cancel any stall timer, remove the stream from `self._running` and call `engine.release(id)` (or remove it from `self._waiting`), and set the wake event.
+- After `await engine.step(...)`, look up streams in `self._running` as it exists after the `await`. Any stream closed or stalled mid-step has already been removed from both `self._running` and `result.tokens`.

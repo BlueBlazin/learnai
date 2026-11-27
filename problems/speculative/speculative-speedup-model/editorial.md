@@ -1,36 +1,21 @@
 ## The idea
 
-Model each draft token as accepted independently with probability $\alpha$. Because
-verification keeps only the prefix before the first rejection, the number of
-accepted drafts $n$ is a geometric variable capped at $k$:
-$P(n \ge i) = \alpha^i$ for $i \le k$. The round emits $n + 1$ tokens, since the
-target's single pass always yields one valid token of its own: the correction at
-the first rejection, or the bonus token after $k$ acceptances. By the tail-sum
-formula,
+Model each draft token as accepted independently with probability $\alpha$. Because verification keeps only the prefix before the first rejection, the number of accepted draft tokens $n$ follows a geometric distribution capped at $k$, with $P(n \ge i) = \alpha^i$ for $0 \le i \le k$. The target's single pass always yields one valid token of its own—either the correction at the first rejection or a bonus token after $k$ acceptances—so the round emits $n + 1$ tokens. Applying the tail-sum formula gives
 
 $$
 E(\alpha, k) = \mathbb{E}[n + 1] = 1 + \sum_{i=1}^{k} P(n \ge i)
 = \sum_{i=0}^{k} \alpha^i = \frac{1 - \alpha^{k+1}}{1 - \alpha}.
 $$
 
-For the speedup, measure time in target calls. Plain decoding produces one token
-per unit. A round costs $k$ draft calls at $c$ units each plus one target call, and
-produces $E$ tokens, so
+To compute wall-clock speedup, measure time in target calls. Plain decoding produces 1 token per target call. One speculative round pays for $k$ draft calls at cost $c$ each plus 1 target call, and produces $E(\alpha, k)$ tokens:
 
 $$
-S(\alpha, k, c) = \frac{1 - \alpha^{k+1}}{(1 - \alpha)(k c + 1)} .
+S(\alpha, k, c) = \frac{1 - \alpha^{k+1}}{(1 - \alpha)(k c + 1)}.
 $$
 
-This assumes what makes speculative decoding work at all: scoring $k + 1$ positions
-in one target pass takes about as long as scoring one, because the pass is batched
-over positions on hardware with spare parallel capacity.
+This model relies on the core hardware assumption behind speculative decoding: scoring $k + 1$ positions in a single batched target pass takes about the same time as scoring one position when the accelerator has spare parallel capacity.
 
-The numerator saturates at $1 / (1 - \alpha)$ while the denominator grows linearly,
-so $S$ rises, peaks, and falls: there is a best draft length, and it is found by
-trying each integer. Setting $k = 1$ shows when speculation can win at all:
-$S = (1 + \alpha) / (1 + c) > 1$ exactly when $\alpha > c$. If $\alpha \le c$, every
-added term $\alpha^i \le c$ adds less to the numerator than $c$ adds to the
-denominator, so no $k$ helps and `best_k` is 0.
+As $k$ grows, the numerator saturates at $1 / (1 - \alpha)$ while the denominator grows linearly in $k$. Therefore $S(\alpha, k, c)$ rises, peaks, and eventually falls, so we can find the optimal integer $k$ by direct search. Evaluating $k = 1$ reveals when speculation helps at all: $S = (1 + \alpha) / (1 + c) > 1$ if and only if $\alpha > c$. When $\alpha \le c$, every additional term $\alpha^i \le c$ adds less to the numerator than $c$ adds to the denominator, so no positive $k$ improves over plain decoding and `best_k` returns `0`.
 
 ## Reference solution (Python)
 
@@ -49,57 +34,24 @@ def best_k(alpha, c, k_max):
     return max(range(k_max + 1), key=lambda k: speedup(alpha, k, c))
 ```
 
-`max` returns the first maximal element, which is the smallest `k`, and `k = 0`
-gives $E = 1$ and $S = 1$ without a special case.
+Python's `max` returns the first element that attains the maximum, which breaks ties in favor of the smallest `k`. Including `k = 0` in `range(k_max + 1)` naturally yields $E = 1$ and $S = 1$ without a separate branch.
 
 ## Common mistakes
 
-- **Forgetting the target's token.** Summing $k$ terms, $(1 - \alpha^k)/(1 - \alpha)$,
-  counts at most $k$ tokens per round. Every round yields at least one token even
-  if all drafts are rejected; that is why speculative decoding never produces fewer
-  tokens per target call than plain decoding.
-- **Leaving the target call out of the cost.** With cost $k c$ the "speedup" of a
-  cheap draft is enormous and grows without bound as $c \to 0$. The target pass is
-  the dominant cost of every round.
-- **Charging $k + 1$ draft calls.** The bonus token comes from the target's pass,
-  not from the draft: $k$ draft calls, one target call.
-- **Dividing by zero at $\alpha = 1$.** The closed form is $0/0$ there, and in
-  Python that is a `ZeroDivisionError`, not a NaN. A perfect draft is not exotic:
-  it is what a copy task looks like.
-- **Patching it with an epsilon.** Clamping $\alpha$ to $1 - 10^{-9}$ trades the
-  exception for cancellation: $1 - \alpha^{k+1}$ is then a difference of two numbers
-  that agree to nine digits, and only about seven correct digits survive. Near 1 the
-  term-by-term sum is the stable formula; at exactly 1 the answer is $k + 1$.
-- **Never recommending $k = 0$.** A search that starts at $k = 1$ reports the least
-  bad draft length when the honest answer is to switch speculation off.
-- **Maximizing tokens per round.** $E$ increases with $k$ forever; the quantity to
-  maximize is tokens per unit of time.
+- **Forgetting the target's token.** Summing only $k$ terms, $(1 - \alpha^k) / (1 - \alpha)$, caps the output at $k$ tokens per round. Every round produces at least one token even when all drafts are rejected, which is why speculative decoding never yields fewer tokens per target call than plain decoding.
+- **Omitting the target call from the cost.** Dividing by $k c$ instead of $k c + 1$ produces an unbounded speedup as $c \to 0$. The target pass is the dominant cost of every round.
+- **Charging `k + 1` draft calls.** The bonus token comes from the target pass, not an extra draft pass. A round makes `k` draft calls and 1 target call.
+- **Dividing by zero at $\alpha = 1$.** The closed form evaluates to `0 / 0`, raising a `ZeroDivisionError` in Python. Perfect acceptance is common on copy-heavy prompts and must return `float(k + 1)`.
+- **Patching $\alpha = 1$ with an epsilon.** Clamping $\alpha$ to $1 - 10^{-9}$ avoids the exception but causes catastrophic cancellation in $1 - \alpha^{k+1}$, leaving only about seven accurate digits. Near 1, the explicit sum is numerically stable, and at exactly 1 the result is `k + 1`.
+- **Never recommending `k = 0`.** Starting the search at `k = 1` forces speculation even when it slows decoding down.
+- **Maximizing tokens per round instead of speedup.** $E(\alpha, k)$ increases monotonically with $k$, so optimizing $E$ always picks `k_max` regardless of draft cost.
 
 ## Complexity
 
-`expected_tokens` and `speedup` are $O(1)$ (or $O(k)$ with the explicit sum);
-`best_k` is $O(k_\text{max})$ evaluations.
+`expected_tokens` and `speedup` run in $O(1)$ time (or $O(k)$ if using the explicit sum). `best_k` evaluates `speedup` $k_\text{max} + 1$ times, taking $O(k_\text{max})$ time and $O(1)$ extra memory.
 
 ## In the wild
 
-The model is from Leviathan, Kalman, and Matias, "Fast Inference from Transformers
-via Speculative Decoding" (ICML 2023, arXiv:2211.17192), with their $\gamma$ written
-as $k$ here. Their Equation 1 is the expected number of generated tokens,
-$(1 - \alpha^{\gamma+1})/(1 - \alpha)$; Theorem 3.8 states that the expected
-improvement factor in total wall time is
-$(1 - \alpha^{\gamma+1}) / ((1 - \alpha)(\gamma c + 1))$, with the cost coefficient
-$c$ defined as the ratio between the time of one draft run and one target run; and
-Corollary 3.9 is the $\alpha > c$ condition, with a guaranteed improvement of at
-least $(1 + \alpha)/(1 + c)$. They note that the optimal $\gamma$ is found
-numerically, as here, and report $\alpha$ between about 0.5 and 0.9 for typical
-draft and target pairs, with $c$ below 0.05.
+This model comes from Leviathan, Kalman, and Matias, "Fast Inference from Transformers via Speculative Decoding" (ICML 2023, arXiv:2211.17192), where draft length is denoted $\gamma$ rather than $k$. Their Equation 1 gives the expected tokens $(1 - \alpha^{\gamma+1}) / (1 - \alpha)$. Theorem 3.8 gives the expected wall-time improvement factor $(1 - \alpha^{\gamma+1}) / ((1 - \alpha)(\gamma c + 1))$, with $c$ defined as the ratio of one draft call to one target call. Corollary 3.9 proves the $\alpha > c$ threshold and shows a guaranteed speedup of at least $(1 + \alpha) / (1 + c)$. They find the optimal $\gamma$ numerically as we do here, reporting typical values of $\alpha$ between 0.5 and 0.9 with $c < 0.05$.
 
-Real acceptances are not independent and identically distributed: $\alpha$ varies
-by prompt and by position, and easy stretches alternate with hard ones. Engines
-therefore treat the formula as a guide and adapt online. Hugging Face
-`transformers` raises the draft length after a fully accepted round and lowers it
-after a rejection, and vLLM has offered a switch that disables speculation above a
-batch size, when the batch is large enough that the target has no spare capacity and the cost model's premise
-fails. With a lookup draft (`c = 0`) the formula says the longest draft is always
-best; in practice the extra verified positions are not free either, which caps the
-useful length.
+In practice, token acceptances are not independent and identically distributed. Acceptance varies across prompts and positions as easy spans alternate with hard ones, so serving engines use this model as a baseline and adapt online. Hugging Face `transformers` increases the draft length after a fully accepted round and decreases it after a rejection. vLLM provides a batch-size threshold that disables speculation when large batches saturate the target model's compute and violate the free-verification assumption. Similarly, for a free lookup draft (`c = 0`), the formula favors making `k` as large as possible, whereas real hardware still pays a non-zero cost for verifying extra positions.

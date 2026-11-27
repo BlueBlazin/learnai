@@ -1,37 +1,14 @@
 ## The idea
 
-One round of speculative decoding costs $k$ draft steps and one target call, and
-yields the accepted prefix plus one token. With a per-token acceptance rate
-$\alpha$, the best $k$ grows quickly with $\alpha$ (`speculative-speedup-model`):
-near $\alpha = 1$ the longest possible draft is best, and at $\alpha = 0.3$ even one
-drafted token can cost more than it saves. The acceptance rate is not a property of
-a model pair. It changes within one response, from a span the draft can copy to a
-span it cannot predict, so a constant $k$ is wrong most of the time in one direction
-or the other.
+Each round of speculative decoding pays for $k$ draft steps and one target call, and produces the accepted prefix plus one target token. Given a per-token acceptance rate $\alpha$, the optimal draft length $k$ grows quickly with $\alpha$ (`speculative-speedup-model`). Near $\alpha = 1$, a long draft saves many target calls. At $\alpha = 0.3$, even a single drafted token can cost more than it saves. Because $\alpha$ shifts within a single response as the text moves between predictable and unpredictable spans, any fixed $k$ is suboptimal much of the time.
 
-Two cheap signals are available online, and the policy uses both.
+The policy combines two cheap online signals to adapt $k$ as decoding runs.
 
-**The outcome of the last round.** If every drafted token was accepted, the draft
-was too short: grow. If a token was rejected, everything drafted after it was
-wasted: shrink. Hugging Face's rule is additive and asymmetric, $+2$ on success and
-$-1$ on failure, with a floor of 1 so that drafting never stops. The asymmetry
-biases $k$ upward: a run of $n$ full acceptances raises $k$ by $2n$, and it takes
-$2n$ rejections to undo it. That fits the cost structure when the draft model is
-much cheaper than the target, since an over-long draft wastes cheap steps while a
-too-short draft wastes an expensive target call.
+**The outcome of the previous round.** If every drafted token was accepted, the draft was likely too short, so the policy grows $k$. If any token was rejected, every token drafted after the first mismatch was wasted, so the policy shrinks $k$. Hugging Face's rule is additive and asymmetric, adding 2 on a full acceptance and subtracting 1 on a rejection, with a floor of 1 so drafting never shuts off completely. This asymmetry biases $k$ upward. A run of $n$ full acceptances raises $k$ by $2n$, and it takes $2n$ rejections to bring it back down. That matches the cost structure when the draft model is much cheaper than the target, because a slightly over-long draft wastes cheap steps whereas a too-short draft wastes an expensive target call.
 
-**The draft's own confidence.** The outcome signal arrives one round late and moves
-$k$ by a step at a time. The draft model's probability of its own token is available
-immediately, for every token, and it is informative: a draft that is unsure is
-usually wrong. Ending the draft at the first low-confidence token cuts a long draft
-exactly where it starts to go wrong, without waiting for the next round.
+**The draft model's own confidence.** The round outcome arrives one round late and changes $k$ gradually. In contrast, the draft model's probability for each token it proposes is available immediately. When the draft model is uncertain, it is usually wrong. Stopping the draft at the first low-confidence token cuts off wasted steps right where the draft starts to fail, without waiting for verification.
 
-The two interact through one detail: the growth rule compares the accepted count
-with the number of tokens **actually drafted**. A draft that the confidence rule cut
-to three tokens, all accepted, is a success and grows $k$, even though the round
-never drafted $k$ tokens. With confidence stopping doing the fine control, $k$
-becomes a ceiling that drifts upward during easy spans and comes down only when
-confident drafts get rejected.
+These two signals interact through one key rule. The growth check compares `n_accepted` against `n_drafted`, the number of tokens **actually drafted**, rather than against `k`. If confidence stopping cuts a draft to three tokens and all three are accepted, the round is still a full acceptance and grows $k$. With confidence stopping handling per-token early exits, $k$ acts as an upper cap that drifts upward on easy spans and drops only when confident drafts are rejected.
 
 ## Reference solution (Python)
 
@@ -70,72 +47,28 @@ def simulate(trace, k, schedule, threshold, c_draft, c_target):
     return {"cost": cost, "rounds": len(ks), "draft_tokens": draft_tokens, "ks": ks}
 ```
 
-The confidence is the stable softmax of `stable-softmax` reduced to one entry:
-after subtracting the maximum, the numerator is $e^0 = 1$.
+The confidence computation is stable softmax (`stable-softmax`) evaluated only at the maximum entry. Subtracting `top` makes the numerator $e^0 = 1$ and keeps every exponent non-positive.
 
 ## Common mistakes
 
-- **Growing on any acceptance.** `n_accepted > 0` is true for a draft of eight
-  tokens that lost seven. The signal for "the draft was too short" is that nothing
-  was rejected.
-- **Never shrinking below the initial `k`.** Treating the configured value as a
-  floor looks conservative and removes the half of the policy that protects hard
-  spans: with an initial $k$ of 5, every round in a span the draft cannot predict
-  wastes four draft steps.
-- **Comparing the confidence with a logit.** A logit is not a probability; `3.0`
-  is "above 0.4" for every distribution. The comparison needs the softmax, and the
-  softmax needs the shift by the maximum, or `math.exp` overflows on large logits.
-- **Dropping the token that triggered the stop.** In this policy the criterion is
-  evaluated after the token has been appended, so the token is drafted, paid for,
-  and verified. Stopping *before* it is a different policy (llama.cpp's, below) with
-  different counts.
-- **Comparing with `k`.** `n_accepted == k` was natural before confidence stopping
-  existed. With it, a shortened draft can never satisfy the test, so $k$ only ever
-  shrinks during the spans where the draft is doing well.
-- **Drafting the last token.** With `min(k, remaining)` the final drafted token can
-  never be used: the target's own token completes the output first.
-- **Counting matches after a mismatch.** Verification keeps a prefix. A match after
-  the first mismatch was computed from a wrong context.
-- **`<=` for `<`**, **a step of $+1$**, **no floor at 1**: each changes the schedule,
-  none changes the text, and the cost check is what notices.
-- **Forgetting the target's token**, or charging the target per drafted token: the
-  target runs once per round and always yields one token of its own.
+- **Growing on any acceptance.** Checking `n_accepted > 0` grows `k` even when a draft of eight tokens lost seven of them. Only a fully accepted draft signals that `k` was too short.
+- **Never shrinking below the initial `k`.** Clamping at the initial `k` instead of `1` disables the protection on hard spans. With an initial `k` of 5, every round on an unpredictable span wastes four draft steps.
+- **Comparing `threshold` against a raw logit or overflowing `math.exp`.** A logit like `3.0` is not a probability, so it must be converted via softmax. Subtract the maximum logit before calling `math.exp`, or large logits like $10^4$ will raise `OverflowError`.
+- **Dropping the token that triggered the stop.** In this policy, the confidence check runs after appending the token, so that token is drafted, paid for, and verified. Discarding it before verification is a different policy (used by `llama.cpp`, described below) and changes all round counts.
+- **Comparing `n_accepted` with `k`.** Checking `n_accepted == k` breaks once confidence stopping is enabled. A draft shortened by low confidence can never reach `k`, so `k` would only ever shrink during easy spans.
+- **Drafting the final token.** Using `min(k, total - position)` drafts a token at the last position that can never be used, because the target's own token already finishes the sequence.
+- **Counting matches after a mismatch.** Verification accepts only a contiguous prefix of matches. Any match after the first mismatch was conditioned on a wrong draft token.
+- **Small rule deviations (`<=` instead of `<`, `+1` instead of `+2`, or no floor at `1`).** None of these change the decoded text, so they only show up in the schedule and cost metrics.
+- **Forgetting the target token or mischarging target cost.** The target model runs once per round regardless of `n_drafted`, costs `c_target`, and always contributes one token to `position`.
 
 ## Complexity
 
-`simulate` reads each position at most once per round that drafts it. A position can
-be drafted again after a rejection, so the work is $O(T \cdot \bar k)$ in the worst
-case and $O(T)$ when most drafts are accepted.
+`simulate` visits each drafted position once per round that drafts it. Because rejected positions can be drafted again in later rounds, the time complexity is $O(T \cdot \bar k)$ in the worst case (where $\bar k$ is the average draft length) and $O(T)$ when most drafts are accepted.
 
 ## In the wild
 
-**Hugging Face `transformers`** (assisted generation). `GenerationConfig` documents
-`num_assistant_tokens_schedule="heuristic"` as "When all speculative tokens are
-correct, increase `num_assistant_tokens` by 2 else reduce by 1", and
-`AssistedCandidateGenerator.update_candidate_strategy` implements it as
-`num_assistant_tokens += 2` when the number of matches equals the number of
-candidate tokens of the round, else `max(1, num_assistant_tokens - 1)`. The
-confidence rule is the stopping criterion `ConfidenceCriteria`: it takes the softmax
-of the assistant's last scores, reads the probability of the last generated token,
-and stops when `p < assistant_confidence_threshold`. This problem follows both. The
-library additionally re-tunes the threshold during generation from the observed
-matches (an ROC-based choice, when scikit-learn is installed), which it describes as
-an unsupervised version of the method of "Dynamic Speculation Lookahead Accelerates
-Speculative Decoding of Large Language Models"; that part is not modeled here.
+**Hugging Face `transformers` (assisted generation).** `GenerationConfig` documents `num_assistant_tokens_schedule="heuristic"` as increasing `num_assistant_tokens` by 2 when all speculative tokens are correct and reducing it by 1 otherwise. `AssistedCandidateGenerator.update_candidate_strategy` implements this by comparing the number of matches against the number of candidate tokens in the round and clamping at 1. Its `ConfidenceCriteria` stopping rule takes the softmax of the assistant's latest scores, reads the probability of the last generated token, and stops when `p < assistant_confidence_threshold`. This problem models both mechanisms. When `scikit-learn` is installed, `transformers` also dynamically re-tunes the confidence threshold during generation using an ROC-based heuristic inspired by "Dynamic Speculation Lookahead Accelerates Speculative Decoding of Large Language Models."
 
-**llama.cpp** takes the other design: no adaptation of the length between rounds,
-but a maximum draft length, a minimum, and a minimum draft probability
-(`--spec-draft-n-max`, `--spec-draft-n-min`, `--spec-draft-p-min`; older releases
-spelled them `--draft-max`, `--draft-min`, `--draft-p-min`). Its draft loop in
-`common/speculative.cpp` checks the probability of the sampled token against `p_min`
-*before* adding the token, so the low-confidence token is discarded, and a draft
-that ends up shorter than the minimum is thrown away as a whole.
+**`llama.cpp`.** `llama.cpp` uses a different design without round-to-round length adaptation. It configures a maximum draft length, a minimum draft length, and a minimum draft probability (`--spec-draft-n-max`, `--spec-draft-n-min`, and `--spec-draft-p-min`, previously `--draft-max`, `--draft-min`, and `--draft-p-min`). In `common/speculative.cpp`, the draft loop checks the sampled token's probability against `p_min` *before* appending it, so the low-confidence token is discarded, and any draft shorter than the minimum length is dropped entirely.
 
-**What the numbers say.** On the phased traces of this problem, the additive rule
-alone, without the confidence stop, beats the best constant $k$ by only a few
-percent when a draft step costs a tenth of a target call, and loses to it when the
-draft is twice as expensive. Adding the confidence stop brings the cost to about
-$0.8$ of the best constant $k$. A *constant* large $k$ with the same confidence stop
-does slightly better still on these traces. The confidence signal carries most of
-the benefit; the additive rule matters when confidence is poorly calibrated, which
-synthetic traces with a clean confidence gap do not capture.
+**What the numbers say.** On the phased traces in this problem, the additive rule alone without confidence stopping beats the best constant `k` by only a few percent when `c_draft` is one-tenth of `c_target`, and loses to it when drafting is twice as expensive. Adding confidence stopping lowers the cost to roughly $0.8$ of the best constant `k`. A large constant `k` paired with the same confidence stop performs slightly better still on these synthetic traces. Confidence stopping does most of the work when confidence is well calibrated, while the additive rule protects against poorly calibrated draft models.

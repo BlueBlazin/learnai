@@ -1,61 +1,29 @@
 ## The idea
 
-`prompt-lookup-draft` answers "where did the last few tokens occur before" by
-scanning the context, for a bounded n-gram. Two things are wrong with that at
-scale: the scan costs time proportional to the context on every step, and the bound
-throws away the best evidence there is, a long match. Dropping the bound makes the
-scan worse, not better. The suffix automaton removes both problems, because the
-answer to the question is something it maintains anyway.
+`prompt-lookup-draft` finds where the last few tokens appeared earlier by scanning the context for a fixed-length n-gram. At scale, that breaks down in two ways. Scanning costs $O(L)$ per decoding step, and capping the n-gram length discards longer matches that carry much stronger signal. Removing the length cap only makes scanning slower. A suffix automaton solves both issues because it maintains the longest earlier suffix match as part of its core structure.
 
-**States.** For a substring $w$ of the sequence, let $\operatorname{endpos}(w)$ be
-the set of positions at which an occurrence of $w$ ends. Two substrings with the
-same end set are equivalent; the states of the suffix automaton are the
-equivalence classes (plus the empty string as the root). The strings of one state
-are suffixes of each other with consecutive lengths, so a state is described by
-its longest string, of length `length[v]`. Reading a substring from the root along
-the `next` transitions arrives at its state.
+**States.** For any substring $w$ of the sequence, let $\operatorname{endpos}(w)$ be the set of indices where an occurrence of $w$ ends. Two substrings with the same end set are equivalent, and each state of the suffix automaton represents one equivalence class (plus a root state for the empty string). All strings in a single state are suffixes of one another with consecutive lengths, so a state is characterized by its longest string of length `length[v]`. Following `next` transitions from the root along the tokens of a substring leads to its state.
 
-**Suffix links.** Take the longest string of state $v$ and shorten it from the
-left. For a while the end set stays the same (those are the other strings of $v$);
-at some length it grows, because the shorter string also occurs elsewhere. The
-state of that first shorter string is `link[v]`. So `link[v]` is the state of the
-*longest suffix of $v$'s strings that ends at more positions than they do*.
+**Suffix links.** Take the longest string in state $v$ and trim tokens from its left end. Initially the shorter suffixes still have the same end set and belong to $v$. Eventually a shorter suffix also occurs elsewhere in the sequence, so its end set strictly grows. The state of that first shorter suffix is `link[v]`. In other words, `link[v]` points to the state of the *longest suffix of $v$'s strings that ends at more positions than $v$ does*.
 
-**The match is a suffix link.** Let `last` be the state of the whole sequence. Its
-end set is the single position $L - 1$. Its link is therefore the state of the
-longest suffix that ends at $L - 1$ **and somewhere else**, and somewhere else can
-only be earlier: that is the definition of the match, overlaps included. Hence
+**The match is a suffix link.** Let `last` be the state representing the entire sequence of length $L$. Its end set is just $\{L - 1\}$. Therefore `link[last]` is the state of the longest suffix that ends at $L - 1$ and at least one other position. Because no index is greater than $L - 1$, that other position must be earlier, which is the exact definition of the longest earlier match (overlaps included). Hence
 
 $$
 m = \texttt{length}[\texttt{link}[\texttt{last}]] .
 $$
 
-No search happens at query time; the construction has already done it.
+No search happens at query time because the automaton already maintains this link.
 
-**The earliest occurrence.** Store `first_end[v]`, the smallest element of
-$v$'s end set. It never changes after the state is created, because positions are
-only ever added at the end of the sequence:
+**The earliest occurrence.** Store `first_end[v]`, the smallest index in state $v$'s end set. Because new tokens are only appended at the right end of the sequence, a state's earliest end position never changes once the state is created:
 
-- a state created for the token at position `pos` has end set $\{pos\}$;
-- a clone takes over strings that the original state $q$ already held, and they
-  ended first wherever $q$'s strings ended first: `first_end[clone] = first_end[q]`.
+- A new state created for the token at index `pos` has end set $\{\text{pos}\}$, so `first_end[cur] = pos`.
+- A cloned state splits off shorter strings that an existing state $q$ already held, so those strings first ended wherever $q$'s strings first ended: `first_end[clone] = first_end[q]`.
 
-Since all strings of a state share the end set, the earliest occurrence of the
-match of length $m$ ends at `first_end[link[last]]`, and the draft starts at the
-next index.
+Since every string in a state shares the same end set, the earliest occurrence of the match of length $m$ ends at `first_end[link[last]]`. The draft therefore starts at `first_end[link[last]] + 1`.
 
-**Construction.** Appending token $t$ creates one state `cur` for the new longest
-string. Walking the suffix links from the old `last` visits the suffixes of the old
-sequence from longest to shortest; each one that was never followed by $t$ gets a
-transition to `cur`. The walk stops at the first state $p$ that already has a
-transition on $t$, to some state $q$. The string (longest of $p$) + $t$ is the
-longest suffix of the new sequence that occurred before. If it is the longest
-string of $q$ (`length[q] == length[p] + 1`), $q$ is the link of `cur`. Otherwise
-$q$ also holds longer strings that are *not* suffixes of the new sequence, and its
-end set is about to split: the strings up to length `length[p] + 1` now also end at
-the new position, the longer ones do not. The clone takes the shorter strings (and
-$q$'s transitions and link), the transitions from $p$ and its link ancestors that
-led to $q$ are redirected to it, and both $q$ and `cur` link to it.
+**Online construction.** Appending token $t$ at index `pos` creates a new state `cur` with `length[cur] = pos + 1` and `first_end[cur] = pos`. Walk suffix links starting from the previous `last` to visit all suffixes of the old sequence from longest to shortest. Each state lacking a transition on $t$ gets a transition to `cur`. If the walk falls off the root, `link[cur]` becomes the root.
+
+Otherwise the walk stops at the first state $p$ that already has a transition on $t$ to some state $q$. The longest string of $p$ followed by $t$ is the longest suffix of the new sequence that appeared earlier. If `length[q] == length[p] + 1`, then every string in $q$ is a suffix of the new sequence, so `link[cur] = q`. Otherwise $q$ also contains longer strings that are *not* suffixes of the new sequence, and its end set must split. Create a `clone` state with `length[clone] = length[p] + 1`, copying $q$'s `next` transitions, `link`, and `first_end`. Redirect transitions on $t$ from $p$ and its suffix-link ancestors that pointed to $q$ so they point to `clone`, and set both `link[q]` and `link[cur]` to `clone`.
 
 ## Reference solution (Python)
 
@@ -108,66 +76,24 @@ class SuffixIndex:
         return self._tokens[start : start + max_len]
 ```
 
-The root has length 0, so "no match" needs no special case beyond the empty index:
-`link[last]` is the root, and $0 <$ `min_match`.
+Because the root state has length `0`, the "no earlier match" case needs no special handling beyond checking whether `_tokens` is empty. When no non-empty suffix matched, `link[last]` is the root and `0 < min_match`.
 
 ## Common mistakes
 
-- **Searching the history for every draft.** Correct, and the reason this problem
-  exists. Even the best version of it (the match length is monotone, so a binary
-  search over the suffix length with a C-speed substring search per probe) costs
-  $O(L \log L)$ per draft and measures about 50x slower than the automaton at
-  12,000 tokens, growing with the context.
-- **A clone that records the current position.** `first_end[clone] = pos` looks
-  natural, since the clone is created while appending position `pos`. But the
-  clone's strings are old; they ended first where the original's did. The draft
-  is then copied from a later occurrence, or, when the recorded end is the last
-  position, from past the end of the sequence.
-- **A clone without the original's transitions.** The clone holds strings that
-  were already followed by tokens; starting it with an empty `next` forgets those
-  continuations, and later matches come out too short.
-- **Never splitting.** Linking `cur` to $q$ unconditionally overstates the match:
-  `length[q]` counts strings that are not suffixes of the sequence.
-- **Drafting from a shorter match.** Following links down to the shortest state
-  that still satisfies `min_match` anchors the copy on less context than is
-  available. `min_match` is a threshold on the longest match, not a target.
-- **The most recent occurrence.** The specification asks for the earliest one,
-  which is also the one a state can remember in constant space; the latest
-  occurrence changes with every append.
-- **Off by one.** The copy starts *after* the earlier occurrence
-  (`first_end + 1`), and a match of exactly `min_match` tokens qualifies.
+- **Searching the history for every draft.** Even an optimized history scan (binary searching on the monotone match length with a fast C-level substring search) takes $O(L \log L)$ per draft and runs about 50x slower than the automaton at 12,000 tokens, worsening as context grows.
+- **Recording the current position on a clone.** Setting `first_end[clone] = pos` is tempting because the clone is created while appending index `pos`. However, the clone's strings already occurred earlier and first ended at `first_end[q]`. Using `pos` copies from a later occurrence, or even past the end of the sequence.
+- **Leaving a clone's transitions empty.** The cloned state represents strings that were already followed by tokens earlier in the sequence. Starting it with `{}` instead of `dict(nxt[q])` loses those continuations and shortens future matches.
+- **Never splitting states.** Linking `cur` directly to `q` when `length[q] > length[p] + 1` overstates the match length because `length[q]` counts longer strings that are not suffixes of the current sequence.
+- **Drafting from a shorter match.** Walking suffix links down to the shortest state with length at least `min_match` throws away longer context. `min_match` is a minimum threshold on the longest match, not a target length.
+- **Returning the most recent occurrence.** The specification requires the earliest occurrence. Storing the earliest end position also takes $O(1)$ per state because it never changes, whereas the latest occurrence changes on every append.
+- **Off-by-one errors.** The draft starts *after* the earlier occurrence (`first_end + 1`), and a match of length equal to `min_match` qualifies (`< min_match` returns `[]`).
 
 ## Complexity
 
-The automaton has at most $2L - 1$ states and $3L - 4$ transitions for a sequence
-of length $L \ge 3$. `extend` is amortized $O(1)$ dictionary operations (the
-classical argument: the length of `link[last]` grows by at most one per token and
-every step of either loop shortens it or a related potential), plus the copy of
-one transition table per clone, which is bounded by the number of distinct tokens
-that follow a context. `match_length` is $O(1)$ and `draft` is $O(\text{max\_len})$.
-Memory is $O(L)$ states. For comparison, the n-gram scan is $O(L)$ per draft for a
-fixed n-gram and $O(L \cdot m)$ for an unbounded one.
+For a sequence of length $L \ge 3$, a suffix automaton has at most $2L - 1$ states and $3L - 4$ transitions. `extend` runs in amortized $O(1)$ dictionary operations (by the standard potential argument on `length[link[last]]`), plus copying one transition dictionary per clone, which is bounded by the number of distinct tokens following that context. `match_length` is $O(1)$ and `draft` is $O(\text{max\_len})$. Memory is $O(L)$ states. By contrast, scanning the history costs $O(L)$ per draft for a fixed n-gram and $O(L \cdot m)$ for an unbounded match.
 
 ## In the wild
 
-- The online construction is the classical linear-time one for the suffix
-  automaton, also known as the directed acyclic word graph (Blumer et al., 1985,
-  the algorithm the SAM-Decoding paper builds its static automaton with).
-- "SAM Decoding: Speculative Decoding via Suffix Automaton" (arXiv:2411.10666)
-  uses exactly this structure as a retrieval drafter. Each state stores its link,
-  its transitions, its length, and `min_endpos`, the earliest end position; the
-  draft is the tokens after `min_endpos` of the matched state, and a clone copies
-  the original's `min_endpos`. The paper keeps a *static* automaton over a text
-  corpus and a *dynamic* one over the prompt and the generated tokens, and uses
-  the match length to choose between them and a model-based drafter. Its dynamic
-  automaton keeps a matching state that it moves with each accepted token before
-  inserting that token ("transfer, then expand"), following suffix links on a
-  mismatch. That state is the same one this problem reads off as
-  `link[last]` after the insertion: the longest suffix of the new sequence that is
-  a substring of the old one.
-- Prompt lookup decoding itself is in `transformers` as the
-  `prompt_lookup_num_tokens` argument of `generate` (with
-  `max_matching_ngram_size`, 2 when unset), and vLLM ships n-gram and suffix-based
-  proposers among its speculative decoding methods. Whatever proposes the draft,
-  the target model verifies it as in `greedy-speculative-verify`, so the output
-  never depends on the index being right; only the speed does.
+- The online algorithm is the classical linear-time suffix automaton (directed acyclic word graph) construction of Blumer et al. (1985), which SAM-Decoding also uses for its static corpus automaton.
+- "SAM Decoding: Speculative Decoding via Suffix Automaton" (arXiv:2411.10666) uses this exact structure as a retrieval drafter. Each state stores its suffix link, transitions, length, and `min_endpos` (the earliest end position), and clones inherit `min_endpos` from the original state. SAM-Decoding maintains a static automaton over a reference corpus alongside a dynamic automaton over the prompt and generated tokens, using match length to pick between them and a neural drafter. Its dynamic automaton tracks a matching state across accepted tokens ("transfer, then expand"), which corresponds to `link[last]` right after insertion here.
+- Prompt lookup decoding is built into Hugging Face `transformers` via `prompt_lookup_num_tokens` in `generate` (with `max_matching_ngram_size`, defaulting to 2), and vLLM includes n-gram and suffix-based proposers among its speculative decoding backends. Because the target model always verifies proposed drafts (as in `greedy-speculative-verify`), index bugs do not change the generated tokens, only the decoding speed.

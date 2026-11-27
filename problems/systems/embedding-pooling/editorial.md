@@ -1,37 +1,20 @@
 ## The idea
 
-An encoder gives every position a state, including the padded positions, whose
-states are meaningless. Pooling must read the real positions only, and the mask is
-the only thing that says which those are.
+An encoder outputs a vector for every position in a batch of shape `(B, T, D)`, including padded positions whose values are arbitrary. Pooling must aggregate only the real tokens indicated by `mask`.
 
-**Mean.** Multiply by the mask so that padded states contribute zero to the sum,
-and divide by the count of real tokens:
+**Mean pooling.** Let $s_{b,t}$ be the token state at sequence $b$ and position $t$, and let $m_{b,t} \in \{0, 1\}$ be the corresponding mask value. Multiply each state by its mask so padded positions contribute zero to the sum, then divide by the number of real tokens in that sequence:
 
 $$
 p_b = \frac{\sum_t m_{b,t}\, s_{b,t}}{\sum_t m_{b,t}} .
 $$
 
-**First and last token.** Both are "pick one position per row", and the position
-is not a constant. With right padding the first real token is at position 0 and
-the last at `lengths - 1`; with left padding the first is at `T - lengths` and the
-last at `T - 1`. Formulas that case-split on the padding side work, but there is
-one that does not need to know the side: the last real position is the largest $t$
-with $m_{b,t} = 1$, and the first is the smallest. Multiplying `arange(T)` by the
-mask makes every padded position compete with the value 0, which cannot beat a
-real position in a `max`; replacing padded positions by `T` does the same for the
-`min`. One gather then selects the state.
+**First and last token pooling.** Both modes select one position per sequence, and that index depends on the padding side. For a sequence with $L$ real tokens, right padding places the first real token at index `0` and the last at `L - 1`, whereas left padding places them at `T - L` and `T - 1`.
 
-**Normalization.** Cosine similarity is an inner product of unit vectors, so
-indexes store unit vectors and the model's output is divided by its length. The
-floor $10^{-12}$ on the divisor only matters for the zero vector, which would
-otherwise become NaN and poison every score it takes part in.
+You can avoid branching on the padding side altogether. The last real token is always the largest position $t$ with $m_{b,t} = 1$, and the first real token is always the smallest. Multiply `arange(T)` by the mask so every padded position becomes `0`, which cannot beat any real position in a `max` reduction (and if position `0` is the only real token, `0` is the right answer). For the first real token, replace padded positions with `T` so they cannot win a `min` reduction. A single gather then extracts the chosen token state for every sequence.
 
-**Matryoshka truncation.** Matryoshka Representation Learning trains a model with
-the same loss applied to several prefixes of the embedding (the first 64, 128, 256,
-... coordinates), so each prefix is a usable embedding on its own. The model
-outputs a unit vector of the full size; a prefix of it has length below 1, and how
-far below differs from text to text. Renormalizing after slicing puts the short
-vectors back on the unit sphere, where cosine and inner product agree.
+**Normalization.** Cosine similarity equals the dot product when both vectors have unit length, so search indexes store normalized embeddings. Clamping the L2 norm from below at $10^{-12}$ leaves every nonzero vector unchanged while preventing an all-zero vector from dividing by zero and producing NaN.
+
+**Matryoshka truncation.** Matryoshka Representation Learning trains a model with the same loss applied to multiple vector prefixes (such as the first 64, 128, or 256 dimensions), making each prefix a standalone embedding. Slicing a unit vector to its first `dim` coordinates reduces its norm below 1 by an amount that varies from text to text. Renormalizing after slicing restores unit length so inner-product search matches cosine similarity again.
 
 ## Reference solution (PyTorch)
 
@@ -62,44 +45,25 @@ def truncate_matryoshka(e, dim):
     return _normalize(e[..., :dim])
 ```
 
-The JAX and MLX versions are line-for-line translations (`jnp.where(...).min(axis=1)`,
-`mx.maximum(norm, EPS)`).
+The JAX and MLX implementations follow the same structure, using `jnp.where(...).min(axis=1)` or `mx.maximum(norm, EPS)` as appropriate.
 
 ## Common mistakes
 
-- **Averaging over padding** (`states.mean(dim=1)`). The embedding of a text then
-  depends on how long the longest text in its batch was.
-- **`states[:, -1]` for the last token.** Right for left-padded batches, which is
-  how decoder models are usually batched, and a padding state for every shorter
-  row of a right-padded batch.
-- **`lengths - 1` for the last token.** The mirror image: right for right padding,
-  and with left padding it points into the padding or at an early token.
-- **`states[:, 0]` for the first token.** Right for right padding, where
-  encoder-style models put their `[CLS]` token; padding for left-padded rows.
-- **No floor on the norm.** An all-zero pooled vector becomes NaN.
-- **Normalizing along the wrong axis.** `norm(dim=0)` normalizes each coordinate
-  across the batch. With `B = D` the shapes agree and nothing complains.
-- **Forgetting to normalize**, in `pool` or after truncating. Inner-product search
-  over vectors of unequal length ranks by length as much as by direction.
+- **Averaging over padded positions (`states.mean(dim=1)`).** Each text's embedding then shifts based on the longest sequence in its batch.
+- **Using `states[:, -1]` for `"last"`.** This works for left-padded batches (common in decoder models) but reads a padding state for every shorter sequence in a right-padded batch.
+- **Using `lengths - 1` for `"last"`.** This works for right-padded batches but points into padding or an earlier token when the batch is left-padded.
+- **Using `states[:, 0]` for `"cls"`.** This works for right-padded batches where encoder models place `[CLS]` at index 0, but reads padding in left-padded sequences.
+- **Omitting the norm floor.** An all-zero pooled vector divides `0 / 0` and turns into NaN.
+- **Normalizing along the wrong axis.** Calling `norm(dim=0)` normalizes each feature across the batch instead of each embedding vector. When `B == D`, the shapes still match and no error is raised.
+- **Skipping normalization in `pool` or `truncate_matryoshka`.** Inner-product search over vectors of unequal lengths conflates magnitude with direction.
 
 ## Complexity
 
-$O(BTD)$ for the mean and $O(BT + BD)$ for the token poolings; nothing is
-allocated beyond the `(B, T, D)` product for the mean. Truncation is $O(B \cdot
-\texttt{dim})$.
+Mean pooling runs in $O(BTD)$ time and allocates a `(B, T, D)` masked tensor. First-token and last-token pooling run in $O(BT + BD)$ time. Matryoshka truncation runs in $O(B \cdot \texttt{dim})$ time.
 
 ## In the wild
 
-- Sentence Transformers implements these as its `Pooling` module (modes `mean`,
-  `cls`, `lasttoken`, and others) followed by a `Normalize` module.
-- The E5 model cards ship an `average_pool` function that zeroes the padded states
-  with the attention mask and divides by the mask's sum, followed by
-  `F.normalize`: the `"mean"` mode here.
-- The Qwen3-Embedding model card ships `last_token_pool`: if every row's last
-  column is a real token the batch is left-padded and it returns
-  `last_hidden_states[:, -1]`; otherwise it gathers at `attention_mask.sum(dim=1)
-  - 1`. Its tokenizer is configured with `padding_side="left"`. That is the
-  case split the `max`-over-positions formula replaces.
-- Matryoshka Representation Learning (arXiv:2205.13147) introduced the nested
-  training; the Qwen3-Embedding cards, for example, state support for output
-  dimensions from 32 up to the model's full size.
+- Sentence Transformers implements these operations as a `Pooling` module (supporting `mean`, `cls`, `lasttoken`, and other modes) followed by a `Normalize` module.
+- The E5 model cards ship an `average_pool` helper that masks padded states, divides by the mask sum, and applies `F.normalize`, matching the `"mean"` mode here.
+- The Qwen3-Embedding model card ships a `last_token_pool` helper that checks whether every row's final column is a real token. If so, it takes `last_hidden_states[:, -1]`. Otherwise, it gathers at `attention_mask.sum(dim=1) - 1`. Its tokenizer defaults to `padding_side="left"`. The `max`-over-positions formula handles both cases without branching.
+- Matryoshka Representation Learning (arXiv:2205.13147) introduced nested prefix training. Models such as Qwen3-Embedding support truncating outputs to any dimension from 32 up to the full embedding size.

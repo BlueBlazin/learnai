@@ -1,36 +1,14 @@
 ## The idea
 
-A tokenizer is greedy about context: it merges `t`, `r`, `u`, `e` into `true`
-whenever the four bytes stand together. So in the model's training data a lone `t`
-token is almost never followed by `rue`; if it were, it would not be a lone `t`. A
-prompt that was cut, concatenated, or forced by a grammar can end at such a place,
-and the model, reading the boundary as evidence, steers away from the natural
-continuation.
+A BPE tokenizer merges bytes greedily, turning `t`, `r`, `u`, `e` into `true` whenever those four bytes appear together. In training data, a lone `t` token is therefore almost never followed by `rue` because the tokenizer would have merged them into `true`. When a prompt is truncated, concatenated from separate chunks, or extended by a grammar, it can end on an unnatural token boundary. The model reads that boundary as evidence against the merged continuation and steers away from it.
 
-Healing turns the question around. Instead of asking the model to continue a
-sequence the tokenizer would not have produced, give back the bytes at the end of
-the prompt and ask the model to write them again, free to choose the tokens. That
-needs two decisions.
+Token healing fixes this by trimming the unstable suffix off the prompt and asking the model to regenerate those bytes with freedom over tokenization. The algorithm has two parts.
 
-**How far to back up.** A boundary is suspect when a single token could have begun
-earlier and swallowed it. For a start position $k$, with $R_k$ the bytes from there
-to the end of the prompt, that is the test "some token's bytes start with $R_k$".
-Two details make it exact. A one-token suffix matches itself, which means nothing,
-so it needs a strictly different token (a longer one). And a special token is a
-wall: it has no bytes, was never produced by merging, and must not be regenerated.
-Among the healable starts take the earliest, because it restores the most freedom:
-for `{` then `"` the model may then write `{"`, which it could not if only the quote
-were taken back.
+**1. How far to back up.** A boundary is suspect if a single vocabulary token could have started earlier and covered the entire suffix. For a start position $k$ with suffix bytes $R_k$, we check whether any token's bytes start with $R_k$. Two edge cases make this exact. First, a one-token suffix trivially starts with itself, so it is healable only if a strictly longer token starts with $R_k$. Second, a special token acts as a hard boundary because it has empty bytes, was never produced by merging, and must not be regenerated. Among all healable start positions, we pick the earliest $k$ to give the model maximum freedom. For `{` followed by `"`, backing up two tokens lets the model emit `{"`, whereas backing up one token would not.
 
-**What generation must do.** Reproduce $R$ and then be free. While part of $R$ is
-missing, a token is acceptable when it does not contradict the missing part: it is a
-prefix of it (progress, more to come) or it has it as a prefix (done, and the token
-continues into new text). Tokens with no bytes make no progress and are excluded.
-When nothing is missing, the constraint has no opinion.
+**2. Which tokens to allow.** Generation must reproduce the removed bytes $R$ and then continue freely. While a non-empty suffix `remaining` of $R$ is still missing, a token is valid if it agrees with `remaining` across their overlap. Either the token is a prefix of `remaining` (making partial progress) or `remaining` is a prefix of the token (finishing $R$ and continuing into new text). Special tokens have empty bytes, make no progress, and are excluded. Once `remaining` is empty, every token is allowed.
 
-Since $R$ was chosen so that some token starts with it, at least one token is always
-allowed at the first step, and the single bytes of $R$ keep the later steps
-satisfiable in this vocabulary.
+Because `heal` chooses $R$ such that at least one token starts with $R$, the first step always has at least one valid token. Single-byte tokens in the vocabulary keep every subsequent step satisfiable as well.
 
 ## Reference solution (Python)
 
@@ -69,66 +47,26 @@ def healing_allowed(required_prefix, generated_bytes, vocab):
     return allowed
 ```
 
-The backward walk visits suffixes from short to long and keeps the last success, so
-it ends with the smallest healable $k$. It may stop early for two reasons that
-cannot hide a longer healable suffix: a special token (every longer suffix contains
-it) and a tail longer than the longest token (every longer suffix is longer still).
-It must not stop at an ordinary failure.
+Walking backward visits suffixes from shortest to longest and keeps updating `best`, ending with the smallest healable $k$. The loop can safely stop early only when no longer suffix could ever be healable. That happens in two cases: hitting a special token (which every longer suffix would contain) or exceeding the length of the longest vocabulary token (which every longer suffix would also exceed). It must not stop on an ordinary non-healable suffix.
 
 ## Common mistakes
 
-- **Allowing only the removed token.** The constraint "the first token must be the
-  one I removed" regenerates the prompt exactly and heals nothing. The useful tokens
-  are the ones that are *longer* than what was removed.
-- **Requiring the first token to cover everything.** Reading "the first tokens must
-  have the removed text as a prefix" as `piece.startswith(remaining)` forbids `t`
-  followed by `r`. The model may have good reasons to rebuild the text in pieces,
-  and when no single token covers a multi-token tail's continuation it has to.
-- **Never lifting the constraint.** Comparing every later token with the removed
-  text again makes the model stutter (`t`, `t`, `tr`, ...) or dead-ends it. The
-  constraint is about a byte offset, and once `len(generated_bytes)` passes it the
-  constraint is over.
-- **Special tokens slipping through the prefix test.** `b""` is a prefix of every
-  byte string. Unfiltered, EOS is "allowed" while text is missing, and a trailing
-  `<|im_start|>` in the prompt looks healable because every token starts with its
-  empty bytes; removing it destroys the chat template.
-- **Backing up exactly one token.** Sufficient for `t` and `true`, blind to seams
-  between separately encoded fragments, where two or three short tokens stand for
-  one vocabulary entry.
-- **Stopping at the first suffix that fails, or at the first that succeeds.**
-  Healability is not monotone in either direction: `r` fails where `t`, `r`
-  succeeds, and `"` succeeds where the longer `{`, `"` also does.
-- **Removing the last token unconditionally.** Harmless for the output (the model
-  is forced to write it back) and a wasted step each time; it also invites the
-  first mistake.
-- **Not checking agreement.** If the caller's bookkeeping is off and the generated
-  bytes diverge from the removed text, slicing by length silently returns a mask for
-  the wrong position.
+- **Allowing only the removed token.** Constraining the first generated token to equal the removed token simply reproduces the original prompt and heals nothing. The whole point is to allow *longer* tokens that extend the suffix.
+- **Requiring the first token to cover all of `remaining`.** Checking only `piece.startswith(remaining)` forbids valid multi-token reconstructions such as `t` followed by `r`. The model may legitimately rebuild the removed text in pieces, and sometimes must when no single token covers the desired continuation.
+- **Never lifting the constraint.** Re-checking every generated token against `required_prefix` causes the model to repeat the prefix (`t`, `t`, `tr`, ...) or hit a dead end. Once `len(generated_bytes) >= len(required_prefix)`, the constraint is over.
+- **Letting special tokens slip through prefix checks.** In Python, `b""` is a prefix of every byte string. Without an explicit non-empty check, special tokens like EOS appear valid while bytes are still missing, and a trailing special token such as `<|im_start|>` looks healable because every token starts with `b""`. Removing a trailing special token corrupts the chat template.
+- **Backing up at most one token.** Trimming only the last token handles `t` vs. `true`, but misses seams between concatenated fragments where two or more short tokens spell a single vocabulary token.
+- **Stopping at the first failure or the first success.** Healability is not monotone in either direction. `r` fails while `t`, `r` succeeds, and `"` succeeds while the longer `{`, `"` also succeeds.
+- **Unconditionally removing the last token.** Even when no longer token extends it, forcing the model to regenerate the last token wastes a decoding step and encourages the first mistake above.
+- **Skipping the overlap check.** If the caller's byte tracking diverges from `required_prefix`, slicing by `len(generated_bytes)` silently returns a mask for the wrong prefix instead of raising `ValueError`.
 
 ## Complexity
 
-`heal` examines at most as many suffixes as the longest token has bytes, each
-against the whole vocabulary: $O(\ell \cdot V \cdot \ell)$ byte comparisons for
-maximum token length $\ell$. `healing_allowed` is one pass over the vocabulary. Real
-implementations replace both scans with a prefix trie over the vocabulary's byte
-strings, built once: "which tokens start with these bytes" is then a walk of
-$|R|$ steps plus the size of the subtree.
+Let $V$ be the vocabulary size, $\ell$ be the maximum token length in bytes, and $|R|$ be the length of the removed prefix. Because `heal` stops once `len(tail)` exceeds $\ell$, it tests at most $\ell$ suffixes against all $V$ tokens, taking $O(\ell^2 \cdot V)$ byte comparisons. `healing_allowed` makes one linear pass over the vocabulary in $O(V \cdot \ell)$ time. Production engines replace both scans with a prebuilt byte prefix trie over the vocabulary, so finding all tokens starting with $R$ takes $O(|R|)$ steps plus the size of the matching subtree.
 
 ## In the wild
 
-- **Guidance** introduced the name. Its documentation ("Token healing" and "The Art
-  of Prompt Design: Prompt Boundaries and Token Healing") describes it as backing up
-  the generation "by one or more tokens before the end of the prompt" and then
-  constraining "the first tokens generated to have a prefix that matches the last
-  token in the prompt", with the `http:` / `://` example. The rule for how many
-  tokens to back up is this problem's own precise choice.
-- The general case is harder than any local rule: the paper "From Language Models
-  over Tokens to Language Models over Characters" (arXiv 2412.03719) shows that
-  backing up one token is not sufficient in general, and studies how to turn a
-  model over tokens into a model over characters.
-- Structured generation meets the same boundary from the other side. When an engine
-  inserts forced text (`jump-forward-decode`), it has to decide how that text is
-  tokenized, and SGLang re-tokenizes for the same reason healing exists.
-- In a serving stack the constraint composes with any other token mask by
-  intersection, and it adds at most a handful of steps: it is over as soon as the
-  removed bytes are back.
+- **Guidance** introduced the term token healing in its documentation ("Token healing" and "The Art of Prompt Design: Prompt Boundaries and Token Healing"), illustrating it with the `http:` / `://` example. Guidance describes backing up "by one or more tokens before the end of the prompt" and constraining the first generated tokens to match the removed prefix. The exact longest-healable-suffix rule here is a concrete formalization of that idea.
+- The general boundary problem goes beyond any local heuristic. "From Language Models over Tokens to Language Models over Characters" (arXiv 2412.03719) shows that backing up one token is not sufficient in general and studies exact conversion from token-level to character-level language models.
+- Structured generation encounters the same boundary issue from the opposite side. When a serving engine injects forced text (as in `jump-forward-decode`), it must decide how to tokenize it, which is why SGLang re-tokenizes jumped text.
+- In a serving stack, token healing composes with any other grammar mask by intersecting the allowed sets, and it adds at most a few constrained steps before lifting completely.

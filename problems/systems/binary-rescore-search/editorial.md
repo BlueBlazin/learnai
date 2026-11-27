@@ -1,39 +1,22 @@
 ## The idea
 
-**One bit per dimension.** For vectors on the unit sphere, the fraction of
-coordinates in which two vectors have different signs tends to grow with the angle
-between them. So the Hamming distance between sign codes is a noisy estimate of angular
-distance: good enough to tell near from far, too coarse to order the nearest few.
+**One bit per dimension.** For vectors on the unit sphere, the fraction of coordinates where two vectors have opposite signs tends to increase with the angle between them. The Hamming distance between sign codes is therefore a noisy estimate of angular distance. It is accurate enough to separate near neighbors from distant ones, but too coarse to rank the closest few reliably.
 
-**Packed bits.** Stored as one byte per bit the codes would save nothing over
-int8. Packed, a 1024-dimensional vector is 128 bytes, and the distance is computed
-without ever unpacking:
+**Packed bits.** Storing one bit per byte would save no memory compared to int8. Packing 8 bits per byte shrinks a 1024-dimensional vector to 128 bytes and lets you compute distances without unpacking. For two packed codes $a$ and $b$, their Hamming distance is
 
 $$
-d_H(a, b) = \operatorname{popcount}(a \oplus b) .
+d_H(a, b) = \operatorname{popcount}(a \oplus b) ,
 $$
 
-XOR marks the differing positions; counting the marks is the distance. CPUs have
-an instruction for the count. In a tensor framework without one, a byte has only
-256 values, so a table of 256 precomputed counts turns popcount into an index
-operation: `POPCOUNT[xor]` gives the count of every byte at once, and a sum over
-the last axis adds the bytes of a code.
+where $\oplus$ is bitwise XOR. XOR marks every differing bit position with a `1`, and counting those `1` bits gives the Hamming distance. CPUs have a dedicated popcount instruction. In a tensor framework without one, a byte has only 256 possible values, so a 256-entry lookup table turns popcount into an indexing operation. Looking up `POPCOUNT[xor]` counts the set bits in every byte at once, and summing over the last axis produces the distance for each code.
 
-**Two stages.** The scan over codes is cheap, so let it return more than is
-needed, $k \cdot \texttt{oversample}$ candidates, and spend the precise comparison
-on those. Three things make the second stage precise:
+**Two stages.** Because the binary scan is cheap, it can retrieve $k \cdot \texttt{oversample}$ candidates and hand them off to a precise second pass. Three details make rescoring accurate:
 
-- the **query is not quantized**: it is one vector, and its float values weight
-  each coordinate properly;
-- the **documents are int8**, four times smaller than float32 and nearly as
-  informative; only the candidates' rows are read, so the int8 matrix can live on
-  disk;
-- the score is an inner product, which for int8 rows that are a scaled copy of
-  unit vectors ranks like cosine similarity.
+- **The query stays in float32.** There is only one query vector, so keeping its full precision properly weights each coordinate.
+- **The documents are stored in int8.** Int8 vectors use four times less memory than float32 while preserving most of the magnitude information. Because only the candidates' rows are read, the int8 matrix can live on disk.
+- **The score is an inner product.** For int8 rows produced by scaling unit vectors, inner product ranks documents the same way as cosine similarity.
 
-Oversampling is what gives rescoring something to do. With `oversample = 1` the
-candidates *are* the answer set and rescoring can only reorder it. A true neighbor
-that the bits ranked 25th is recovered only if the candidate list reaches rank 25.
+Oversampling is what makes rescoring effective. With `oversample = 1`, the candidates already are the final `k` results, so rescoring can only reorder them. A true neighbor ranked 25th by Hamming distance can be recovered only if the candidate list includes at least 25 items.
 
 ## Reference solution (PyTorch)
 
@@ -61,58 +44,27 @@ def search(q, corpus_bits, corpus_int8, k, oversample, distance):
     return candidates[order], scores[order]
 ```
 
-Slicing with `[:m]` and `[:k]` caps both counts at what exists, so `m > N` needs no
-special case. In JAX and MLX the table is indexed with the uint8 tensor directly,
-and the descending stable sort is an ascending sort of the negated scores.
+Slicing with `[:m]` and `[:k]` automatically caps both counts at the available length, so `m > N` needs no special branch. In JAX and MLX, you can index `POPCOUNT` with the uint8 tensor directly, and you can perform a descending stable sort by sorting the negated scores in ascending order.
 
-For a large corpus the full sort in `hamming_topk` is the part to replace. Hamming
-distances are small integers, so the tie rule can be folded into the key:
-`distances * N + arange(N)` is distinct for every document and orders by distance,
-then index; any partial selection of the `m` smallest keys is then exact.
+For a very large corpus, the full sort in `hamming_topk` is the first bottleneck to replace. Because Hamming distances are small integers, you can fold the tie-breaking rule into the sort key with `distances * N + arange(N)`. Every document gets a distinct key ordered by distance and then by index, so any partial top-`m` selection becomes exact.
 
 ## Common mistakes
 
-- **Rescoring everything.** Calling `distance(q, corpus_int8)` and taking the top
-  `k` gives results at least as good and reads the whole int8 matrix: the cost of
-  the search the binary index was built to avoid.
-- **Counting differing bytes.** `(a != b).sum()` on packed codes counts bytes, so
-  a byte with eight differing bits counts like a byte with one. The ranking
-  degrades quietly; nothing crashes.
-- **Ranking in ascending order.** Hamming *distances* are sorted ascending, inner
-  products descending. Reusing the same sort for both returns the worst candidates.
-- **`>= 0` for the sign.** Exact zeros are common (ReLU outputs, zero-padded
-  Matryoshka prefixes), and the corpus was binarized with `> 0`.
-- **The wrong bit order.** Packing with the first coordinate in the least
-  significant bit is self-consistent and incompatible with every index built by
-  `numpy.packbits`.
-- **Ignoring `oversample`.** Retrieving `k` candidates and "rescoring" them only
-  reorders the Hamming top `k`.
-- **Scoring without reordering.** Returning the first `k` candidates with their
-  new scores looks like a rescored result and is the Hamming ranking.
-- **Arbitrary ties in the candidate stage.** With codes of a few bytes, hundreds
-  of documents share a distance; which of them become candidates must not depend
-  on the selection routine.
+- **Rescoring everything.** Calling `distance(q, corpus_int8)` and taking the top `k` produces equally good or better results, but it reads the entire int8 matrix. That defeats the purpose of the binary index and violates the cost limit.
+- **Counting differing bytes.** Running `(a != b).sum()` on packed codes counts differing bytes rather than bits, treating a byte with 8 differing bits the same as one with 1 differing bit. Nothing crashes, but ranking quality degrades silently.
+- **Ranking in ascending order.** Hamming distances are sorted ascending, while inner products are sorted descending. Reusing the same sort order for both returns the worst candidates.
+- **Using `>= 0` for the sign.** Exact zeros are common in ReLU outputs and zero-padded Matryoshka prefixes, and the corpus codes are binarized with `> 0`.
+- **Packing in the wrong bit order.** Placing the first coordinate in the least significant bit is internally consistent, but incompatible with any index built by `numpy.packbits`.
+- **Ignoring `oversample`.** Retrieving only `k` candidates and rescoring them can only reorder the Hamming top `k`.
+- **Scoring without reordering.** Returning the first `k` candidates with their rescored values looks like a rescored result, but preserves the Hamming ranking.
+- **Arbitrary ties in the candidate stage.** With short binary codes, hundreds of documents can share the same Hamming distance. Which documents enter the candidate set must follow the index tie-breaking rule rather than depend on an unstable selection routine.
 
 ## Complexity
 
-The Hamming pass is $O(N \cdot D / 8)$ byte operations and reads $N D / 8$ bytes.
-Rescoring is $O(k \cdot \texttt{oversample} \cdot D)$ and reads that many int8
-values. Exact float search is $O(ND)$ float operations over $4ND$ bytes.
+The Hamming pass performs $O(N \cdot D / 8)$ byte operations and reads $ND / 8$ bytes. Rescoring performs $O(k \cdot \texttt{oversample} \cdot D)$ operations and reads $k \cdot \texttt{oversample} \cdot D$ int8 values. By comparison, an exact float32 scan performs $O(ND)$ float operations over $4ND$ bytes.
 
 ## In the wild
 
-- The Sentence Transformers write-up on embedding quantization ("Binary and Scalar
-  Embedding Quantization for Significantly Faster & Cheaper Retrieval", Hugging
-  Face blog) describes this pipeline: binary codes made by thresholding normalized
-  embeddings at 0 and packing with `np.packbits`, retrieval of
-  `rescore_multiplier * top_k` candidates, and rescoring with the float32 query;
-  its demo rescoring step loads the candidates' int8 embeddings from disk. Its
-  experiments use a multiplier of 4, and report about 96% of float32 retrieval
-  quality for binary codes with rescoring on the model it measures, against about
-  92.5% without.
-- `quantize_embeddings(..., precision="ubinary")` in Sentence Transformers is
-  `np.packbits(embeddings > 0)`; `precision="binary"` is the same bytes shifted to
-  int8. Its `semantic_search_faiss` and `semantic_search_usearch` rescore by
-  default, with `rescore_multiplier=2`.
-- On the seeded corpus of this problem the Hamming stage alone finds 61% of the
-  true top 10, and four-fold oversampling with int8 rescoring finds 96%.
+- The Hugging Face blog post on Sentence Transformers ("Binary and Scalar Embedding Quantization for Significantly Faster & Cheaper Retrieval") describes this exact pipeline. It thresholds normalized embeddings at 0, packs them with `np.packbits`, retrieves `rescore_multiplier * top_k` candidates, and rescores them with the float32 query against int8 embeddings loaded from disk. Using a multiplier of 4, the authors report about 96% of float32 retrieval quality with rescoring, compared to about 92.5% without it.
+- In Sentence Transformers, `quantize_embeddings(..., precision="ubinary")` calls `np.packbits(embeddings > 0)`, and `precision="binary"` shifts those same bytes to int8. Both `semantic_search_faiss` and `semantic_search_usearch` enable rescoring by default with `rescore_multiplier=2`.
+- On the seeded test corpus in this problem, the Hamming stage alone recovers 61% of the true top 10, while 4x oversampling with int8 rescoring recovers 96%.

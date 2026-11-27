@@ -1,16 +1,8 @@
-Write the function as one loop whose body is: make an attempt, classify what came
-back, decide whether to stop, compute the delay, sleep. Most of the work is the
-classification. For each kind of outcome ask one question: does the client *know*
-that the server did not do the work?
+Structure the function as a single loop: make an attempt, classify the outcome, decide whether to stop, compute the delay, and sleep. Most of the subtlety is in the classification. For each outcome, ask whether the client *knows* that the server did not execute the request.
 
 ---
 
-Keep three pieces of state: the start time, the number of retries made, and the
-number of uniforms used (these two differ as soon as one delay comes from
-`Retry-After`). After an attempt, tell the budget what happened, then check the stop
-conditions in an order where each is cheap and independent: not retryable, no
-attempts left, budget says no. Only then compute the delay, and compare the time
-the retry *would start* with the deadline before sleeping, not after.
+Track three pieces of state: the call start time, the number of retries made, and the number of uniforms consumed (the last two diverge as soon as a delay comes from `Retry-After`). After each attempt, update the budget first, then check the cheap stop conditions: not retryable, no attempts remaining, or budget disallows retry. Only if all three pass should you compute the delay and check whether the next retry would start before the deadline.
 
 ---
 
@@ -25,6 +17,4 @@ await asyncio.sleep(delay)
 retries += 1
 ```
 
-`retry_after_s` loops over the headers, compares `name.lower()` with
-`"retry-after"`, and accepts the value only if `value.strip()` is all ASCII digits.
-The cap goes inside the multiplication by the uniform, not around it.
+In `retry_after_s`, iterate over the headers, compare `name.lower()` against `"retry-after"`, and accept the value only if `value.strip()` contains solely ASCII digits. Apply `min(cap_s, ...)` before multiplying by `uniforms[drawn]`, not after.

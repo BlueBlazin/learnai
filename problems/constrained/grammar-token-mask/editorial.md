@@ -1,66 +1,25 @@
 ## The idea
 
-**From one stack to many.** A grammar without alternatives can be matched with one
-stack: the symbols still to be read, next one on top. A rule reference on top is
-replaced by the rule's body; a character set on top is compared with the next
-character and popped. With alternatives a reference has several replacements, and
-the matcher cannot know which one the text will follow, so it keeps a *set* of
-stacks, one per reading that is still possible. A character is accepted if some
-stack accepts it, and the stacks that do not are dropped. This is a nondeterministic
-pushdown automaton simulated breadth-first, and it is how llama.cpp matches GBNF.
+**From one stack to a set of stacks.** A grammar with no alternatives can be matched with a single stack of symbols remaining to be read. If the top symbol is a `Ref`, replace it with that rule's body. If it is a `Chars`, match the next character and pop it. When rules have multiple alternatives, the matcher cannot know which branch the upcoming text will take, so it maintains a *set* of stacks, one per active reading. A character is accepted if at least one stack accepts it, and stacks that fail are discarded. This breadth-first simulation of a nondeterministic pushdown automaton is how llama.cpp matches GBNF.
 
-**Why the stacks have to go.** Expand `expr ::= expr "-" term | term` on top of a
-stack and the first alternative puts `expr` on top again, with `"-" term` beneath
-it; expand that and there are two copies beneath, and so on. Each stack is a
-different, longer one, so "have I seen this stack before" never fires. The set of
-stacks that a left-recursive grammar needs before reading a single character is
-infinite.
+**Why stacks fail on left recursion.** Consider expanding `expr ::= expr "-" term | term` at the top of a stack. The first alternative pushes `expr` back on top with `"-" term` below it. Expanding `expr` again produces two copies of `"-" term` below it, and so on forever. Because every stack is strictly longer than the last, checking whether a stack has been seen before never stops the loop. A left-recursive grammar requires infinitely many stacks before reading a single character.
 
-What is finite is the set of *positions inside rules*. An **Earley item**
-`(rule, alternative, dot, origin)` records how far one alternative has got and at
-which character it started, and nothing about what is above it. The stack is
-recovered when it is needed: when an item finishes, the items that were waiting for
-that rule are exactly the items in column `origin` whose dot stands before a
-reference to it. Many parents share one child item, and a left-recursive rule simply
-has itself among its parents. A column, the set of items after a given number of
-characters, has at most (rules' total length) × (positions) elements, so everything
-terminates.
+What remains finite is the set of *positions inside rules*. An **Earley item** `(rule, alt, dot, origin)` records how far one alternative (`alt`) of `rule` has progressed (`dot`) and the character position where it began (`origin`), without storing the caller stack above it. When an item finishes, its waiting parents are recovered from column `origin`. They are the items in column `origin` whose dot sits before `Ref(rule)`. Multiple parents share a single child item, and a left-recursive rule simply appears among its own parents. After $n$ characters, a column (the set of active items at position $n$) has bounded size, so expanding active items always terminates.
 
-Per character:
+At each character, three operations advance the parser:
 
-- **scan**: items whose dot is before a `Chars` that matches the character move, with
-  the dot advanced, into the next column;
-- **predict**: for an item whose dot is before a rule, add that rule's alternatives
-  with dot 0 and origin "here";
-- **complete**: for an item whose dot is at the end, advance its parents (found in
-  column `origin`) into the current column.
+- **Scan:** For every item whose dot stands before a `Chars` matching the character, add the item with `dot + 1` to the next column.
+- **Predict:** For every item whose dot stands before `Ref(target)`, add `(target, alt, 0, position)` for each alternative `alt` of `target` to the current column.
+- **Complete:** For every item whose dot is at the end of its body, find every item in column `origin` whose dot stands before `Ref(rule)` and add it with `dot + 1` to the current column.
 
-Predict and complete are repeated until nothing new appears. One subtlety: a rule
-that matches nothing completes in the same column it was predicted in, where its
-parents are still arriving. An item that arrives after the empty rule has already
-been completed would wait forever. The fix (Aycock and Horspool's) is to advance
-over a nullable rule at prediction time.
+Repeating predict and complete until the column stops growing is called **closure**. One subtlety arises with nullable rules. A rule that matches the empty string completes in the same column where it is predicted, while other parents may still be entering that column. Any parent that arrives after the empty rule has already been processed would never be advanced. The Aycock-Horspool fix is to immediately advance `(rule, alt, dot + 1, origin)` during prediction whenever `target` is in `grammar.nullable`.
 
-A text is a viable prefix exactly when its last column is not empty, because every
-rule in a kit grammar can finish. It is a member of the language when the last
-column holds a finished `root` item with origin 0.
+Because every rule in a kit grammar can derive at least one string, a prefix is viable if and only if its last column is non-empty. The full text is accepted if and only if the last column contains a finished `root` item with `origin == 0`.
 
-**From characters to tokens.** A token is allowed when all its bytes can be fed in
-turn. Nothing about rule boundaries enters: closure runs after every character, so a
-token may finish one rule and begin the next. Two things do need care.
+**From characters to tokens.** A token is allowed if all of its bytes can be fed in sequence. Running closure after every completed character allows tokens to open and close arbitrary rules mid-token. Two details remain:
 
-*Bytes.* Tokens carry bytes, the grammar reads code points. The state therefore
-includes up to three pending bytes. While a character is incomplete the column does
-not move; the matcher only asks whether continuing is possible: the pending bytes
-determine a range of code points (the payload bits read so far, with the unread
-bits free), clipped to the characters that really have that encoding length, and
-the partial character is viable if some item's next symbol is a `Chars` that
-overlaps the range. When the last byte arrives, the code point is scanned as usual.
-
-*Shared prefixes.* Checking each token separately parses `t` four times for `t`,
-`tr`, `tru`, `true`. Put the vocabulary into a trie over bytes and walk it once,
-depth-first, carrying the matcher state along each edge. A byte that fails prunes
-the whole subtree; a node's tokens are allowed when the walk reaches it.
+- **UTF-8 bytes.** Tokens are byte sequences while grammars match Unicode code points, so the state also stores up to three pending bytes. While a character is incomplete, the Earley columns do not advance. Instead, the pending bytes define a range of possible code points (the payload bits read so far, with unread bits ranging from all 0s to all 1s), clipped to the valid range for that UTF-8 byte length with surrogates excluded. The partial character is viable if at least one item in the last column expects a `Chars` overlapping that range. Once the final byte arrives, scan the resulting code point normally.
+- **Shared token prefixes.** Testing each token independently parses `t` four times for `t`, `tr`, `tru`, and `true`. Storing the vocabulary in a byte trie and walking it depth-first carries the matcher state along each edge. A failing byte prunes the entire subtree below it, and every token attached to a reachable node is allowed.
 
 ## Reference solution (Python)
 
@@ -144,72 +103,27 @@ class GrammarMatcher:
         return frozenset(current)
 ```
 
-`advance` feeds the token's bytes and raises `ValueError` on a `None`;
-`is_accepting` is "no pending bytes and a finished `root` item with origin 0 in the
-last column". `_code_points` implements the table in the statement: the lead byte
-gives the length and the first payload bits, continuation bytes add six bits each,
-the unread bits give the range, and the range is clipped to the code points of that
-length without surrogates. The state is a tuple of frozensets and a `bytes`, so it
-is hashable and old states stay valid.
+`advance` feeds the token's bytes one by one and raises `ValueError` if any `_feed` call returns `None`. `is_accepting` checks that `pending` is empty and that the last column contains a completed `root` item with `origin == 0`. `_code_points` implements the UTF-8 table from the statement. The lead byte sets the expected length and top payload bits, each continuation byte adds 6 bits, and the unread bits determine `[low, high]`, which is then clipped to the valid non-surrogate code points of that length. Storing the state as a tuple of frozensets plus `bytes` makes it immutable and hashable.
 
 ## Common mistakes
 
-- **One stack.** Committing to the first alternative that fits the next character
-  is right for grammars where one character always decides (the list example) and
-  wrong as soon as two alternatives begin alike or a repetition may stop or go on.
-- **Recursive expansion of the top of the stack.** Correct for every grammar
-  without left recursion, and unbounded recursion on `expr ::= expr "-" term`.
-  Cycle detection on whole stacks does not help, because the stacks keep growing.
-- **Forgetting empty rules at prediction.** The classic Earley bug. It needs the
-  same nullable rule twice at one position (`ws items ws` with empty `items`) to
-  show, which is why it survives small tests.
-- **Closing the item set only between tokens.** Scanning a token's characters
-  without predict and complete in between accepts tokens that stay inside one
-  literal (`true`) and rejects those that cross into another rule (`, `, `{"`).
-- **Decoding tokens before matching.** `piece.decode()` fails on a token that is
-  half a character, and treating that as "not allowed" makes every character that
-  the tokenizer splits unreachable.
-- **Allowing any partial character.** The opposite error: accepting pending bytes
-  because they begin *some* character, without asking the grammar for an overlap,
-  or computing the range from the payload bits alone, which lets `F0` (whose
-  unclipped range starts at 0) stand for an ASCII character.
-- **Special tokens.** A walk over zero bytes never fails; tokens without bytes must
-  be left out of the trie.
-- **`is_accepting` on any finished `root`.** With `value ::= ... | root` an inner
-  `root` finishes long before the text is complete. The origin must be 0, and no
-  bytes may be pending.
-- **Calling the oracle.** It gives the right answers and re-parses the whole text
-  for every token of the vocabulary at every step.
+- **Keeping only one stack.** Committing to the first alternative that matches the next character works on LL(1) grammars like the list example, but fails as soon as two alternatives share a prefix or a repetition can either stop or continue.
+- **Recursively expanding the top of a stack.** This works for non-left-recursive grammars and loops forever on `expr ::= expr "-" term`. Whole-stack cycle detection does not help because the stacks grow without bound.
+- **Skipping nullable rules during prediction.** This classic Earley bug only surfaces when the same nullable rule can match twice at one position (such as `ws items ws` when `items` is empty), so it often slips past small tests.
+- **Closing the item set only between tokens.** Scanning all characters of a token before running predict and complete accepts tokens inside a single literal (like `true`) but rejects tokens that cross rule boundaries (like `, ` or `{"`).
+- **Decoding tokens before matching.** Calling `piece.decode()` raises an error on tokens that hold half a UTF-8 character, making split multi-byte characters unreachable.
+- **Accepting any partial UTF-8 sequence.** Allowing pending bytes without checking `Chars.overlaps`, or computing the code-point range without clipping to valid lengths (so `F0` appears to overlap ASCII starting at 0), lets invalid byte sequences through.
+- **Including special tokens in the trie.** Feeding zero bytes never fails, so tokens with `vocab.bytes(t) == b""` must be skipped when building the trie.
+- **Accepting on any finished `root` item.** When `root` is recursive (`value ::= ... | root`), an inner `root` finishes before the outer input is complete. Acceptance requires `origin == 0` and no pending bytes.
+- **Calling the oracle.** Using `grammar.accepts` or `grammar.accepts_prefix` is forbidden by the harness and re-parses the full text for every token at every step.
 
 ## Complexity
 
-A column has $O(G \cdot n)$ items for a grammar of total size $G$ after $n$
-characters, and closing it costs up to $O(G^2 n^2)$ in the worst case, though for
-the unambiguous grammars of structured output columns stay small and the work per
-character is near constant. `allowed` performs one feed per trie edge reached, at
-most the total number of bytes in the vocabulary and usually far fewer, since most
-first bytes fail. The state as written keeps every column, which is what completion
-needs; real engines drop or share what can no longer be reached.
+For a grammar of total size $G$ after $n$ characters, a column contains at most $O(G \cdot n)$ items and closing it takes up to $O(G^2 n^2)$ time in the worst case. For the unambiguous grammars used in structured output, columns stay small and per-character work is near constant. Each call to `allowed` runs `_feed` once per visited trie edge, bounded by the total number of bytes in the vocabulary and much smaller in practice because most first bytes fail immediately. The reference state retains every column for completion; production engines prune or share unreachable columns.
 
 ## In the wild
 
-- **llama.cpp** parses GBNF into the rule shape `Grammar.rules` mirrors and matches
-  with a set of stacks, carrying a partial UTF-8 sequence in the grammar state
-  between tokens. Left recursion is a known hazard of that design; its GBNF
-  documentation (`grammars/README.md`) does not mention it, and the project added a
-  check for it when grammars are loaded.
-- **XGrammar** ("XGrammar: Flexible and Efficient Structured Generation Engine for
-  Large Language Models", arXiv 2411.15100) keeps the stack-based automaton and makes
-  it fast: stacks are stored persistently so that branches share their tails, and
-  the vocabulary is split into tokens whose validity depends only on the position
-  inside the current rule, which are precomputed, and the few context-dependent
-  ones that are checked at run time. Its successor's report ("XGrammar-2: Dynamic
-  and Efficient Structured Generation Engine for Agentic LLMs", arXiv 2601.04426)
-  extends this to formats that change during generation.
-- **llguidance** uses an Earley parser for the grammar on top of a lexer built from
-  regular expressions, and walks a trie of the vocabulary to compute the mask, the
-  two ideas of this solution.
-- Whatever the algorithm, the mask is consumed by the loop of
-  `constrained-greedy-decode`, and precomputing it per automaton state, as
-  `dfa-token-index` does for regular languages, is what the context-independent
-  token cache generalizes.
+- **llama.cpp** parses GBNF into the same rule structure as `Grammar.rules` and matches using a set of stacks while carrying partial UTF-8 bytes in the state. Left recursion is a known hazard of stack-based matching, so llama.cpp checks for it when loading a grammar.
+- **XGrammar** ("XGrammar: Flexible and Efficient Structured Generation Engine for Large Language Models", arXiv 2411.15100) uses a stack-based pushdown automaton with persistent stacks that share tails across branches. It splits the vocabulary into context-independent tokens (precomputed per rule position) and a small set of context-dependent tokens checked at runtime. **XGrammar-2** ("XGrammar-2: Dynamic and Efficient Structured Generation Engine for Agentic LLMs", arXiv 2601.04426) extends this to grammars that change dynamically during generation.
+- **llguidance** combines an Earley parser with a regex-based lexer and walks a vocabulary trie to compute the token mask, using the same two core ideas as this solution.
+- Across all of these engines, the resulting mask feeds into the decoding loop of `constrained-greedy-decode`. Precomputing masks per automaton state (as in `dfa-token-index` for regular languages) is the simpler version of XGrammar's context-independent token cache.

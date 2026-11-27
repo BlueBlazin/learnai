@@ -1,15 +1,8 @@
-Every step has a fixed budget and two kinds of customers: sequences that need one
-token each to keep streaming, and prompts that could each absorb the whole budget.
-Which kind has to be paid first if the time between two tokens of a running sequence
-must never exceed the length of one step?
+Every step has a fixed token budget and two kinds of work. Running sequences need 1 token each to keep streaming, while prompts can each consume the entire budget. Which group must be scheduled first if the gap between two tokens of a running sequence must never exceed one step?
 
 ---
 
-Use one running total. Start with `budget = max_batch_tokens`, take the decodes
-(`running[:max_batch_tokens]`) and subtract their number. Then go through
-`prefilling` followed by `waiting` as one line: each candidate takes the smallest of
-three numbers (what it still needs, the threshold, what is left), and you stop as soon
-as nothing is left. You never need to look ahead or sort.
+Track a single remaining budget. Start with `budget = max_batch_tokens`, take `running[:max_batch_tokens]` for `decode`, and subtract `len(decode)` from `budget`. Then iterate through `prefilling` followed by `waiting` in order. Give each candidate the smallest of its remaining tokens, `long_prefill_threshold`, and `budget`, and stop as soon as `budget` reaches 0. You never need to sort or look ahead.
 
 ---
 
@@ -22,7 +15,4 @@ for seq_id, remaining in [*prefilling, *waiting]:
     budget -= n
 ```
 
-The `break` on an empty budget is what keeps zero-token chunks out of the list (the
-engine rejects them). Nothing else is needed: do not add a sequence to `decode`
-because its chunk happens to complete its prompt, and do not skip a prompt because it
-does not fit whole.
+Breaking when `budget == 0` keeps zero-token chunks out of `prefill`, which the engine would otherwise reject. Do not add a sequence to `decode` just because its chunk finishes its prompt, and do not skip a prompt just because it cannot fit whole.

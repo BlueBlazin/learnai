@@ -1,9 +1,4 @@
-A regular expression cannot count brackets, so structured output for nested formats
-is specified with a context-free grammar. The decoding loop still asks the same
-question at every step, "which tokens may come next?", but the answer now depends on
-an unbounded amount of context: how many lists are open, which rule is in progress,
-and, when the grammar is ambiguous, several readings of the text at once. Build the
-matcher that answers it, token by token, for any grammar the kit can parse.
+Regular expressions cannot count nested brackets, so structured output for nested formats uses a context-free grammar. At each decoding step, the engine still asks which vocabulary tokens can legally follow the text generated so far, even when nesting is unbounded and multiple grammar alternatives remain active at once. Implement `GrammarMatcher` to answer that query token by token for any context-free grammar parsed by the kit.
 
 ![This problem is Allowed tokens and Advance state, here for a context-free grammar.](assets/map.svg)
 
@@ -18,69 +13,39 @@ class GrammarMatcher:
     def is_accepting(self, state) -> bool: ...
 ```
 
-This is the `TokenConstraint` protocol of `constrained-greedy-decode`, for a grammar.
+This class implements the `TokenConstraint` protocol from `constrained-greedy-decode` for a context-free grammar.
 
-**The grammar.** `grammar` is a [`Grammar`](../../../python/src/learnai/kit/grammar.py),
-parsed from GBNF, the notation of llama.cpp. Its language is the set of strings that
-the rule `root` matches. Read the grammar from `grammar.rules`:
+**The grammar.** `grammar` is a [`Grammar`](../../../python/src/learnai/kit/grammar.py) parsed from GBNF (the notation used by llama.cpp). Its language is the set of strings matched by the `root` rule. Read the grammar from `grammar.rules`:
 
 ```python
 grammar.rules  # {"root": (alternative, ...), "value": (...), ...}
 ```
 
-Each rule is a tuple of alternatives, each alternative a tuple of symbols (possibly
-empty), and each symbol one of
+Each rule is a tuple of alternatives, each alternative is a tuple of symbols (possibly empty), and each symbol is one of two types:
 
-- `Chars`: exactly one character out of a set. `symbol.matches(code_point)` tests one
-  character (an `int` or a one-character `str`), and `symbol.overlaps(low, high)`
-  says whether the set contains any code point in the inclusive range.
-- `Ref`: another rule, `symbol.name`.
+- `Chars`: matches a single Unicode character from a set. `symbol.matches(code_point)` tests one character (an `int` or one-character `str`), and `symbol.overlaps(low, high)` reports whether the set contains any code point in the inclusive range `[low, high]`.
+- `Ref`: refers to another rule by `symbol.name`.
 
-Everything else in the notation has been rewritten into this shape: a literal is one
-`Chars` per character, and groups and the repetitions `* + ? {m,n}` are generated
-rules (`x*` is `r ::= x r | (empty)`). Two precomputed sets are yours to use:
-`grammar.nullable`, the names of the rules that can match the empty string, and
-`grammar.left_recursive`, the names of the rules that can begin with themselves.
-Every rule can finish: there is no rule from which no string can be derived.
+All higher-level GBNF constructs have already been rewritten into this representation. String literals become sequences of single-character `Chars` symbols, and groups or repetitions (`*`, `+`, `?`, `{m,n}`) become generated rules (for example, `x*` becomes `r ::= x r | (empty)`). Two precomputed sets are also provided: `grammar.nullable` contains the names of rules that can match the empty string, and `grammar.left_recursive` contains the names of rules that can begin with themselves. Every rule can derive at least one string.
 
-**The vocabulary.** `vocab` is a [`ToyVocab`](../../../python/src/learnai/kit/vocab.py):
-ids `0` to `vocab.size - 1`, `vocab.bytes(t)` the byte string of token `t`. Special
-tokens have the byte string `b""`. A token may be several characters, or only some
-of the bytes of one character.
+**The vocabulary.** `vocab` is a [`ToyVocab`](../../../python/src/learnai/kit/vocab.py) with token IDs `0` through `vocab.size - 1`. `vocab.bytes(t)` returns the byte string of token `t`, and special tokens have `vocab.bytes(t) == b""`. A token may span multiple characters or only part of a single character's UTF-8 encoding.
 
-**The definition.** Call a byte string a *viable prefix* if some string of the
-language has a UTF-8 encoding that starts with it. Let `text(state)` be the
-concatenated bytes of the tokens advanced through since `start()`.
+**Definitions.** A byte string is a *viable prefix* if some string in the grammar's language has a UTF-8 encoding starting with those bytes. Let `text(state)` be the concatenation of `vocab.bytes(t)` for all tokens advanced through since `start()`.
 
-- **`allowed(state)`** returns, in increasing order, the ids of all tokens `t` such
-  that `vocab.bytes(t)` is not empty and `text(state) + vocab.bytes(t)` is a viable
-  prefix. Special tokens are never in the list.
-- **`advance(state, token)`** returns the state for `text(state) + vocab.bytes(token)`.
-  It raises `ValueError` if `token` is not allowed in `state`.
-- **`is_accepting(state)`** returns `True` exactly when `text(state)` is itself the
-  UTF-8 encoding of a string of the language.
+- **`allowed(state)`** returns, in increasing order, the IDs of all tokens `t` such that `vocab.bytes(t)` is non-empty and `text(state) + vocab.bytes(t)` is a viable prefix. Special tokens are never included.
+- **`advance(state, token)`** returns the new state for `text(state) + vocab.bytes(token)`. It raises `ValueError` if `token` is not allowed in `state`.
+- **`is_accepting(state)`** returns `True` if and only if `text(state)` is the UTF-8 encoding of a complete string in the language.
 
-States are opaque to the caller. They must be hashable, and `advance` must not
-modify the state it is given: a decoding loop keeps old states to branch from.
+States are opaque to the caller. They must be hashable, and `advance` must not modify the state it receives because a decoding loop may keep earlier states to branch from.
 
-What the definition demands of the matcher:
+### Required behaviors
 
-- **Several readings at once.** After `tr` the text may be the whole word `tr`, the
-  beginning of `true`, or of `trust`. Every alternative that is consistent with the
-  text stays alive until the text rules it out.
-- **Rules of any shape.** Recursion on the right, in the middle, and on the left
-  (`expr ::= expr "-" term | term`), directly or through other rules, and rules that
-  match nothing. A matcher that eagerly expands the first symbol of a rule never
-  finishes on a left-recursive one; this one must terminate and answer.
-- **Tokens are not aligned with rules.** A token is allowed if *all* of its bytes can
-  be read, however many rules begin and end inside it; it need not end where a rule
-  ends.
-- **Tokens are not aligned with characters.** The grammar is over Unicode code points
-  and the vocabulary over bytes. A text that ends inside a character is viable if
-  *some* character that starts with those bytes can be read next: after `"` in a
-  JSON string, `b"\xe2\x82"` (the first two bytes of `€` and of 63 other characters)
-  is allowed, and after `[` in a list of numbers it is not. Bytes that begin no
-  character at all are never viable. The well-formed encodings are:
+- **Multiple active readings.** After `tr`, the text might be the full word `tr`, the start of `true`, or the start of `trust`. Every consistent alternative stays alive until later bytes rule it out.
+- **Arbitrary recursion and nullable rules.** Grammars may use right, middle, or left recursion (`expr ::= expr "-" term | term`), directly or through other rules, as well as rules that match the empty string. A matcher that naively expands the leftmost symbol will loop forever on left recursion. Your matcher must terminate and return the exact result.
+- **Tokens crossing rule boundaries.** A token is allowed whenever all of its bytes can be consumed, regardless of how many rules open or close inside it. A token does not need to end on a rule boundary.
+- **Tokens splitting UTF-8 characters.** Grammars operate on Unicode code points, while vocabularies operate on bytes. A byte string ending mid-character is viable if *some* valid Unicode character starting with those bytes can be read next. For example, after `"` in a JSON string, `b"\xe2\x82"` (the first two bytes of `€` and 63 other characters) is allowed, whereas after `[` in a list of digits it is not. Invalid UTF-8 byte sequences are never viable, and a state ending mid-character is never accepting.
+
+  The valid UTF-8 encodings are:
 
   | first byte | length | following bytes | code points |
   |---|---|---|---|
@@ -89,12 +54,9 @@ What the definition demands of the matcher:
   | `E0`–`EF` | 3 | `80`–`BF` each | U+0800–U+FFFF, except U+D800–U+DFFF |
   | `F0`–`F4` | 4 | `80`–`BF` each | U+10000–U+10FFFF |
 
-  The code point ranges are part of the rule: `F0 80` continues no character (its
-  completions would be below U+10000), nor does `ED A0` (surrogates) or `F4 90`
-  (above U+10FFFF). A text that ends inside a character is never accepting.
+  Code point bounds are strict. `F0 80` is invalid because all its completions are below U+10000 (overlong), `ED A0` is invalid because it falls in the surrogate range U+D800–U+DFFF, and `F4 90` is invalid because it exceeds U+10FFFF.
 
-Write the matcher yourself. `grammar.accepts` and `grammar.accepts_prefix` are the
-oracle the tests use; a solution must not call them (the harness rejects it).
+Write the matcher yourself. `grammar.accepts` and `grammar.accepts_prefix` are the test oracle and must not be called (the harness rejects solutions that call them).
 
 ## Example
 
@@ -124,44 +86,23 @@ Advancing through the tokens `[`, `1`, `,`, (space), `[`, `tr`, `u`, `e`, `]`, `
 | `[1, [true]` | `,`, `, `, `]` | no |
 | `[1, [true]]` | (none) | yes |
 
-- After `[1` the two-character token `, ` is allowed. Its comma is the literal of
-  one rule and its space is the whole of another (`ws`); the token crosses the
-  boundary.
-- After `[1,` the space is allowed and after `[1, ` it is not: `ws` is at most one
-  space.
-- After `[1, [true]` the inner list is complete, and `root` has matched, but only
-  the inner occurrence. The text is not a member of the language, so the state is
-  not accepting.
-- No non-ASCII token is allowed anywhere: this grammar has no such character.
-- In the last state nothing is allowed and the state is accepting, so a decoding
-  loop's only move is end-of-sequence.
+- After `[1`, the two-character token `, ` is allowed. Its comma comes from the literal in `root` and its space matches `ws`, so the token crosses a rule boundary.
+- After `[1,`, the space is allowed, and after `[1, ` it is not, because `ws` matches at most one space.
+- After `[1, [true]`, the inner list has finished matching `root`, but the outer `root` is still open. The state is not accepting.
+- No non-ASCII token is allowed at any step because this grammar contains only ASCII characters.
+- In the final state, no tokens are allowed and `is_accepting` is `True`, so a decoding loop must stop with end-of-sequence.
 
-As ids, the allowed tokens after `[1` are `[8, 12, 16, 26, 27, 32, 34, 45, 48, 50,
-52, 56, 62]`.
+As token IDs, the allowed tokens after `[1` are `[8, 12, 16, 26, 27, 32, 34, 45, 48, 50, 52, 56, 62]`.
 
 ## Constraints
 
-- Grammars have at most a few dozen rules after rewriting. `vocab.size` is between
-  64 and 282. Texts are at most a few dozen tokens long.
-- Results are compared exactly with the oracle: the same ids in the same order, and
-  the same accepting flag, in every state the tests reach.
-- Time limit 10 s per case. One call of `allowed` on the reference takes a few
-  milliseconds; nothing in the tests needs more than a straightforward
-  implementation of a correct algorithm, but an algorithm that does not terminate
-  on left recursion fails.
-- Use `grammar.rules`, `grammar.nullable`, and `grammar.left_recursive` only. Do not
-  call `grammar.accepts`, `grammar.accepts_prefix`, or the grammar's private
-  methods.
+- Grammars have at most a few dozen rules after rewriting. `vocab.size` is between 64 and 282. Test sequences are at most a few dozen tokens long.
+- Outputs are compared exactly with the oracle, requiring identical token ID lists in increasing order and identical `is_accepting` values at every visited state.
+- Time limit is 10 s per test case. A single call to `allowed` takes a few milliseconds on the reference implementation. A straightforward correct algorithm passes easily, while an algorithm that loops on left recursion times out.
+- Use only `grammar.rules`, `grammar.nullable`, and `grammar.left_recursive`. Do not call `grammar.accepts`, `grammar.accepts_prefix`, or private methods of `Grammar`.
 
 ## Why this matters
 
-Grammar-constrained decoding is how engines guarantee JSON that matches a schema
-with recursion, SQL in a given dialect, or a tool-call format, and this function runs
-once per generated token over the whole vocabulary. Its failures are quiet. A matcher
-that commits to one alternative masks out valid continuations, and the model is
-pushed into whatever the surviving alternative allows. One that only accepts tokens
-ending on rule boundaries starves the model of its natural multi-character tokens
-and degrades the text. One that mishandles characters split across tokens either
-makes non-ASCII text unreachable or lets through bytes that are not text at all, and
-the response fails to decode. And one that hangs on a grammar a user wrote with
-`expr ::= expr "+" term` hangs a server thread.
+Grammar-constrained decoding lets inference engines guarantee valid recursive JSON schemas, SQL dialects, or structured tool-call formats. The matcher runs over the entire vocabulary on every generated token, and bugs in it fail silently.
+
+A matcher that commits too early to one alternative masks out valid continuations and forces the model down the wrong branch. One that requires tokens to end on rule boundaries blocks natural multi-character tokens and degrades output quality. Mishandling multi-byte UTF-8 characters either makes non-ASCII text unreachable or allows invalid byte sequences that fail to decode. Finally, a naive stack expander that loops on a user-supplied left-recursive rule like `expr ::= expr "+" term` hangs the inference worker.

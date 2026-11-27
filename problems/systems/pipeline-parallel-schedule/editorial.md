@@ -1,49 +1,26 @@
 ## The idea
 
-A pipeline of $S$ stages is $S$ servers in a row, and a sequence is a customer
-that walks through all of them once per token and may not start its next lap
-before finishing the current one. One sequence alone occupies one server at a
-time: per token it needs
+Think of an $S$-stage pipeline as $S$ servers in series. Each sequence walks through all $S$ stages once per token and cannot start its next token until the current one exits stage $S - 1$. A single sequence occupies only one server at a time, taking
 
 $$
-C = \sum_i \text{service}_i + \sum_i \text{transfer}_i ,
+C = \sum_i \text{service}_i + \sum_i \text{transfer}_i
 $$
 
-and during that time every stage but one is idle. The pipeline has room for more:
-while stage 1 works on sequence `a`, stage 0 can already work on `b`. With enough
-sequences in flight every stage always has something waiting, and then tokens
-leave the pipeline at the rate of its slowest stage, one every
-$\max_i \text{service}_i$, instead of one every $C$. In the public throughput case
-that is 5 ms per token against 17 ms.
+milliseconds per token while all other stages sit idle. Running multiple sequences concurrently fills the pipeline. While stage 1 processes sequence `a`, stage 0 can already process `b`. With enough sequences in flight, every stage stays busy and tokens exit at the rate of the slowest stage, one every $\max_i \text{service}_i$ ms instead of one every $C$ ms. In the public throughput test, that reduces the per-token interval from 17 ms to 5 ms.
 
-The scheduling rule that gets there is the simplest one: a stage never idles when a
-job is ready, and it takes the job that has been ready longest. What makes the
-problem hard is not the rule but making the timeline *exact*.
+The scheduling policy itself is simple. A stage never idles when a job is ready, and it picks the job that has been ready longest. The hard part is making the event timeline exact.
 
-**Compute, do not listen.** The tempting design is one coroutine per sequence that
-walks through the stages, with a lock per stage. It interleaves correctly and
-gets one thing wrong: who gets a stage when two jobs become ready at the same
-instant is decided by which coroutine the event loop happens to resume first. A
-request that arrives at the moment an older sequence's token comes back takes
-stage 0 ahead of it, because its timer was created earlier.
+**Compute the timeline instead of racing coroutines.** A natural first attempt is one coroutine per sequence walking through the stages with an `asyncio.Lock` per stage. That interleaves sequences, but it breaks tie-breaking. When two jobs become ready at the same instant, whichever coroutine the event loop wakes first acquires the lock. For example, a new request whose `sleep` timer was created at $t = 0$ can wake ahead of an older sequence's returning token at the same timestamp.
 
-The fix is to notice that nothing in this system is a surprise. When a job starts
-at $T$ on stage $i$, three future facts are known immediately: the stage is free
-at $T + \text{service}_i$; the job is ready at stage $i + 1$ at
-$T + \text{service}_i + \text{transfer}_i$; or, at the last stage, the sequence's
-next token is ready at stage 0 at $T + \text{service}_i$. So the scheduler keeps a
-**calendar** (a heap of future events) and runs a discrete-event simulation that
-happens to be executed in real (simulated) time: sleep until the next event time,
-apply *all* events of that instant, and only then let each free stage pick from
-its waiting heap, ordered by `(ready time, request index)`. The jobs themselves
-are tasks that call `pipe.run` and then `pipe.transfer`; the scheduler never waits
-for them, because it already knows when they end.
+The clean solution relies on the fact that every duration is deterministic. When a job starts at time $T$ on stage $i$, we immediately know its future events:
 
-**Why the schedule is unique.** By induction over event times: the state before
-time $T$ determines which stages become free and which jobs become ready at $T$;
-the rule then determines which job each free stage starts at $T$ (a total order
-on waiting jobs); and those starts determine the future events. No choice is left
-anywhere.
+- Stage $i$ becomes free at $T + \text{service}_i$.
+- If $i < S - 1$, the job becomes ready at stage $i + 1$ at $T + \text{service}_i + \text{transfer}_i$.
+- If $i = S - 1$, the sequence's next token (if any) becomes ready at stage 0 at $T + \text{service}_i$.
+
+The scheduler therefore maintains a **calendar** (a min-heap of future events) and runs a discrete-event simulation synchronized to the event loop clock. At each step, it sleeps until the next event timestamp, processes *all* events at that timestamp, and only then assigns ready jobs to free stages from each stage's waiting heap ordered by `(ready_time, request_index)`. Each started job runs in its own task that calls `pipe.run` followed immediately by `pipe.transfer`. The scheduler does not need to await individual jobs because it already knows their exact finish times.
+
+**Why the schedule is unique.** By induction over event timestamps, the state before time $T$ uniquely determines which stages become free and which jobs become ready at $T$. Because `(ready_time, request_index)` defines a total order on waiting jobs, the selection rule uniquely determines which job each free stage starts at $T$, which in turn determines all future events.
 
 ## Reference solution (Python)
 
@@ -100,63 +77,28 @@ async def run_pipeline(pipe, requests):
     return outputs
 ```
 
-A task created at time `now` starts running when the scheduler next awaits, still
-at `now`, so `pipe.run` is called at the planned instant. The job task calls
-`pipe.transfer` in the same breath as `pipe.run` returns, which is the instant the
-stage finishes. All times are integers, so the calendar and the clock agree
-exactly.
+A task created at time `now` starts executing on the scheduler's next `await` while the clock is still at `now`, so `pipe.run` begins at the exact planned timestamp. Inside `job`, `pipe.transfer` starts immediately after `pipe.run` returns, matching the exact finish time of the stage. Because all durations are integers, the calendar and event loop clock stay exactly aligned.
 
-An online design also works (one worker per stage that waits for its heap to be
-non-empty), provided each worker lets the other events of the instant arrive
-before it pops. That is the same "events first, decisions second" order, obtained
-by yielding to the event loop instead of by reading a calendar.
+An online design with one worker per stage also works, provided each worker yields until all events at the current timestamp have been processed before popping from its heap. That achieves the same "events first, decisions second" ordering through event-loop yields rather than an explicit calendar.
 
 ## Common mistakes
 
-- **One sequence at a time.** Looping over the requests and walking each through
-  the stages is correct and uses one device's worth of the pipeline: 30 ms
-  instead of 18 in the worked example, 4080 ms instead of 1212 in the throughput
-  case.
-- **One token in flight.** A global lock around "one token through all stages"
-  lets sequences take turns, and still only one stage works at any time.
-- **Letting a sequence's next token in early.** Token $t + 1$ depends on token
-  $t$'s output. Starting it when token $t$ has merely left stage 0 would be
-  pipelining within a sequence, which autoregressive decoding does not allow.
-- **Free transfers.** Marking a job ready at the next stage the moment the
-  previous stage finishes starts that stage on an activation that is still in
-  transit.
-- **Transfers started late.** Claiming the next stage first and transferring
-  then (pull instead of push) keeps the receiving stage idle for the whole
-  transfer and delays everything behind it. The activation should already be
-  there when the stage frees up.
-- **A lock per stage.** Ties at one instant are decided by the event loop's
-  wake-up order. See above.
-- **Priority by request instead of by ready time.** Always serving the earliest
-  request lets its tokens overtake jobs that have waited longer, and the later
-  requests starve.
-- **Ties the wrong way round**, new arrivals before the returning token of an
-  older sequence.
+- **Running one sequence at a time.** Looping over requests and finishing each completely before starting the next uses only one device's worth of capacity. That takes 30 ms instead of 18 ms in the worked example, and 4080 ms instead of 1212 ms in the throughput case.
+- **Allowing only one token in flight.** Putting a global lock around a token's full trip through all stages lets sequences alternate, but still keeps only one stage busy at a time.
+- **Starting a sequence's next token early.** Token $t + 1$ depends on token $t$'s generated output from the last stage. Launching token $t + 1$ as soon as token $t$ leaves stage 0 violates autoregressive data dependence.
+- **Treating transfers as zero-cost.** Marking a job ready at stage $i + 1$ as soon as stage $i$ finishes starts stage $i + 1$ before the activation arrives and raises `PipelineError`.
+- **Starting transfers late.** Acquiring stage $i + 1$ before running `pipe.transfer` (pull instead of push) leaves stage $i + 1$ idle during the transfer and delays every job behind it. Transfers should overlap with computation on stage $i + 1$.
+- **Using an `asyncio.Lock` per stage.** Simultaneous arrivals and completions are then ordered by the event loop's coroutine wake-up order rather than by `(ready_time, request_index)`.
+- **Ordering by request index instead of ready time.** Always prioritizing the earliest request lets its newer tokens jump ahead of jobs that have been waiting longer, starving later requests.
+- **Breaking ties in the wrong direction.** Preferring a newly arriving request over the returning token of an older sequence flips the request-index tie-breaker.
 
 ## Complexity
 
-One calendar event per stage visit and two heap operations per event:
-$O(N S \log(N S))$ scheduling work for $N$ tokens, and $N S$ tasks. The makespan
-is at least $N \cdot \max_i \text{service}_i$ (every token passes the slowest
-stage) and at least $C$ times the longest sequence; with enough concurrent
-sequences the first bound is what the schedule approaches.
+Let $N$ be the total number of generated tokens across all requests. Each token visits $S$ stages, creating $O(N S)$ calendar events and $N S$ tasks. With $O(\log(N S))$ heap operations per event, scheduling overhead is $O(N S \log(N S))$. The makespan is bounded below by $N \cdot \max_i \text{service}_i$ (every token must pass through the bottleneck stage) and by $C$ times the longest sequence's token count. With enough concurrent sequences, the schedule approaches the bottleneck bound.
 
 ## In the wild
 
-- vLLM combines the two kinds of model parallelism: its documentation on
-  parallelism and scaling describes setting `tensor_parallel_size` to the number
-  of GPUs per node and `pipeline_parallel_size` to the number of nodes, so the
-  slow links between nodes carry one activation per token instead of an
-  all-reduce per layer.
-- The Megatron-LM paper (arXiv 1909.08053) describes its tensor-parallel scheme
-  as "orthogonal and complementary" to pipeline model parallelism.
-- A device map that spills layers from GPU to CPU is a pipeline with one very slow
-  stage. The bound $N \cdot \max_i \text{service}_i$ says what that costs: the
-  slow stage sets the throughput no matter how fast the GPU part is.
-- Real engines also batch: a stage processes the waiting jobs of several
-  sequences in one forward pass. This problem keeps one job per stage at a time to
-  isolate the scheduling; batching changes the service time, not the structure.
+- vLLM combines tensor and pipeline parallelism in multi-node deployments. Its scaling documentation recommends setting `tensor_parallel_size` to the number of GPUs per node and `pipeline_parallel_size` to the number of nodes, so slower cross-node links carry one activation per token instead of an all-reduce at every layer.
+- The Megatron-LM paper (arXiv 1909.08053) notes that its tensor-parallel scheme is orthogonal and complementary to pipeline model parallelism.
+- A device map that offloads some layers from GPU to CPU creates a pipeline with one very slow stage. The $N \cdot \max_i \text{service}_i$ lower bound shows why offloading hurts throughput regardless of how fast the GPU stages are.
+- Production serving engines also batch multiple waiting jobs into a single forward pass at each stage. This problem limits each stage to one job at a time to isolate the scheduling mechanics, while batching changes the per-step service time without changing the pipeline structure.

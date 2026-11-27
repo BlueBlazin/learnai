@@ -1,17 +1,8 @@
-The scorer charges every pair of a batch for the longest pair in it. Which pairs
-should share a batch so that the longest one is not much longer than the rest? And
-once you have reordered the pairs to arrange that, how will you know which document
-each returned score belongs to?
+The scorer charges every pair in a batch for the length of the longest pair in that batch. Think about how to group pairs so that the longest pair in each batch is close in length to the rest. Once you reorder pairs for batching, how will you map each returned score back to its original document?
 
 ---
 
-Do not sort the pairs themselves: sort their *indices* by pair length
-(`sorted(range(n), key=lambda i: lengths[i])`, which is stable). Build the batches
-as lists of indices. A new pair joins the last batch unless the batch already has
-`max_batch` pairs or `(len(batch) + 1) * lengths[i]` would exceed `max_tokens`; the
-new pair is the longest, because the order is ascending. Truncate documents before
-you measure them, and take the tokens away from the document's end, never from the
-query.
+Sort the document *indices* by truncated pair length using `sorted(range(len(docs)), key=lambda i: lengths[i])`, which preserves original order on ties. Build each batch as a list of indices rather than pairs. A new pair joins the current batch unless the batch already has `max_batch` pairs or `(len(batch) + 1) * lengths[i]` exceeds `max_tokens`. Because the order is ascending, `lengths[i]` is always the new maximum length of the batch. Be sure to truncate each document from the end before measuring its length, and never truncate the query.
 
 ---
 
@@ -20,9 +11,8 @@ scores = [0.0] * len(docs)
 for batch in batches:  # each batch is a list of document indices
     results = scorer([pairs[i] for i in batch])
     for i, score in zip(batch, results):
-        scores[i] = score  # back to the document's own slot
+        scores[i] = score  # place score back at the document's original index
 ranking = sorted(range(len(scores)), key=lambda i: -scores[i])[:top_n]
 ```
 
-`sorted` is stable, so sorting by the negated score keeps equal scores in index
-order. Sorting with `reverse=True` would also reverse the ties.
+Because `sorted` is stable, sorting indices by `-scores[i]` keeps equal scores in ascending index order. Reversing a sorted list or sorting `(score, index)` in descending order would reverse ties.

@@ -1,23 +1,14 @@
-The alignment and the stopping rule are exactly those of greedy verification: row `i`
-belongs to draft token `i`, the first failure ends the accepted prefix, and one extra
-row supplies the next token. Only the test changed, from "is the argmax" to "has a
-probability above a per-row threshold". What does each row need, besides the
-probability of its draft token, to compute that threshold?
+The row alignment and prefix stopping rule match greedy verification. Row `i` corresponds to `draft_tokens[i]`, the first failure ends the accepted prefix, and one extra row supplies `next_token`. Only the per-token pass test changes from an argmax match to a per-row probability threshold. What quantity do you need from each row of `p` to compute that threshold?
 
 ---
 
-Compute the entropy of all `K + 1` rows at once, in nats: `-(p * log(p)).sum(-1)`.
-That expression is NaN for a row with a zero in it, because `0 * log(0)` is
-`0 * -inf`. Feed the logarithm a harmless `1` wherever `p` is `0` (a `where`), so the
-term becomes `0 * 0`. The threshold of a row is the **smaller** of `epsilon` and
-`delta * exp(-entropy)`.
+Compute the entropy of all `K + 1` rows at once in nats with `-(p * log(p)).sum(-1)`. To prevent `0 * log(0)` from producing `NaN`, replace zeros in the argument to `log` with `1` using a `where` mask so those terms evaluate to `0 * 0`. Each row's threshold is then the smaller of `epsilon` and `delta * exp(-entropy)`.
 
-Read the probability of each draft token with one indexing operation: rows
-`0..K-1`, columns `draft_tokens`.
+Gather the target probability of each draft token with a single indexing operation over rows `0..K-1` and columns `draft_tokens`.
 
 ---
 
-With `prob` of shape `(K,)` and `threshold` of shape `(K + 1,)`:
+Given `prob` of shape `(K,)` and `threshold` of shape `(K + 1,)`:
 
 ```python
 accepted = prob > threshold[:K]  # strict
@@ -25,4 +16,4 @@ n_accepted = cumprod(accepted).sum()  # 1 up to the first False, then 0
 next_token = argmax(p[n_accepted])  # the target's greedy token at that row
 ```
 
-Convert both to Python ints before returning.
+Convert both `n_accepted` and `next_token` to Python `int`s before returning.

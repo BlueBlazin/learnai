@@ -1,30 +1,15 @@
-Suppose a piece ends with `<to`. You cannot emit it (it may be a tag) and you cannot
-drop it (it may be text). What is the least you have to remember to do the right
-thing when the next piece arrives, whichever way it goes? Now ask the same question
-for a piece that ends with a backslash inside an argument string, and for one that
-ends in the middle of the name.
+Suppose a piece ends with `<to`. You cannot emit it because it might start a tag, and you cannot drop it because it might be ordinary text. What is the minimum information you must store in the state to handle the next piece correctly in either case? Ask the same question for a piece ending with a backslash inside an argument string, and for a piece ending in the middle of the tool name.
 
 ---
 
-Process the piece one character at a time through a small state machine with four
-modes: content, the head of a call (up to the `{` that opens the arguments), the
-arguments, and the tail (up to the end of `</tool_call>`). The state is an immutable
-tuple: the mode, the next call index, a small buffer, and for JSON the nesting depth,
-"inside a string", and "the previous character was a backslash". Because every flag
-lives in the state, a boundary between pieces changes nothing: that is the whole
-trick behind chunking invariance. Collect events in a list, appending to the previous
-event when it is the same kind of delta.
+Process `piece` one character at a time through a small state machine with four modes: `content`, `head` (up to the `{` that opens `ARGS`), `arguments`, and `tail` (up to the end of `</tool_call>`). Store the state in an immutable tuple containing the mode, the next call index, a small buffer, and three JSON tracking fields: nesting depth, `in_string`, and `escaped`. Because every flag lives in the state, boundaries between pieces cannot change the result, which guarantees chunking invariance. Collect events in a list and merge consecutive deltas of the same kind and call index.
 
 ---
 
-Content mode: append the character to the buffer; if the buffer is `<tool_call>`,
-switch to the head. Otherwise find the longest suffix of the buffer that
-`"<tool_call>".startswith`, emit what is in front of it, and keep the suffix (do not
-simply clear the buffer on a mismatch: in `<<tool_call>` the second `<` starts the
-tag). Head mode: track strings with the escape flag; the second completed string
-literal is the name (`json.loads` it and emit the start), and the first `{` outside
-a string after the third literal opens the arguments at depth 1. Arguments mode:
-emit every character; outside strings `{` and `[` add one to the depth, `}` and `]`
-subtract one, and depth 0 ends the arguments. Tail mode: buffer characters until the
-buffer ends with `</tool_call>`, emit the end, add one to the index. `parse_end`
-returns the buffer as content if the mode is content and the buffer is not empty.
+In `content` mode, append each character to the buffer. If the buffer equals `<tool_call>`, switch to `head` mode. Otherwise, find the longest suffix of the buffer that `"<tool_call>"` starts with, emit everything before that suffix, and keep the suffix. Do not clear the buffer blindly on a mismatch, because in `<<tool_call>` the second `<` begins the tag.
+
+In `head` mode, track JSON strings using `in_string` and `escaped`. The second completed string literal is `NAME` (decode it with `json.loads` and emit `tool_call_start`), and the first `{` outside a string after the third literal opens `arguments` mode at depth 1.
+
+In `arguments` mode, emit every character. Outside strings, `{` and `[` increment depth while `}` and `]` decrement it, and depth 0 switches to `tail` mode.
+
+In `tail` mode, buffer characters until the buffer ends with `</tool_call>`, then emit `tool_call_end`, increment `index`, and return to `content` mode. In `parse_end`, return the buffer as a `content` event if the mode is `content` and the buffer is non-empty.

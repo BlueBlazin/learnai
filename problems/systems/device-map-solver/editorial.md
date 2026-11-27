@@ -1,41 +1,14 @@
 ## The idea
 
-A device map is a partition of the model's weights into consecutive runs, one per
-device. "Consecutive" is the important word. During a forward pass the hidden state
-is moved to wherever the next module lives, so the number of device-to-device
-copies per pass is the number of boundaries in the map. Filling devices strictly in
-order gives the minimum, one boundary per device used, and it turns placement into
-a single scan: there is one current device, and the only question for the next
-module is whether it still fits there.
+A device map partitions a model's weights into consecutive runs, one per device. Keeping runs consecutive is critical. During a forward pass, activations move to wherever the next module lives, so the number of device-to-device transfers equals the number of device boundaries in the map. Filling devices strictly in order minimizes transfers to one boundary per device and reduces placement to a single forward scan. At each step, there is one current device, and the only question is whether the next module fits.
 
-That scan is greedy and does not maximize what the GPUs hold. A bin-packing
-solution that tucks a small late layer into the free tail of GPU 0 holds more on the
-GPUs and is slower, because the activations then visit GPU 0 twice. Giving up a few
-hundred megabytes at the end of each device is the price of the order.
+This greedy scan does not maximize GPU utilization. A bin-packing solver that tucks a small late layer into leftover space on GPU 0 holds more weights on GPUs, but runs slower because activations must visit GPU 0 twice. Leaving a few hundred megabytes unused at the end of a device is the cost of preserving forward order.
 
-**What may be divided.** The scan works on a tree. A module that fits is placed
-whole, which keeps the map short. A module that does not fit is opened and its
-children are tried on the same device, so a stack of layers is cut between two
-layers. The recursion stops at leaves and at modules of a no-split class. A
-transformer block computes `x + f(x)`: if the block were cut, `x` would be on the
-device where the block started and `f(x)` on the device where it ended, and the
-addition fails. Hence every class with a residual connection is no-split.
+**What may be divided.** The scan operates on a module tree. A module that fits is placed whole, which keeps the map compact. A container that does not fit is opened so its children can be tried on the same device, splitting a stack of layers cleanly between two layers. Recursion stops at leaves and at modules whose class is in `no_split`. A transformer block computes `x + f(x)`. If the block were split, `x` would live on the starting device while `f(x)` lived on the next, causing the residual addition to fail.
 
-**The reserve.** Weights are not all a device must hold. The first device also
-receives the inputs, holds the output while it is post-processed, and executes
-every module that was offloaded to CPU or disk: those weights are copied in just
-before their forward pass and dropped after it. So the largest module that might
-ever be brought in has to fit next to what lives there permanently. Reserving the
-size of the largest indivisible module guarantees that.
+**The reserve.** Weights are not the only data a device holds. The first device also receives inputs, holds outputs during post-processing, and executes modules offloaded to CPU or disk by copying their weights in just before each forward call and dropping them afterward. The largest module that might be staged in must fit alongside the weights permanently stored on the first device. Reserving the size of the largest indivisible module guarantees that room.
 
-**Tied weights.** An output head tied to the input embedding is one tensor with two
-names. If the two names were placed independently, the head, which is last in
-forward order, would land on the last device, the embedding on the first, and
-loading would either duplicate the tensor or break the tie. The tied module
-therefore travels with its owner: it is removed from the scan, its extra bytes are
-added to the owner's when checking the fit, and both get the same device. This is
-the one place where the map is allowed to go "backwards": the head on GPU 0 is used
-after the last layer on GPU 1.
+**Tied weights.** An output head tied to an input embedding is a single tensor under two names. Placed independently, the embedding would land on the first device and the head on the last, forcing the loader to duplicate the tensor or break the tie. Instead, each tied module travels with its owner. We exclude it from the initial queue, add its extra bytes to its owner's size check, and assign both to the same device. This is the one place where forward execution moves backwards across devices, from the last layer on a later device back to the head on GPU 0.
 
 ## Reference solution (Python)
 
@@ -86,69 +59,34 @@ def solve_device_map(modules, max_memory, no_split, tied):
     return device_map
 ```
 
-The loop terminates because every iteration places a module, replaces a container
-by its children, or advances the device, and `"disk"` accepts everything.
+The loop always terminates because every iteration places a module, opens a container into its children, or advances to the next device, and `"disk"` accepts everything.
 
 ## Common mistakes
 
-- **Packing instead of scanning.** First-fit or best-fit over all devices ("put it
-  wherever there is room") respects every budget and scatters consecutive layers.
-  A closed device stays closed.
-- **Looking ahead.** Skipping a module that does not fit to place a smaller later one
-  is the same mistake inside one device.
-- **Dividing a no-split module.** The check for "can be opened" must look at the
-  class, not only at whether the module has children.
-- **Never opening.** Treating every top-level module as indivisible sends the whole
-  layer stack to the next device as soon as it does not fit as one piece.
-- **Opening everything first.** Flattening the tree before the scan gives the same
-  devices and a map with thousands of entries where one would do; the specified
-  map names a module whole when it fits whole.
-- **Forgetting the reserve**, or subtracting it from every device, or computing it
-  from the top-level modules (the "largest layer" is then the whole stack and the
-  first device stays empty).
-- **`<` for `<=`.** An exact fit fits.
-- **Tied modules placed on their own**, or following the owner without their bytes
-  being counted.
-- **No disk.** When the last listed device is full, what remains goes to `"disk"`,
-  not onto the last device over its budget.
+- **Packing instead of scanning.** First-fit or best-fit across all devices respects memory budgets but scatters consecutive layers across GPUs. Once a device is closed, it must stay closed.
+- **Looking ahead.** Skipping a module that does not fit to place a smaller later module breaks forward order within a device.
+- **Dividing a no-split module.** The check for opening a module must inspect its class against `no_split`, not just check whether it has children.
+- **Never opening containers.** Treating every top-level module as indivisible pushes an entire layer stack onto the next device as soon as it does not fit whole.
+- **Opening everything upfront.** Flattening the tree before scanning assigns the same devices to leaves but produces thousands of entries instead of naming containers that fit whole.
+- **Mishandling the reserve.** Common bugs include omitting the reserve, subtracting it from every device instead of only the first, or computing it over top-level containers (which makes the whole layer stack the reserve and leaves the first device empty).
+- **Using `<` instead of `<=`.** A module whose size equals the remaining budget fits.
+- **Mishandling tied modules.** Placing tied modules independently or forgetting to include their extra bytes in `need` violates the placement rules.
+- **Forgetting `"disk"`.** When the last listed device fills up, remaining modules spill to `"disk"` rather than overflowing the last device.
 
 ## Complexity
 
-With $n$ modules, each is taken from the queue at most once per device it is tried
-on, and a device is closed at most once: $O(n + d)$ queue operations for $d$
-devices. The reference recomputes sizes and leaf lists per visit, which is
-$O(n \cdot \text{depth})$ in total for sizes and fine at this scale; cache them for
-models with hundreds of thousands of modules.
+With $n$ modules and $d$ devices, each module is popped at most once per device it is tried on, and each device closes at most once, giving $O(n + d)$ queue operations. The reference solution recomputes module sizes and leaf lists on each visit, taking $O(n \cdot \text{depth})$ time in total for sizes. That is fast at this problem's scale, though caching them is worthwhile for models with hundreds of thousands of modules.
 
 ## In the wild
 
-`accelerate.infer_auto_device_map` (Hugging Face Accelerate,
-`src/accelerate/utils/modeling.py`), which `device_map="auto"` and
-`device_map="sequential"` in `transformers` end in, is this scan. Its documentation
-("Loading big models into memory") states the order (GPUs, then CPU, then disk as
-memory-mapped tensors), that `no_split_module_classes` should list every block with
-a residual connection, and that devices are attributed sequentially, "so if your
-first layer is bigger than the size of the GPU you have, it will end up with
-everything on the CPU/Disk". Differences from this problem, all simplifications
-made here:
+`accelerate.infer_auto_device_map` in Hugging Face Accelerate (`src/accelerate/utils/modeling.py`) powers `device_map="auto"` and `device_map="sequential"` in `transformers` using this same scan. Its documentation specifies the same device order (GPUs, then CPU, then memory-mapped disk), requires `no_split_module_classes` for blocks with residual connections, and assigns devices sequentially so that a first layer larger than GPU 0 sends the whole model to CPU or disk.
 
-- Accelerate works on `torch.nn.Module`s whose containers can hold parameters and
-  buffers of their own, and sizes come from parameter shapes and dtypes.
-- Its reserve is the largest layer among the modules *not yet placed*, recomputed as
-  the scan proceeds, and it is applied to the first GPU and to the CPU (the "main
-  devices"), since the CPU executes what was offloaded to disk when there is no GPU.
-  Here it is one fixed number on the first device.
-- Tied parameters are found by identity of the tensors, a tied group can have more
-  than two members, and when the owner fits alone but not with its tied modules,
-  Accelerate tries to open the tied module before giving up on the device.
-- `"auto"` and `"balanced"` first lower each GPU's limit so that the model spreads
-  evenly over the GPUs (`get_balanced_memory`), then run the same scan;
-  `"sequential"` runs it on the limits as given.
-- A `fallback_allocation` option lets an empty device take a later module when the
-  next one in order does not fit, trading order for use of the device, and the
-  result is cleaned so that a parent whose children all share a device is reported
-  once.
+This problem simplifies several details of Accelerate's implementation:
 
-At run time, Accelerate's hooks move each module's input to the module's device,
-and for modules mapped to `"cpu"` or `"disk"` load the weights onto the execution
-device for the duration of the call: the mechanism the reserve leaves room for.
+- Accelerate inspects `torch.nn.Module` trees where containers can hold their own parameters and buffers, computing sizes from parameter shapes and dtypes.
+- Accelerate recomputes the reserve dynamically from the largest *unplaced* module and applies it to both the first GPU and CPU (since CPU executes disk-offloaded layers when no GPU is present). Here, the reserve is fixed and applied only to the first device.
+- Accelerate detects tied parameters by tensor identity, supports tied groups with more than two members, and tries opening a tied module if its owner fits alone but not with its followers.
+- `"auto"` and `"balanced"` first shrink each GPU's memory limit via `get_balanced_memory` to spread layers evenly across GPUs before running the scan, whereas `"sequential"` uses the limits as given.
+- Accelerate also supports a `fallback_allocation` mode that lets an empty device accept a later module when the next one does not fit, and cleans the final map by collapsing parents whose children all share one device.
+
+At runtime, Accelerate attaches forward hooks that move each module's inputs to its assigned device and temporarily copy `"cpu"` or `"disk"` weights onto the execution device for the duration of the call—the exact staging the reserve accounts for.

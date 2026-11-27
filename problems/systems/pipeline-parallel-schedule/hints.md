@@ -1,23 +1,12 @@
-Follow one sequence through the pipeline and write down when each stage is busy
-with it. For how much of the time is each device idle? Now add a second sequence:
-what is the earliest moment stage 0 could start on it, and what, exactly, would
-have to be true at each later stage before it can continue there?
+Trace a single sequence through the pipeline and write down when each stage is busy. How much of the time is each device idle? Now add a second sequence and ask what the earliest moment is that stage 0 can start on it, and what must finish before it can advance to each later stage.
 
 ---
 
-Every duration is known in advance, so you never have to wait and see when
-something ends: when a stage starts a job at time `T`, you already know that the
-stage is free at `T + service`, that the job is ready at the next stage at
-`T + service + transfer`, or (at the last stage) that the sequence's next token is
-ready at stage 0 at `T + service`. Keep those future events in a heap ordered by
-time, and keep, per stage, a heap of waiting jobs ordered by
-`(ready time, request index)`. The scheduler sleeps until the next event time,
-and each job runs as its own task: `await pipe.run(...)`, then
-`await pipe.transfer(...)`.
+Every service and transfer duration is known in advance, so you do not have to wait for tasks to finish to know when events happen. When a stage starts a job at time `T`, you immediately know when the stage becomes free (`T + service`) and what becomes ready next. If it is not the last stage, the job becomes ready at the next stage at `T + service + transfer`; at the last stage, the sequence's next token becomes ready at stage 0 at `T + service`. Store these future events in a min-heap ordered by time, and keep a per-stage min-heap of waiting jobs ordered by `(ready_time, request_index)`. The scheduler sleeps until the next event time, while each started job runs as its own task calling `await pipe.run(...)` followed by `await pipe.transfer(...)`.
 
 ---
 
-The order of work at one instant is what makes the schedule exact:
+Processing all events at a timestamp before making any scheduling decisions is what makes the timeline exact:
 
 ```python
 now = calendar[0][0]
@@ -29,7 +18,4 @@ for stage in range(n_stages):  # 2. only then, the decisions
         ...  # pop the job, start it as a task, push its future events
 ```
 
-If you decide as each event comes in (for example with one lock per stage that
-sequences race for), a new request that arrives at the instant an older
-sequence's token returns can take stage 0 first, only because its timer happened
-to fire first.
+If you dispatch as each event arrives (for example, using one lock per stage that sequences race to acquire), a newly arriving request can claim stage 0 ahead of an older sequence's returning token at the same timestamp simply because its timer woke first.

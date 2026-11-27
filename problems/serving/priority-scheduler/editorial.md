@@ -1,31 +1,16 @@
 ## The idea
 
-Strict priority scheduling answers "who is most urgent?" and has a well-known failure:
-if urgent work keeps arriving, less urgent work waits forever. Aging repairs it by
-making urgency grow with waiting time. Here the growth is one level per `aging_ms`:
+Strict priority scheduling always serves the most urgent request, which starves lower-priority work whenever urgent requests keep arriving. Aging fixes this by increasing a request's urgency as it waits. At virtual time $t$, a request's priority improves by one level for every full `aging_ms` elapsed since its arrival:
 
 $$
-\text{effective}(t) = \text{priority} - \left\lfloor \frac{t - \text{arrival}}{\text{aging\_ms}} \right\rfloor .
+\text{effective}(t) = \text{priority} - \left\lfloor \frac{t - \text{arrival}}{\text{aging\_ms}} \right\rfloor
 $$
 
-A request with priority $p$ is at the level of a fresh priority-0 request after
-$p \cdot \text{aging\_ms}$, and from then on it wins the tie against every request
-that arrived after it, because ties go to the earlier arrival. So its extra wait,
-compared with what a priority-0 request arriving at the same time would see, is
-bounded by roughly $(p + 1) \cdot \text{aging\_ms}$: starvation becomes a tunable
-delay.
+A request with priority $p$ reaches the level of a newly arrived priority-0 request after waiting $p \cdot \text{aging\_ms}$. Once it reaches that level, it beats every request that arrived after it because ties go to the earlier arrival. Its extra wait compared to a priority-0 request arriving at the same instant is bounded by roughly $(p + 1) \cdot \text{aging\_ms}$, turning starvation into a predictable delay.
 
-The consequence for the implementation is that the rank of a waiting request is a
-function of time. Two requests with different arrival times cross their level
-boundaries at different instants, so their relative order can flip while nothing
-arrives and nothing is admitted. A key stored at insertion is wrong the moment the
-clock moves. The robust design evaluates the rule exactly when it is needed: when a
-slot is free, scan the waiting list with the current time.
+Because a request's rank depends on the current time, two waiting requests with different arrival times cross their aging boundaries at different instants. Their relative order can flip while nothing arrives and nothing is admitted. Any sort key stored at insertion becomes stale as soon as the clock advances. Evaluating the selection rule at admission time by scanning `waiting` with `now_ms` avoids stale keys completely.
 
-The tie-breaks are part of the rule, not decoration. Arrival time before queue
-position makes the order independent of *when the scheduler happened to look* (a
-request that arrived mid-step is not penalized), and never using the id keeps opaque
-ids opaque.
+The tie-breaking rules also matter. Breaking ties by `arrival_s` before queue position ensures that a request arriving mid-step is not penalized relative to when the scheduler drains the queue. Ignoring `request.id` keeps ids opaque.
 
 ## Reference solution (Python)
 
@@ -61,54 +46,25 @@ async def run(engine, queue, max_running, aging_ms):
         running = [i for i in [*running, *(i for i, _ in prefill)] if i not in finished]
 ```
 
-The loop is unchanged from `continuous-batching-scheduler` except for the admission
-line. That is the general shape of scheduling policies in an iteration-level engine:
-the loop owns the mechanics, and a policy is a function that orders the waiting list.
+The loop is identical to `continuous-batching-scheduler` except for the admission call. In an iteration-level serving engine, the loop manages execution steps while the scheduling policy simply selects which waiting request gets the next free slot.
 
 ## Common mistakes
 
-- **No aging.** Returning the base priority passes every test of ordering at one
-  instant and starves low priorities under a steady urgent stream: 4946 ms instead of
-  1320 ms in the bound's workload, and unbounded as the stream gets longer.
-- **A static sort key.** A heap keyed by `(priority, arrival)` at insertion cannot
-  express aging at all. The usual patch, refreshing the keys whenever a request
-  arrives, still decides on stale levels when a slot frees up with no arrival in
-  between, which is precisely when the queue is draining and order matters.
-- **Fractional aging.** `priority - waited / aging_ms` looks equivalent and is a
-  different policy: a priority-1 request that has waited 90% of a level passes a
-  fresh priority-0 request. (It is also a static order, `priority + arrival /
-  aging_ms`, which is why it is tempting.) The statement asks for whole levels.
-- **Off by one at the boundary.** At exactly `aging_ms` the level has been gained
-  (`floor`, not `ceil - 1`). With arrival times and durations on a 0.25 ms grid these
-  boundaries are hit exactly.
-- **Waiting measured from collection.** Stamping a request with `loop.time()` when it
-  leaves the queue forgets the time it sat there during a step. Use `arrival_s`.
-- **Ties by id.** Sorting by `(effective, id)` works on every workload whose ids
-  happen to increase with arrival time, which is every workload you would write by
-  hand.
-- **Larger is more urgent.** The convention here, as in vLLM and Unix `nice`, is that
-  a smaller number is served first.
+- **No aging.** Returning the base priority passes static ordering tests but starves low-priority requests under a steady urgent stream (4946 ms instead of 1320 ms on the stress workload, and unbounded on longer streams).
+- **A static sort key.** A heap keyed by `(priority, arrival)` at insertion cannot represent aging. Even if you rebuild keys on every arrival, the order is still stale when a slot opens with no arrivals in between.
+- **Fractional aging.** Computing `priority - waited / aging_ms` is a different policy. Under fractional aging, a priority-1 request that has waited 90% of a period still ranks behind a fresh priority-0 request, whereas two requests with different remainders break ties differently than whole-level aging. It also collapses to a static key (`priority + arrival / aging_ms`), which is why it is a common mistake.
+- **Off by one at the boundary.** A request gains a level at exactly `aging_ms`, which requires `floor`, not `ceil - 1`. Because arrival times and step durations lie on a 0.25 ms grid, exact boundaries happen frequently.
+- **Measuring wait time from collection.** Recording `loop.time()` when draining `queue` drops the time a request waited during the previous step. Always measure from `request.arrival_s`.
+- **Breaking ties by id.** Sorting by `(effective, id)` passes hand-written tests where ids increase with arrival time, but fails when ids are arbitrary strings or out-of-order integers.
+- **Larger number means more urgent.** Following vLLM and Unix `nice`, smaller priority values are more urgent here.
 
 ## Complexity
 
-`pick_next` is a linear scan, $O(W)$ for $W$ waiting requests, once per admission.
-That is negligible next to a forward pass of several milliseconds, and it is the
-honest cost of a key that changes with time. If $W$ were in the hundreds of
-thousands, the fix is one FIFO per base priority: within a level, requests age in
-arrival order, so the best candidate overall is the best of the queue heads, $O(L)$
-for $L$ levels.
+`pick_next` performs an $O(W)$ linear scan over $W$ waiting requests per admission. That cost is negligible next to a forward pass of several milliseconds, and it handles time-varying keys cleanly. If $W$ grew to hundreds of thousands, you could keep one FIFO queue per base priority level. Within a single base priority, requests age in arrival order, so the best candidate overall is always among the $L$ queue heads, reducing selection to $O(L)$ for $L$ priority levels.
 
 ## In the wild
 
-- **vLLM** (`--scheduling-policy priority`): the waiting queue is a heap ordered by
-  `(priority, arrival_time)`, lower first, and when KV memory runs out the running
-  request with the *largest* `(priority, arrival_time)` is preempted. There is no
-  aging, so a deployment that needs it adjusts priorities at the gateway.
-- **Triton**'s dynamic batcher has `priority_levels` with a per-level queue policy
-  (timeouts, maximum queue size) and no aging either; a request that times out in
-  the queue is rejected or delayed, the blunt alternative to aging.
-- **Operating systems** are where aging comes from: the Unix multilevel feedback queue
-  periodically boosts the priority of processes that have waited, for the same reason.
-- The next step in this direction is a scheduler that orders by *deadline* instead of
-  by level (`slo-deadline-scheduler`), and one that orders by service received per
-  tenant (`vtc-fair-scheduler`).
+- **vLLM** (`--scheduling-policy priority`) orders its waiting queue in a heap by `(priority, arrival_time)` with lower values first. When KV memory runs out, it preempts the running request with the largest `(priority, arrival_time)`. Because vLLM has no built-in aging, deployments that need starvation protection adjust priorities at the gateway.
+- **Triton**'s dynamic batcher supports `priority_levels` with per-level queue timeouts and size limits, also without aging. Requests that wait too long are rejected rather than promoted.
+- **Operating systems** introduced aging in the Unix multilevel feedback queue, which periodically boosts the priority of waiting processes to prevent starvation.
+- Related scheduling policies order requests by deadline (`slo-deadline-scheduler`) or by cumulative service per tenant (`vtc-fair-scheduler`).

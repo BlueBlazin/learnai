@@ -1,16 +1,13 @@
-Three numbers are needed before the loop starts: the size of any module (a sum over
-its leaves), the reserve (the largest module that can never be divided), and for
-each tied module, where its owner is. The loop itself only ever looks at one
-module, the front of a queue, and one device.
+Before starting the loop, compute three helper quantities: the total size of any module (the sum of its leaves), the reserve (the size of the largest indivisible module anywhere in the model), and which module owns each tied leaf. The main loop itself only ever inspects the front module of a queue and the current device.
 
 ---
 
-Write the loop with three outcomes for the front module: it fits (record it and
-its followers, add to `used`), it does not fit but can be opened (put its children
-at the front of the queue and stay on the device), or it does not fit and is
-indivisible (move to the next device with `used = 0` and try the same module
-again). `"disk"` accepts everything. Never look back at an earlier device, and
-never look ahead in the queue for something smaller.
+Structure the loop around three outcomes for the front module:
+1. It fits on the current device (or the current device is `"disk"`), so assign it and its followers and add their combined size to `used`.
+2. It does not fit and is divisible, so replace it at the front of the queue with its children and stay on the current device.
+3. It does not fit and is indivisible, so advance to the next device with `used = 0` and retry the same module.
+
+Never revisit a closed device, and never skip ahead in the queue for a smaller module.
 
 ---
 
@@ -33,5 +30,4 @@ while queue:
         queue.insert(0, m)
 ```
 
-`followers(m)` are the keys `t` of `tied` whose owner `tied[t]` is `m` or one of the
-leaves inside `m`.
+`followers(m)` are all keys `t` of `tied` whose owner `tied[t]` is `m` or a leaf inside `m`.

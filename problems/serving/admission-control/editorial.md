@@ -1,33 +1,18 @@
 ## The idea
 
-Admission control is a promise made at the door. A server with one slot that
-processes $r$ prompt tokens per second serves an admitted request after everything
-ahead of it: the request that is running, and the queue. If the queue never holds
-more than $T_{\max}$ prompt tokens, a newly admitted request finishes within
+Admission control is a latency promise enforced at the front door. Suppose a single-slot server processes $r$ prompt tokens per second. An admitted request waits behind whatever is currently running and whatever is already in the queue. If no prompt exceeds $p_{\text{longest}}$ tokens and the queue never holds more than $T_{\max}$ prompt tokens, every admitted request finishes within
 
 $$
 \frac{T_{\max} + p_{\text{longest}}}{r}
 $$
 
-seconds, whatever the arrival rate. The bound on tokens is what makes the promise;
-the bound on requests covers the per-request costs that tokens do not measure
-(memory for request state, scheduling overhead). Without either, the wait is
-proportional to how long the overload has lasted.
+seconds, regardless of how high the arrival rate spikes. The token bound guarantees that latency ceiling, while the request-count bound caps per-request overhead such as request metadata and scheduling work. Without both bounds, wait times grow in proportion to how long the overload lasts.
 
-Three details carry the correctness:
+Three implementation rules make the controller correct:
 
-1. **Decide, then enqueue.** The test is on the state *with* the new request,
-   $Q + 1 \le Q_{\max}$ and $T + p \le T_{\max}$, and a rejection must leave nothing
-   behind.
-2. **Queued means waiting.** A request stops counting at `start`. The bounds exist to
-   limit waiting; work in progress is limited elsewhere, by the engine's batch size
-   and memory.
-3. **An honest `Retry-After`.** A client that retries immediately is rejected again
-   and adds load; one that is told to wait until the whole queue is empty stays away
-   too long. The right estimate is the time until *enough* of the queue has drained
-   for this request to fit, which depends on the request: a small prompt needs one
-   departure, a large one may need several, and one that exceeds the token bound by
-   itself needs to be told never.
+1. **Check before enqueueing.** Evaluate both bounds with the new request included ($Q + 1 \le \text{max\_queued\_requests}$ and $T + p \le \text{max\_queued\_tokens}$). If either fails, reject without mutating state.
+2. **Count only waiting requests.** A request stops counting against the queue bounds at `start`. These bounds limit waiting work, whereas in-flight work is governed separately by the engine's batch size and memory limits.
+3. **Return an accurate `retry_after_s`.** Telling a client to retry immediately triggers another rejection and adds load. Telling it to wait until the entire queue empties keeps it away longer than necessary. The right estimate is the time needed for *enough* of the queue to drain so this specific request fits. A small prompt may need one departure, a large prompt may need several, and a prompt larger than `max_queued_tokens` can never fit and must receive `None`.
 
 ## Reference solution (Python)
 
@@ -72,61 +57,26 @@ class Admission:
         return drained / self.drain_tokens_per_s
 ```
 
-The three properties return `len(self._queue)`, `self._queued_tokens`, and
-`len(self._running)`.
+The three properties return `len(self._queue)`, `self._queued_tokens`, and `len(self._running)`.
 
 ## Common mistakes
 
-- **No bound at all.** The default of many servers. Every request is accepted and
-  the queue absorbs the overload; in the 3x overload test the last requests would
-  wait about two minutes for a server whose requests take half a second.
-- **Checking after enqueueing.** Appending first and testing `len(queue) > max` is
-  equivalent only if the rejected request is removed again. When it is not, rejected
-  requests occupy the queue forever and the server soon rejects everything.
-- **Counting running requests as queued.** Releasing a request's tokens at `finish`
-  instead of `start` makes the token bound cover work in progress: with a long prompt
-  running, the server rejects requests although nothing is waiting.
-- **`<` for `<=`.** A request that fills the queue exactly is within the bounds.
-  Rejecting it wastes one slot permanently, and `max_queued_requests=1` rejects
-  everything.
-- **Bounding requests only.** Eight queued requests of 100,000 tokens are a very
-  different wait from eight chat turns.
-- **`Retry-After` for the whole queue**, or for one departure regardless of the
-  request's size. The first keeps clients away from a server that has room; the
-  second sends large requests back too early, to be rejected again.
-- **A finite `Retry-After` for a request that can never fit.** The client will retry
-  forever. Say `None` here, and a 4xx rather than a 503 at the HTTP layer.
-- **Assuming FIFO starts.** `start` names the request. A scheduler that picks by
-  priority or by length removes requests from the middle of the queue.
+- **No bound at all.** Many servers default to unbounded queues. In the 3x overload simulation, an unbounded queue forces the last requests to wait roughly two minutes on a server whose individual requests take half a second.
+- **Checking after enqueueing.** Appending first and checking `len(queue) > max` only works if you roll back on rejection. Forgetting the rollback leaves rejected requests stuck in the queue until the server rejects all traffic.
+- **Counting running requests as queued.** Releasing a request's tokens in `finish` instead of `start` counts active execution against the queue bound. When a long prompt is running, the server rejects new traffic even though nothing is waiting.
+- **Using `<` instead of `<=`.** A request that brings the queue exactly to its limit must be admitted. Using strict `<` permanently wastes one slot and causes `max_queued_requests=1` to reject every request.
+- **Bounding request count only.** Eight queued 100,000-token prompts create a vastly longer wait than eight short chat turns.
+- **Bad `Retry-After` estimates.** Returning the drain time of the entire queue keeps clients away after room has opened up. Returning only one departure's drain time regardless of `prompt_tokens` sends large requests back too early to be rejected again.
+- **Returning a finite `Retry-After` for an oversized prompt.** If `prompt_tokens > max_queued_tokens`, returning a number makes the client retry forever. Return `None` here, which maps to an HTTP 4xx error rather than a retryable 503.
+- **Assuming FIFO starts.** `start(req)` names a specific request. A priority or shortest-job-first scheduler removes requests from the middle of the queue, so a plain FIFO pop fails.
 
 ## Complexity
 
-`admit` is $O(1)$ when it accepts and $O(Q)$ when it rejects (the scan for the retry
-estimate, at most `max_queued_requests` steps). `start` and `finish` are $O(1)$.
-Memory is $O(Q + \text{running})$.
+`admit` takes $O(1)$ time on acceptance and $O(Q)$ time on rejection to scan the queue (at most `max_queued_requests` steps). `start` and `finish` take $O(1)$ time. Memory is $O(Q + R)$ for $Q$ queued and $R$ running requests.
 
 ## In the wild
 
-- **vLLM** has both knobs under the names this problem uses, with one difference in
-  what they count. `--max-num-queued-reqs` is documented as the "maximum number of
-  requests that can be in-flight (waiting or running) at the same time", and
-  `--max-num-queued-tokens` as the "maximum total prompt tokens of requests currently
-  in the prefill phase"; beyond either, new requests are rejected with HTTP 503 "so
-  the client can retry on another instance", and rejections are counted in the
-  `vllm:admission_rejections` metric
-  ([engine arguments](https://docs.vllm.ai/en/latest/configuration/engine_args.html),
-  [metrics](https://docs.vllm.ai/en/latest/usage/metrics.html)). This problem bounds
-  waiting requests only, which keeps the latency argument above exact; with vLLM's
-  definition, set the request limit to the running capacity plus the queue you want.
-- **TGI** rejects with HTTP 429 when its queue exceeds `--max-concurrent-requests`,
-  and validates `--max-input-tokens` and `--max-total-tokens` per request, the
-  analogue of `Rejected(None)`. **Triton** bounds each model's queue with
-  `max_queue_size` and can time requests out of the queue.
-- **Where the drain rate comes from.** Here it is a constructor argument. A real
-  server measures it: an exponentially weighted average of prefill tokens per second
-  from the engine's own counters. The estimate is only as good as that number, which
-  is why `Retry-After` is advice, and why clients add jitter to it.
-- **Rejection is the cheap half of backpressure.** The other half is the client's
-  behavior: exponential backoff with jitter, honoring `Retry-After`, and a retry
-  budget. A fleet behind a load balancer also exports the queue depth, so the
-  balancer can stop sending to a replica before it has to reject.
+- **vLLM** exposes both limits under similar names, with one difference in accounting. `--max-num-queued-reqs` caps the maximum number of in-flight requests (waiting or running), while `--max-num-queued-tokens` caps the total prompt tokens currently in the prefill phase. Requests beyond either limit receive HTTP 503 so clients can retry on another instance, and rejections increment `vllm:admission_rejections` ([engine arguments](https://docs.vllm.ai/en/latest/configuration/engine_args.html), [metrics](https://docs.vllm.ai/en/latest/usage/metrics.html)). This problem bounds waiting requests only to keep the latency formula exact. Under vLLM's definition, set the request limit to your running capacity plus your desired queue depth.
+- **TGI** returns HTTP 429 when its queue exceeds `--max-concurrent-requests` and validates `--max-input-tokens` and `--max-total-tokens` per request (the analogue of `Rejected(None)`). **Triton** bounds each model's queue with `max_queue_size` and can expire requests that wait too long.
+- **Estimating the drain rate.** Here `drain_tokens_per_s` is passed to the constructor. Real servers measure it dynamically using an exponentially weighted moving average of prefill tokens per second from engine counters. Because that rate is an estimate, `Retry-After` is advisory and clients add jitter before retrying.
+- **Client-side backpressure.** Server-side rejection is only half of overload protection. Clients pair it with exponential backoff, jitter, `Retry-After` handling, and retry budgets. Behind a load balancer, replicas also export queue depth so traffic shifts away before rejections start.

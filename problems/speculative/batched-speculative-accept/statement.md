@@ -1,9 +1,7 @@
-Implement the two steps that make speculative sampling work on a **batch**: verify
-every row's draft tokens at once, and append what each row accepted. Each row is an
-independent sequence, so each stops at its own first rejection, draws its
-replacement from its own residual, and grows by its own number of tokens. The batch
-goes in rectangular and comes out ragged; the substance is keeping every row exact
-while the tensor stays a tensor.
+Implement `verify_batch` and `advance_batch` to run speculative sampling across a
+batch of sequences. Each row in the batch is an independent sequence, so every row
+stops at its own first rejection, samples its own next token, and grows to its own
+length.
 
 ![This problem is Roll back caches, where each row of a batch keeps its own number of tokens.](assets/map.svg)
 
@@ -11,48 +9,55 @@ while the tensor stays a tensor.
 
 ```python
 def verify_batch(p, q, draft_tokens, u_accept, u_resample): ...
-
-
 # -> (n_accepted, next_tokens)
 
 
 def advance_batch(tokens, lengths, draft_tokens, n_accepted, next_tokens, pad_id): ...
-
-
 # -> (new_tokens, new_lengths, cache_lengths)
 ```
 
 ### `verify_batch`
 
-Row $b$ of the batch is one call of `speculative-sampling-block`. Write $x_{b,i}$
-for `draft_tokens[b, i]`, sampled by the draft model from `q[b, i]`; `p[b, i]` is
-the target's distribution at the same position, and `p[b, K]` its distribution
-after the last draft. Rows share nothing: no result of row $b$ depends on another
-row.
+A batch contains $B$ independent sequences, each with $K$ drafted tokens over a
+vocabulary of size $V$. For row $b \in \{0, \dots, B - 1\}$ and draft position
+$i \in \{0, \dots, K - 1\}$, write $x_{b,i} = \texttt{draft\_tokens}[b, i]$ for the
+token sampled by the draft model from distribution $q_{b,i} = \texttt{q}[b, i]$.
+The target model's distribution at that same position is $p_{b,i} = \texttt{p}[b, i]$,
+and its distribution after all $K$ draft tokens is $p_{b,K} = \texttt{p}[b, K]$.
+Every distribution in `p` and `q` sums to 1 (entries may be 0), and
+$q_{b,i}[x_{b,i}] > 0$. Rows are completely independent, so nothing computed for
+row $b$ may depend on any other row.
 
-**1. Accept a prefix, per row.** Draft $i$ of row $b$ passes its test when
+Each row runs the same two-step acceptance and resampling rule as
+`speculative-sampling-block`.
+
+**1. Accept a leading prefix per row.** Using the uniform draw `u_accept[b, i]` in
+$[0, 1)$, draft $i$ of row $b$ passes its rejection test when
 
 $$
-u_\text{accept}[b, i] \cdot q_{b,i}[x_{b,i}] < p_{b,i}[x_{b,i}],
+u_\text{accept}[b, i] \cdot q_{b,i}[x_{b,i}] < p_{b,i}[x_{b,i}].
 $$
 
-and `n_accepted[b]` is the number of drafts before the first one that does not
-pass ($K$ if all pass):
+The accepted count `n_accepted[b]` (written $n_b$) is the index of the first
+failing draft, or $K$ if all $K$ drafts pass:
 
 $$
 n_b = \min\big(\{\, i : 0 \le i < K,\; u_\text{accept}[b,i] \cdot q_{b,i}[x_{b,i}] \ge p_{b,i}[x_{b,i}] \,\} \cup \{K\}\big).
 $$
 
-**2. One more token, per row.** `next_tokens[b]` is drawn by inverse CDF with
-`u_resample[b]` from weights $w_b$:
+**2. Sample one next token per row.** After accepting $n_b$ drafts, row $b$ draws
+one additional token `next_tokens[b]` by inverse-CDF sampling from unnormalized
+weights $w_b$ of length $V$:
 
-- **rejection at $n_b < K$:** the residual of the rejected position,
-  $w_b = \max(0,\; p_{b,n_b} - q_{b,n_b})$, which the sampling normalizes by its
-  own total;
-- **all $K$ accepted:** the bonus token, $w_b = p_{b,K}$.
+- **Rejection ($n_b < K$):** use the clamped residual at the rejected position,
+  $w_b = \max(0,\; p_{b,n_b} - q_{b,n_b})$.
+- **All $K$ accepted ($n_b = K$):** draw a bonus token from the final target
+  distribution, $w_b = p_{b,K}$.
 
-With cumulative sums $c_{b,j} = \sum_{v \le j} w_{b,v}$ and the row's total
-$W_b = c_{b,V-1}$,
+Form the cumulative sums $c_{b,j} = \sum_{v=0}^{j} w_{b,v}$ for $0 \le j < V$, and
+let $W_b = c_{b,V-1}$ be row $b$'s total weight. Using `u_resample[b]` in $[0, 1)$
+(the only uniform used for sampling in row $b$), select the first token whose
+cumulative sum strictly exceeds the scaled threshold:
 
 $$
 \texttt{next\_tokens}[b] = \min \{\, j : c_{b,j} > u_\text{resample}[b] \cdot W_b \,\}.
@@ -60,43 +65,34 @@ $$
 
 ### `advance_batch`
 
-`tokens` is a padded matrix: row $b$ holds a sequence of `lengths[b]` tokens in its
-first `lengths[b]` columns. **What is stored in the remaining columns is
-arbitrary** (padding, or leftovers of an earlier round) and must not reach the
-output. The function appends to every row its accepted drafts and its next token:
+`tokens` is a padded matrix of shape `(B, T)` holding the current sequences. Row
+$b$ stores its valid sequence of length $\ell_b = \texttt{lengths}[b]$
+($1 \le \ell_b \le T$) in columns $0$ through $\ell_b - 1$. Values in the remaining
+columns are arbitrary padding or leftovers from earlier rounds and must never reach
+the output.
+
+For each row $b$, append its $n_b = \texttt{n\_accepted}[b]$ accepted drafts
+($0 \le n_b \le K$) followed by `next_tokens[b]`:
 
 $$
 \text{row}_b' = \texttt{tokens}[b, :\ell_b] \;\Vert\; \texttt{draft\_tokens}[b, :n_b] \;\Vert\; [\texttt{next\_tokens}[b]],
 \qquad \ell_b' = \ell_b + n_b + 1 .
 $$
 
-It returns
+Return three integer tensors:
 
-- `new_tokens`: an integer matrix of shape $(B, \max_b \ell_b')$, exactly as wide
-  as the longest new row. Row $b$ holds $\text{row}_b'$ in its first $\ell_b'$
-  columns and `pad_id` in **every** column after them.
+- `new_tokens`: an integer matrix of shape $(B, \max_b \ell_b')$, sized to the
+  longest updated row. Row $b$ holds $\text{row}_b'$ in its first $\ell_b'$ columns
+  and the Python integer `pad_id` in every column after them. Note that `pad_id`
+  may also occur as a real token inside a sequence, so always rely on `lengths`
+  rather than `pad_id` to find a row's end.
 - `new_lengths`: $\ell_b'$ for every row.
-- `cache_lengths`: $\ell_b + n_b$ for every row, the number of leading tokens of
-  row $b$ whose KV-cache entries are still valid. The target has processed row
-  $b$'s old tokens and all $K$ drafts; the entries of the accepted drafts stay,
-  those of the rejected ones must be dropped, and the next token has not been fed
-  to any model yet. Each row's cache is rolled back to its own length.
-
-Arguments:
-
-- `p`: float32, `(B, K + 1, V)`; every row of every distribution sums to 1; entries
-  may be exactly 0.
-- `q`: float32, `(B, K, V)`, with $q_{b,i}[x_{b,i}] > 0$.
-- `draft_tokens`: integer, `(B, K)`.
-- `u_accept`: float32, `(B, K)`, values in $[0, 1)$.
-- `u_resample`: float32, `(B,)`, values in $[0, 1)$; `u_resample[b]` is the only
-  uniform used for sampling in row $b$.
-- `tokens`: integer, `(B, T)`; `lengths`: integer, `(B,)`, with
-  $1 \le \ell_b \le T$.
-- `n_accepted`, `next_tokens`: integer, `(B,)`, with $0 \le n_b \le K$.
-- `pad_id`: a Python int. It may also occur as a real token inside a row.
-
-All five results are integer tensors.
+- `cache_lengths`: $\ell_b + n_b$ for every row, giving the number of leading
+  tokens whose KV-cache entries remain valid. During verification, the target model
+  processed row $b$'s $\ell_b$ existing tokens plus all $K$ drafts. The entries for
+  the $n_b$ accepted drafts stay, the entries for rejected drafts must be dropped,
+  and `next_tokens[b]` has not been passed through any model yet. Each row's cache
+  is rolled back to its own `cache_lengths[b]`.
 
 ## Shapes
 
@@ -130,15 +126,16 @@ verify_batch(p, q, [[1, 1], [0, 2]], [[0.9, 0.7], [0.8, 0.6]], [0.5, 0.45])
 # n_accepted = [1, 2], next_tokens = [2, 2]
 ```
 
-Row 0. Draft 0 is token 1 with $p/q = 2$: accepted. Draft 1 is token 1 with
-$p/q = 0.25/0.6 \approx 0.417$, and $0.7 \ge 0.417$: rejected, $n_0 = 1$. The
-residual of position 1 is $[0.15, 0, 0.05, 0.15]$ with total 0.35 and cumulative
-sums $[0.15, 0.15, 0.20, 0.35]$; the threshold $0.5 \times 0.35 = 0.175$ selects
-token 2.
+**Row 0.** Draft 0 is token 1 with $p/q = 0.40 / 0.20 = 2.0$, so it passes. Draft 1
+is token 1 with $p/q = 0.25 / 0.60 \approx 0.417$, and $0.7 \ge 0.417$, so it is
+rejected and $n_0 = 1$. The residual at position 1 is $[0.15, 0, 0.05, 0.15]$,
+which has total weight $0.35$ and cumulative sums $[0.15, 0.15, 0.20, 0.35]$. The
+scaled threshold is $0.5 \times 0.35 = 0.175$, which selects token 2.
 
-Row 1. Token 0 has $p/q = 0.7/0.6 > 1$ and token 2 has $0.3/0.25 > 1$: both
-accepted, $n_1 = 2 = K$. The bonus token is sampled from `p[1, 2]` with cumulative
-sums $[0.1, 0.3, 0.6, 1.0]$: the first one above 0.45 belongs to token 2.
+**Row 1.** Token 0 has $p/q = 0.70 / 0.60 > 1$ and token 2 has
+$p/q = 0.30 / 0.25 > 1$, so both pass and $n_1 = 2 = K$. The bonus token is sampled
+from `p[1, 2]`, whose cumulative sums are $[0.1, 0.3, 0.6, 1.0]$. The first entry
+strictly above $0.45$ is at index 2.
 
 ```python
 # row 0 holds 3 tokens (the 77 is a leftover), row 1 holds 4
@@ -150,42 +147,44 @@ advance_batch(tokens, [3, 4], [[1, 1], [0, 2]], [1, 2], [2, 2], pad_id=9)
 # cache_lengths = [4, 6]
 ```
 
-Row 0 gains its one accepted draft and its resampled token and is padded to the
-width of row 1, which gains two drafts and its bonus token. The leftover 77 is
-gone. The target's cache covered $3 + 2$ and $4 + 2$ tokens after verification;
-row 0 is rolled back to 4 (its rejected draft is dropped), row 1 keeps all 6.
+Row 0 appends its 1 accepted draft and its resampled token, then pads to length 7
+to match row 1, which appends 2 accepted drafts and its bonus token. The leftover
+token `77` is discarded. After verification, the target's KV cache held $3 + 2 = 5$
+and $4 + 2 = 6$ tokens. Row 0 rolls back to 4 (dropping its rejected draft), while
+row 1 keeps all 6.
 
 ## Constraints
 
 - $1 \le B \le 8$, $1 \le K \le 8$, $2 \le V \le 64$, $1 \le T \le 64$.
-- **Exact cases.** Single calls of both functions are compared exactly. For
-  `verify_batch` their inputs stay away from every decision boundary, so float32
-  rounding cannot change the result: $|u_\text{accept}[b,i] - p/q| \ge 10^{-3}$
-  for every examined draft with $0 < p/q < 1$, and
+- **Exact cases.** Single calls to both functions are compared exactly. For
+  `verify_batch`, test inputs stay away from decision boundaries so float32
+  rounding cannot flip a result: $|u_\text{accept}[b,i] - p/q| \ge 10^{-3}$ for
+  every examined draft with $0 < p/q < 1$, and
   $|u_\text{resample}[b] - c_{b,j} / W_b| \ge 10^{-3}$ for every $j$ with
   $c_{b,j} > 0$.
-- **Property.** A row's result must be the same in the batch and alone ($B = 1$).
+- **Batch-independence property.** Each row's result in a batch must match its
+  result when run alone ($B = 1$).
 - **Statistical cases.** The test samples every draft token from its row of `q`,
-  draws independent uniforms, and makes up to 400 calls with $B = 3$. Per row it
-  compares the distribution of `n_accepted`, of the first emitted token (with
-  `p[b, 0]`), and of the bonus token (with `p[b, K]`), using finite-sample
-  Chernoff bounds. A correct solution fails with probability below $10^{-9}$, and
-  since the seeds are fixed, it either always passes or always fails.
-- Both functions are expected to be a fixed number of tensor operations, with no
-  Python loop over rows or positions.
+  draws independent uniforms, and makes up to 400 calls with $B = 3$. For each row,
+  it checks the distributions of `n_accepted`, the first emitted token (against
+  `p[b, 0]`), and the bonus token (against `p[b, K]`) using finite-sample Chernoff
+  bounds. A correct solution fails with probability below $10^{-9}$, and because
+  the seeds are fixed, it either always passes or always fails.
+- Both functions must use a fixed number of tensor operations, with no Python loop
+  over rows or positions.
 - Do not draw random numbers yourself.
 
 ## Why this matters
 
-A server does not decode one sequence at a time, and speculative decoding does not
-combine with batching for free. After one verification pass, one row has accepted
-all five drafts, its neighbor none. The cheap way out is to cut every row back to
-the shortest accepted prefix: the tensors stay rectangular, the output stays
-exact, and the speedup of the whole batch is set by its unluckiest row, shrinking
-toward nothing as the batch grows. Keeping each row's own acceptance means ragged
-lengths, per-row cache rollback, and padding that must never be mistaken for
-content, which is why batched speculative decoding took engines much longer to
-ship than the single-sequence version. Every piece here fails quietly: a residual
-normalized by the wrong row's total or a uniform shared across rows changes the
-output distribution; a stale token left behind a row's end is read as context
-three rounds later.
+Production inference servers decode batches of requests, and speculative decoding
+does not combine with batching for free. After one verification pass, one row might
+accept all five drafts while its neighbor accepts none. A simple workaround is to
+truncate every row to the shortest accepted prefix in the batch. That keeps tensors
+rectangular and preserves exactness, but it ties the entire batch's speedup to its
+unluckiest row, eroding the gain as batch size grows.
+
+Keeping each row's own accepted count requires ragged lengths, per-row KV-cache
+rollback, and strict padding discipline. Subtle bugs here fail silently. Normalizing
+a residual by the wrong row's total or sharing a uniform across rows distorts the
+output distribution without raising an error, and leaving a stale token past a
+row's end can leak into the context several rounds later.

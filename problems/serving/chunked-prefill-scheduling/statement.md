@@ -1,7 +1,4 @@
-Implement the step planner of a continuous-batching engine that works under a token
-budget: every step may process at most `max_batch_tokens` tokens, running sequences
-are decoded first, and prompts get what is left, in chunks. A long prompt is spread
-over several steps and never makes the sequences that are already generating wait.
+Implement the step planner for a continuous-batching engine operating under a per-step token budget. Each step processes at most `max_batch_tokens` tokens, decoding running sequences first and splitting prompts into chunks with the remaining budget so long prompts never stall active generations.
 
 ![This problem is the Engine loop, here the plan of one step under a token budget.](assets/map.svg)
 
@@ -13,43 +10,32 @@ def plan(running, prefilling, waiting, max_batch_tokens, long_prefill_threshold)
     return prefill, decode
 ```
 
-`plan` is a pure function. It is called once before every engine step with the state
-of the server and returns the two arguments of `engine.step`.
+`plan` is a pure function called once before each engine step with the current server state. It returns the tuple `(prefill, decode)` passed directly to `engine.step`.
 
-| argument | meaning |
+| Argument | Meaning |
 |---|---|
-| `running` | ids of the sequences whose prompt is completely prefilled, in admission order. Each can decode one token in this step. |
-| `prefilling` | `(id, remaining_tokens)` for every admitted sequence whose prompt is only partly prefilled, in admission order. `remaining_tokens >= 1`. |
-| `waiting` | `(id, prompt_tokens)` for every request that has arrived and is not admitted, in arrival order. |
-| `max_batch_tokens` | the budget of one step, `>= 1`: prompt tokens plus decoded sequences. |
-| `long_prefill_threshold` | the most prompt tokens one sequence may receive in one step, `>= 1`. |
+| `running` | Ids of sequences whose prompts are fully prefilled, in admission order. Each sequence can decode 1 token in this step. |
+| `prefilling` | List of `(id, remaining_tokens)` pairs for admitted sequences whose prompts are only partly prefilled, in admission order, with `remaining_tokens >= 1`. |
+| `waiting` | List of `(id, prompt_tokens)` pairs for arrived requests that are not yet admitted, in arrival order. |
+| `max_batch_tokens` | Maximum total tokens allowed in one step (`>= 1`), counting both prompt tokens and decoded sequences. |
+| `long_prefill_threshold` | Maximum prompt tokens a single sequence may receive in one step (`>= 1`). |
 
-It returns the tuple `(prefill, decode)`: `prefill` is a list of `(id, n_tokens)`
-chunks and `decode` is a list of ids. The rule:
+The return value is `(prefill, decode)`, where `prefill` is a list of `(id, n_tokens)` chunks and `decode` is a list of sequence ids. Build these two lists in order:
 
-1. **Decodes first.** `decode` is `running`, in order. Each decode costs one token of
-   the budget. (If there are more running sequences than budget, `decode` is the first
-   `max_batch_tokens` of them.)
-2. **Then prompts, first come, first served.** Walk through `prefilling` and then
-   `waiting`, in order. Each candidate gets a chunk of
+1. **Decodes first.** Copy `running` in order into `decode`. Each decoded sequence uses 1 token of the step budget. If `running` contains more sequences than `max_batch_tokens`, take only the first `max_batch_tokens` ids.
+2. **Prompts next, first come, first served.** Iterate through `prefilling` and then `waiting` in order. Assign each candidate a chunk of size
 
    $$
    n = \min(\text{remaining tokens},\ \text{long\_prefill\_threshold},\ \text{budget left}),
    $$
 
-   and the budget shrinks by $n$. Stop when the budget is used up. Candidates that are
-   not reached get nothing in this step and do not appear in `prefill`.
+   and subtract $n$ from the remaining budget. Stop as soon as the remaining budget reaches 0. Candidates that are not reached receive nothing in this step and do not appear in `prefill`.
 
-So a prompt that does not fit is **split**: it takes what the budget and the threshold
-allow now and continues in later steps. Nobody is skipped: while budget is left, the
-next candidate in line gets at least one token. A sequence appears at most once in the
-two lists. In particular, a sequence that receives its last chunk in this step is
-*not* decoded in this step; that chunk produces its first output token, and the
-sequence is in `running` at the next call.
+A prompt that does not fit within the remaining budget or `long_prefill_threshold` is **split** across steps. It takes as many tokens as allowed now and continues in later steps. No candidate is skipped while budget remains, because the next candidate in line always receives at least 1 token.
 
-**The loop around `plan`.** The tests run this loop, with a
-[`SimEngine`](../../../python/src/learnai/kit/simengine.py) whose
-`max_batch_tokens` is the budget. You do not write it.
+Each sequence appears at most once across `prefill` and `decode`. In particular, a sequence that receives its final prompt chunk in this step is *not* included in `decode` during the same step. That final chunk produces the sequence's first output token, and the sequence moves into `running` on the next call.
+
+**Engine loop.** The test suite drives `plan` using the loop below and a [`SimEngine`](../../../python/src/learnai/kit/simengine.py) configured with `max_batch_tokens`. You do not implement this loop.
 
 ```python
 waiting = deque()                                   # requests, in arrival order
@@ -71,22 +57,15 @@ while True:
     await engine.step(prefill=prefill, decode=decode)
 ```
 
-Time is virtual and counted in **milliseconds**. A step over $P$ prompt tokens and $D$
-decoded sequences takes $8 + 0.25\,P + D$ ms. A sequence produces its first output
-token at the end of the step that completes its prompt and one token per step in which
-it is decoded. There is no limit on the number of live sequences other than the
-budget. The engine refuses, and the case fails, if a step exceeds the budget, is empty,
-names a sequence twice, decodes a sequence whose prompt is incomplete, or gives a
-sequence more prompt tokens than it has left.
+Time is virtual and measured in **milliseconds**. A step that processes $P$ prompt tokens and $D$ decoded sequences takes $8 + 0.25\,P + D$ ms. A sequence emits its first output token at the end of the step that finishes its prompt, and emits one output token per subsequent step in which it is decoded.
 
-A request that arrives during a step, or at the exact instant a step ends, is in
-`waiting` at the next call.
+There is no limit on the number of live sequences beyond the token budget. The engine rejects a step and fails the test if the step exceeds the budget, is empty, lists any sequence twice, decodes a sequence whose prompt is incomplete, or gives a sequence more prompt tokens than it has remaining.
+
+A request that arrives during a step, or at the exact instant a step ends, appears in `waiting` on the next call.
 
 ## Example
 
-`max_batch_tokens = 32`, `long_prefill_threshold = 24`. Requests as (arrival, prompt
-tokens, output tokens): request 0 `(0, 16, 4)`, request 1 `(0, 40, 2)`, request 2
-`(3, 8, 2)`.
+Let `max_batch_tokens = 32` and `long_prefill_threshold = 24`. Three requests arrive, written as `(arrival, prompt_tokens, output_tokens)`: request 0 is `(0, 16, 4)`, request 1 is `(0, 40, 2)`, and request 2 is `(3, 8, 2)`.
 
 | starts | `running` | `prefilling` | `waiting` | `prefill` | `decode` | takes |
 |---|---|---|---|---|---|---|
@@ -97,39 +76,21 @@ tokens, output tokens): request 0 `(0, 16, 4)`, request 1 `(0, 40, 2)`, request 
 
 ![The four steps of the example, each against the budget of 32 tokens. Decodes come first, and request 1's 40-token prompt enters as chunks of 16 and 24.](assets/step-budget.svg)
 
-At time 0 the budget is 32: request 0 takes its whole prompt (16), and request 1 is
-capped by the 16 tokens that are left. At 16 the decode of request 0 costs one token,
-leaving 31: request 1 is capped by the threshold (24), and request 2, which arrived at
-3, gets the last 7. Request 1 completed its prompt in the second step and is decoded
-from the third one on. The times to first token are 16, 32.75, and 40 ms.
+At time 0, the budget is 32. Request 0 takes its full 16-token prompt, leaving 16 tokens for request 1.
+
+At time 16, decoding request 0 costs 1 token, leaving 31. Request 1 is capped at `long_prefill_threshold = 24`, which finishes its prompt. Request 2, which arrived at time 3, takes the remaining 7 tokens.
+
+At time 32.75, request 1 has moved to `running` and decodes alongside request 0, while request 2 takes its last prompt token. The times to first token are 16, 32.75, and 40 ms.
 
 ## Constraints
 
-- `1 <= max_batch_tokens <= 512`, `1 <= long_prefill_threshold <= 512`; prompts have
-  1 to 4,000 tokens. Ids are opaque. Do not modify the argument lists.
-- `plan` is deterministic, and the tests compare its output exactly: on direct calls
-  with literal results, on 300 random states with the reference, and through the loop
-  above on seeded Poisson workloads of 60 requests (literal steps on the small
-  scenarios, the reference's steps on the large ones).
-- **Stall bound.** Six sequences are generating when a 4,000-token prompt arrives,
-  followed by three 24-token prompts. With `max_batch_tokens = 512` and
-  `long_prefill_threshold = 512`, the longest gap between two consecutive tokens of
-  any of the six must be at most **150 ms** (the largest possible step is
-  8 + 0.25 · 506 + 6 = 140.5 ms; prefilling the prompt in one step would take over a
-  second).
-- **Head-of-line bound.** The same scenario with `long_prefill_threshold = 128`: each
-  of the three short prompts must have its first token within **120 ms** of arriving,
-  and the gap bound above still holds.
+- `1 <= max_batch_tokens <= 512` and `1 <= long_prefill_threshold <= 512`. Prompts have between 1 and 4,000 tokens. Sequence ids are opaque. Do not mutate the input lists.
+- `plan` is deterministic, and the tests compare its output exactly. Coverage includes direct calls with literal expected outputs, 300 random states compared against the reference, and seeded Poisson workloads of 60 requests run through the engine loop above (checked against literal steps on small scenarios and against the reference on large ones).
+- **Stall bound.** Six sequences are generating when a 4,000-token prompt arrives, followed by three 24-token prompts. With `max_batch_tokens = 512` and `long_prefill_threshold = 512`, the longest gap between two consecutive tokens of any of the six running sequences must be at most **150 ms**. The largest possible step takes $8 + 0.25 \cdot 506 + 6 = 140.5$ ms, whereas prefilling the prompt in one step would take over a second.
+- **Head-of-line bound.** In the same scenario with `long_prefill_threshold = 128`, each of the three short prompts must emit its first token within **120 ms** of arrival, and the 150 ms inter-token gap bound must still hold.
 
 ## Why this matters
 
-Prefill and decode have opposite shapes. A prefill pushes thousands of tokens through
-the model in one pass and takes hundreds of milliseconds; a decode step handles one
-token per sequence and takes a few. Put a long prompt into a batch of decoding
-sequences without a budget and every one of them freezes for the duration: users see
-streaming text stop for a second whenever somebody else pastes a document. Running
-prefills separately instead protects the stream and wastes throughput. Chunked prefill
-with a token budget, the stall-free batching of Sarathi-Serve and the default mode of
-vLLM, gets both: the budget bounds the length of every step, hence the time between
-tokens, and the chunks fill the capacity the decodes leave free. The planner is a few
-lines, and its mistakes are exactly the latency pathologies it exists to prevent.
+Prefill and decode have opposite compute profiles. A long prefill pushes thousands of tokens through the model in one pass and takes hundreds of milliseconds, while a decode step processes one token per sequence and takes only a few milliseconds. Mixing an unchunked prompt into a decode batch freezes every active stream for the entire prefill, so users watch text stop for a second whenever someone else submits a long document.
+
+Running prefills separately protects streaming latency but leaves GPU compute underutilized. Chunked prefill with a token budget, popularized as stall-free batching in Sarathi-Serve and now the default in vLLM, achieves both goals. The token budget caps step duration and inter-token latency, while prompt chunks fill the compute capacity left free by decodes.

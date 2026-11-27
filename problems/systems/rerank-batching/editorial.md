@@ -1,32 +1,16 @@
 ## The idea
 
-A transformer processes a batch as a rectangle, so the cost of a batch is its number
-of rows times its longest row. The total over all batches is
+A transformer processes a batch as a dense rectangle, so the cost of a batch $b$ is its number of pairs $|b|$ multiplied by the length of its longest pair. Summing over all batches gives the total padded tokens:
 
 $$
-\sum_{\text{batches } b} |b| \cdot \max_{i \in b} L_i ,
+\sum_{\text{batches } b} |b| \cdot \max_{i \in b} L_i
 $$
 
-and the only freedom is which pairs share a batch. Every pair pays for the longest
-pair of its batch, so a pair wants neighbors of its own length. Sorting by length
-and cutting the sorted list into consecutive runs achieves that: within a run the
-lengths differ as little as the data allows. (An exchange argument shows that some
-optimal partition is always made of consecutive runs of the sorted order: if a
-short pair sits in a batch with a longer maximum than a longer pair's batch,
-swapping the two never increases either maximum.)
+where $L_i$ is the truncated length of pair $i$. Every pair pays for the longest pair in its batch, so pairs should be grouped with neighbors of similar length. Sorting by length and slicing into consecutive runs minimizes the length gap within each batch. An exchange argument confirms that an optimal partition always consists of consecutive runs in sorted order. If a short pair sits in a batch with a larger maximum than a longer pair's batch, swapping the two never increases either batch maximum.
 
-Where to cut is the second decision. A fixed number of pairs per batch is the usual
-answer, and it wastes memory in the opposite way: a batch size that is safe for
-the longest pairs is far too small for the short ones. A **token budget** bounds
-what actually costs memory and time, the area of the rectangle. With ascending
-order the pair being added is the longest of its batch, so the test is one
-multiplication: `(m + 1) * L_p <= max_tokens`.
+Deciding where to cut each batch is the second piece. A fixed batch size wastes memory in the opposite direction, because a batch size small enough for the longest pairs underutilizes hardware on short pairs. A **token budget** bounds the actual rectangle area that drives memory and compute. Because the pairs are sorted in ascending order, a new pair $p$ of length $L_p$ is the longest in its batch so far. If the current batch holds $m$ pairs, checking the budget takes one multiplication: `(m + 1) * L_p <= max_tokens`.
 
-The third part is the one that goes wrong in practice. The scorer returns scores
-in the order of the batch, and the batch is in sorted order. Carry the original
-index of every pair through the whole computation and write each score to
-`scores[original_index]`. Sorting indices, and never the pairs, makes that the
-natural thing to do.
+The final piece is restoring the original order. The scorer returns scores in batch order, which follows the length-sorted order. Carrying each pair's original index through sorting and batching lets you write every score directly to `scores[original_index]`. Sorting the indices rather than the pairs themselves makes this straightforward.
 
 ## Reference solution (Python)
 
@@ -57,53 +41,25 @@ def rerank(query, docs, scorer, max_batch, top_n, max_tokens=None):
     return scores, ranking
 ```
 
-With no documents the loop bodies never run and the scorer is never called, which is
-what the specification asks for: an empty batch is an error for the scorer.
+When `docs` is empty, `batches` is empty and the scoring loop never runs, so `scorer` is never called with an empty batch.
 
 ## Common mistakes
 
-- **Batching in arrival order.** The result is correct and the cost is not: every
-  batch that mixes a short and a long passage pads the short one to the long one.
-  In the worked example that is 40 padded tokens instead of 28.
-- **Returning the scores in sorted order.** Collecting `scores.extend(scorer(batch))`
-  gives a list of the right length with the right values in it, in length order.
-  If every document has the same length the bug is invisible, which is why a test
-  with uniform lengths does not find it.
-- **Truncating the pair instead of the document.** Concatenating query and document
-  and keeping the last `max_length` tokens cuts the query. The scorer then answers
-  a different question. The query is the part that must survive; real rerankers
-  truncate with the "only second" strategy for this reason.
-- **Measuring before truncating.** Sorting by the untruncated length puts every
-  over-long document at the end even though, after truncation, they are all exactly
-  `max_length` long. Harmless for the scores, but the budget test then uses the
-  wrong width.
-- **Ignoring the token budget**, or testing it with the *previous* longest pair
-  (`(m + 1) * current_width`) instead of the pair being added, which lets a long
-  pair into a batch of short ones and blows the rectangle up after the fact.
-- **One call per pair.** No padding at all and the worst possible throughput: the
-  point of batching is that a call has a fixed overhead and a GPU is idle when it
-  is fed one row at a time.
-- **Reversing the ties.** `sorted(..., key=score, reverse=True)` keeps equal
-  elements in their original order too, but `sorted(...)[::-1]` or sorting
-  `(score, index)` tuples in reverse ranks equal scores by the higher index.
-  Duplicate passages are common in a candidate list, so ties are not a corner case.
-- **Calling the scorer with an empty batch** when there are no candidates.
+- **Batching in arrival order.** The scores and ranking are right, but the padded-token cost is too high whenever a short passage shares a batch with a long one. In the worked example, arrival order uses 40 padded tokens instead of 28.
+- **Returning scores in sorted order.** Appending results with `scores.extend(scorer(batch))` returns a list of the right length with the right floats, but in length order rather than document order. Tests where all documents have the same length will not catch this bug.
+- **Truncating the pair instead of the document.** Concatenating query and document and keeping the last `max_length` tokens cuts off the query, causing the scorer to evaluate a different question. Real rerankers truncate only the second sequence for this reason.
+- **Measuring length before truncating.** Sorting by untruncated length puts over-long documents at the end even though they all truncate to `max_length`, and it causes the token-budget check to use the wrong width.
+- **Ignoring the token budget or checking the wrong width.** Testing `(m + 1) * current_width` against `max_tokens` instead of `(m + 1) * L_p` lets a long pair join a batch of short pairs and overflow the rectangle.
+- **Scoring one pair per call.** This eliminates padding completely, but it maximizes call overhead and leaves GPUs underutilized, failing the call-count limit.
+- **Breaking score ties in reverse.** Python's `sorted(..., key=..., reverse=True)` is stable and preserves index order for ties, but reversing a sorted list with `[::-1]` or sorting `(score, index)` tuples in reverse puts higher indices first. Duplicate passages are common in retrieval candidates, so ties happen often.
+- **Calling `scorer` on an empty batch.** When `docs` is empty, `scorer([])` raises `ValueError`.
 
 ## Complexity
 
-Sorting is $O(n \log n)$; batching, scattering the scores, and ranking are linear
-and $O(n \log n)$. All of it is negligible next to the model, whose cost is the
-padded-token count the problem measures.
+Let $n = \text{len}(\texttt{docs})$. Sorting by length and ranking by score each take $O(n \log n)$ time. Truncating, batching, and scattering scores back to their original indices are $O(n)$. All of this overhead is negligible compared to the cross-encoder forward passes, whose cost is measured by `padded_tokens`.
 
 ## In the wild
 
-- Sentence Transformers sorts inputs by length before batching in
-  `SentenceTransformer.encode` (longest first, so that the largest batch comes
-  first and an out-of-memory error shows up immediately) and restores the original
-  order with the inverse permutation afterwards. Sorting ascending, as here, makes
-  the budget test simpler; the padding saved is the same.
-- Text Embeddings Inference, Hugging Face's server for embedding and reranking
-  models, forms batches under a token budget (`--max-batch-tokens`) instead of a
-  fixed batch size, for the reason given above.
-- Tokenizers implement "truncate the document, not the query" as
-  `truncation="only_second"` for a pair of texts.
+- Sentence Transformers sorts inputs by length inside `SentenceTransformer.encode` (longest first, so any out-of-memory failure surfaces immediately on the first batch) and restores the original order with an inverse permutation afterward. Sorting ascending gives the same padding savings while keeping the token-budget check to one multiplication.
+- Hugging Face's Text Embeddings Inference (TEI) server packs embedding and reranking requests under a token budget (`--max-batch-tokens`) rather than a fixed batch size.
+- Hugging Face tokenizers implement "truncate the document, not the query" via `truncation="only_second"` on text pairs.

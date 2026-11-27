@@ -1,39 +1,20 @@
 ## The idea
 
-Backpressure means that when the consumer is slower than the producer, the producer
-finds out and slows down, instead of the difference piling up in between. A token
-stream has three places where the difference can go:
+Backpressure ensures that when a consumer falls behind a producer, the producer slows down instead of letting unread data pile up. In a token-streaming server, the excess tokens can be absorbed in one of three places:
 
-| where | what it costs | who pays |
+| where excess goes | what it costs | who pays |
 |---|---|---|
-| an unbounded buffer | memory, and GPU time for tokens nobody has read | the server |
+| an unbounded buffer | memory and GPU time for unread tokens | the server |
 | the engine loop (`await send`) | every request waits for the slowest client | all other clients |
-| the slow request itself | it generates no faster than it is read | the slow client |
+| the slow request itself | it generates no faster than the client reads | the slow client |
 
-Only the third is fair, and a bounded buffer is how to get it. The buffer absorbs
-the jitter of a healthy client (a chunk of a few tokens instead of one), and when it
-is full the *sequence* stops, not the loop: it is left out of the next step. The
-engine loop never touches a client; it only reads the length of a list.
+Only the third option isolates slow clients from the server and from other users, and a bounded per-stream buffer implements it. The buffer absorbs normal network jitter by coalescing a few tokens into one chunk. Once the buffer is full, the *sequence* pauses rather than the engine loop. The loop never awaits a client and only checks the length of each buffer.
 
-Three consequences have to be handled.
+This design introduces three requirements:
 
-**Pausing is a planning decision.** Whether a sequence takes part in a step is
-decided when the step is planned, from `len(buffer) < max_buffered`. A sequence gets
-at most one token per step, so a buffer that was below the limit at planning time
-is at most at the limit afterwards. No check is needed when appending, and nothing
-is ever dropped.
-
-**The loop can run out of work while sequences are live.** If every running
-sequence is paused and nobody can be admitted, there is no step to run. An empty
-step is a protocol violation and polling wastes time and resumes late, so the loop
-waits on an event. Everything that can create work sets it: a new request, a
-`take()` that empties a buffer, a `close()` or a stall that frees a slot.
-
-**A paused sequence is not free.** It holds a slot and its KV cache. A client that
-never comes back would hold them forever, so a full buffer starts a clock, and when
-it reaches `stall_ms` the request is treated exactly like a disconnect: released
-from the engine at that instant. Disconnects themselves must reach the engine too;
-otherwise the buffer bound only limits the damage of a client that is gone.
+- **Pausing is a planning decision.** Before each step, include a running sequence in `decode` only if `len(buffer) < max_buffered`. Because a sequence produces at most one token per step, a buffer below the limit at planning time can at most reach `max_buffered` after the step. No overflow check is needed when appending, and tokens are never dropped.
+- **The loop can run out of work while sequences are live.** If every running sequence is paused and no new request can be admitted, there is no step to run. Running an empty step raises a `ProtocolViolation`, and polling wastes time and resumes late. Instead, the loop waits on an `asyncio.Event` that is set by every operation that can create work: `submit`, `take`, `close`, and a stall timeout.
+- **A paused sequence still holds resources.** It occupies an engine slot and its KV cache. To prevent an abandoned client from holding that slot forever, filling a buffer starts a timer for `stall_ms`. If the timer expires before a `take()`, the server releases the sequence immediately, using the same cleanup path as a client disconnect (`close()`).
 
 ## Reference solution (Python)
 
@@ -109,65 +90,26 @@ class Server:
                     )
 ```
 
-Clearing the event and then waiting cannot lose a wake-up: between planning (which
-found nothing to do) and `clear()` there is no `await`, so no callback can run in
-between.
+Clearing `_wake` and immediately calling `await self._wake.wait()` cannot miss a wake-up because there is no `await` between planning and `clear()`, so no callback can run in between.
 
 ## Common mistakes
 
-- **`await queue.put(token)` in the engine loop.** A bounded `asyncio.Queue` looks
-  like backpressure in one line, and it is, on the wrong party: the loop that serves
-  everyone blocks on one client. In the test with six running requests, one stalled
-  client freezes the other five.
-- **An unbounded buffer.** The starter's behavior: nobody is ever paused. The output
-  is correct, and the server keeps generating for a client that reads nothing until
-  something else stops it; in the cost case the peak is 24 unread tokens against a
-  limit of 8, and without a stall limit it would be the whole answer.
-- **Dropping tokens when the buffer is full.** Bounded memory, and a client that
-  reads `[0, 1, 2]` and then `[7, 8, 9]`. Text is not telemetry: nothing may be
-  skipped.
-- **Pausing one token late** (`<=` for `<`). The check runs before a step that adds
-  a token, so "not above the limit" lets the buffer reach `max_buffered + 1`.
-- **Marking a stalled stream without releasing it.** The client is told, the
-  sequence stays paused in the engine, and its slot is gone for good; after
-  `max_running` stalled clients the server admits nothing.
-- **Not propagating a disconnect.** `close()` that only flips the state leaves the
-  sequence generating into the void until the buffer bound pauses it, and then
-  holding its slot.
-- **A stale stall timer.** If `take()` does not cancel the timer, the timer of an
-  earlier full buffer fires on a client that has been reading since.
-- **A `take()` that does not wake the loop,** or a loop that polls. When every
-  running sequence is paused, the only event that can restart the engine is the
-  client's read. Without the wake-up the server hangs until an unrelated request
-  arrives; with polling it restarts late.
+- **Calling `await queue.put(token)` in the engine loop.** A bounded `asyncio.Queue` applies backpressure to the shared engine loop instead of the individual sequence. In a batch of six running requests, one stalled client freezes the other five.
+- **Leaving buffers unbounded.** Never pausing a sequence produces the right token order but keeps generating for a client that is not reading. In the peak-buffer test, this reaches 24 unread tokens against a limit of 8, and without a stall timeout it would buffer the entire response.
+- **Dropping tokens when the buffer is full.** Dropping bounds memory, but the client receives a corrupted stream with missing tokens (such as `[0, 1, 2]` followed by `[7, 8, 9]`).
+- **Pausing one token late (`<=` instead of `<`).** The check runs before a step that appends a token, so `len(s._buffer) <= self.max_buffered` lets the buffer reach `max_buffered + 1`.
+- **Marking a stream `"stalled"` without calling `engine.release`.** The sequence stays paused in the engine and leaks its slot permanently. After `max_running` stalled clients, the server can no longer admit new requests.
+- **Not propagating `close()` to the engine.** Flipping `stream.state` without releasing the sequence lets it keep generating until the buffer fills and then hold its slot until it stalls.
+- **Leaving a stale stall timer active.** If `take()` does not cancel `_stall_timer`, a timer armed during an earlier full buffer can fire later on a client that is actively reading.
+- **Forgetting to wake the loop in `take()`, or polling with `sleep`.** When every running sequence is paused, a client read is the only event that can resume generation. Without `_wake.set()`, the loop hangs until another request arrives. Polling with `sleep` wakes up late.
 
 ## Complexity
 
-Planning is $O(R)$ per step for $R$ running sequences, as before. `take` is $O(1)$
-plus the size of the chunk it returns. Memory per stream is at most `max_buffered`
-tokens, and the engine generates at most `max_buffered` tokens beyond what a client
-has read.
+Planning takes $O(R)$ time per step for $R$ running sequences. `take()` takes $O(1)$ time plus the size of the returned chunk. Each stream buffers at most `max_buffered` tokens in memory, and the engine generates at most `max_buffered` tokens ahead of what the client has read.
 
 ## In the wild
 
-- **vLLM** (`vllm/v1/engine/output_processor.py`) puts a `RequestOutputCollector`
-  between its output loop and each request's generator. Its docstring states the
-  coalescing rule of this problem: "When streaming deltas, RequestOutputs are merged
-  if the producer gets ahead of the consumer." The collector is a single slot that
-  merges, `put` never blocks the loop, and the consumer waits on an `asyncio.Event`.
-  It does not pause generation: what bounds the merged output there is the request's
-  own token limit, and what stops a request whose client has gone is disconnect
-  detection, the `close()` of this problem.
-- **ASGI and asyncio transports** expose the same signal from the other side: `await
-  send(...)` (and `StreamWriter.drain()`) returns only when the transport's write
-  buffer has room. A handler that awaits it per request, in its own task, is
-  backpressured correctly; a shared loop that awaits it is the head-of-line bug.
-  `sse-token-stream` covers the per-request side, including the fact that a
-  disconnect has to be detected by watching `receive()`.
-- **Reactive Streams** (and gRPC and HTTP/2 flow control) make the bound explicit as
-  credit: the consumer grants the producer permission for $n$ more items.
-  `max_buffered` minus the buffer's length is that credit, and `take()` refills it.
-- Pausing has a price: a paused sequence keeps its KV cache. Servers under memory
-  pressure may prefer to preempt a paused sequence (free its blocks and recompute
-  later, `preemption-recompute`) or to shorten `stall_ms`; the buffer bound is what
-  gives them the signal to act on.
+- **vLLM** (`vllm/v1/engine/output_processor.py`) places a `RequestOutputCollector` between its output loop and each request's generator. Its docstring states the same coalescing rule used here: "When streaming deltas, RequestOutputs are merged if the producer gets ahead of the consumer." The collector holds a single merged slot, `put` never blocks the engine loop, and the consumer waits on an `asyncio.Event`. vLLM does not pause generation on a full buffer. Instead, per-request token limits bound the merged output, and disconnect detection stops abandoned requests just like `close()`.
+- **ASGI and asyncio transports** expose backpressure on the socket side. `await send(...)` and `StreamWriter.drain()` return only when the transport's write buffer has room. A per-request handler task that awaits them applies backpressure cleanly, whereas awaiting them in a shared engine loop causes head-of-line blocking. `sse-token-stream` covers the per-request side, including detecting disconnects by watching `receive()`.
+- **Reactive Streams, gRPC, and HTTP/2 flow control** express this bound as credit, where the consumer grants the producer permission to send $n$ more items. Here, `max_buffered - len(buffer)` is that credit, and `take()` refills it.
+- Pausing a sequence keeps its KV cache allocated. Under memory pressure, production servers may preempt paused sequences (freeing their blocks and recomputing later, as in `preemption-recompute`) or shorten `stall_ms`. The buffer bound provides the signal to make that decision.

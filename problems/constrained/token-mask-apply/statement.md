@@ -1,9 +1,4 @@
-Constrained generation works by removing, before every sampling step, the tokens that
-would break the format. Implement that removal for a batch: `mask_logits` deletes the
-disallowed tokens from the logits, and `masked_probs` returns the distribution over
-what is left. The catch is in the corners: the model may put nearly all of its
-probability on tokens it is not allowed to produce, and a row in which nothing is
-allowed must be reported, not turned into NaN.
+Constrained generation removes tokens that would break the output format before each sampling step. Implement `mask_logits` to mask out disallowed tokens from a batch of logits, and `masked_probs` to compute the next-token probability distribution over the remaining allowed tokens. Your implementation must stay numerically accurate even when disallowed tokens have much larger logits than allowed ones, and it must raise an error if any row has no allowed tokens.
 
 ![This problem is Mask, which removes the disallowed tokens from the logits.](assets/map.svg)
 
@@ -14,12 +9,9 @@ def mask_logits(logits, allowed): ...
 def masked_probs(logits, allowed): ...
 ```
 
-- `logits`: a float32 tensor of shape `(B, V)`, one row of next-token logits per
-  sequence in the batch.
-- `allowed`: a boolean tensor of shape `(B, V)`. `allowed[b, v]` is true when sequence
-  `b` may generate token `v` next. Every row has its own mask.
+Both functions operate on a batch of `B` sequences over a vocabulary of `V` tokens. `logits` holds one row of next-token logits per sequence. `allowed` is a per-row boolean mask where `allowed[b, v]` is `True` when sequence `b` may generate token `v` next.
 
-**`mask_logits(logits, allowed)`** returns a float32 tensor of shape `(B, V)`:
+**`mask_logits(logits, allowed)`** keeps every allowed logit unchanged bit for bit and replaces every disallowed entry with exact `-inf` (not a large negative number). Writing $\ell_{b,v}$ for `logits[b, v]` and $a_{b,v}$ for `allowed[b, v]`, each output entry is
 
 $$
 \operatorname{mask\_logits}(\ell, a)_{b,v} =
@@ -29,11 +21,7 @@ $$
 \end{cases}
 $$
 
-Allowed logits are returned unchanged, bit for bit. Disallowed entries are exactly
-`-inf`, not a large negative number.
-
-**`masked_probs(logits, allowed)`** returns a float32 tensor of shape `(B, V)`: for
-each row, the softmax over the allowed tokens only.
+**`masked_probs(logits, allowed)`** computes the softmax over the allowed tokens in each row, assigning exact probability `0` to every disallowed token so each row sums to 1.
 
 $$
 \operatorname{masked\_probs}(\ell, a)_{b,v} =
@@ -43,24 +31,16 @@ $$
 \end{cases}
 $$
 
-A disallowed token has probability exactly `0`, and every row sums to 1. The result
-must be correct whatever the disallowed logits are: the allowed tokens may all lie
-hundreds of units below a disallowed one.
+The output must remain accurate regardless of the disallowed logits, including when all allowed logits are hundreds of units below a disallowed logit.
 
-**A row with nothing allowed.** If any row of `allowed` is entirely false, both
-functions raise `ValueError` (with any message), even when the other rows are fine.
-Such a row means the constraint has reached a dead end, and there is no distribution
-to return.
+**Empty mask rows.** If any row of `allowed` is all `False`, both functions must raise `ValueError` (with any message), even when other rows have allowed tokens. An all-`False` row means the constraint has reached a dead end and has no valid distribution.
 
-Details:
+Additional requirements:
 
-- `logits` may already contain `-inf` (an earlier filter such as top-k removed those
-  tokens). Such an entry stays `-inf` in `mask_logits` and has probability `0` in
-  `masked_probs`, allowed or not. Every row that has an allowed token has at least one
-  allowed token with a finite logit. `+inf` and NaN never appear.
-- Neither function modifies its arguments.
-- You may use your framework's `softmax` or `learnai.kit.ops.softmax`; this problem
-  is about the mask.
+- `logits` may already contain `-inf` from an earlier filter such as top-k. Those entries stay `-inf` in `mask_logits` and receive probability `0` in `masked_probs`, whether `allowed` is `True` or `False`.
+- Every row with at least one `True` entry in `allowed` also has at least one allowed token with a finite logit. `+inf` and NaN never appear in `logits`.
+- Neither function modifies its input tensors.
+- You may use your framework's `softmax` or `learnai.kit.ops.softmax`.
 
 ## Shapes
 
@@ -88,12 +68,7 @@ masked_probs(logits, allowed)
 #  [0.5,    0.0,    0.0, 0.5]]
 ```
 
-In row 0 the model's favorite token (index 3, logit 3.0) is not allowed. The two
-allowed tokens share the whole probability mass in the ratio $e^{2} : e^{1}$, which
-gives $e / (1 + e) = 0.7311$ and $1 / (1 + e) = 0.2689$. Without the mask these two
-tokens had probabilities 0.2369 and 0.0871: masking is not just zeroing, the survivors
-are renormalized. In row 1 the two allowed logits are equal, so each gets 0.5, however
-large the disallowed logit 4.0 is.
+In row 0, the model's highest-scoring token (index 3, logit 3.0) is disallowed. The two allowed tokens share all of the probability mass in the ratio $e^{2} : e^{1}$, giving $e / (1 + e) = 0.7311$ and $1 / (1 + e) = 0.2689$. Without the mask, those two tokens had probabilities 0.2369 and 0.0871. Masking renormalizes the surviving tokens rather than simply zeroing out the disallowed ones. In row 1, both allowed tokens have logit 0.5, so each gets 0.5 regardless of the disallowed logit 4.0.
 
 ```python
 mask_logits([[1.0, 2.0]], [[False, False]])     # raises ValueError
@@ -104,18 +79,12 @@ masked_probs([[1.0, 2.0], [3.0, 4.0]],
 ## Constraints
 
 - $1 \le B \le 64$ and $1 \le V \le 4096$. Finite logits lie in $[-10^4, 10^4]$.
-- Results are compared with the reference to a relative tolerance of `1e-4` and an
-  absolute tolerance of `1e-6`. Infinities must match exactly and a NaN is always
-  wrong. The tests also check directly that disallowed probabilities are exactly `0`
-  and that allowed logits come back unchanged.
+- Results are compared against the reference with a relative tolerance of `1e-4` and an absolute tolerance of `1e-6`. Infinities must match exactly, and any NaN fails.
+- Tests also verify directly that disallowed probabilities are exact `0` and that allowed logits are returned unchanged.
 - No Python loops over rows or tokens are needed.
 
 ## Why this matters
 
-This is the last step of every structured-output feature: JSON mode, tool calls, regex
-and grammar constraints all end with "compute the set of allowed tokens, then apply it
-to the logits". Engines apply the mask in exactly this form, as `-inf` written into the
-logits before the sampler runs, so that temperature, top-p, and the final softmax all
-see a distribution in which forbidden tokens do not exist. Getting the corners wrong
-is how a server emits a token outside the grammar once in a million requests, or
-returns NaN probabilities and crashes the sampler when a constraint dead-ends.
+Every structured-output feature ends with this step. JSON mode, tool calling, regex filters, and grammar constraints all compute a set of allowed tokens and then apply it to the logits. Inference engines write `-inf` directly into the logits before sampling so that temperature scaling, top-p filtering, and the final softmax operate on a distribution where forbidden tokens do not exist.
+
+Handling the edge cases matters in production. A sloppy mask can leak a grammar-breaking token once in a million requests, or produce NaN probabilities that crash the sampler when a constraint dead-ends.

@@ -1,30 +1,17 @@
-Why is a prompt that ends with the token `t` a problem when the vocabulary also has
-`true`, and why is a prompt that ends with `}` not one? Phrase the difference as a
-question about the vocabulary: which tokens could have started where this one starts?
-Then ask the same question about the last *two* tokens taken together.
+Why does a prompt ending in the token `t` cause trouble when the vocabulary also contains `true`, whereas a prompt ending in `}` does not? Think about which vocabulary tokens could have started where that last token starts. Then ask the same question for the last *two* tokens taken together.
 
 ---
 
-For `heal`, walk backwards over the prompt, growing a byte string `tail` by one token
-at a time, and stop at a special token (or when `tail` is longer than the longest
-token). After each step ask: does some token's byte string start with `tail`? For a
-tail of one token, the token itself does not count. Remember the *last* position at
-which the answer was yes; do not stop at the first no. For `healing_allowed`,
-compute what is still missing, `required_prefix[len(generated_bytes):]`. Nothing
-missing: all ids. Otherwise keep the tokens that agree with the missing bytes for as
-long as both last.
+For `heal`, walk backward from the end of `prompt_ids`, prepending each token's bytes to a running byte string `tail`. Stop early only if you hit a special token or if `tail` becomes longer than the longest token in `vocab`. At each position `k`, check whether any token's bytes start with `tail` (for a one-token suffix, ignore the token matching itself). Record the *earliest* position `k` where this holds, and do not stop on the first position that fails.
+
+For `healing_allowed`, first verify that `required_prefix` and `generated_bytes` agree on their shared prefix. Then compute `remaining = required_prefix[len(generated_bytes):]`. If `remaining` is empty, return all token ids. Otherwise, keep every non-special token whose bytes agree with `remaining` for as long as both last.
 
 ---
 
-"Agree for as long as both last" is one line:
+"Agree with `remaining` for as long as both last" reduces to one condition:
 
 ```python
 piece and (remaining.startswith(piece) or piece.startswith(remaining))
 ```
 
-The first half lets the model rebuild the text from short tokens, the second half
-lets it run past the text with a longer token, and `piece and` keeps out the special
-tokens, whose empty byte string is a prefix of everything. The same trap sits in
-`heal`: every token "starts with" the empty bytes of a special token, so test for
-specials before comparing. Raise `ValueError` first when
-`required_prefix[:m] != generated_bytes[:m]` for `m = min` of the two lengths.
+The first clause lets the model rebuild the removed text from shorter tokens, the second lets it overshoot with a longer token, and `piece and` filters out special tokens whose empty byte string `b""` is a prefix of everything. Watch out for the same empty-bytes trap in `heal` by checking for special tokens before comparing prefixes. Before slicing `remaining`, let `m = min(len(required_prefix), len(generated_bytes))` and raise `ValueError` if `required_prefix[:m] != generated_bytes[:m]`.

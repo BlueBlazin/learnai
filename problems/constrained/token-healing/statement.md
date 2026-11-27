@@ -1,11 +1,4 @@
-A prompt that ends in the middle of what the model would have written as one token
-puts the model in a situation it has rarely seen. If the prompt ends with the token
-`t`, the model learns something false from it: had `true` been coming, the tokenizer
-would have produced `true`, not `t`, so whatever follows a lone `t` is probably not
-`rue`. Token healing repairs the boundary: take the unstable tail off the prompt, and
-make the model regenerate that text itself, in whatever tokens it likes. Implement
-the two halves: deciding how much of the prompt to take back, and the constraint
-that makes generation reproduce it.
+Implement `heal` and `healing_allowed` to perform token healing at a prompt boundary. When a prompt ends mid-token (for example, with `t` even though `true` is in the vocabulary), the model sees a boundary that rarely occurs in its training data and tends to avoid the natural continuation. Token healing trims the unstable suffix from the prompt and constrains generation to reproduce those bytes using whatever tokens the model prefers.
 
 ## Specification
 
@@ -14,69 +7,41 @@ def heal(prompt_ids, vocab) -> tuple[list[int], bytes]: ...
 def healing_allowed(required_prefix, generated_bytes, vocab) -> list[int]: ...
 ```
 
-`vocab` is a [`ToyVocab`](../../../python/src/learnai/kit/vocab.py): token ids are
-`0` to `vocab.size - 1`, `vocab.bytes(t)` is the byte string of token `t`, and
-special tokens (`vocab.is_special(t)`, ids 0 to 4) have the empty byte string `b""`.
+`vocab` is a [`ToyVocab`](../../../python/src/learnai/kit/vocab.py). Token ids run from `0` to `vocab.size - 1`, `vocab.bytes(t)` returns the byte string for token `t`, and special tokens (`vocab.is_special(t)`, ids 0 through 4) have the empty byte string `b""`.
+
+Both functions must return new values without modifying their inputs.
 
 ### `heal(prompt_ids, vocab)`
 
-Returns `(trimmed_ids, required_prefix)`: the prompt without a suffix of its tokens,
-and the bytes of the removed tokens, which generation must reproduce.
+Returns `(trimmed_ids, required_prefix)`, where `trimmed_ids` is a list of Python ints (the prompt with a suffix removed) and `required_prefix` is a `bytes` object (the concatenated bytes of the removed tokens that generation must reproduce).
 
-Let the prompt have $n$ tokens and write $R_k$ for the concatenated bytes of
-`prompt_ids[k:]`. The suffix that starts at position $k$ ($0 \le k < n$) is
-**healable** when both hold:
+Let $n$ be the number of tokens in `prompt_ids`. For a start index $k$ ($0 \le k < n$), let $R_k$ be the concatenated bytes of `prompt_ids[k:]`. The suffix `prompt_ids[k:]` is **healable** when both conditions hold:
 
-1. none of the tokens `prompt_ids[k:]` is a special token, and
-2. some token $q$ of the vocabulary has bytes that start with $R_k$, and the suffix
-   is not just that token: `prompt_ids[k:] != [q]`.
+1. None of the tokens in `prompt_ids[k:]` is a special token.
+2. Some token $q$ in `vocab` has bytes starting with $R_k$, and the suffix is not simply that single token (`prompt_ids[k:] != [q]`).
 
-In words: a single token could begin where the suffix begins and cover all of it,
-either because one longer token extends it (`t` and `true`) or because one token
-spells what the prompt spells with several (`{` then `"`, and the token `{"`).
-A suffix of one token that no longer token extends is not healable: there is nothing
-to repair.
+In other words, a single vocabulary token could begin at position $k$ and cover the entire suffix. This happens either when a longer token extends a one-token suffix (`t` extended by `true`) or when one token spans multiple prompt tokens (`{` followed by `"`, covered by `{"`). A one-token suffix that no longer token extends is not healable because there is nothing to repair.
 
-`heal` removes the **longest** healable suffix, that is, the one with the smallest
-$k$. It returns `prompt_ids[:k]` and $R_k$. If no suffix is healable (in particular
-for an empty prompt) it returns the prompt unchanged and `b""`.
+`heal` removes the **longest** healable suffix, which corresponds to the smallest healable index $k$, and returns `(list(prompt_ids[:k]), R_k)`. If no suffix is healable (including when `prompt_ids` is empty), it returns `(list(prompt_ids), b"")`.
 
-Healability is not monotone. In the prompt `t`, `r` (two tokens) the suffix `r` is
-not healable, yet the suffix `t`, `r` is, since `tr` is a token. Every $k$ has to be
-judged on its own.
+Healability is not monotone in $k$. In the two-token prompt `t`, `r`, the suffix `r` is not healable, yet the longer suffix `t`, `r` is healable because `tr` is a token. Every candidate $k$ must be checked on its own.
 
 ### `healing_allowed(required_prefix, generated_bytes, vocab)`
 
-The constraint for one generation step. `required_prefix` is the second result of
-`heal`, and `generated_bytes` is the concatenation of the bytes of all tokens
-generated so far. It returns the ids, in increasing order, of the tokens that may be
-generated next.
+Computes the allowed token ids for one generation step, returned as a list of Python ints in increasing order. `required_prefix` is the byte string returned by `heal`, and `generated_bytes` is the concatenation of the bytes of all tokens generated so far.
 
-Let `remaining` be the part of `required_prefix` that `generated_bytes` has not
-reproduced yet: `required_prefix[len(generated_bytes):]`, which is empty when
-`generated_bytes` is at least as long.
+First, verify that `required_prefix` and `generated_bytes` agree where they overlap. If neither is a prefix of the other, raise `ValueError`.
 
-- If `remaining` is empty, the removed text is back and the constraint is lifted:
-  **every** token id is allowed, special tokens included.
-- Otherwise a token `t` is allowed exactly when `vocab.bytes(t)` is not empty and one
-  of `vocab.bytes(t)` and `remaining` is a prefix of the other. The token may stop
-  short of the remaining text (`t` when `tru` remains), match it, or run past it
-  (`true` when `tru` remains, which is the point of healing). Special tokens are not
-  allowed: they would end or redirect the output before the prompt's own text is
-  restored.
+Next, let `remaining` be the part of `required_prefix` not yet reproduced, namely `required_prefix[len(generated_bytes):]` (empty once `generated_bytes` is at least as long as `required_prefix`):
 
-The two byte strings must agree where they overlap. If neither `required_prefix`
-nor `generated_bytes` is a prefix of the other, raise `ValueError`.
+- If `remaining` is empty, the removed text has been restored and the constraint is lifted. Return **every** token id in `vocab`, special tokens included.
+- Otherwise, a token `t` is allowed if and only if `vocab.bytes(t)` is non-empty and one of `vocab.bytes(t)` and `remaining` is a prefix of the other.
 
-Both functions return new values and modify nothing. `trimmed_ids` is a list of
-Python ints, `required_prefix` is `bytes`.
+This rule lets the model stop short of `remaining` (`t` when `tru` remains), match it exactly, or run past it (`true` when `tru` remains, which is the purpose of healing). Special tokens are excluded while `remaining` is non-empty so the model cannot terminate or redirect generation before restoring the prompt's bytes.
 
 ## Example
 
-`vocab = ToyVocab(size=64, seed=0)`, with the tokens `5 = b'"'`, `6 = b't'`,
-`7 = b'a'`, `11 = b'{"'`, `13 = b'"}'`, `15 = b'{'`, `27 = b'1'`, `36 = b'":'`,
-`46 = b'tr'`, `48 = b', '`, `49 = b'true'`, `51 = b'['`, `54 = b'tru'`,
-`57 = b'": '`.
+Using `vocab = ToyVocab(size=64, seed=0)`, which includes `5 = b'"'`, `6 = b't'`, `7 = b'a'`, `11 = b'{"'`, `13 = b'"}'`, `15 = b'{'`, `21 = b'}'`, `27 = b'1'`, `36 = b'":'`, `46 = b'tr'`, `48 = b', '`, `49 = b'true'`, `51 = b'['`, `54 = b'tru'`, and `57 = b'": '`:
 
 ```python
 # '{"a": t' : the prompt ends with a token that longer tokens extend
@@ -94,33 +59,17 @@ heal([11, 7, 57, 27, 21], vocab)  # ([11, 7, 57, 27, 21], b'')
 healing_allowed(b"", b"", vocab)  # [0, 1, ..., 63]
 ```
 
-In the second prompt the last token `"` alone is healable (`":` extends it), and so
-is the suffix `{`, `"`, because `{"` is a token. The longer suffix wins, and the
-model gets the chance to write `{"` as the single token its tokenizer would have
-produced. The suffix `, `, `{`, `"` is not healable: no token starts with `, {"`.
-After the model has generated `{`, one byte remains, `"`, and four tokens agree with
-it; `{"` is no longer among them.
+In the second example, the last token `"` is healable on its own because `":` extends it, and the two-token suffix `{`, `"` is also healable because `{"` is a single token. `heal` picks the longer suffix so the model can emit `{"` as one token. The three-token suffix `, `, `{`, `"` is not healable because no token starts with `, {"`. Once the model generates `{`, one byte (`"`) remains, so the four tokens starting with `"` are allowed and `{"` is no longer eligible.
 
 ## Constraints
 
-- `vocab.size` is between 64 and 282; prompts have at most a few hundred tokens.
-- `generated_bytes` is always the bytes of whole tokens, and it may be longer than
-  `required_prefix`.
-- Results are compared exactly: the same ids in the same order, the same bytes.
-- This problem's backup rule is one precise choice. Guidance, where token healing
-  comes from, describes backing up "one or more tokens"; other implementations
-  remove exactly one. The tests follow the rule above.
+- `vocab.size` is between 64 and 282, and prompts have at most a few hundred tokens.
+- `generated_bytes` is always the concatenation of whole tokens and may be longer than `required_prefix`.
+- Outputs are compared for exact equality (same token ids in the same order, same bytes).
+- This backup rule is one specific design choice. Guidance, where token healing originated, describes backing up "one or more tokens", while other implementations remove exactly one. The tests follow the specification above.
 
 ## Why this matters
 
-Prompts are rarely tokenized in one piece. A chat template, a retrieved document,
-and a partial answer such as `{"name": "` are encoded separately and concatenated,
-and every seam can leave a token boundary where the tokenizer would never have put
-one. Constrained generation makes it worse, because the forced text ends wherever
-the grammar says, not where a token ends. The model then continues from a sequence
-that is rare in its training data and tends to avoid exactly the continuation the
-prompt was written to invite: the classic example is a prompt ending in `http:`,
-after which a model that has the token `://` will not produce `//`. Healing costs a
-few regenerated bytes. Getting it wrong costs more: a constraint that insists on
-the removed token itself forbids the longer token that was the reason to back up,
-and one that never lifts leaves the model unable to write anything else.
+Prompts are rarely tokenized as a single string. Chat templates, retrieved documents, and partial structured prefixes such as `{"name": "` are often encoded separately and concatenated, leaving token boundaries that the tokenizer would never produce on the combined text. Constrained generation amplifies this problem because forced text ends wherever the grammar stops rather than on a natural token boundary. The model then continues from an out-of-distribution sequence and avoids the expected completion. In the classic example, a prompt ending in `http:` prevents a model whose vocabulary contains `://` from generating `//`.
+
+Token healing trades a few regenerated bytes for a clean token boundary. Getting the constraint wrong breaks generation in subtle ways. Restricting the first step to the removed token itself forbids the longer tokens that justified backing up, while failing to lift the constraint once the bytes are restored leaves the model stuck unable to continue.

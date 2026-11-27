@@ -1,46 +1,22 @@
 ## The idea
 
-A safetensors file is a table of contents followed by raw tensors, and a memory map
-turns "the bytes from `a` to `b`" into an address range without reading anything:
-the operating system brings a page in when something touches it. A loader built on
-those two facts has three moments, and each should touch only what it needs.
+A safetensors file consists of a JSON table of contents followed by raw tensor bytes. Memory-mapping that file turns a byte range `a:b` into a virtual address range without reading from disk—the operating system faults pages in only when code touches them. A lazy loader built on these two properties has three distinct phases, each touching only what it needs:
 
-1. **Open.** Read the 8-byte length and the $n$ bytes of JSON. From then on the
-   loader knows every tensor's name, dtype, shape, and position, which is enough to
-   answer `keys()`, to plan a device map, or to count parameters. No tensor byte has
-   been read.
-2. **First use of a tensor.** Slice exactly its byte range and wrap it:
-   `np.frombuffer` builds an array whose memory *is* the mapped range. Nothing is
-   copied, and nothing around the tensor is touched.
-3. **Later uses.** Return the array made in step 2. The cache is a dict from name
-   to array; it is what makes "lazy" different from "re-read every time".
+1. **Open.** Read the 8-byte header length and the $n$ bytes of JSON. From that point on, the loader knows every tensor's name, dtype, shape, and byte range, which is enough to answer `keys()`, plan a device map, or count parameters without reading any tensor data.
+2. **First use of a tensor.** Slice only that tensor's byte range and wrap it with `np.frombuffer`. This produces an array backed directly by the mapped pages, with no copy and no reads outside the tensor.
+3. **Later uses.** Return the cached array from step 2. Storing materialized arrays in a dict keyed by name ensures lazy loading does not turn into repeated reads.
 
-Two kinds of tensor cannot be handed out as a view.
+Two cases cannot be returned directly as a view.
 
-**bfloat16.** numpy has no such dtype, so there is no way to describe the mapped
-bytes as the numbers they are. They have to be decoded, and the result lives in new
-memory. A bfloat16 value is a float32 with the low 16 bits of the mantissa removed,
-so decoding is a widening and a shift, exact for every pattern, infinities and NaN
-included:
+**bfloat16.** NumPy has no `bfloat16` dtype, so mapped bytes cannot be viewed directly as floating-point numbers. They must be decoded into new memory. Because a `bfloat16` value is a `float32` value with its lower 16 mantissa bits truncated, decoding is an exact widening and left shift for every bit pattern, including infinities and NaN:
 
 $$
 \text{float32 bits} = \text{bf16 bits} \ll 16 .
 $$
 
-**Unaligned tensors.** A `float32` array is aligned when its address is a multiple
-of 4. The map begins at a page boundary, so the address of a tensor is aligned
-exactly when its file offset $8 + n + \texttt{begin}$ is. Writers pad the header so
-that the data section starts at a multiple of 8, but nothing in the format aligns
-each tensor inside it: a 3-byte mask followed by a matrix of floats puts the matrix
-at an odd offset. numpy will build a view there and mark it
-`flags.aligned == False`. Arithmetic on it works on x86 and ARM, more slowly; code
-that receives the pointer and assumes alignment (a C extension, a vectorized kernel,
-a GPU upload path) may not. One copy into memory numpy allocates fixes it, and it is
-taken only for the tensors that need it.
+**Unaligned tensors.** A `float32` array is aligned when its memory address is a multiple of 4. Because the memory map starts at a page boundary, a tensor's address is aligned if and only if its file offset $8 + n + \texttt{begin}$ is a multiple of its element size. Writers usually pad the header so the data section starts on an 8-byte boundary, but the format does not require padding between tensors. A 3-byte mask followed by a float matrix places the matrix at an odd offset. NumPy still creates a view there with `flags.aligned == False`. Arithmetic works on x86 and ARM at a speed penalty, but downstream C extensions, vectorized kernels, or GPU upload paths that assume aligned pointers can fail. Copying only the unaligned tensors into NumPy-allocated memory fixes alignment without paying for copies on aligned tensors.
 
-`load_subset` adds one rule: validate the request before paying for any of it. On a
-real checkpoint the first names of a subset can be gigabytes, and a typo in the last
-one should not cost a minute of I/O before the error.
+`load_subset` adds one more rule: validate every requested name before reading any tensor. On a large checkpoint, the first tensors in a subset can be gigabytes, and a typo in the last name should not waste minutes of I/O before raising `KeyError`.
 
 ## Reference solution (Python)
 
@@ -83,51 +59,26 @@ class LazyCheckpoint:
         return flat.reshape(info["shape"])
 ```
 
-`names = list(names)` matters: the argument may be a generator, and it is walked
-twice. The dict comprehension keeps the first position of a repeated name, and the
-second `get` of it is a cache hit.
+Converting `names = list(names)` is essential because `names` may be a single-pass generator and must be iterated twice. The dict comprehension preserves the first occurrence of any repeated name, and subsequent `get` calls hit the cache.
 
 ## Common mistakes
 
-- **Reading the file to find the header.** `file.read()` or `file[:]` followed by
-  correct slicing gives correct arrays and has already paid for everything. On a
-  map the bytes are not copied, but the loader has declared the whole range in use;
-  with an ordinary file handle the same code allocates the size of the checkpoint.
-- **Loading eagerly.** Building every array in the constructor "so that `get` is
-  fast" is the loader this problem replaces.
-- **No cache.** Slicing again on every `get` returns equal arrays, so a value test
-  passes; but each BF16 tensor is decoded again and each unaligned one copied again,
-  and two callers no longer share one array.
-- **Copying everything.** `np.array(view)` or `bytes(file[a:b])` on the way doubles
-  the memory of every tensor that was already usable where it lay.
-- **Offsets from the wrong origin.** `data_offsets` count from the data section,
-  byte $8 + n$. Counting from byte 8 returns arrays of the right shape filled with
-  header text.
-- **BF16 as integers, or as float16.** Returning the `uint16` patterns leaves the
-  decoding to a caller who was promised weights; viewing them as `float16` gives
-  finite, plausible, wrong numbers, because the two formats split their 16 bits
-  differently.
-- **Trusting every view.** Skipping the alignment test works for every checkpoint a
-  mainstream writer produced and fails on the first file from somewhere else.
-- **Validating as you go in `load_subset`.** Calling `get` in a loop raises the
-  `KeyError` at the bad name, after the good ones before it have been read.
+- **Reading the whole file to parse the header.** Calling `file.read()` or `file[:]` before slicing produces the right arrays but charges the entire file upfront. Even with a memory map, this marks the whole file range as read, and with a standard file handle it allocates the full checkpoint size in RAM.
+- **Loading eagerly in `__init__`.** Materializing every tensor during construction defeats lazy loading.
+- **Skipping the cache.** Re-slicing on every `get` passes value equality checks, but re-decodes every `BF16` tensor, re-copies every unaligned tensor, and breaks object identity across callers.
+- **Copying every tensor.** Calling `np.array(view)` or `bytes(file[a:b])` doubles memory usage for tensors that could have been zero-copy views.
+- **Using the wrong offset origin.** `data_offsets` are relative to the start of the data section at byte $8 + n$. Measuring from byte 8 returns correctly shaped arrays filled with header bytes.
+- **Returning `BF16` as integers or `float16`.** Returning raw `uint16` values pushes decoding onto the caller, while viewing them as `float16` silently produces finite, plausible, wrong numbers because `float16` and `bfloat16` allocate exponent and mantissa bits differently.
+- **Skipping the alignment check.** Trusting every view passes on checkpoints from writers that pad every tensor, then fails on any file with unaligned offsets.
+- **Validating lazily in `load_subset`.** Calling `get` inside a loop raises `KeyError` only after reading all valid tensors that appeared earlier in `names`.
 
 ## Complexity
 
-Opening costs $O(n)$ for a header of $n$ bytes. A first `get` costs the size of the
-tensor only when it is decoded or copied, and $O(1)$ when it is a view; the pages
-are read when the caller touches them. Every later `get` is a dict lookup. Memory
-beyond the map is the header, the cache, and the decoded or copied tensors.
+Opening takes $O(n)$ time for an $n$-byte header. The first `get` call takes $O(1)$ time for an aligned non-`BF16` view (the OS faults pages in when the caller reads elements) and time proportional to the tensor's byte size when decoding `BF16` or copying an unaligned tensor. Subsequent `get` calls are $O(1)$ dict lookups. Memory beyond the memory map consists of the parsed header, the cache dict, and any decoded or copied tensors.
 
 ## In the wild
 
-- The safetensors format was designed for this: its README lists inspecting a file
-  without loading it and loading only some of its tensors among the goals, and
-  describes the header as the only part that is not zero-copy.
-- `safe_open(path)` of the `safetensors` package is the same interface: `keys()`
-  and `get_tensor(name)`, each tensor read on request.
-- MLX and llama.cpp (GGUF) both map their weight files, which is why a multi-gigabyte
-  model appears to load in well under a second when the file is in the page cache.
-- bfloat16 is what most current checkpoints are stored in, including this
-  project's house models, so the "no numpy dtype" branch is the common path and not
-  an exotic one.
+- The safetensors format was built for lazy zero-copy loading. Its README highlights inspecting a checkpoint without loading it and loading tensor subsets as primary goals, noting that the header is the only part that requires copying.
+- `safe_open(path)` in the `safetensors` library exposes this same interface (`keys()` and `get_tensor(name)`), reading each tensor only when requested.
+- MLX and llama.cpp (GGUF) both memory-map weight files, which allows multi-gigabyte models to appear loaded in under a second when pages are already in the OS page cache.
+- Most modern checkpoints store weights in `bfloat16`, so the decode-to-`float32` path is the common case rather than an edge case.

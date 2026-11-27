@@ -1,38 +1,45 @@
 ## The idea
 
-Losslessness is a statement about one sequence: its emitted tokens are distributed
-as the target model would have sampled them. A batch is $B$ such statements, and
-the only way to keep all of them is to make sure that **nothing in row $b$'s
-computation reads another row**. Written as a loop over rows this is trivial.
-Written as tensor operations, every reduction is a chance to reduce over the wrong
-axis, and every scalar of the single-sequence code (the stopping position, the
-residual's total, the uniform) has silently become a vector.
+Losslessness in speculative sampling guarantees that a single sequence's emitted
+tokens follow the exact distribution of the target model. A batch of $B$
+sequences requires $B$ simultaneous guarantees, which hold as long as **nothing in
+row $b$'s computation reads another row**. With a Python loop over rows, isolation
+is automatic. With vectorized tensor operations, every reduction can accidentally
+cross the batch axis, and values that were scalars in the single-sequence version
+(the stopping position, the residual total, and the resampling uniform) become
+length-$B$ vectors.
 
-`verify_batch` is `speculative-sampling-block` with three such promotions:
+`verify_batch` extends `speculative-sampling-block` by promoting three
+single-sequence scalars to per-row values:
 
-- **The stopping position is per row.** `passes` is `(B, K)`; the running product
-  along the draft axis keeps a row's leading run of `True`, and its sum is
-  $n_b$. A reduction over the whole matrix, or a `min` over rows, is the classic
-  shortcut that keeps the batch rectangular.
-- **The residual is per row and per position.** Row $b$ needs
-  $\max(0, p_{b,n_b} - q_{b,n_b})$: a gather with two index vectors,
-  `p[arange(B), n]`. Padding `q` with a zero row at position $K$ turns the bonus
-  case into the same expression, since $\max(0, p_{b,K} - 0) = p_{b,K}$.
-- **The normalization and the uniform are per row.** The threshold is
-  $u_b \cdot W_b$ with $W_b$ the row's own total. Residual totals differ wildly
-  between rows (it is one minus the acceptance probability at that position), so
-  a shared total is not a small error.
+- **Per-row stopping position.** The boolean acceptance matrix `passes` has shape
+  `(B, K)`. Taking a cumulative product along the draft axis (`dim=1`) zeroes out
+  every position after the first failure, and summing along the same axis yields
+  $n_b$ for each row. Reducing across the whole matrix or taking a minimum across
+  rows would break per-row acceptance.
+- **Per-row, per-position residual.** Row $b$ needs $\max(0, p_{b,n_b} - q_{b,n_b})$,
+  which can be fetched in one advanced-indexing gather such as `p[arange(B), n]`.
+  Appending a zero slice to `q` at position $K$ unifies the rejection and bonus
+  cases into a single expression, because $\max(0, p_{b,K} - 0) = p_{b,K}$.
+- **Per-row normalization and uniform.** Each row's inverse-CDF threshold is
+  $u_b \cdot W_b$, where $u_b = \texttt{u\_resample}[b]$ and $W_b$ is row $b$'s own
+  residual total. Because a row's residual total equals one minus its acceptance
+  probability at the rejected position, totals vary widely across rows, so sharing
+  a single total produces large errors.
 
-Why every row stays exact: for a fixed row, the function computes exactly what the
-single-sequence function computes from that row's inputs, and those inputs (its
-drafts, its uniforms) are independent of the other rows'. The proof for one
-sequence therefore applies to each row verbatim. This is what the property case
-checks directly, and the statistical case per row.
+For any fixed row $b$, these operations compute the exact same result as the
+single-sequence algorithm on row $b$'s inputs. Because each row's drafts and
+uniforms are independent of the other rows, the single-sequence proof of
+losslessness applies verbatim to every row. The property test verifies this
+isolation directly, and the statistical test verifies each row's marginal
+distribution.
 
-`advance_batch` is bookkeeping, and bookkeeping is where batched speculation
-usually breaks. Rows had different lengths before the round and gain different
-numbers of tokens, so there is no single column at which "the new tokens" go. The
-reference decides, for every cell `(b, c)` of the output, which source owns it:
+`advance_batch` handles the ragged sequence update, which is a frequent source of
+bugs in batched speculation. Rows start with different lengths $\ell_b$ and gain
+different numbers of tokens, so there is no single column where the new tokens
+belong. Instead, we compute the output width $W = \max_b (\ell_b + n_b + 1)$ and
+assign every cell `(b, c)` of the `(B, W)` output matrix according to one of four
+disjoint rules:
 
 | condition on column $c$ | value |
 |---|---|
@@ -41,18 +48,18 @@ reference decides, for every cell `(b, c)` of the output, which source owns it:
 | $c = \ell_b + n_b$ | next token |
 | $c > \ell_b + n_b$ | `pad_id` |
 
-Every cell is written from exactly one rule, so nothing stale can survive: not the
-leftovers past a row's old length, and not the rejected drafts. The lengths are the
-source of truth; `pad_id` may be a real token, so lengths can never be recovered
-from the matrix.
+Because every cell is written by exactly one rule, no leftover tokens past the old
+length and no rejected drafts can survive. `lengths` is the sole source of truth
+for sequence boundaries, since `pad_id` may also appear as a legitimate token.
 
-The third result, `cache_lengths`, is the rollback instruction. After the
-verification pass the target's cache holds, for every row, its old tokens and all
-$K$ drafts. Entries $[0, \ell_b + n_b)$ are verified tokens and stay; entries from
-$\ell_b + n_b$ on belong to rejected drafts. The next token is not in any cache:
-it is the input of the next pass. With a per-row length (or attention mask) the
-cache tensor can stay rectangular while each row ignores what lies beyond its own
-length; that mask is the price of raggedness.
+The third return value, `cache_lengths`, specifies how far to roll back each row's
+KV cache. After verification, the target's cache holds each row's $\ell_b$ old
+tokens plus all $K$ drafts. Entries in $[0, \ell_b + n_b)$ are verified and stay,
+while entries from $\ell_b + n_b$ onward belong to rejected drafts and are dropped.
+The newly sampled `next_tokens[b]` has not been processed yet and will be the input
+to the next forward pass. Carrying a per-row cache length (or attention mask) lets
+the KV-cache tensor stay rectangular while each row ignores positions beyond its
+own valid length.
 
 ## Reference solution (PyTorch)
 
@@ -87,55 +94,57 @@ def advance_batch(tokens, lengths, draft_tokens, n_accepted, next_tokens, pad_id
     return new_tokens, new_lengths, cache_lengths
 ```
 
-The JAX and MLX versions are the same with `take_along_axis` for `gather`.
+The JAX and MLX versions are identical except they use `take_along_axis` in place
+of `gather`.
 
 ## Common mistakes
 
-- **Truncating every row to the batch minimum.** Set every $n_b$ to
-  $\min_b n_b$ and let rows that accepted more re-emit their next draft. The
-  output is still exact, which is why this survives review; what is lost is
-  speed. With per-position acceptance rate $\alpha$, one row accepts all $K$ drafts
-  with probability $\alpha^K$ and a batch of $B$ rows with probability
-  $\alpha^{KB}$: at $\alpha = 0.8$, $K = 4$, that is 41 percent for one sequence
-  and 3 percent for a batch of four.
-- **Counting passes instead of the leading run.** `passes.sum(dim=1)` keeps
-  drafts that were proposed on top of a rejected token.
-- **The bonus from a residual**, with the last draft row standing in for the
-  missing `q[:, K]`, or **the correction from `p`** instead of the residual: the
-  two single-sequence mistakes, now per row.
-- **One total for the batch.** `cdf.max()` or `cdf[-1, -1]` instead of
-  `cdf[:, -1:]`: rows with small residuals are not normalized and their sample
-  piles up on the last tokens (or runs off the end of the vocabulary).
-- **One uniform for the batch.** `u_resample[0]` for every row gives each row the
-  right marginal distribution and couples the rows: two requests in one batch
-  now share randomness. No per-row statistic sees it; the exact cases do.
-- **Appending at the batch width.** Concatenating the new tokens after the old
-  matrix puts them at column $T$ for every row, behind the padding of the shorter
-  rows.
-- **Leaving rejected drafts or old leftovers past the end.** Harmless until a
-  later round extends the row over them, or a consumer trusts `pad_id`.
-- **Off by the next token.** `new_lengths` must count it; `cache_lengths` must
-  not.
+- **Truncating every row to the batch minimum.** Setting every $n_b$ to
+  $\min_b n_b$ keeps outputs exact, which makes it easy to miss in code review, but
+  it destroys throughput. With per-position acceptance rate $\alpha$, one row
+  accepts all $K$ drafts with probability $\alpha^K$, whereas a batch of $B$ rows
+  all accept $K$ drafts with probability $\alpha^{KB}$. At $\alpha = 0.8$ and
+  $K = 4$, that drops from 41% for a single sequence to 3% for a batch of four.
+- **Counting passes instead of the leading run.** Using `passes.sum(dim=1)` keeps
+  drafts that were generated on top of an already-rejected token.
+- **Computing the bonus from a residual or the correction from `p`.** Reusing the
+  last draft distribution for the missing `q[:, K]` corrupts the bonus token, and
+  sampling a rejection directly from `p` instead of $\max(0, p - q)$ breaks
+  losslessness.
+- **Using one residual total for the whole batch.** Taking `cdf.max()` or
+  `cdf[-1, -1]` instead of `cdf[:, -1:]` leaves rows with small residuals
+  unnormalized, pushing their samples toward the end of the vocabulary (or past it).
+- **Sharing one uniform across the batch.** Using `u_resample[0]` for every row
+  preserves each row's marginal distribution, so per-row statistical tests will not
+  catch it, but it couples different requests in the batch and fails the exact
+  tests.
+- **Appending at the batch width $T$.** Concatenating new tokens onto the right
+  edge of `tokens` places them after the padding of shorter rows instead of right
+  after `lengths[b]`.
+- **Leaving rejected drafts or old leftovers past the new end.** Stale tokens may
+  look harmless until a later round extends into them or a downstream consumer
+  inspects `pad_id`.
+- **Miscounting `next_tokens` in the lengths.** `new_lengths` must include the next
+  token ($\ell_b + n_b + 1$), while `cache_lengths` must not ($\ell_b + n_b$).
 
 ## Complexity
 
-`verify_batch` is $O(BK + BV)$ after the gathers, `advance_batch` is
-$O(B \cdot W)$; both are a constant number of tensor operations and negligible
-next to the target's forward pass over $B (K + 1)$ positions.
+Let $W = \max_b (\ell_b + n_b + 1)$ be the width of `new_tokens`. `verify_batch`
+runs in $O(BK + BV)$ time, and `advance_batch` runs in $O(B \cdot W)$ time. Both
+use a constant number of tensor operations and are negligible compared to the
+target model's forward pass over $B(K + 1)$ positions.
 
 ## In the wild
 
 - The per-sequence rule is Algorithm 1 of "Fast Inference from Transformers via
-  Speculative Decoding" (ICML 2023, arXiv:2211.17192); see
+  Speculative Decoding" (ICML 2023, arXiv:2211.17192). See
   `speculative-sampling-block`.
 - "BASS: Batched Attention-optimized Speculative Sampling" (arXiv:2404.15778)
-  is about exactly this situation: the number of accepted draft tokens differs
-  across the batch, the tensors become ragged, and the paper handles them with
-  attention kernels written for ragged inputs, together with a per-step heuristic
-  for the draft length. It is a good account of why batching and speculation
-  interact badly.
-- Engines differ in where they pay. Some keep every row's own acceptance and carry
-  per-row lengths and masks, as here; some run speculation only at batch size one;
-  some truncate to the minimum and accept the loss. When reading such code, look
-  for the three reductions above (first rejection, residual total, uniform) and
-  check the axis of each.
+  targets this exact bottleneck. Because accepted lengths vary across a batch, the
+  paper introduces ragged attention kernels alongside a per-step heuristic for
+  choosing the draft length.
+- Serving engines make different trade-offs here. Some track per-row lengths and
+  attention masks as in this problem, some enable speculation only at batch size 1,
+  and others truncate to the batch minimum and accept the lower speedup. When
+  auditing batched speculation code, check the reduction axis for three quantities:
+  first rejection, residual total, and resampling uniform.

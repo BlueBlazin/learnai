@@ -1,49 +1,14 @@
 ## The idea
 
-**Interference.** In a continuous-batching step, the prefill tokens of newly
-admitted prompts and the decode of running sequences share one forward pass, and
-the step takes as long as all of it. Here a step costs $8 + 0.25\,P + D$ ms: eight
-sequences decoding alone tick every 16 ms; admit one 3000-token document and that
-step takes 766 ms. Every stream on the replica freezes for three quarters of a
-second, and a request that needed 60 more tokens has its average time per token
-pushed from 16 to 28 ms by that single event. Time to first token suffers the same
-way in the other direction: a short prompt that arrives just after a long one is
-prefilled in the next step, behind it.
+**Prefill-decode interference.** In a continuous-batching step, newly admitted prompts and active decode sequences share one forward pass, and the step runs until all of them finish. Under this model, a step that prefills $P$ tokens and decodes $D$ sequences takes $8 + 0.25\,P + D$ ms. Eight sequences decoding alone tick every 16 ms, but admitting one 3000-token document pushes that single step to 766 ms. Every active stream on the replica freezes for three-quarters of a second, raising the average time per token of a 60-token generation from 16 ms to 28 ms. Time to first token (TTFT) suffers in the opposite direction when a short prompt arrives right behind a long one and has to wait for the next step.
 
-**Disaggregation** gives each phase its own replicas. A prefill replica runs
-prompts only and hands each request off after its first token; a decode replica
-receives the keys and values and continues from the second token. Decode steps
-never contain a long prefill, so the token pace is steady, and the two pools can
-be sized separately: how many prefill replicas is a question about prompt tokens
-per second and the TTFT objective, how many decode replicas a question about
-concurrent streams and the TPOT objective.
+**Disaggregation.** Splitting the cluster gives each phase dedicated replicas. A prefill replica processes prompts and hands each request off after producing its first token. A decode replica receives the KV cache and generates the remaining tokens. Because decode steps never include long prefills, token generation stays smooth. The two pools can also be sized independently. Prefill capacity scales with prompt tokens per second and the TTFT target, while decode capacity scales with concurrent streams and the TPOT target.
 
-**The price** is the transfer: the whole KV cache of the prompt, tens of megabytes
-to gigabytes, crosses the network between the first and the second token. It adds
-nothing to TTFT (the first token is produced where the prompt was prefilled) and
-adds its full duration to the gap before the second token. Averaged over a long
-output that is small; for a short answer it is most of the TPOT budget.
+**The cost of KV transfer.** Disaggregation requires shipping the prompt's full KV cache—tens of megabytes to gigabytes—across the network between the first and second token. That transfer adds nothing to TTFT because the first token is already produced on the prefill replica, but its full duration lands in the gap before the second token. Amortized over a long output, that pause is small. For a short answer, it can consume most of the TPOT budget.
 
-**Not every request should pay it.** A 50-token prompt costs a decode replica
-12 ms of prefill, less than one decode step. Sending it through the prefill pool
-instead puts it in a batch with whatever long prompt is being prefilled there, and
-its first token arrives when that batch ends. In the statement's workload,
-disaggregating everything drops TTFT attainment from 96% to 40% for exactly this
-reason. So short prompts are prefilled locally on the decode replica, where their
-interference is negligible, and only long ones take the detour. The threshold is
-where the interference a prompt would cause exceeds what the detour costs.
+**Why short prompts stay local.** A 50-token prompt adds only 12.5 ms of prefill time on a decode replica, which is less than one decode step. Sending it to the prefill pool instead puts it in a batch with long documents, delaying its first token until that heavy step finishes. In the benchmark workload, disaggregating every request drops TTFT attainment from 96.0% to 40.4% for this exact reason. Running short prompts locally on decode replicas keeps their interference negligible while avoiding the prefill-pool detour. `local_threshold` marks the crossover where prefill interference outweighs transfer and queuing overhead.
 
-**When to choose the decode replica.** Not at arrival. Between arrival and the end
-of the prefill lie the prefill queue and the prefill itself, often hundreds of
-milliseconds, in which the decode replicas' load changes completely. A choice made
-at arrival is stale when it is used, and if it is also *reserved* (counted as load
-from arrival), the replica is kept half idle for a request that is not there yet.
-Choosing at the end of the prefill uses current information. It leaves one blind
-spot: a request in transfer is in nobody's queue. Several prompts prefilled in the
-same step finish at the same instant, all see the same least loaded decode replica,
-and all go there, unless the coordinator counts its own transfers in flight. This
-is the same local accounting that `least-loaded-balancer` needs between load
-reports.
+**When to pick the decode replica.** Never pick the decode replica at request arrival. Between arrival and the end of prefill lie the prefill queue and the prefill step itself—often hundreds of milliseconds during which decode loads change completely. A decision made at arrival is stale by the time the transfer starts, and reserving a decode slot from arrival leaves that replica underutilized while the request is still in the prefill pool. Choosing the decode replica right when prefill returns uses fresh load data. It leaves only one blind spot: a request currently in transfer is not yet in any replica's queue. When multiple prompts finish prefill in the same step, they all see the same least-loaded decode replica unless the coordinator tracks its own in-flight transfers. This is the same local accounting pattern used in `least-loaded-balancer`.
 
 ## Reference solution (Python)
 
@@ -74,15 +39,11 @@ class Coordinator:
         await decode.submit(request, phase="decode")
 ```
 
-The prefill replica is chosen by outstanding tokens because prefill work is
-proportional to tokens: one 4000-token prompt is ten times the work of four
-100-token prompts. The decode replica is chosen by requests because a decode
-replica's scarce resource is its slots.
+The prefill pool routes by `outstanding_tokens` because prefill latency scales with token count—one 4000-token prompt is ten times the work of four 100-token prompts. The decode pool routes by request count (`queue_len + inbound`) because a decode replica's scarce resource is its concurrent sequence slots.
 
 ## Does it pay off?
 
-The statement's table, four replicas at 8 requests per second with 10% long
-documents:
+Here are the benchmark results from the statement (four replicas at 8 requests per second with 10% long documents):
 
 | cluster | TTFT attainment | TPOT attainment |
 |---|---|---|
@@ -91,63 +52,27 @@ documents:
 | every request disaggregated | 40.4% | 95.2% |
 | every request local to the 3 decode replicas | 90.0% | 83.2% |
 
-The gain is in TPOT, as expected: decode is what was being interfered with. TTFT
-is roughly unchanged, because the same prefill work is done either way, now on one
-replica instead of four. The last row is the control: three colocated replicas are
-worse than four, so the improvement comes from the separation and not from the
-routing. The gain is not unconditional. With too few prefill replicas for the
-prompt load, the prefill queue grows and TTFT collapses while decode replicas idle;
-with a slow network, the transfer eats the TPOT budget of short answers; with
-light load, colocated replicas meet both objectives and disaggregation only adds a
-hop. The split between the pools has to follow the workload's ratio of prompt
-tokens to output tokens.
+The gain appears in TPOT because decode streams are no longer stalled by long prefills. TTFT stays nearly unchanged because the cluster executes the same total prefill work, now concentrated on one replica instead of four. The final row acts as a control. Three colocated replicas perform worse than four, confirming that the win comes from separating phases rather than from routing alone.
+
+Disaggregation is not universally better. With too few prefill replicas for the prompt rate, the prefill queue backs up and TTFT collapses while decode replicas sit idle. With a slow network, KV transfer eats the TPOT budget of short answers. Under light load, colocated replicas already meet both objectives and disaggregation only adds an extra hop. The ratio of prefill to decode replicas must match the workload's ratio of prompt tokens to output tokens.
 
 ## Common mistakes
 
-- **Disaggregating everything.** Short prompts queue behind long ones and pay a
-  transfer for nothing.
-- **Disaggregating nothing**, or sending long prompts to decode replicas when the
-  prefill pool looks busy, without bound: the interference is back.
-- **`<=` at the threshold.**
-- **Choosing the decode replica at arrival**, with or without reserving it.
-- **Ignoring transfers in flight**, or never decrementing the count when they land
-  (every decode replica then looks busier by the number of requests ever sent to
-  it, and the choice degenerates into round robin by history).
-- **Not waiting for the transfer**: starting it and submitting the decode at once.
-  In the simulation the cluster accepts this, as a real decode server would accept
-  a request whose cache has not arrived and then block or recompute; the tests
-  check the order.
-- **Choosing the prefill replica by request count**, or the decode replica by
-  tokens.
+- **Disaggregating every request.** Short prompts queue behind long documents in the prefill pool and pay transfer overhead for no benefit.
+- **Disaggregating nothing, or overflowing long prompts to decode replicas without bound.** Sending long prompts to decode replicas when the prefill pool looks busy brings prefill-decode interference back.
+- **Using `<=` at the threshold.** Requests with `prompt_tokens == local_threshold` must be disaggregated, not served locally.
+- **Choosing the decode replica at arrival.** Whether or not you reserve its slot in `inbound`, arrival-time load is stale by the time prefill finishes.
+- **Ignoring in-flight transfers, or forgetting to decrement `inbound`.** Without tracking transfers, simultaneous prefill completions pile onto the same decode replica. Forgetting to decrement `inbound` makes each replica look permanently busier by its total lifetime count, degenerating into round-robin by history.
+- **Submitting decode before the transfer finishes.** The simulated cluster accepts overlapping calls just as a real server might accept a request whose KV cache has not arrived and then stall or recompute, but the tests reject out-of-order execution.
+- **Routing prefill by request count or decode by token count.** Each pool needs the metric matching its bottleneck.
 
 ## Complexity
 
-Each request costs one scan of each pool. The coordinator holds one counter per
-decode replica.
+Each request performs one scan of the prefill pool (if disaggregated) and one scan of the decode pool. The coordinator stores a single integer counter per decode replica.
 
 ## In the wild
 
-- **DistServe** ("DistServe: Disaggregating Prefill and Decoding for
-  Goodput-optimized Large Language Model Serving", OSDI 2024, arXiv:2401.09670)
-  introduced the split, measured by goodput: the request rate served while meeting
-  both a TTFT and a TPOT objective. It assigns the two phases to different GPUs to
-  remove prefill-decode interference, chooses the resources and parallelism of
-  each phase for the application's two objectives, and places the phases according
-  to the cluster's bandwidth to limit the cost of moving KV caches.
-- **vLLM** documents "Disaggregated Prefilling (experimental)": a prefill instance
-  and a decode instance, with a connector that transfers the KV caches between
-  them (NIXL-based and other connectors). The feature is marked experimental and
-  relies on those connectors for production use.
-- **NVIDIA Dynamo** makes the decision per request ("conditional disaggregation"):
-  a prefill is sent to a remote prefill worker only if its length, not counting a
-  prefix-cache hit, exceeds a threshold, and only if the remote prefill queue is
-  short; otherwise the decode worker prefills locally. The first condition is this
-  problem's `local_threshold`. The second, which this problem leaves out, protects
-  TTFT when the prefill pool is behind. In Dynamo the decode worker is chosen
-  first and allocates the KV blocks before the remote prefill is queued; this
-  problem's order (prefill, then choose) is the simpler one of a coordinator in
-  front of two engine pools.
-- The cheaper alternative on a single pool is chunked prefill
-  (`chunked-prefill-scheduling`): cap the prompt tokens per step so that decodes
-  are delayed by a bounded amount. It bounds the interference instead of removing
-  it and needs no transfer.
+- **DistServe** ("DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving", OSDI 2024, arXiv:2401.09670) introduced prefill-decode disaggregation and evaluated it by *goodput*, the request rate served while meeting both TTFT and TPOT targets. It assigns the two phases to separate GPUs to eliminate interference, tunes resources and parallelism independently for each phase, and places phases according to cluster bandwidth to limit KV transfer cost.
+- **vLLM** provides experimental disaggregated prefilling with separate prefill and decode instances connected by a KV-transfer connector (such as NIXL-based connectors) for moving KV caches across instances.
+- **NVIDIA Dynamo** applies conditional disaggregation per request. A prompt goes to a remote prefill worker only if its uncached length (excluding prefix-cache hits) exceeds a threshold and the remote prefill queue is short; otherwise the decode worker prefills locally. The length check matches `local_threshold` here, while the queue check (omitted in this problem) protects TTFT when the prefill pool falls behind. Dynamo also chooses the decode worker first so it can pre-allocate KV blocks before queuing the remote prefill, whereas this problem uses the simpler coordinator-first flow (prefill, then choose decode).
+- The lower-overhead alternative on a single pool is chunked prefill (`chunked-prefill-scheduling`), which caps prompt tokens per step to bound decode stalls without transferring KV caches.

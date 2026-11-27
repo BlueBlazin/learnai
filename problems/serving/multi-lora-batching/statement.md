@@ -1,8 +1,4 @@
-Run one linear layer for a batch in which every row may use a different LoRA
-adapter, or none: the shared base weight is applied once to the whole batch, and
-each row adds the low-rank update of its own adapter, without merging anything into
-the weight. The formula is that of `lora-merge`, per row; the substance is doing it
-for all rows at once, with adapters of different ranks and rows that have no adapter.
+Implement a batched linear layer where each row in the batch can use a different LoRA adapter, or no adapter at all. Apply the shared base weight once to the entire batch, then add each row's low-rank adapter update without merging adapters into the base weight.
 
 ## Specification
 
@@ -10,46 +6,34 @@ for all rows at once, with adapters of different ranks and rows that have no ada
 def batched_lora_forward(x, base, a_stack, b_stack, ranks, adapter_ids, alpha): ...
 ```
 
-A server holds one frozen base layer with weight $W$ of shape `(out, in)` and $N$
-LoRA adapters. Adapter $n$ has rank $r_n$, a down-projection $A_n$ of shape
-$(r_n, \text{in})$, and an up-projection $B_n$ of shape $(\text{out}, r_n)$, and
-changes the layer's output for an input row $x$ from $x W^{\top}$ to
+A server holds one frozen base linear layer with weight $W$ of shape `(out, in)` and $N$ LoRA adapters, padded to a maximum rank $r_{\max}$. Adapter $n$ has true rank $r_n$ ($1 \le r_n \le r_{\max}$), a down-projection matrix $A_n$ of shape `(r_n, in)`, and an up-projection matrix $B_n$ of shape `(out, r_n)`. For an input vector $x$ of length `in` and a shared scaling factor $\alpha$, the base layer computes $x W^{\top}$, and adapter $n$ adds a scaled low-rank update:
 
 $$
 x W^{\top} + \frac{\alpha}{r_n}\,\big(x A_n^{\top}\big) B_n^{\top}.
 $$
 
-- **`base`** is the base layer, given as a callable: `base(x)` returns $x W^{\top}$
-  for `x` of shape `(..., in)`. You do not get $W$ itself, and a call is expensive:
-  it is the full-size matmul that all requests share.
-- **`a_stack`**, shape `(N, r_max, in)`, and **`b_stack`**, shape `(N, out, r_max)`,
-  hold all adapters, zero-padded to the largest rank $r_\text{max}$: rows
-  $r_n, \dots, r_\text{max} - 1$ of `a_stack[n]` and the same columns of
-  `b_stack[n]` are zero.
-- **`ranks`**, shape `(N,)`, holds the true rank $r_n$ of each adapter,
-  $1 \le r_n \le r_\text{max}$.
-- **`adapter_ids`**, shape `(B,)`, gives the adapter of each row of the batch: an
-  integer in $[0, N)$, or $-1$ for a row that uses the base model alone.
-- **`alpha`** is a Python float, the same for all adapters. Adapter $n$ is scaled
-  by $\alpha / r_n$, its own rank, not $r_\text{max}$.
-- **`x`** has shape `(B, in)`, or `(B, T, in)` for $B$ sequences of $T$ tokens. The
-  first axis is the batch axis that `adapter_ids` indexes; every token of sequence
-  $b$ uses adapter `adapter_ids[b]`.
+The function receives the following arguments (see the Shapes table below for exact dimensions and dtypes):
 
-The result $y$ has the shape of `base(x)`, and for every row $b$ of the batch, with
-$n$ = `adapter_ids[b]`,
+- **`x`**: Input activations for a batch of $B$ requests, either 2D (`(B, in)`) or 3D (`(B, T, in)`) for $B$ sequences of $T$ tokens. Axis 0 is the batch axis indexed by `adapter_ids`, so every token in sequence $b$ uses `adapter_ids[b]`.
+- **`base`**: Callable representing the frozen base layer. Calling `base(x)` returns $x W^{\top}$ for any `x` with trailing dimension `in`. You do not have direct access to $W$, and each call to `base` is expensive.
+- **`a_stack`** and **`b_stack`**: Stacked adapter weights, zero-padded to $r_{\max}$. Rows $r_n, \dots, r_{\max} - 1$ of `a_stack[n]` and columns $r_n, \dots, r_{\max} - 1$ of `b_stack[n]` are zero.
+- **`ranks`**: True rank $r_n$ of each adapter, with $1 \le r_n \le r_{\max}$.
+- **`adapter_ids`**: Adapter index for each batch row $b$, either an integer in $[0, N)$ or $-1$ to indicate that row $b$ uses the base model alone.
+- **`alpha`**: Python float shared across all adapters. Adapter $n$ is scaled by $\alpha / r_n$ using its own rank $r_n$, not $r_{\max}$.
+
+Return a tensor $y$ with the same shape as `base(x)`. For each batch row $b$, with $n = \text{adapter\_ids}[b]$,
 
 $$
 y_b =
 \begin{cases}
-x_b W^{\top} + \dfrac{\alpha}{r_n}\,\big(x_b A_n^{\top}\big) B_n^{\top} & n \ge 0, \\[2ex]
-x_b W^{\top} & n = -1 .
+x_b W^{\top} + \dfrac{\alpha}{r_n}\,\big(x_b A_n^{\top}\big) B_n^{\top} & \text{if } n \ge 0, \\[2ex]
+x_b W^{\top} & \text{if } n = -1.
 \end{cases}
 $$
 
-**Cost.** `base` must be called exactly once per call of `batched_lora_forward`,
-with the whole batch `x`. **Speed.** The updates must be computed with batched
-tensor operations, not in a Python loop over the rows of the batch.
+**Cost.** Call `base` exactly once per call to `batched_lora_forward`, passing the full batch `x`.
+
+**Speed.** Compute the adapter updates with batched tensor operations rather than a Python loop over the rows of the batch.
 
 ## Shapes
 
@@ -65,19 +49,18 @@ tensor operations, not in a Python loop over the rows of the batch.
 
 ## Example
 
-The base layer and adapter 0 are those of the example in `lora-merge`; adapter 1 has
-rank 1 and is padded to rank 2.
+This example reuses the base layer and adapter 0 from `lora-merge`, and adds a rank-1 adapter 1 padded to rank 2.
 
 ```python
 w = [[1.0, 0.0, 2.0], [0.0, 1.0, -1.0]]  # out = 2, in = 3; base(x) = x @ w.T
 a_stack = [
     [[1.0, 0.0, 1.0], [0.0, 2.0, 0.0]],  # adapter 0, rank 2
-    [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
-]  # adapter 1, rank 1 (second row is padding)
+    [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],  # adapter 1, rank 1 (row 1 is padding)
+]
 b_stack = [
-    [[1.0, 0.0], [2.0, -1.0]],
-    [[1.0, 0.0], [1.0, 0.0]],
-]  # second column of adapter 1 is padding
+    [[1.0, 0.0], [2.0, -1.0]],           # adapter 0, rank 2
+    [[1.0, 0.0], [1.0, 0.0]],            # adapter 1, rank 1 (col 1 is padding)
+]
 ranks = [2, 1]
 alpha = 2.0
 x = [[1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [0.0, 1.0, 0.0]]
@@ -90,49 +73,25 @@ batched_lora_forward(x, base, a_stack, b_stack, ranks, adapter_ids, alpha)
 #  [ 0.0, -1.0]]
 ```
 
-The first three rows are the same input and give three different outputs. The base
-output of $[1, 2, 3]$ is $[7, -1]$.
+The first three rows share the same input `[1, 2, 3]` (whose base output is `[7, -1]`) and produce three different outputs:
 
-- Row 0, adapter 0, scale $2/2 = 1$: $x A_0^{\top} = [4, 4]$,
-  $[4, 4]\,B_0^{\top} = [4, 4]$, so $y = [11, 3]$.
-- Row 1, no adapter: $y = [7, -1]$. Indexing the stacks with $-1$ would have applied
-  adapter 1.
-- Row 2, adapter 1, scale $2/1 = 2$: $x A_1^{\top} = [1, 0]$,
-  $[1, 0]\,B_1^{\top} = [1, 1]$, so $y = [7, -1] + 2 \cdot [1, 1] = [9, 1]$. With the
-  padded rank the scale would be 1 and the result $[8, 0]$.
-- Row 3, adapter 0: base $[0, 1]$, $x A_0^{\top} = [0, 2]$,
-  $[0, 2]\,B_0^{\top} = [0, -2]$, so $y = [0, -1]$.
+- **Row 0 (adapter 0, scale $2/2 = 1$).** $x A_0^{\top} = [4, 4]$ and $[4, 4] B_0^{\top} = [4, 4]$, so $y_0 = [7, -1] + [4, 4] = [11, 3]$.
+- **Row 1 (no adapter).** $y_1 = [7, -1]$. Indexing `a_stack` directly with `-1` would mistakenly apply adapter 1.
+- **Row 2 (adapter 1, scale $2/1 = 2$).** $x A_1^{\top} = [1, 0]$ and $[1, 0] B_1^{\top} = [1, 1]$, so $y_2 = [7, -1] + 2 \cdot [1, 1] = [9, 1]$. Scaling by $r_{\max} = 2$ instead of $r_1 = 1$ would give `[8, 0]`.
+- **Row 3 (adapter 0, scale $2/2 = 1$).** Base output is `[0, 1]`, $x A_0^{\top} = [0, 2]$, and $[0, 2] B_0^{\top} = [0, -2]$, so $y_3 = [0, 1] + [0, -2] = [0, -1]$.
 
 ## Constraints
 
-- $1 \le B \le 512$, $1 \le T \le 16$, $1 \le \text{in}, \text{out} \le 128$,
-  $1 \le N \le 16$, $1 \le r_n \le r_\text{max} \le 8$. Entries are of order 1 and
-  $|\alpha| \le 64$.
-- `adapter_ids` and `ranks` arrive in the framework's default integer type (int64 in
-  PyTorch, int32 in JAX and MLX).
-- Results are compared with the reference to a relative tolerance of `1e-4` and an
-  absolute tolerance of `1e-4`, and with a row-by-row evaluation of the formula above.
-- **Cost:** `base` is called at most **1** time and is given at most $B$ rows. A
-  loop over rows calls it $B$ times; splitting the batch by adapter calls it once per
-  adapter present.
-- **Speed:** for 512 rows of width 64 over 16 adapters with ranks 1 to 8, the
-  function must be within **5x** of the reference in the same framework. Adding the
-  updates in a Python loop over the rows is about 16x slower in PyTorch and more
-  than 100x slower in JAX and MLX. A loop over the *adapters* (one masked update
-  per adapter) is not a loop over rows and is fast enough.
-- Do not wrap the function in `jax.jit` or `mx.compile`: `base` counts its calls.
+- $1 \le B \le 512$, $1 \le T \le 16$, $1 \le \text{in}, \text{out} \le 128$, $1 \le N \le 16$, and $1 \le r_n \le r_{\max} \le 8$.
+- Tensor entries are of order 1, and $|\alpha| \le 64$.
+- `adapter_ids` and `ranks` use the framework's default integer dtype (`int64` in PyTorch, `int32` in JAX and MLX).
+- Outputs are checked against the reference and a row-by-row evaluation of the formula with relative tolerance `1e-4` and absolute tolerance `1e-4`.
+- **Cost:** `base` may be called at most **1** time and given at most $B$ rows. Looping over rows calls it $B$ times, and splitting the batch by adapter calls it once per active adapter.
+- **Speed:** On 512 rows of width 64 across 16 adapters (ranks 1 to 8), your implementation must run within **5x** of the reference in the same framework. Looping over rows in Python is roughly 16x slower in PyTorch and over 100x slower in JAX and MLX. Looping over the *adapters* with one masked update per adapter is fast enough.
+- Do not decorate the function with `jax.jit` or `mx.compile`, because `base` tracks its call count.
 
 ## Why this matters
 
-A LoRA adapter is a few megabytes; the model it adapts is many gigabytes. A provider
-with a thousand fine-tuned customers cannot keep a thousand merged copies of the
-model in GPU memory, and cannot afford a batch per customer either: most adapters
-see a request now and then, and a batch of one wastes the GPU. Serving them together
-rests on the identity above. The expensive part, $x W^{\top}$, does not depend on the
-adapter, so it is computed once for the whole mixed batch; the adapter-specific part
-is two thin matmuls per row, which can be gathered by adapter index and batched as
-well. Merging, the cheapest option for a single adapter, is exactly what must not
-happen here: a merged weight serves one adapter, and switching it per request means
-rewriting the full weight matrix on the request path. The bugs are quiet ones. A row
-without an adapter that silently gets the last adapter in the stack, or an adapter
-scaled by the padded rank, produces fluent output from the wrong model.
+A LoRA adapter takes a few megabytes, while the base model takes tens of gigabytes. A multi-tenant server hosting hundreds of fine-tuned adapters cannot store a separate merged model per customer, nor can it run each adapter in its own tiny batch without underutilizing the GPU.
+
+The unmerged form solves this by separating the shared computation $x W^{\top}$ from the lightweight, per-row low-rank updates. Merging adapters into $W$ is fast for a single adapter, but fails for mixed batches because switching weights per request would rewrite the full matrix on the serving path. Mistakes here fail silently. Indexing with `-1` secretly applies the last adapter to a base-model request, and scaling by $r_{\max}$ weakens lower-rank adapters, producing fluent text from the wrong model.

@@ -1,32 +1,15 @@
 ## The idea
 
-Most of JSON is regular. Strings, numbers, the three literals, and the punctuation
-between them can each be recognized by a small finite automaton. What is not regular
-is nesting: to know whether `}` or `]` is legal you must know which bracket is
-innermost, and after closing it, which one was open before, to any depth. A finite
-automaton has a fixed number of states and cannot count unbounded depth. Add a stack
-and it can: that is a **pushdown automaton**.
+Most of JSON is regular. Strings, numbers, the three literals, and the punctuation between them can each be recognized by a small finite automaton. What is not regular is arbitrary nesting. To decide whether `}` or `]` is valid, the recognizer must remember which container is innermost and, after closing it, which container was open before it. A finite automaton has a fixed number of states and cannot track unbounded depth. Pairing it with a stack solves this and produces a **pushdown automaton**.
 
-So the state has two parts.
+The validator state therefore has two parts:
 
-- A **mode**, the finite control: what the automaton is in the middle of, or what it
-  expects next.
-- A **stack** of open containers. Only its top is ever inspected: it decides whether
-  a comma leads to a key or to a value, and which closer is legal.
+- A **mode** (the finite control) that tracks what the recognizer is currently inside or expects next.
+- A **stack** of open containers. Only the top entry is inspected, determining whether a comma leads to an object key or an array value and which closing bracket is legal.
 
-The property that makes this a *prefix* validator comes for free. In every mode the
-step function accepts exactly the characters that the grammar allows next, and from
-every state that is reached there is a way to finish (close the token, supply the
-missing value, close the containers). So "no `Invalid` so far" is the same as "a
-prefix of some valid text", and the first impossible character is where `Invalid` is
-raised.
+Prefix validation falls out automatically from this design. In every mode, `json_step` accepts only characters permitted by the grammar, and every reachable state has at least one valid completion (closing the current token, supplying a missing value, and closing any open containers). As a result, reaching a state without raising `Invalid` is equivalent to being a prefix of some valid JSON text, and `Invalid` is raised at the first impossible character.
 
-Numbers are the one token without a terminator. `12` may be complete or may continue
-with `3`, `.`, or `e`. The automaton stays in a number mode, and when a character
-arrives that cannot continue the number, it first checks that the number was
-complete (`1.` and `-` are not), then treats the character as whatever may follow a
-value. `json_complete` has to know about these modes too: at the top level `12` is a
-complete text although nothing has "closed" it.
+Numbers are the one token type without a closing delimiter. After reading `12`, the number may be finished or it may continue with `3`, `.`, or `e`. The recognizer stays in a number mode until a character arrives that cannot continue the number. At that point, it checks that the number so far is complete (`1.` and `-` are not), transitions to the post-value mode, and processes that same character as whatever may follow a value. `json_complete` must also recognize complete number modes, because a top-level `12` is already a complete JSON text even though no delimiter has closed it.
 
 ## Reference solution (Python)
 
@@ -144,69 +127,28 @@ def json_step(state, ch):
     raise Invalid("expected a value")
 ```
 
-The stack is a string, so pushing and popping copy it. That keeps every state a plain
-immutable tuple at a cost proportional to the depth. A persistent stack, a linked list
-of `(top, rest_of_stack)` pairs, makes both operations constant time and lets all the
-states that share a prefix share memory; grammar engines use that representation
-because they keep one stack per candidate token.
+Here the stack is stored as a Python string, so pushing and popping copy it in time proportional to the nesting depth while keeping every state an immutable tuple. A persistent linked stack of `(top, rest_of_stack)` pairs makes push and pop $O(1)$ and lets branching states share common prefixes. Grammar engines use that persistent representation because they test many candidate tokens from the same state.
 
 ## Common mistakes
 
-- **No stack.** A depth counter, or a stack whose top is never compared with the
-  closing bracket, knows that something is open, not what. `[1}` and `{"a":1]` pass,
-  and with a bare counter the automaton cannot even tell whether a key or a value is
-  due after a comma.
-- **Leading zeros.** Treating a number as "digits" accepts `01`. The grammar has two
-  integer forms, `0` alone or a nonzero digit followed by digits, and they need two
-  modes.
-- **Complete before any value.** "Depth zero and not inside a token" is also true of
-  the empty text. The start state must be distinct from the state after a value;
-  otherwise a JSON mode lets the model answer with nothing.
-- **Complete in the middle of a number.** `-`, `1.`, `2e`, and `2e+` are prefixes of
-  numbers, not numbers. Only the modes in which the number could end count.
-- **Trailing commas.** Reusing the "just opened" mode after a comma is tempting,
-  because both expect an element, but that mode also accepts the closer.
-- **Raw control characters in strings.** A model asked for multi-line text will happily
-  emit a real line feed inside a string. It must be `\n`, two characters.
-- **Rejecting surrogates.** The grammar is deliberately loose: `\u` plus four hex
-  digits, whatever they are. RFC 8259 notes (section 8.2) that a text with an unpaired
-  surrogate escape is grammatical and that software receiving it behaves
-  unpredictably; a validator that follows the RFC accepts it, and a stricter policy
-  belongs in a layer above. Rejecting the whole range also breaks every emoji written
-  as an escaped surrogate pair.
-- **Mutating the state.** With a list as the stack and `append` / `pop` in place, all
-  states share one list. The validator works when driven straight through a text and
-  fails as soon as a caller tries two continuations from one state, which is the only
-  thing a token mask ever does.
+- **No stack.** A bare depth counter (or a stack whose top is never matched against the closer) accepts mismatched brackets like `[1}` and `{"a":1]`. A bare counter also cannot tell whether a key or a value is expected after a comma.
+- **Leading zeros.** Treating an integer as any sequence of digits accepts `01`. A standalone `0` and a nonzero digit followed by more digits require separate modes.
+- **Complete before any value.** Checking only that the stack is empty and no token is open wrongly marks the empty string as complete. The initial `"value"` mode must be distinct from `"after"`, or JSON mode will allow an empty response.
+- **Complete in the middle of a number.** `-`, `1.`, `2e`, and `2e+` are valid prefixes, not complete numbers. Only the four finished number modes (`"zero"`, `"int"`, `"frac"`, `"exp"`) should satisfy `json_complete`.
+- **Trailing commas.** Transitioning back to `"key_or_end"` or `"value_or_end"` after a comma allows a closing bracket right after the comma, letting `[1,]` and `{"a":1,}` slip through.
+- **Raw control characters in strings.** A model generating multi-line text will often emit a literal newline inside a string. It must be rejected in favor of the two-character escape `\n`.
+- **Rejecting surrogates.** RFC 8259 accepts `\u` followed by any four hex digits. Section 8.2 notes that unpaired surrogate escapes are grammatical even though downstream software may handle them inconsistently, so stricter Unicode policies belong in a higher layer. Rejecting the surrogate range outright also breaks emojis encoded as escaped surrogate pairs.
+- **Mutating the state.** Using a Python `list` with in-place `append` and `pop` causes states to alias the same list. The validator appears to work on a linear pass through one string, then corrupts state as soon as a caller branches to test multiple candidate tokens from the same state.
 
 ## Complexity
 
-`json_step` is $O(1)$ work plus the cost of the stack operation: $O(d)$ at depth $d$
-with a string or tuple stack, $O(1)$ with a persistent linked stack. Memory is the
-stack, $O(d)$. Validating a token costs one step per character, and a mask costs that
-for every token in the vocabulary, which is why real engines combine a recognizer like
-this one with the precomputation of `dfa-token-index`: tokens that stay inside one
-string or number never touch the stack and can be resolved ahead of time.
+Let $d$ be the current container nesting depth. Each call to `json_step` does $O(1)$ work plus the cost of updating the stack, which is $O(d)$ with a string or tuple stack and $O(1)$ with a persistent linked stack. Memory usage is $O(d)$ for the stack. Testing a candidate token takes one step per character, and computing a full token mask repeats this across the vocabulary. Real constrained-decoding engines avoid most of that work by combining a pushdown recognizer with the precomputed token index from `dfa-token-index`, since tokens that stay inside a string or number never touch the stack.
 
 ## In the wild
 
-- **RFC 8259** (2017) is the grammar used here. Since RFC 7159 a JSON text may be any
-  value; the original RFC 4627 required an object or an array at the top level.
-- **llama.cpp** constrains output with GBNF grammars and ships a JSON grammar and a
-  converter from JSON Schema to GBNF. Its grammar engine keeps a set of stacks of
-  grammar positions and advances them one code point at a time, the nondeterministic
-  version of the single stack here.
-- **XGrammar** compiles the grammar to a byte-level pushdown automaton and stores the
-  stacks persistently (as a tree shared between states), precisely so that trying a
-  token and backing out is cheap.
-- **llguidance** splits the work the way this editorial does: a lexer built from
-  regular expressions for strings, numbers, and punctuation, and an Earley parser for
-  the nesting.
-- **Outlines** takes the other road for JSON Schema: it translates the schema to a
-  regular expression and uses the index of `dfa-token-index`. That works because a
-  fixed schema without recursion has bounded depth; free-form JSON, or a recursive
-  schema, does not, and needs the stack.
-- OpenAI-style `response_format: {"type": "json_object"}` promises what this
-  recognizer checks: the output is syntactically valid JSON. If generation is cut off
-  by `max_tokens`, the text is a valid *prefix* but `json_complete` is false, which
-  is why truncated JSON-mode responses fail to parse.
+- **RFC 8259** (2017) defines the grammar implemented here. Starting with RFC 7159, any JSON value can be a top-level document, whereas the original RFC 4627 required an object or array.
+- **llama.cpp** constrains generation with GBNF grammars and ships both a JSON grammar and a JSON Schema to GBNF converter. Its engine maintains a set of grammar-position stacks and advances them one code point at a time, generalizing this single-stack recognizer to nondeterministic grammars.
+- **XGrammar** compiles grammars to byte-level pushdown automata and stores stacks in a persistent tree shared across states, making speculative token checks cheap.
+- **llguidance** splits recognition the same way as this solution, pairing a regex-based lexer for strings, numbers, and punctuation with an Earley parser for nested structure.
+- **Outlines** translates non-recursive JSON Schemas into regular expressions and uses a precomputed DFA token index (`dfa-token-index`). That works when a fixed schema has bounded nesting depth, whereas free-form JSON or recursive schemas require a stack.
+- OpenAI-style `response_format: {"type": "json_object"}` enforces the same syntactic validity checked here. If generation hits `max_tokens` early, the output is a valid prefix with `json_complete` still `False`, which is why truncated JSON-mode responses fail to parse.

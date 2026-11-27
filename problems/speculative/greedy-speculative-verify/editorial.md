@@ -1,28 +1,29 @@
 ## The idea
 
-With greedy decoding the target model's output is a deterministic function of the
-prefix: the next token is the argmax of its logits. A draft token is therefore
-"correct" exactly when it equals that argmax, and speculative decoding reduces to
-checking guesses.
+Under greedy decoding, the target model's next token is a deterministic function of
+the prefix, namely the argmax of its logits. A draft token is therefore correct if
+and only if it equals that argmax, so speculative verification reduces to checking
+guesses.
 
-The target is run once on the verified sequence plus the $K$ draft tokens. A causal
-model's output at a position depends only on the tokens up to it, so that single pass
-yields, for every $i$, the logits the target *would have produced* had it been fed
-the sequence up to `draft_tokens[i-1]` alone. Row $i$ is trustworthy if and only if
-the context it was computed from is the true greedy sequence, that is, if draft
-tokens $0..i-1$ were all correct:
+The target model runs once on the verified prefix plus the $K$ draft tokens. Because
+a causal model's output at any position depends only on earlier tokens, that single
+pass produces, for every $i$, the exact logits the target would have output if fed
+the prefix up to `draft_tokens[i-1]`. Row $i$ is valid if and only if its input
+context matches the true greedy sequence, meaning draft tokens `0..i-1` were all
+correct:
 
-- Row 0 depends on no draft token. It is always valid, so the round always yields at
-  least one token.
-- If rows $0..i-1$ agree with the draft, row $i$ is valid too (induction).
-- At the first mismatch $n$, row $n$ is still valid, and it tells us the right token
-  for that position. Rows after $n$ were computed from a context containing the wrong
-  token and are worthless, whatever they say.
-- If nothing mismatches, row $K$ is valid, and it is one more token for free.
+- Row 0 depends on no draft tokens, so it is always valid. Every round therefore
+  produces at least one token.
+- By induction, if rows `0..i-1` all match the draft, then row $i$ is valid too.
+- At the first mismatch $n$, row $n$ is still valid and supplies the correct token
+  for position $n$. Every row after $n$ was conditioned on the wrong token and must
+  be discarded, even if its argmax happens to agree with the draft.
+- If all $K$ draft tokens match, row $K$ is valid and provides one bonus token for
+  free.
 
-So the answer is the length $n$ of the matching prefix and the target's token in row
-$n$. One target pass produces between 1 and $K + 1$ tokens, and the output sequence
-is identical to what the target alone would have generated.
+The result is therefore the length $n$ of the matching prefix together with the
+target's greedy token from row $n$. Each target pass yields between 1 and $K + 1$
+tokens, and the final sequence is identical to greedy decoding with the target alone.
 
 ## Reference solution (PyTorch)
 
@@ -34,47 +35,54 @@ def verify_greedy(draft_tokens, target_logits):
     return n_accepted, int(greedy[n_accepted])
 ```
 
-The cumulative product of the 0/1 match vector is 1 up to the first mismatch and 0
-from there on, so its sum is the prefix length. `greedy[n_accepted]` covers both
-outcomes without a branch: the correction when `n_accepted < K`, the bonus token
-when `n_accepted == K`. The JAX and MLX versions are the same four lines. A Python
-loop that breaks at the first mismatch is equally good for one sequence; the
-vectorized form is what generalizes to a batch.
+The cumulative product of the 0/1 match vector stays 1 up to the first mismatch and
+becomes 0 from that point onward, so summing it gives the accepted prefix length.
+Indexing `greedy[n_accepted]` handles both outcomes without a branch. It selects the
+correction token when `n_accepted < K`, and it selects the bonus token when
+`n_accepted == K`. The JAX and MLX implementations use the same four lines. A plain
+Python loop that breaks on the first mismatch works just as well for a single
+sequence, while the vectorized form extends directly to batches.
 
 ## Common mistakes
 
-- **Counting all matches.** `match.sum()` accepts a position that matches after an
-  earlier mismatch. That token was predicted from a context containing a rejected
-  token; accepting it makes the output differ from the target's greedy decode.
-- **Shifted alignment.** In an ordinary decoding loop "the logits for the next token"
-  are the last row, and it is tempting to pair `draft_tokens[i]` with row `i + 1`.
-  Row `i` is the one that scores `draft_tokens[i]`. With the shift almost nothing is
-  accepted, and what is accepted is wrong.
-- **No bonus token.** Slicing the logits to `K` rows "to match the draft" throws away
-  the one row that is valid whenever everything was accepted. The loop stays correct
-  only if it then spends another target pass on a token it already had.
-- **Taking the next token from the last row.** `logits[-1]` is right only after a
-  full match. After a rejection at $n < K$ the correction is in row $n$.
-- **All or nothing.** Rejecting the whole block on any mismatch is still lossless but
-  discards the valid prefix, and with it most of the speedup: with a per-token
-  agreement rate of 0.8 and $K = 4$, a block survives intact only 41% of the time.
+- **Counting all matches.** Using `match.sum()` accepts positions that match after an
+  earlier mismatch. Those logits were computed from a context containing a rejected
+  token, so accepting them causes the output to diverge from the target model.
+- **Shifted alignment.** Because standard decoding reads next-token logits from the
+  last row, it is easy to pair `draft_tokens[i]` with row `i + 1`. Row `i` is the row
+  that scores `draft_tokens[i]`. Shifting by one rejects almost everything and
+  accepts wrong tokens when it does match.
+- **Dropping the bonus token.** Slicing `target_logits` to `K` rows to match the
+  length of `draft_tokens` discards row `K`, which is valid whenever all drafts are
+  accepted. The decoder then wastes an extra target pass to recompute a token it
+  already had.
+- **Taking `next_token` from the last row.** `target_logits[-1]` is only valid when
+  all `K` draft tokens match. After a mismatch at $n < K$, the correction comes from
+  row $n$.
+- **All-or-nothing rejection.** Discarding the whole block on any mismatch remains
+  exact, but it throws away the valid prefix and most of the speedup. With a
+  per-token agreement rate of 0.8 and $K = 4$, an entire block survives intact only
+  41% of the time.
 
 ## Complexity
 
-$O(K V)$ time for the argmax, $O(K)$ extra memory.
+$O(K V)$ time for the argmax over `target_logits`, and $O(K)$ extra memory, where $V$
+is the vocabulary size.
 
 ## In the wild
 
 Leviathan, Kalman, and Matias, "Fast Inference from Transformers via Speculative
-Decoding" (ICML 2023, arXiv:2211.17192) and Chen et al., "Accelerating Large Language
-Model Decoding with Speculative Sampling" (2023, arXiv:2302.01318) define
-verification for sampling: accept draft token $x$ with probability
-$\min(1, p(x)/q(x))$ and resample from the residual on rejection. Greedy decoding is
-the limit in which both distributions are one-hot: the ratio is 1 when the tokens
-agree and 0 otherwise, and the residual is the target's one-hot distribution, which
-gives exactly the rule above. Hugging Face `transformers` (assisted generation),
-vLLM, and llama.cpp all implement this comparison batched over sequences, with the
-cumulative-product (or "first mismatch") trick so that rows can accept different
-numbers of tokens. The drafts need not come from a model: prompt lookup, an n-gram
-cache, or the multi-token-prediction heads of the target itself feed the same
-verifier.
+Decoding" (ICML 2023, arXiv:2211.17192), and Chen et al., "Accelerating Large
+Language Model Decoding with Speculative Sampling" (2023, arXiv:2302.01318), define
+verification for sampling with target distribution $p$ and draft distribution $q$.
+They accept draft token $x$ with probability $\min(1, p(x) / q(x))$ and resample from
+the residual on rejection. Greedy decoding is the special case where both
+distributions are one-hot. The acceptance ratio is 1 when the tokens agree and 0
+otherwise, and the residual is the target's one-hot distribution, which yields the
+exact rule above.
+
+Hugging Face `transformers` (assisted generation), vLLM, and llama.cpp all run this
+verification batched over sequences using the cumulative-product (or first-mismatch)
+trick so each sequence in a batch can accept a different number of tokens. Drafts do
+not even require a separate model. Prompt lookup, n-gram caches, and the target
+model's own multi-token-prediction heads all feed the same verifier.

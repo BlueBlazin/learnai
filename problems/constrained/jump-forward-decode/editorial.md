@@ -1,34 +1,16 @@
 ## The idea
 
-The constrained loop chooses each token as an argmax over the permitted set, and the
-permitted set is a function of the constraint state alone. When it has one element
-the choice is made before the model runs: every logit but one is masked to
-$-\infty$, so the forward pass decides nothing. Jump-forward decoding takes that
-token directly.
+In constrained greedy decoding, each next token is the argmax over the permitted set, which depends only on the constraint state. When the permitted set has a single element, the choice is already determined before the model runs. Every other logit would be masked to $-\infty$, so a forward pass cannot change the outcome. Jump-forward decoding appends that token directly.
 
-Skipping the *call* is not skipping the *token*. The model's distribution at a later
-free step is conditioned on the whole sequence, forced tokens included, so they must
-enter the KV cache before that step. But nothing needs their logits, which removes
-the reason to feed them one at a time: they can wait and go in together with the
-token before them, in the single call that the next free step needs anyway. A
-causal model computes position $i$ from positions $\le i$ only, so one call with
-$k$ tokens leaves the cache in the same state as $k$ calls with one token, and its
-last row is the distribution the ordinary loop would have seen.
+Skipping the forward pass does not mean skipping the token in the model's context. Every later free step is conditioned on the entire sequence generated so far, including forced tokens, so those tokens must enter the KV cache before the next free step. Because nothing needs the logits of forced tokens, you do not have to feed them one by one. Instead, buffer them and pass them together in the single forward call required by the next free step. In a causal language model, position $i$ attends only to positions $\le i$. Feeding $k$ tokens in one call therefore produces the same KV cache state as $k$ single-token calls, and its last row of logits matches the distribution the ordinary loop would see.
 
-That gives the invariant of the loop: a list `pending` holds exactly the tokens the
-model has not seen, in order. It starts as the prompt, grows by every generated
-token, and is emptied by a call. A call happens only at a free step. So:
+This yields a simple loop invariant. Maintain a `pending` list holding all tokens the model has not yet seen, in order. Initialize `pending` with `prompt`, append every generated token to it, and clear it whenever you call `lm(pending, cache)` at a free step. Let $P$ be the prompt length, $f$ the number of free steps, and $L$ the number of generated tokens before the last free step. This invariant guarantees three properties:
 
-- calls $= f$, the number of free steps;
-- tokens processed $= P + L$, everything before the last free step, because what is
-  pending when the loop ends is dropped;
-- the result is token for token the result of the ordinary loop, since at forced
-  steps both take the only permitted token and at free steps both take an argmax
-  over the same logits.
+- The model runs $f$ times, once per free step.
+- The model processes $P + L$ tokens (or $0$ if $f = 0$), because anything still in `pending` when the loop ends is never fed.
+- The output matches standard constrained greedy decoding token for token, because forced steps pick the only permitted token and free steps take the argmax over identical logits.
 
-"Forced" has to be judged on the permitted set, EOS included. One allowed token in an
-accepting state is a decision (continue or stop). No allowed token in an accepting
-state is not: EOS is forced, and the closing call of the ordinary loop disappears.
+Always check whether a step is forced using the full `permitted` set, including `eos_id`. A state with one allowed token that is also accepting gives the model a real choice between continuing and stopping. Conversely, an accepting state with no allowed tokens permits only `eos_id`, making the final stop token forced and eliminating the trailing model call.
 
 ## Reference solution (PyTorch)
 
@@ -66,59 +48,23 @@ The JAX and MLX versions differ only in the names of `where` and `argmax`.
 
 ## Common mistakes
 
-- **Jumping over forced text instead of forced tokens.** After `{"safe": fal` the
-  text `se}` is certain, and so is `{"` at the start. But where the vocabulary
-  offers both `{` and `{"`, two tokens are permitted and the model's preference
-  between them is part of the result. Taking the longest piece (or re-encoding the
-  forced string with the tokenizer) is a different algorithm with a different
-  output. It can be the right engineering choice, see below, but it is not what the
-  masked argmax computes.
-- **Forced tokens appended to the output but not to the model's input.** The output
-  is still valid, which is why this survives casual testing. Every free choice after
-  the first forced run is made from a context that lacks it.
-- **One call per forced token.** Taking the token without reading the logits and
-  then feeding it immediately "to keep the cache current" saves an argmax and no
-  model work.
-- **A call for the prompt alone.** If the first step is forced, the prompt's logits
-  are never read. Let the prompt wait in `pending` like any other unseen token.
-- **Feeding the tail.** After the last free step nothing is chosen, so the last
-  free token and the forced run behind it need not be fed. Flushing `pending` after
-  the loop costs a call for nothing (unless the caller wants the cache, which this
-  function does not return).
-- **Counting `allowed` instead of `permitted`.** `len(allowed) == 1` jumps over a
-  state where the model could also have stopped; requiring "not accepting" for a
-  jump pays a call for a forced EOS.
-- **An inner jump loop that forgets the token limit.** Forced tokens count toward
-  `max_new_tokens`; a `while forced:` loop needs the same bound as the outer one.
+- **Jumping over forced text instead of forced tokens.** After `{"safe": fal`, the text `se}` is certain, and `{"` is certain at the start. However, when the vocabulary offers both `{` and `{"`, two tokens are permitted and the model's preference between them affects the output. Picking the longest piece or re-encoding the forced string is a different algorithm with a different output, even though some engines choose to do it in practice.
+- **Appending forced tokens to the output without adding them to `pending`.** Because the constraint still enforces valid syntax, this bug often escapes casual testing. Every free choice after the first forced run is computed from a corrupted context that omits the forced tokens.
+- **Calling the model once per forced token.** Picking the forced token without reading logits and immediately calling `lm([token], cache)` to keep the cache up to date saves only an argmax and violates the forward-call limit.
+- **Running a dedicated forward pass for the prompt.** If the first generated token is forced, the prompt's logits are never used. Keep `prompt` in `pending` like any other unseen token.
+- **Flushing `pending` after the loop.** Once the last free step is over, no further decisions are made, so the last free token and any trailing forced tokens do not need to be fed. Flushing `pending` at the end wastes a call (this function does not return the cache).
+- **Checking `len(allowed)` instead of `len(permitted)`.** Treating `len(allowed) == 1` as forced skips the choice to emit `eos_id` in an accepting state. Requiring `not is_accepting(state)` to jump pays an unnecessary call for a forced `eos_id`.
+- **Forgetting `max_new_tokens` inside an inner jump loop.** Forced tokens count toward `max_new_tokens`. If you write an inner `while forced:` loop, it must enforce the same length bound as the outer loop.
 
 ## Complexity
 
-$f$ forward calls and $P + L$ tokens processed, against $g$ and $P + g - 1$ for the
-ordinary loop, plus one `allowed`, one `is_accepting`, and at most one `advance` per
-token. The saving is in calls, not in positions: a forced token before the last free
-step still costs one position of attention. On a GPU a call with a few extra
-positions costs about as much as a call with one, so the wall-clock gain is close to
-the fraction of forced steps, which for JSON with a fixed schema is most of them.
+For $g$ generated tokens with $f$ free steps, prompt length $P$, and $L$ tokens generated before the last free step, this loop makes $f$ forward calls and processes $P + L$ tokens (compared to $g$ calls and $P + g - 1$ tokens for standard constrained decoding). Constraint overhead is one `allowed`, one `is_accepting`, and at most one `advance` call per generated token.
+
+The speedup comes from reducing forward calls rather than token positions, since every forced token before the last free step still requires one attention position. On a GPU, prefilling a small batch of tokens in one pass takes roughly the same wall-clock time as decoding a single token, so the speedup approaches the fraction of forced steps. For JSON with a fixed schema, that is most of the output.
 
 ## In the wild
 
-- **SGLang** introduced the name. Its description (the paper "SGLang: Efficient
-  Execution of Structured Language Model Programs", arXiv 2312.07104, and the LMSYS
-  blog post "Fast JSON Decoding for Local LLMs with Compressed Finite State Machine")
-  works at the level of text: consecutive singular transitions of the regex automaton
-  are compressed into one edge, and the engine prefills that edge's string instead of
-  decoding it. Because the string, not a token sequence, is what is forced, SGLang
-  re-tokenizes the whole text after appending it, so that the model continues from
-  the tokenizer's own segmentation; the post reports that different tokenizations of
-  the jumped text change the later distributions, and puts the cost of
-  re-tokenizing at about 4 percent.
-- **llguidance** (the constraint engine behind Guidance) reports forced tokens to
-  the host as fast-forward tokens: after a token is committed, the parser returns
-  any further tokens the grammar forces, and the host appends them all. It enables
-  this only for tokenizers with a canonical tokenization.
-- The two differ exactly at the note in the statement. Token-level forcing, as in
-  this problem, reproduces the masked argmax exactly and jumps less often. Text-level
-  forcing jumps over every forced string and has to decide how to tokenize it. A
-  related repair at the start of generation is `token-healing`.
-- With sampling instead of argmax nothing changes: a distribution masked to one
-  token is a point mass, so a forced step consumes no randomness worth modeling.
+- **SGLang** introduced the name jump-forward decoding (in "SGLang: Efficient Execution of Structured Language Model Programs", arXiv 2312.07104, and the LMSYS blog post "Fast JSON Decoding for Local LLMs with Compressed Finite State Machine"). SGLang operates at the text level, compressing consecutive singular transitions in the regex automaton into one edge and prefilling that string. Because text-level jumping bypasses token choices, SGLang re-tokenizes the combined text so the model continues from its tokenizer's native segmentation. The LMSYS post notes that alternate tokenizations shift downstream distributions and puts the re-tokenization overhead at about 4 percent.
+- **llguidance** (the constraint engine behind Guidance) exposes forced tokens to the host as fast-forward tokens. After a token is committed, the parser returns any subsequent tokens forced by the grammar, and the host appends them in one batch. It enables this only for tokenizers with a canonical tokenization.
+- These two designs split exactly on the distinction in the specification note. Token-level forcing (this problem) reproduces masked decoding exactly at the cost of jumping less often, while text-level forcing jumps over every forced string and must resolve tokenization boundaries. A related boundary fix at the start of generation is `token-healing`.
+- Under sampling instead of greedy decoding, the logic is identical. A distribution masked down to one token has probability 1 on that token, so a forced step consumes no randomness.

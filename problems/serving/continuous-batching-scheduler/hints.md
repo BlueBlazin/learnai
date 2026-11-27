@@ -1,29 +1,19 @@
-The loop needs to remember two things between steps: who is waiting for a slot, and
-who holds one. After a step returns, which of those change, and what tells you how?
-(Look at what `engine.step` returns, and remember that a sequence admitted in this
-step was prefilled, not decoded.)
+Track two collections across steps: the requests waiting for a slot and the sequences currently holding one. After `engine.step` returns, think about which of those collections change and what tells you how to update them. Remember that a sequence admitted in the current step was prefilled, not decoded.
 
 ---
 
-Keep a `deque` of waiting requests and a list `running` of ids in admission order. One
-iteration of `while True`:
+Keep a `deque` of waiting requests and a list `running` of live sequence ids in admission order. In each iteration of `while True`:
 
-1. if both are empty and the queue is empty, `await queue.get()` and append the result;
-2. drain the queue with `get_nowait()` while `not queue.empty()`;
-3. pop from the left of `waiting` while `len(running) + len(prefill) < max_running`,
-   calling `engine.admit(request)` and appending `(request.id, request.prompt_tokens)`
-   to this step's `prefill`;
-4. `await engine.step(prefill=prefill, decode=running)`, passing `running` as it was
-   *before* this step's admissions.
+1. If `waiting`, `running`, and `queue` are all empty, block on `await queue.get()` and append the request to `waiting`.
+2. Drain `queue` with `get_nowait()` while `not queue.empty()`.
+3. While `waiting` is non-empty and `len(running) + len(prefill) < max_running`, pop from the left of `waiting`, call `engine.admit(request)`, and append `(request.id, request.prompt_tokens)` to `prefill`.
+4. Call `await engine.step(prefill=prefill, decode=running)` using `running` as it stood *before* this step's admissions.
 
-Steps 1 and 2 guarantee that the step in 4 is never empty.
+Steps 1 and 2 guarantee that step 4 never runs an empty batch.
 
 ---
 
-The update after the step is where the classic mistakes live. The new sequences join
-`running` only now (so they are decoded from the next step on), and everything in
-`result.finished` leaves in the same statement (so its slot is free when the next
-iteration counts):
+Updating `running` right after the step avoids the most common bugs. Newly prefilled sequences join `running` only after the step returns (so they decode from the next step onward), and every id in `result.finished` is removed immediately (so its slot is free before the next admission check):
 
 ```python
 result = await engine.step(prefill=prefill, decode=running)
@@ -31,5 +21,4 @@ finished = set(result.finished)
 running = [i for i in [*running, *(i for i, _ in prefill)] if i not in finished]
 ```
 
-A request with one output token finishes in its prefill step: it is in `prefill` and
-in `result.finished` at once, and this line handles it without a special case.
+If a request has only one output token, it appears in both `prefill` and `result.finished` on the same step, and this comprehension handles it without a special case.

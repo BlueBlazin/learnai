@@ -1,21 +1,12 @@
-Look at the conversation from the model's side. After an assistant message with
-three tool calls, what must the next three messages be before the model will accept
-the conversation again? Now ask the same question when the second call names a tool
-you do not have, or when its tool raised. Is there any situation in which fewer
-than three tool messages is the right answer?
+Think about the conversation from the model's point of view. After an assistant message requests three tool calls, what must the next three messages in the transcript be before the model will accept the conversation again? Does that requirement change if one call names an unknown tool or raises an exception?
 
 ---
 
-Write one coroutine that turns a single tool call into its outcome string and
-**never raises**: unknown name, `json.loads` failing, arguments that are not a
-dict, and an exception from the tool each `return` an error string. With that, a
-step is simple: start that coroutine for every call, wait for all of them, and
-append one tool message per call. Keep the loop a `for _ in range(max_steps)`
-with the `return` for a final answer inside it, so the limit cannot be forgotten.
+Write a helper coroutine that turns a single tool call into its outcome string and **never raises**. Unknown tool names, `json.JSONDecodeError`, non-dict JSON arguments, and exceptions from `await tool(**arguments)` should all return a JSON error string. With that helper in place, run all calls in a step concurrently, wait for all of them to finish, and append one tool message per call. Use `for _ in range(max_steps):` with an early `return` on a final answer so the step limit is enforced automatically.
 
 ---
 
-`asyncio.gather` does the concurrency and the ordering in one line:
+`asyncio.gather` handles both concurrency and ordering in one call:
 
 ```python
 outcomes = await asyncio.gather(*(execute(tools, call) for call in calls))
@@ -23,7 +14,4 @@ for call, outcome in zip(calls, outcomes, strict=True):
     transcript.append({"role": "tool", "tool_call_id": call["id"], "content": outcome})
 ```
 
-It starts the coroutines in argument order and returns their results in argument
-order, however long each took. Because `execute` catches its own exceptions,
-`gather` never sees one, and one failing tool cannot cancel the others. Work on
-`transcript = list(messages)`, not on `messages`.
+`gather` starts the coroutines in argument order and returns their outcomes in argument order regardless of which finishes first. Because `execute` catches its own exceptions, one failing tool cannot cancel its siblings. Initialize `transcript = list(messages)` so you do not mutate the caller's list.

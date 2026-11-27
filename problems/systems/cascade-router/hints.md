@@ -1,19 +1,12 @@
-Two questions decide everything. What do you know about a call *before* you make it,
-and what do you only know after? The price is known before; the confidence only
-after. Which of the two checks therefore belongs in front of `model.complete`?
+Separate what you know *before* calling a model from what you learn *after*. You know a model's cost before the call, and you learn its confidence only from the reply. Which check belongs before `model.complete`?
 
 ---
 
-One loop over `enumerate(models)` with a running `spent`. At the top: if
-`spent + model.cost > budget`, stop without calling. Then call with
-`[{"role": "user", "content": prompt}]`, add the cost, and compute the confidence as
-`sum(logprobs) / len(logprobs)`. Remember the content, name, and confidence of this
-reply before you decide anything: if the budget stops the next stage, this is the
-answer you return.
+Loop over `enumerate(models)` while tracking `spent`. At the top of each iteration, stop if `spent + model.cost > budget`. Otherwise, call the model with `[{"role": "user", "content": prompt}]`, add `model.cost` to `spent`, and compute `confidence = sum(logprobs) / len(logprobs)`. Record the reply's `content`, `model.name`, and `confidence` right away so they are ready to return if the budget stops the next iteration.
 
 ---
 
-The decision after a call:
+After recording the reply, decide whether to accept and stop:
 
 ```python
 last = i == len(models) - 1
@@ -22,5 +15,4 @@ if last or confidence >= thresholds[i]:
     break
 ```
 
-`thresholds` has one entry fewer than `models`, so test `last` first. `accepted`
-stays `False` in exactly one situation: the loop ended on the budget check.
+Because `thresholds` has one fewer entry than `models`, check `last` before indexing `thresholds[i]`. The `accepted` flag stays `False` only when the loop stops at the budget check.

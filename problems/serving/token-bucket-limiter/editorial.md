@@ -1,39 +1,20 @@
 ## The idea
 
-**Refill lazily.** The balance is a function of time, so it does not have to be
-stored at every moment. Store the balance together with the time at which it was
-valid, and bring it up to date whenever someone looks:
+**Refill lazily.** Because the balance is a deterministic function of elapsed time, you do not need a background loop to update it. Store the balance alongside the timestamp `_updated_at` when it was last computed, and bring it up to date whenever any method runs:
 
 $$
-\text{balance} \leftarrow \min\bigl(\text{burst},\ \text{balance} + (\text{now} - \text{updated\_at}) \cdot \text{rate}\bigr).
+\text{balance} \leftarrow \min\bigl(\text{burst},\ \text{balance} + (\text{now} - \text{updated\_at}) \cdot \text{rate\_per\_s}\bigr).
 $$
 
-No background task ticks, an idle bucket costs nothing, and the balance is exact at
-every instant instead of a staircase.
+No background task ticks, an idle bucket consumes zero CPU, and the balance is exact at every instant instead of stepping in coarse intervals.
 
-**One queue, one timer.** Fairness is a single rule: only the head of the queue may be
-served. A waiting call must therefore be woken at one predictable moment, when the
-balance reaches the head's `n`, which is `(n - balance) / rate` seconds away. The
-bucket keeps one timer for that moment. Three events change the moment and re-arm the
-timer: a call joins an empty queue, the head is served (the next head has a different
-`n`), and a refund raises the balance.
+**One queue, one timer.** Fairness comes from a single rule. Only the head of the queue may be served. Because the head's token count `n` is known, the exact time it will be ready is `(n - balance) / rate_per_s` seconds from now. The bucket maintains at most one timer for that deadline and re-arms it whenever one of three events occurs: a call joins an empty queue, the head is served and exposes a new head, or a `refund` raises the balance.
 
-**Why the head only.** If any waiting call that fits could be served, small requests
-would consume the tokens as fast as they accrue, and a large request would never see
-the balance reach its `n`. Reserving the trickle for the head bounds every wait: a
-call waits at most the sum of the `n` of the calls ahead of it, plus its own, divided
-by the rate. `try_acquire` has to respect the same rule, or it becomes the side door
-through which small requests barge.
+**Why only the head can be served.** If any queued call that fits could take tokens, small requests would drain tokens as fast as they accrue and a large request would never see the balance reach its `n`. Reserving incoming tokens for the head bounds every wait. A call waits at most the sum of `n` across the calls ahead of it, plus its own `n`, divided by `rate_per_s`. `try_acquire` must obey the same rule, or it becomes a back door that lets small requests cut in front of queued callers.
 
-**Settle, then act.** Every public method first brings the bucket up to date: credit
-the refill and serve whoever that covers. This makes the outcome independent of the
-order in which the event loop happens to run a timer and a call that fall on the same
-instant. It matters in `refund`: if the head's tokens have just accrued and the refund
-is added first, the cap at `burst` can destroy tokens that the head was about to take.
+**Settle, then act.** Every public method first refills the balance and serves any waiting calls that are now covered. This makes behavior independent of the order in which the event loop dispatches a timer callback and a user call scheduled at the same instant. It is especially important in `refund`. If the head's tokens have just accrued and `refund` adds tokens before serving the head, capping at `burst` can discard tokens that the head should already have taken.
 
-**Why `n > burst` must raise.** The balance never exceeds `burst`, so such a request
-would wait forever, and in a FIFO queue everything behind it would wait forever too.
-The only correct moment to report it is the call.
+**Why `n > burst` must raise immediately.** The balance can never exceed `burst`, so a request with `n > burst` would wait forever. In a FIFO queue, every call behind it would stall forever as well. Raising `ValueError` at call time prevents that deadlock.
 
 ## Reference solution (Python)
 
@@ -97,62 +78,27 @@ class TokenBucket:
             self._timer = asyncio.get_running_loop().call_later(delay, self._serve_waiters)
 ```
 
-`EPSILON` (`1e-9` tokens) is for rates that are not binary fractions: when the timer
-fires, `elapsed * rate` can come out one rounding error short of `missing`, and
-without the slack the timer would be re-armed for a delay too small to advance the
-clock. The tests use exactly representable values, where it plays no role.
+`EPSILON` (`1e-9` tokens) protects against floating-point rounding when `rate_per_s` is not a binary fraction. When the timer fires, `elapsed * rate_per_s` can fall one ULP short of `missing`. Without that small tolerance, the timer would re-arm with a delay too tiny to advance the clock. The test suite uses exact binary fractions, so `EPSILON` does not affect the test results.
 
 ## Common mistakes
 
-- **Refilling on a tick.** A background task that adds `rate` tokens every second
-  (or every 100 ms) releases tokens in lumps: requests are granted at tick boundaries,
-  up to a tick late, and traffic leaves in synchronized bursts. It also runs forever
-  on an idle bucket.
-- **Barging.** Checking only `balance >= n` in `try_acquire` or in the fast path of
-  `acquire` lets a small request take tokens that a waiting large request has been
-  saving for. The queue must be empty for the fast path.
-- **Serving whoever fits.** Scanning the queue for any call the balance covers looks
-  like better utilization and is starvation: under a steady stream of small requests,
-  the large one never returns.
-- **No cap, or a cap in one place only.** Without `min(burst, ...)` in the refill, a
-  bucket that was idle overnight admits an unbounded burst in the morning. The same
-  cap applies to `refund`.
-- **Waiting for the impossible.** Queueing a request with `n > burst` blocks it and
-  everyone behind it forever. Reject it at the call.
-- **A refund that wakes nobody.** Adding the tokens without serving the queue leaves
-  the waiters asleep until a wake-up computed from the old balance; the refunded
-  capacity sits unused in the meantime.
-- **Forgetting to re-arm.** After the head is served, the next waiter needs its own
-  timer. Without it the queue advances only when an unrelated call arrives, which in
-  production is a request that hangs until the next request comes in.
-- **Refunding before settling.** At the instant the head's tokens have accrued, adding
-  a refund first and capping at `burst` discards tokens the head should already have
-  taken.
-- **Starting empty.** `burst` is the allowance for a cold start; an empty bucket
-  throttles the first requests after every deploy.
+- **Refilling on a periodic tick.** A background task that adds tokens every second or every 100 ms releases capacity in chunks. Requests wait until tick boundaries, traffic leaves in synchronized bursts, and an idle bucket still burns CPU.
+- **Barging.** Checking only `balance >= n` in `try_acquire` or in the fast path of `acquire` lets small requests take tokens that a waiting large request is accumulating. The fast path must also require an empty queue.
+- **Serving whoever fits.** Scanning the queue for any call that fits looks like higher utilization, but it causes starvation. Under a steady stream of small requests, a large request never returns.
+- **Missing the `burst` cap.** Omitting `min(burst, ...)` during refill lets an idle bucket accumulate an unbounded burst overnight. The same cap is required in `refund`.
+- **Queueing impossible requests.** Enqueueing a call with `n > burst` blocks that call and every caller behind it forever. Validate `n <= burst` immediately on entry.
+- **Refunding without waking waiters.** Adding refunded tokens without serving the queue leaves waiting callers asleep until their old timer fires, wasting the returned capacity.
+- **Forgetting to re-arm the timer.** After serving the head, the next waiter needs a timer for its own deadline. Without re-arming, the queue only advances when an unrelated call arrives, causing requests to hang during quiet periods.
+- **Refunding before settling.** At the exact instant the head's tokens finish accruing, adding a refund first and capping at `burst` can clip tokens that the head was entitled to take.
+- **Starting empty.** `burst` is the cold-start allowance. Initializing the balance to `0` unnecessarily throttles the first requests after every deploy.
 
 ## Complexity
 
-Every operation is $O(1)$ amortized: one refill, and each waiting call is enqueued and
-dequeued once. Memory is $O(\text{waiting calls})$, and there is at most one pending
-timer whatever the queue length.
+Every operation runs in $O(1)$ amortized time. Each call performs one refill, and each waiting call is enqueued and dequeued once. Memory is $O(W)$ for $W$ waiting calls, with at most one active timer regardless of queue length.
 
 ## In the wild
 
-- **API providers** publish limits in tokens per minute next to requests per minute,
-  and count the request's `max_tokens` against the limit when the request is admitted.
-  Gateways such as LiteLLM and Envoy AI Gateway implement token-based limits the same
-  way: reserve an estimate, then correct it from the `usage` the model reports. The
-  correction is this problem's `refund`.
-- **GCRA**, the "virtual scheduling" form of the leaky bucket used by Redis-based
-  limiters, stores a single timestamp (the theoretical arrival time) instead of a
-  balance and a time. It is the same lazy idea and it fits in one atomic Redis
-  script, which is what a limiter shared by several gateway replicas needs.
-- **Inside the engine** the same fairness question appears one level down. vLLM's
-  scheduler is first come, first served by default, and the Virtual Token Counter
-  scheduler (Sheng et al., OSDI 2024) replaces "who arrived first" with "who has
-  been served the fewest tokens" to keep tenants fair without rejecting anyone.
-- **Rejecting versus waiting.** `try_acquire` is the path that answers HTTP 429 with a
-  `Retry-After` header; `acquire` is the path for batch jobs that prefer to queue.
-  Real limiters also remove a waiting call when its client disconnects, which this
-  problem leaves out.
+- **API providers and gateways** publish token-per-minute limits alongside request-per-minute limits and reserve `max_tokens` when a request enters. Gateways such as LiteLLM and Envoy AI Gateway follow this exact pattern, reserving an upfront estimate and reconciling it from the `usage` field reported by the model. That reconciliation is this problem's `refund`.
+- **GCRA (Generic Cell Rate Algorithm)** is the virtual-scheduling form of a leaky bucket used in Redis-backed rate limiters. It stores a single theoretical arrival timestamp instead of a balance and last-update time. It applies the same lazy-update principle and fits in one atomic Redis script for multi-replica gateways.
+- **Inside the serving engine**, the same fairness question reappears at the scheduler level. vLLM defaults to first-come, first-served scheduling, while the Virtual Token Counter scheduler (Sheng et al., OSDI 2024) prioritizes the tenant with the fewest served tokens to maintain fairness without rejecting traffic.
+- **Rejecting versus waiting.** `try_acquire` maps to returning HTTP 429 with a `Retry-After` header for interactive traffic, while `acquire` maps to queueing for batch workloads. Production limiters also remove a waiting caller when its client disconnects, which this problem omits.

@@ -1,22 +1,23 @@
-Start from the goal: the emitted token must have distribution `p`, although the
-proposal came from `q`. A token is emitted either because it was drafted and
-accepted, or because some draft was rejected and resampling chose it. If drafts are
-accepted with probability $\min(1, p[x]/q[x])$, how much probability does token $t$
-receive through the first route, and how much is still missing compared with $p[t]$?
+Start from the goal. The emitted token must follow `p`, even though the proposal came
+from `q`. A token can be emitted either because it was drafted and accepted, or
+because some draft was rejected and resampling picked it. If draft token `x` is
+accepted with probability $\min(1, p[x] / q[x])$, how much probability does token $t$
+get from acceptance, and how much is still missing compared with $p[t]$?
 
 ---
 
-Through acceptance, token $t$ receives $q[t] \cdot \min(1, p[t]/q[t]) = \min(p[t],
-q[t])$. What is missing is $p[t] - \min(p[t], q[t]) = \max(0, p[t] - q[t])$. So the
-resampling distribution must be proportional to $\max(0, p - q)$: zero wherever the
-draft model already supplies enough, positive where it undersupplies. It has to be
-normalized before you can sample from it, and its total is less than 1.
+Through acceptance, token $t$ receives
+$q[t] \cdot \min(1, p[t] / q[t]) = \min(p[t], q[t])$. The missing probability is
+$p[t] - \min(p[t], q[t]) = \max(0, p[t] - q[t])$. The resampling distribution must
+therefore be proportional to $\max(0, p - q)$, which is zero wherever the draft model
+already supplies enough mass and positive where it undersupplies. Remember that its
+sum is less than 1, so it must be normalized before sampling.
 
 ---
 
-Two decisions, two uniforms. Acceptance: `u_accept * q[x] < p[x]` (no division, no
-`min`). On rejection: `c = cumsum(clamp(p - q, min=0))`, and the token is the first
-index with `c[k] > u_resample * c[-1]`. Scaling the uniform by the total `c[-1]`
-is the normalization. The first index that exceeds a threshold equals the number of
-entries that do not: `sum(c <= threshold)`. Convert to a Python `int` and return the
-pair.
+Use two separate uniforms for the two decisions. Test acceptance with
+`u_accept * q[x] < p[x]`, which avoids both division and `min`. On rejection, compute
+`c = cumsum(clamp(p - q, min=0))` and find the first index where
+`c[k] > u_resample * c[-1]`. Multiplying `u_resample` by `c[-1]` performs the
+normalization, and the first index exceeding the threshold equals `sum(c <= threshold)`.
+Convert the token to a Python `int` and return `(token, accepted)`.

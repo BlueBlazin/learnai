@@ -1,16 +1,8 @@
-There are two separate questions, and it helps to answer them in two separate
-steps. First: ignoring the past, how many replicas does the present load call for?
-Second: given what was recommended recently, how far is the count allowed to drop?
-Only the second needs `state`.
+Split the policy into two independent steps. First, ignore history and compute how many replicas the current load requires. Second, use `state` to limit how far the replica count is allowed to drop based on recent recommendations.
 
 ---
 
-For the first step, compute everything in integers: the load, the capacity
-`current * target`, and the ceiling of `load / target`. Remember what `current`
-contains. For the second step, `state` can simply be the list of `(time,
-recommendation)` pairs that are still in the window. Build a new list each time:
-keep the entries that are younger than `window_s`, append the new one. Scaling up
-ignores the list; scaling down takes its maximum.
+For the first step, keep the arithmetic in integers for `load`, `capacity = current * cfg.target`, and the ceiling of `load / cfg.target`. Remember that `current` includes both `ready` and `starting` replicas. For the second step, store the recent `(time, recommendation)` pairs in `state`. Build a new list on every call containing only entries younger than `window_s`, then append `(metrics.now, raw)`. Scale-up returns `raw` immediately, while scale-down takes `min(current, max_in_window)`.
 
 ---
 

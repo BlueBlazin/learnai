@@ -1,47 +1,16 @@
 ## The idea
 
-The language "free text, then a tag, then free text" is regular whenever the tag
-contents are, so a dispatcher is a finite automaton over bytes, and a token is
-allowed when the automaton can read all of its bytes. What makes the problem worth
-doing is that the automaton is assembled from parts with different owners (the
-triggers, the begin strings, the content automata, the end strings), and each
-junction has a classic way to go wrong.
+Because each tag's content language is regular, the combined language of free text interspersed with tags is also regular. A dispatcher is therefore a finite automaton over bytes, and a token is allowed whenever the automaton can consume all of its bytes without failing. The main challenge is handling the transitions between the four components (triggers, begin strings, content automata, and end strings) cleanly.
 
-**Free text is a string search that never ends.** The reader has to notice the first
-moment the text ends with a trigger, reading one byte at a time. The only part of the
-past that can matter is the longest suffix that is still a proper prefix of some
-trigger: anything before it can no longer be part of a match. That suffix is the
-whole state. On a byte, extend it; if the result is not a prefix of any trigger,
-drop bytes from the front until it is (possibly until it is empty). This is the
-Aho-Corasick automaton of the trigger set, with the failure links computed on the
-fly. Clearing the suffix on a mismatch is the tempting shortcut, and it is wrong
-exactly when a trigger overlaps its own beginning.
+**Free text is a continuous string search.** Reading one byte at a time, the reader must detect the first position where the current free-text buffer ends with a trigger. Only the longest suffix that is still a proper prefix of some trigger can participate in a future match, so that suffix is the entire free-text state. On each new byte, append it to the suffix. If the result is not a prefix of any trigger, drop bytes from the front until it is (or becomes empty). This mirrors an Aho-Corasick automaton with failure links computed on the fly. Clearing the suffix on a mismatch is a common shortcut, but it fails whenever a trigger overlaps its own beginning.
 
-Requiring that no trigger contains another makes "the first position where the text
-ends with a trigger" unambiguous: if a trigger ended inside the held suffix earlier
-than at its end, it would be a substring of the trigger the suffix belongs to.
+Forbidding one trigger from containing another makes the first match unambiguous. If another trigger ended earlier inside the held suffix, it would be a substring of the trigger that the suffix belongs to.
 
-**Dispatch is a narrowing set.** After the trigger, the tags that begin with it are
-all candidates, and each byte keeps those that agree. Because no `begin` is a prefix
-of another, the moment one is complete it is the only candidate, and the dispatch is
-decided. A trigger without tags gives an empty candidate set at once, which makes it
-a forbidden string for free: the engine's way to say "the model may write anything,
-except this".
+**Dispatch narrows a candidate set.** Once a trigger fires, every tag whose `begin` starts with that trigger becomes a candidate. Each subsequent byte keeps only the candidates that expect that byte next. Because no `begin` is a prefix of another, the first time a candidate's `begin` completes, it is guaranteed to be the only remaining candidate. A trigger with no belonging tags immediately produces an empty candidate set, which makes it a forbidden string in free text.
 
-**Content hands over to the end string.** The content automaton reads for as long as
-it can. When it cannot, the byte must begin the end string, and only if the content
-is complete. The guarantee in the constraints (no accepting state can read the end
-string's first byte) is what keeps this deterministic; without it the reader would
-have to follow both possibilities at once, as `grammar-token-mask` does.
+**Content hands off to the end string.** The `inner` automaton consumes bytes as long as it has a valid transition. When `inner.step` returns `DEAD`, the byte must match `end[0]` and the automaton must currently be in an accepting state. Because the constraints guarantee that no accepting state of `inner` transitions on `end[0]`, this handoff is deterministic. Without that guarantee, the reader would have to track both branches in parallel, as in `grammar-token-mask`.
 
-**Tokens see none of this.** A token is a few bytes, and those bytes may end a
-trigger, pass through a begin string, and enter the content, or close the content
-and the tag in one piece. So nothing is ever decided per token: the token mask is
-"walk the bytes, see whether the walk survives", and the state after a token is
-wherever the walk stopped. A special token has no bytes, survives every walk
-vacuously, and has to be excluded by hand. End of sequence is the loop's business:
-it is permitted exactly when `is_accepting` holds, which here means the reader is in
-free text.
+**Tokens are transparent to the automaton.** A single token can end a trigger, traverse a `begin` string, and enter content, or close both the content and the `end` string at once. Nothing should be decided at the token level. To test whether a token is allowed, walk its bytes through the byte-level transition function and check that the walk succeeds. The state after `advance` is simply the state reached at the end of the walk. Special tokens have empty byte strings, so a byte walk would succeed vacuously and they must be filtered out explicitly. End of sequence is handled by the decoding loop, which allows stopping only when `is_accepting` is true (that is, in free text).
 
 ## Reference solution (Python)
 
@@ -96,73 +65,28 @@ def allowed(self, state):
     ]
 ```
 
-`_walk` applies `_step` to each byte and stops at the first `None`; `advance` is
-`_walk` with a `ValueError`; `is_accepting` is `state[0] == "free"`. The constructor
-encodes the strings to bytes and checks the three ambiguity rules. States are tuples
-of ints, bytes, and tuples, so they are hashable, and nothing about a generation
-lives in the object: two generations can share one dispatcher.
+`_walk` applies `_step` to each byte of a token and returns `None` on the first invalid byte. `advance` calls `_walk` and raises `ValueError` if it returns `None`. `is_accepting` checks `state[0] == "free"`. The constructor encodes all strings to UTF-8 bytes and checks the three ambiguity rules. Because states are tuples of strings, integers, bytes, and tuples, they are hashable and immutable, and multiple generations can safely share one dispatcher instance.
 
 ## Common mistakes
 
-- **Looking for the trigger inside one token.** `<tool_call>` is a single token only
-  in tokenizers that were trained with it as a special token. Everywhere else it is
-  five to eight tokens, and a dispatcher that tests `trigger in piece` never fires.
-  The partial match has to live in the state.
-- **Clearing the partial match on a mismatch.** Correct for triggers that do not
-  overlap themselves and wrong for `<<fn=` after `<<<`. Restart from the longest
-  suffix that still matches.
-- **Carrying the scan across a tag.** After the end string the scan starts from
-  nothing. If the end string's last bytes are kept (a fence closed by three
-  backticks, a trigger that begins with three backticks), ordinary text after the
-  tag fires a trigger that is not there.
-- **Taking the first tag of a trigger**, or **not narrowing the candidates.** The
-  first makes all but one function of `<function=` uncallable; the second accepts
-  the beginning of one tag followed by the rest of another.
-- **Keeping content state in the object.** The content automaton must start from its
-  start state for every call. State kept on `self` and never reset makes the second
-  call continue the first one's content, and makes the dispatcher unusable for two
-  requests at once.
-- **Skipping the end string.** Returning to free text as soon as the content is
-  complete lets the model leave the tag open; the client's parser, which waits for
-  `</tool_call>`, then swallows the rest of the reply.
-- **Accepting inside a tag.** `is_accepting` must be false from the byte that fires
-  the trigger to the last byte of the end string, including the begin and end
-  strings, not only the content.
-- **Special tokens.** A walk over no bytes always survives. Without `if piece`,
-  end-of-sequence is "allowed" in the middle of the arguments.
-- **Ignoring a trigger without tags.** It is not a no-op: it is the one string the
-  free text may not contain.
-- **No validation.** With one trigger inside another, which one fires depends on the
-  implementation; rejecting the configuration is the only honest answer.
+- **Looking for the trigger inside a single token.** A trigger like `<tool_call>` is one token only if the tokenizer added it as a special token. Otherwise it spans five to eight tokens, so testing `trigger in piece` never fires. The partial trigger match must live in the state.
+- **Clearing the partial match on a mismatch.** Resetting the suffix to empty works only when triggers do not overlap themselves. For a trigger like `<<fn=`, reading `<<<` must retain `<<` rather than clearing the buffer.
+- **Carrying the trigger scan across a tag.** After a tag's `end` string finishes, free text starts fresh with an empty suffix. Keeping trailing bytes from `end` (such as a closing triple backtick when a trigger starts with three backticks) causes ordinary text after the tag to fire a false trigger.
+- **Picking the first matching tag or failing to narrow candidates.** Picking the first tag of a trigger makes every other tag sharing `<function=` unreachable. Failing to narrow the candidate set accepts the prefix of one tag followed by the suffix of another.
+- **Storing content state on `self`.** Each tag invocation must start its `inner` automaton at `inner.start`. Storing mutable state on `self` corrupts subsequent calls and breaks concurrent generations sharing the dispatcher.
+- **Skipping the end string.** Returning to free text as soon as `inner` accepts lets the model leave tags unclosed. A downstream parser waiting for `</tool_call>` then swallows the rest of the reply.
+- **Accepting inside a tag.** `is_accepting` must be `False` from the byte that fires the trigger through the last byte of `end`, including the `begin` and `end` phases, not only during `inner`.
+- **Allowing special tokens.** Walking zero bytes always succeeds. Without checking `if piece`, end-of-sequence tokens appear in `allowed` even inside a tag.
+- **Ignoring a trigger with no tags.** Such a trigger is not a no-op. It represents a string that free text is forbidden from containing.
+- **Skipping constructor validation.** If one trigger contains another, which trigger fires becomes implementation-dependent. Rejecting ambiguous configurations upfront is the only consistent behavior.
 
 ## Complexity
 
-One `allowed` call walks every token once: $O(\sum_t |t|)$ steps, each constant
-apart from the trigger-prefix test, which is bounded by the number and length of the
-triggers. An engine would precompute the failure links and, since the whole thing is
-a finite automaton, index the allowed tokens per state as in `dfa-token-index`. In
-free text almost every token is allowed, so real engines special-case it: only the
-tokens that could touch a trigger need checking.
+Each call to `allowed` walks every token in the vocabulary once, taking $O(\sum_t |t|)$ byte steps (where $|t|$ is the byte length of token $t$). Each step is constant time except for the trigger-prefix check in free text, which is bounded by the number and length of the triggers. A production engine precomputes Aho-Corasick failure links and indexes allowed tokens per automaton state (as in `dfa-token-index`). Because almost every token is allowed in free text, production engines also special-case free text and inspect only tokens that could touch or advance a trigger.
 
 ## In the wild
 
-- **XGrammar** calls the format a structural tag. Its documentation describes
-  `triggered_tags` as allowing "arbitrary text until a trigger is encountered", then
-  dispatching "to one of several tags", with arbitrary text allowed again after the
-  tag ends; each tag has a `begin`, a content specification, and an `end`, each tag
-  should match exactly one trigger, and each trigger should be an unambiguous prefix
-  of the tags it dispatches to. The validation rules of this problem are that
-  requirement made checkable. Options there that this problem leaves out:
-  `at_least_one` (the output must begin with a tag), `stop_after_first`, and
-  `excludes`, strings the free text may not contain, which is what a trigger without
-  tags amounts to here.
-- The technical report "XGrammar-2: Dynamic and Efficient Structured Generation
-  Engine for Agentic LLMs" (arXiv 2601.04426) names the dispatching construct
-  TagDispatch.
-- **vLLM** and other OpenAI-compatible servers accept the format as
-  `response_format` of type `structural_tag` and pass it to the grammar backend, with
-  JSON schemas for the tag contents instead of the regular expressions used here.
-- The stream parser of `tool-call-stream-parser` is the other half of the same
-  design: this constraint guarantees that what is generated after a trigger is a
-  well-formed call, and the parser turns it into API events. Its "hold back a
-  possible tag start" is the same suffix that the free state carries here.
+- **XGrammar** calls this construct a structural tag. Its `triggered_tags` format allows arbitrary text until a trigger appears, dispatches to one of several tags (each with `begin`, content schema, and `end`), and returns to arbitrary text after `end`. XGrammar requires each tag to match one trigger and each trigger to be an unambiguous prefix of its tags, which matches the validation rules here. XGrammar also supports options omitted in this problem, including `at_least_one` (requiring the output to start with a tag), `stop_after_first`, and `excludes` (forbidden strings in free text, equivalent to a trigger with no tags here).
+- The technical report "XGrammar-2: Dynamic and Efficient Structured Generation Engine for Agentic LLMs" (arXiv 2601.04426) refers to this dispatching construct as `TagDispatch`.
+- **vLLM** and other OpenAI-compatible serving engines expose this feature via `response_format` with type `structural_tag`, passing JSON schemas for the tag contents to the grammar backend instead of the regular expressions used here.
+- The stream parser in `tool-call-stream-parser` is the decoding-side counterpart to this problem. This constraint guarantees that text after a trigger forms a valid tool call, while the stream parser converts it into structured API events. Its buffered prefix for a potential tag start is the exact same suffix that the free-text state tracks here.

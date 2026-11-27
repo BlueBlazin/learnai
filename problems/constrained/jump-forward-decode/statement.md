@@ -1,10 +1,4 @@
-In structured output most tokens are not decisions. After `{"safe": ` has begun, the
-key, the quotes, and the closing brace are dictated by the format, and a forward pass
-whose result is masked down to a single token computes nothing. Write the constrained
-decoding loop that skips those passes: a token that is the only permitted one is
-appended without running the model, and the model is called only when it has a real
-choice to make, in one call that also catches it up on everything it skipped. The
-output must be exactly what the ordinary constrained loop produces.
+Implement `jump_forward_decode`, a constrained greedy decoding loop that skips model forward passes whenever only one token is permitted. Forced tokens are appended directly without calling the model, then fed together in a single batch the next time the model has a real choice. The returned token sequence must match standard constrained greedy decoding exactly.
 
 ![This problem is the decode loop, which here skips the model when only one token is allowed.](assets/map.svg)
 
@@ -14,76 +8,62 @@ output must be exactly what the ordinary constrained loop produces.
 def jump_forward_decode(lm, prompt, constraint, max_new_tokens, eos_id): ...
 ```
 
-`lm` is a [`TinyLM`](../../../python/src/learnai/kit/tinylm.py) and `constraint` a
-[`TokenConstraint`](../../../python/src/learnai/kit/constraint.py), both used as in
-`constrained-greedy-decode`:
+`lm` is a [`TinyLM`](../../../python/src/learnai/kit/tinylm.py) and `constraint` is a [`TokenConstraint`](../../../python/src/learnai/kit/constraint.py), used as in `constrained-greedy-decode`:
 
 ```python
-logits, cache = lm(tokens)  # start a sequence; one row of logits per token
+logits, cache = lm(tokens)         # start a sequence; one row of logits per token
 logits, cache = lm(tokens, cache)  # continue the cached prefix with one or more tokens
 
 state = constraint.start()
-constraint.allowed(state)  # sorted token ids that may come next; never eos_id
+constraint.allowed(state)          # sorted token ids that may come next (never eos_id)
 state = constraint.advance(state, token)
-constraint.is_accepting(state)  # may the output end here?
+constraint.is_accepting(state)     # whether the output may end here
 ```
 
-**The result** is defined by the loop of `constrained-greedy-decode`. With the
-constraint in state $s$, the permitted tokens are
+The other parameters are:
+
+- `prompt`: initial sequence of $P \ge 1$ token ids. The constraint does not apply to the prompt.
+- `max_new_tokens`: maximum number of tokens to generate ($\ge 1$). Forced tokens count toward this limit just like any other token.
+- `eos_id`: special token id marking the end of generation.
+
+The function returns the generated tokens (excluding `prompt`) as a list of Python ints.
+
+### Decoding semantics
+
+The output matches the loop in `constrained-greedy-decode`. When the constraint is in state $s$, the set of permitted next tokens is
 
 $$
-\text{permitted}(s) = \text{allowed}(s) \;\cup\; \begin{cases} \{\texttt{eos\_id}\} & \text{if is\_accepting}(s) \\ \emptyset & \text{otherwise,} \end{cases}
+\text{permitted}(s) = \text{allowed}(s) \;\cup\; \begin{cases} \{\texttt{eos\_id}\} & \text{if is\_accepting}(s) \\ \emptyset & \text{otherwise.} \end{cases}
 $$
 
-the next token is the permitted token with the largest next-token logit given the
-prompt and all tokens generated so far, and the constraint is advanced by it unless
-it is `eos_id`. Generation ends when nothing is permitted (return what was generated,
-without EOS), when `eos_id` has been generated (it is the last element), or when
-`max_new_tokens` tokens have been generated, whichever comes first.
+At each step, the next token is the permitted token with the highest next-token logit given the prompt and all tokens generated so far. Unless that token is `eos_id`, the constraint advances to `constraint.advance(state, token)`. Generation stops as soon as one of three conditions holds:
 
-**What this problem adds** is how little of the model that takes. Call a step
+- `permitted(s)` is empty (return the tokens generated so far, without `eos_id`),
+- `eos_id` is generated (included as the final element), or
+- `max_new_tokens` tokens have been generated.
 
-- **forced** when exactly one token is permitted, and
-- **free** when two or more are.
+### Forced steps and cost limits
 
-At a forced step the argmax over the permitted tokens can only return that one
-token, so its logits are not needed. Note what counts: the *permitted* set. A state
-with one allowed token that is also accepting has two permitted tokens (that token
-and EOS) and is free. A state that is accepting with nothing allowed has one, EOS,
-and is forced: the final EOS of a finished structure costs no model call.
+Classify each decoding step by the size of `permitted(s)`:
 
-A forced token still belongs to the sequence. The model must have seen it, in its
-place, before it scores any later free step, or those logits describe a different
-text.
+- A **forced** step has exactly one permitted token.
+- A **free** step has two or more permitted tokens.
 
-**Cost limits.** Let $g$ be the number of tokens returned, $f$ the number of free
-steps among them, and $L$ the number of tokens generated before the last free step
-($0 \le L < g$; not defined when $f = 0$).
+At a forced step, the argmax over `permitted(s)` can only return that single token, so the model's logits are not needed. Notice that this depends on the *permitted* set, not just `allowed(s)`. A state with one allowed token that is also accepting has two permitted tokens (that token and `eos_id`), making it a free step. Conversely, an accepting state with no allowed tokens has only `eos_id` permitted, so the final `eos_id` is forced and costs no model call.
 
-| counter | limit | why |
+Even though a forced token skips a forward pass, it still belongs to the sequence. The model must process every forced token in its proper position before scoring any later free step, or the logits will correspond to the wrong text.
+
+Let $g$ be the number of returned tokens, $f$ be the number of free steps among them, and $L$ be the number of generated tokens that precede the last free step ($0 \le L < g$, undefined when $f = 0$). Your implementation must stay within both counter limits:
+
+| counter | limit | explanation |
 |---|---|---|
-| `lm.counters.forward_calls` | $f$ | one call per free step; it feeds everything the model has not seen yet (the prompt, or the previous free token and the forced run after it) and its last row scores the choice |
-| `lm.counters.tokens_processed` | $P + L$, and $0$ if $f = 0$ | the prompt and every token before the last free step, once each; the last free token and whatever follows it are never fed |
+| `lm.counters.forward_calls` | $f$ | One call per free step, feeding all unseen tokens (either the prompt, or the previous free token plus any forced run after it) so the last row of logits scores the choice. |
+| `lm.counters.tokens_processed` | $P + L$ (or $0$ if $f = 0$) | The prompt and every token before the last free step are each fed once. The last free token and any trailing forced tokens are never fed. |
 
-So the prompt does not get a call of its own when the output begins with forced
-tokens, a run of forced tokens costs no call however long it is, a forced run at the
-end of the output is never fed, and an output that is forced from the first token to
-the last costs nothing at all.
-
-Parameters and result:
-
-- `prompt`: a list of ints, $P \ge 1$ token ids. The constraint does not apply to it.
-- `max_new_tokens`: an int $\ge 1$. It counts forced tokens like any others: a forced
-  run is cut where the limit is reached.
-- `eos_id`: an int, a special token of the vocabulary.
-- Returns the generated tokens (without the prompt) as a list of Python ints.
+In particular, the prompt does not trigger its own call when generation starts with forced tokens, a run of forced tokens costs no calls regardless of length, trailing forced tokens are never fed, and a completely forced output makes zero model calls.
 
 > [!NOTE]
-> Forced *text* is not a forced *token*. After `{"safe": ` the text `true` or `false`
-> must follow, but a vocabulary with the pieces `t`, `tr`, `tru`, and `true` permits
-> four tokens that all spell a prefix of `true`. Which of them the model emits is a
-> free step like any other: the tokenization is part of the output, and the model's
-> later logits depend on it. Only a step with a single permitted token is skipped.
+> Forced *text* is not the same as a forced *token*. After `{"safe": `, the text `true` or `false` must follow, yet a vocabulary containing `t`, `tr`, `tru`, and `true` permits multiple tokens that spell prefixes of `true`. Choosing among them is a free step because the tokenization becomes part of the output and affects later logits. Only skip a step when a single token is permitted.
 
 ## Shapes
 
@@ -96,8 +76,7 @@ Parameters and result:
 
 ## Example
 
-The constraint is the regular expression `\{"safe": (true|false)\}` over the kit's
-64-token vocabulary:
+Using the regular expression `\{"safe": (true|false)\}` over the kit's 64-token vocabulary:
 
 ```python
 lm = TinyLM(fw, seed=5)
@@ -124,38 +103,21 @@ jump_forward_decode(lm, [0, 17, 42, 5], constraint, 24, eos_id=1)
 | 11 | `{"safe": false` | `}` | forced | 40 `}` | |
 | 12 | `{"safe": false}` | EOS | forced | 1 | |
 
-Twelve tokens, three decisions, three calls ($f = 3$), and $4 + 7 = 11$ tokens
-processed ($L = 7$: seven tokens precede the choice of `fal`). The ordinary loop
-returns the same twelve tokens with 12 calls and 15 tokens processed.
+This produces 12 tokens with 3 free steps ($f = 3$) and $4 + 7 = 11$ tokens processed ($L = 7$, since seven tokens precede the choice of `fal`). Standard constrained decoding returns the same 12 tokens using 12 calls and 15 tokens processed.
 
-- Step 1 is free although the text must begin with `{"`: the vocabulary has both
-  `{` and `{"`, and the model prefers `{`. After that choice the quote is forced.
-- Step 7's call feeds the first free token and the five forced tokens after it
-  together. Its six rows of logits score six positions; only the last one is used.
-- Steps 9 to 12 are never fed. No decision comes after them.
+- Step 1 is free even though the text must begin with `{"`. The vocabulary contains both `{` and `{"`, and the model prefers `{`, after which `"` becomes forced.
+- Step 7 feeds the first free token together with the five forced tokens that followed it. The call returns six rows of logits, and only the last row is used.
+- Steps 9 through 12 are never fed because no decision follows them.
 
 ## Constraints
 
-- $1 \le P$, $1 \le$ `max_new_tokens`, and $P +$ `max_new_tokens` $\le$
-  `lm.max_context` (128).
-- The tokens are compared exactly with constrained greedy decoding that uses no
-  cache and makes one call per step. In the tests the two best permitted logits of
-  every free step differ by more than `1e-3`, so the result does not depend on how
-  the calls are split, and ties do not occur.
-- The counters are compared with the limits above. A solution over a limit fails
-  even when its tokens are right.
-- Use only the four methods of the constraint. The tests include a constraint that
-  is not built from a DFA and whose states are tuples.
+- $1 \le P$, $1 \le$ `max_new_tokens`, and $P +$ `max_new_tokens` $\le$ `lm.max_context` (128).
+- Output tokens are compared exactly against uncached single-step constrained greedy decoding. In all tests, the top two permitted logits at every free step differ by more than `1e-3`, so ties do not occur and batching calls does not change the result.
+- Both `lm.counters.forward_calls` and `lm.counters.tokens_processed` must stay within the limits above. Exceeding either limit fails even if the output tokens match.
+- Use only the four methods on `constraint`. The test suite includes a constraint that is not backed by a DFA and uses tuples as states.
 
 ## Why this matters
 
-A JSON schema with fixed keys is mostly punctuation and key names. An engine that
-runs one forward pass per token spends most of a structured request computing
-distributions it then masks to one entry; an engine that knows a token is forced
-appends it for free and batches the run into the next pass, where extra positions in
-one call are far cheaper than extra calls. SGLang calls this jump-forward decoding
-and llguidance fast-forward tokens. The trap is the token boundary. Jumping over
-forced *text* means choosing its tokenization for the model, and a model shown `{`
-then `"` where it would have produced `{"` continues from a sequence it has rarely
-seen. And a loop that appends forced tokens to its output but not to the model's
-context returns valid JSON whose free choices were made about a different document.
+A JSON schema with fixed keys consists mostly of punctuation and field names. An engine that runs one forward pass per token spends most of its time computing probability distributions only to mask them down to a single entry. By appending forced tokens for free and batching them into the next forward pass, serving engines eliminate most decode calls because processing a few extra positions in one pass is far cheaper than launching separate passes.
+
+SGLang calls this technique jump-forward decoding, and llguidance calls it fast-forward tokens. The subtle failure modes lie at token boundaries and cache state. Jumping over forced *text* instead of forced *tokens* imposes a tokenization on the model, which can push it onto a rare token sequence like `{` followed by `"` instead of `{"`. Even worse, appending forced tokens to the output without feeding them into the model's KV cache still produces syntactically valid JSON, while every subsequent free choice is conditioned on a different document.

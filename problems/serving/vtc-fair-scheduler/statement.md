@@ -1,9 +1,4 @@
-Make a continuous-batching scheduler fair between tenants with the Virtual Token
-Counter (VTC) algorithm: each tenant has a counter of the service it has received, in
-weighted tokens, and a free slot goes to the queued tenant with the smallest counter.
-The starter is a working first-come-first-served scheduler; the work is the three
-counter rules, of which the least obvious one keeps an idle tenant from saving up
-credit.
+Add multi-tenant fairness to a continuous-batching scheduler using the Virtual Token Counter (VTC) algorithm. Each tenant maintains a counter of the weighted tokens it has received, and each free slot goes to the queued tenant with the smallest counter. The starter code already implements a working first-come, first-served scheduler, so you only need to add the three VTC counter rules.
 
 ![This problem is the Waiting queue, where the tenant with the smallest counter goes first.](assets/map.svg)
 
@@ -17,62 +12,38 @@ class VTCScheduler:
     async def run(self) -> None: ...
 ```
 
-`engine` is a [`SimEngine`](../../../python/src/learnai/kit/simengine.py) with
-`max_running` slots. Requests are
-[`SimRequest`](../../../python/src/learnai/kit/workloads.py) objects;
-`request.tenant` is a string naming who sent it. Time is virtual and counted in
-**milliseconds**; a step over $P$ prompt tokens and $D$ decoded sequences takes
-$8 + 0.25\,P + D$ ms. Do not read `request.output_tokens`: a server does not know how
-long an output will be.
+`engine` is a [`SimEngine`](../../../python/src/learnai/kit/simengine.py) with `max_running` slots. `w_in` and `w_out` are the weights charged per input (prompt) token and per generated output token. Incoming requests are [`SimRequest`](../../../python/src/learnai/kit/workloads.py) objects, where `request.tenant` is a string identifying the sender and `request.prompt_tokens` is the prompt length. Time is virtual and measured in **milliseconds**. A step over $P$ prompt tokens and $D$ decoded sequences takes $8 + 0.25\,P + D$ ms. Do not read `request.output_tokens`, because a real server does not know output lengths in advance.
 
-The algorithm is Algorithm 2 of Sheng et al., "Fairness in Serving Large Language
-Models" (OSDI 2024). $Q$ is the queue of requests that have been submitted and not
-admitted, in arrival order. A tenant is *queued* if it has a request in $Q$; requests
-that are already running do not count. `counters[t]` is $c_t$, and a tenant enters
-`counters` with `0.0` at its first `submit`.
+Implement Algorithm 2 from Sheng et al., "Fairness in Serving Large Language Models" (OSDI 2024). Let $Q$ be the queue of submitted, unadmitted requests in arrival order. A tenant is *queued* if it has at least one request in $Q$. Requests that are already running do not make a tenant queued. Let $c_t$ denote `counters[t]`. A tenant is added to `counters` with value `0.0` on its first `submit` call and is never removed.
 
-**Arrival: `submit(request)`** is called by the test at the request's arrival instant,
-from a plain callback inside the event loop. With $u$ the request's tenant:
+**Arrival (`submit(request)`).** The test harness calls `submit` at the request's arrival instant from a plain callback inside the event loop. Let $u$ be `request.tenant`:
 
-1. If $u$ is not queued, apply the **counter lift**:
-   - if $Q$ is not empty: $c_u \leftarrow \max\bigl(c_u,\ \min\{c_i : i \text{ queued}\}\bigr)$;
-   - if $Q$ is empty: $c_u \leftarrow \max(c_u,\ c_l)$, where $l$ is the tenant of the
-     request that left $Q$ most recently (the last one admitted). If no request has
-     ever been admitted, $c_u$ is unchanged.
-2. Append the request to $Q$ and wake the loop.
+1. If $u$ is not currently queued, apply the **counter lift**:
+   - If $Q$ is non-empty, set $c_u \leftarrow \max\bigl(c_u,\ \min\{c_i : i \text{ is queued}\}\bigr)$.
+   - If $Q$ is empty, set $c_u \leftarrow \max(c_u,\ c_l)$, where $l$ is the tenant of the most recently admitted request. If no request has ever been admitted, leave $c_u$ unchanged.
+2. Append `request` to $Q$ and wake the scheduling loop.
 
-**Admission.** `run()` is the loop of `continuous-batching-scheduler`, given in the
-starter: before every step, while fewer than `max_running` sequences are running and
-$Q$ is not empty, one request is admitted; the step prefills the admitted prompts
-whole, in admission order, and decodes every sequence that was already running. The
-request to admit is chosen as follows:
+**Admission (`run()`).** The starter provides the continuous-batching loop from `continuous-batching-scheduler`. Before each step, while fewer than `max_running` sequences are running and $Q$ is non-empty, admit one request. The step then prefills all newly admitted prompts whole in admission order and decodes every previously running sequence. Choose each admitted request as follows:
 
-- $k$ is the queued tenant with the smallest counter. Among tenants with equal
-  counters, $k$ is the one whose earliest request comes first in $Q$.
-- The request is the earliest request of $k$ in $Q$.
-- Immediately, before the next choice of the same step:
-  $c_k \leftarrow c_k + w_\text{in} \cdot \text{prompt\_tokens}$.
+- Select the queued tenant $k$ with the smallest counter $c_k$. If multiple queued tenants tie for the smallest counter, pick the one whose earliest request appears first in $Q$.
+- Remove and admit the earliest request of tenant $k$ in $Q$.
+- Immediately charge its prompt tokens before making the next pick in the same step:
+  $$
+  c_k \leftarrow c_k + w_\text{in} \cdot \text{prompt\_tokens}.
+  $$
 
-**Generation.** When a step returns, for every id in `result.tokens` (the sequences
-that produced one output token in that step, the first token from the prefill step
-included): $c_t \leftarrow c_t + w_\text{out}$ for the sequence's tenant $t$.
+**Generation.** When `engine.step` returns, iterate through every sequence id in `result.tokens`. That list contains every sequence that produced an output token in the step, including the first token produced by a prefill step. For each sequence's tenant $t$, add $w_\text{out}$ to $c_t$:
+$$
+c_t \leftarrow c_t + w_\text{out}.
+$$
 
-So input tokens are charged when a request is admitted and output tokens one at a
-time as they are generated. Nothing else changes a counter: counters are never reset
-and never decrease.
+Input tokens are charged at admission, and output tokens are charged one at a time as they are generated. Nothing else modifies a counter. Counters are never reset and never decrease.
 
-**Events at one instant.** `submit` runs at the arrival instant even when a step is in
-flight, so a lift sees the counters as they are then, without the charges of the step
-that is still running. A request that arrives at the exact instant a step ends is
-submitted before that step's output tokens are charged. Requests that arrive at the
-same instant are submitted in arrival order.
+**Events at the same instant.** `submit` runs at the arrival instant even when a step is in flight, so a counter lift observes the counters as they stand then, before the in-flight step's output charges are applied. A request arriving at the exact instant a step finishes is submitted before that step's output tokens are charged. Requests arriving at the same instant are submitted in arrival order.
 
 ## Example
 
-`max_running = 1`, `w_in = 1`, `w_out = 2`. Every request has an 8-token prompt and 2
-output tokens: it holds the slot for 19 ms and costs its tenant 8 + 2 · 2 = 12.
-Tenant `a` sends requests 0, 1, 2 at time 0 and requests 6, 7 at 61. Tenant `b` sends
-request 3 at 5 and requests 4, 5 at 60.
+Let `max_running = 1`, `w_in = 1`, and `w_out = 2`. Every request has an 8-token prompt and 2 output tokens, so each request holds the slot for 19 ms and costs its tenant $8 + 2 \cdot 2 = 12$. Tenant `a` sends requests 0, 1, and 2 at time 0, and requests 6 and 7 at time 61. Tenant `b` sends request 3 at time 5, and requests 4 and 5 at time 60.
 
 | time | event | $c_a$ | $c_b$ |
 |---|---|---|---|
@@ -92,48 +63,24 @@ request 3 at 5 and requests 4, 5 at 60.
 
 ![The counters of the example. Tenant `b` sends nothing from 38 to 60 ms and returns lifted from 20 to 32, the counter of tenant `a`.](assets/counters.svg)
 
-The admissions are 0, 3, 1, 2, 4, 6, 5, 7. Between 38 and 60 tenant `b` sent nothing
-while `a` kept being served. Without the lift at 60, `b` would return with a counter of
-20 against 32 and both of its requests would be admitted before request 6; with it,
-the tenants alternate. Unused share is not saved up.
+The resulting admission order is 0, 3, 1, 2, 4, 6, 5, 7. Between 38 ms and 60 ms, tenant `b` is idle while tenant `a` continues to be served. Without the counter lift at 60 ms, tenant `b` would return at 20 against tenant `a`'s 32 and both of its requests would be admitted before request 6. With the lift, unused capacity is not saved as credit, and the two tenants alternate.
 
 ## Constraints
 
-- `1 <= max_running <= 8`; weights are positive and exactly representable (such as
-  0.5, 1, 2, 3, 4), so counters are exact floats. Up to four tenants in the seeded
-  workloads.
-- The algorithm determines every admission. The tests read `scheduler.counters` at
-  chosen instants and at the end, and compare admissions (time and id), engine steps,
-  and counters exactly: with literal values on small scenarios, and with the reference
-  on seeded Poisson and bursty workloads of up to 100 requests.
-- **Fairness bound** (Theorem 4.4 of the paper). The service a tenant receives in
-  $[t_1, t_2)$, $W(t_1, t_2)$, is $w_\text{in}$ times the prompt tokens of its requests
-  admitted in the interval plus $w_\text{out}$ times its output tokens generated in
-  it. For any two tenants $f$ and $g$ and any interval in which both are queued
-  throughout,
+- `1 <= max_running <= 8`. Weights are positive and exactly representable in binary floating point (such as 0.5, 1, 2, 3, or 4), so all counters are exact floats. Seeded workloads have up to four tenants.
+- Every admission is deterministic. The tests read `scheduler.counters` at chosen instants and at the end of each run, and compare admissions (time and id), engine steps, and counters exactly against literal values on small scenarios and against the reference on seeded Poisson and bursty workloads of up to 100 requests.
+- **Fairness bound (Theorem 4.4 of the paper).** Define the service $W_f(t_1, t_2)$ received by tenant $f$ during $[t_1, t_2)$ as $w_\text{in}$ times the prompt tokens of its requests admitted in that interval plus $w_\text{out}$ times its output tokens generated in that interval. Let $L_\text{input}$ be the longest prompt, $L_\text{output}$ be the longest output, and $M = \text{max\_running} \cdot (L_\text{input} + L_\text{output})$ be the maximum tokens in a running batch. For any two tenants $f$ and $g$ that remain queued throughout $[t_1, t_2)$,
 
   $$
-  |W_f(t_1, t_2) - W_g(t_1, t_2)| \le 2 \max(w_\text{in} \cdot L_\text{input},\ w_\text{out} \cdot M),
+  |W_f(t_1, t_2) - W_g(t_1, t_2)| \le 2 \max(w_\text{in} \cdot L_\text{input},\ w_\text{out} \cdot M).
   $$
 
-  where $L_\text{input}$ is the longest prompt and $M$ is the number of tokens that fit
-  in a running batch, here `max_running` $\cdot\ (L_\text{input} + L_\text{output})$.
-  The tests compute the left side from the engine's trace on every seeded workload,
-  including one with three tenants backlogged for 270 requests.
-- Work conservation: no slot is left free while a request is queued. Within a tenant,
-  requests are admitted in arrival order.
-- Use `asyncio` and the engine only; time is virtual.
+  The tests verify this bound from the engine trace on every seeded workload, including a three-tenant backlog of 270 requests.
+- **Work conservation and per-tenant order.** No slot may be left free while $Q$ is non-empty, and requests from the same tenant must be admitted in arrival order.
+- Use `asyncio` and the provided engine only, since time is virtual.
 
 ## Why this matters
 
-A shared LLM endpoint is a commons. First come, first served hands it to whoever sends
-the most: one tenant running a batch job fills the queue and everyone else's latency
-goes up by the length of that queue. The usual defense, a requests-per-minute limit
-per tenant, is both too strict and too loose: it rejects a tenant's traffic while GPUs
-sit idle, and it treats a 20-token question and a 4,000-token document with an
-essay-length answer as the same unit. VTC applies fair queueing, the idea behind
-network schedulers, to tokens: it never rejects work that fits, it measures what each
-tenant actually consumed, and it does so without knowing output lengths in advance,
-because counters are updated as tokens are produced. The paper proves that two
-backlogged tenants never drift apart by more than a constant, and the counter lift is
-what makes the guarantee hold for tenants that come and go.
+A shared LLM endpoint is a common resource. First-come, first-served scheduling hands capacity to whoever sends the most traffic, so one tenant running a batch job fills the queue and inflates latency for everyone else. The standard alternative, a per-tenant requests-per-minute limit, is both too rigid and too coarse. It rejects traffic even when GPUs are idle, and it counts a 20-token question the same as a 4,000-token document with a long answer.
+
+VTC brings fair queueing from packet networks to token serving. It never rejects work that fits, measures actual weighted token consumption, and updates counters as tokens are generated so it never needs to know output lengths upfront. The counter lift ensures that the constant fairness bound between backlogged tenants still holds when tenants go idle and return.

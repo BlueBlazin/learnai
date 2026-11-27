@@ -1,28 +1,16 @@
 ## The idea
 
-The mask for a state is a pure function of the state. A decoding run visits the same
-states over and over (inside a JSON string the automaton sits in one state for most
-tokens), and different requests with the same schema visit the same states too. So
-compute the function for every state once and store it:
+For a given automaton and vocabulary, the allowed token mask depends only on the current state. A single generation visits the same states repeatedly (for instance, staying in one state for most tokens inside a JSON string), and separate requests using the same schema revisit the same states as well.
+
+Let $Q$ be the set of automaton states, $b_t$ be the byte string of token $t$, $\varepsilon$ be the empty byte string, and $\delta^*(q, b)$ be the state reached by reading the bytes of $b$ in order from state $q$ (or $\text{DEAD}$ if any byte fails). Precomputing the allowed tokens and their destination states for every state $q \in Q$ gives the table:
 
 $$
 \text{index}[q] = \{\, t \mapsto \delta^*(q, b_t) \;:\; b_t \ne \varepsilon,\ \delta^*(q, b_t) \ne \text{DEAD} \,\}.
 $$
 
-Storing the next state next to each token makes `advance` a lookup as well, so after
-the build the automaton is never consulted again. The automaton over bytes has become
-an automaton over tokens: same states, one transition per allowed token.
+Storing each token's next state makes both `allowed_from_index` and `advance_from_index` pure lookups, so the byte-level automaton is never called again after `build_index`. In effect, the byte-level DFA has been compiled into a token-level DFA over the same states, with one transition per allowed token.
 
-That settles the queries. The build is where the work now is: $|Q|$ states times the
-whole vocabulary. Walking each token separately repeats steps, because vocabularies
-are full of tokens that extend other tokens: `t`, `tr`, `tru`, `true`. From a given
-state the walk of `true` passes through exactly the states that the walks of `t`,
-`tr`, and `tru` end in. A trie over the tokens' bytes makes that sharing explicit:
-each node is a distinct prefix, and walking the trie depth-first while carrying the
-automaton state visits each prefix once per state. When a step dies, every token
-below that node is dead too, and the whole subtree is skipped without a single
-further step. For restrictive states, which are the common case in structured
-formats, almost the entire vocabulary is cut off at the first byte.
+The main cost is now building that table across all $|Q|$ states. Walking each token from scratch repeats work whenever tokens share a prefix, such as `t`, `tr`, `tru`, and `true`. From any state $q$, the walk for `true` visits the exact same states where `t`, `tr`, and `tru` end. Organizing the vocabulary into a prefix tree (trie) makes that sharing explicit. Each trie node represents a distinct prefix, so a depth-first walk of the trie paired with the current DFA state steps each prefix at most once per state. Whenever a transition reaches `DEAD`, every token in that subtree is also dead, so the entire subtree is pruned immediately. In restrictive states—the common case in structured outputs—almost the entire vocabulary is pruned at the first byte.
 
 ## Reference solution (Python)
 
@@ -76,76 +64,30 @@ def advance_from_index(index, state, token):
         raise ValueError(f"token {token} is not allowed in state {state}") from None
 ```
 
-The trie is built once and reused for every state. A node keeps a *list* of tokens
-because real vocabularies occasionally contain two ids with identical bytes.
+The trie is constructed once and reused across all states. Each node stores a list of tokens rather than a single token id because real vocabularies sometimes assign two token ids to the same byte string.
 
-Two other ways to stay within the budget are worth knowing. Sorting the tokens by
-their bytes puts tokens with a common prefix next to each other, and a walk that
-keeps the states of the previous token's bytes can resume after the shared part: the
-same sharing without an explicit tree. And since the count is of `dfa.step` calls,
-remembering every `(state, byte)` result in a table of your own also meets it. That
-is fair, it is what a real DFA already is, but note what it leaves untouched: the
-loop over every byte of every token for every state is still there, only cheaper per
-iteration. The trie removes iterations.
+Two alternative approaches also satisfy the step budget. First, sorting tokens lexicographically by their bytes places shared prefixes next to each other, so a walk that keeps the previous token's state stack can resume after the longest common prefix without building an explicit tree. Second, memoizing `(state, byte)` transitions in a local cache avoids duplicate `dfa.step` calls, though it still loops over every byte of every token for every state instead of pruning dead subtrees like a trie does.
 
 ## Common mistakes
 
-- **A lazy "index".** Keeping the automaton and walking at query time, or filling the
-  entry for a state on its first query, is a cache, not an index: the first visit to
-  each state still stalls a decoding step, and the stall lands in the middle of a
-  request. The zero-step check catches both.
-- **Walking each token separately.** Correct output, 484 steps instead of 310 in the
-  example, and a worse ratio on real vocabularies, where long tokens are common.
-- **An index keyed by token only.** Recording where each token leads from the start
-  state answers the first step and no other. The key is the pair (state, token).
-- **Storing dead entries.** Writing `moves[token] = after` before testing `after`
-  puts `token: DEAD` into the table. Everything that survives its first bytes and dies
-  on its last then counts as allowed, and `advance` hands `DEAD` to the caller.
-- **Tokens only at the leaves.** In a trie of tokens, interior nodes are tokens too:
-  `t` and `tr` sit on the path to `true`. Recording a token only where a branch ends
-  loses exactly the short, frequent ones.
-- **No pruning.** Stepping on from `DEAD` (the kit lets you: the result stays `DEAD`)
-  walks the entire trie for every state. The index is right and the budget is blown.
-- **Special tokens at the root.** Inserting a token with empty bytes leaves it at the
-  root, "reached" from every state without a step. End-of-sequence is the decoding
-  loop's decision, made with `dfa.is_accepting(state)`.
+- **Building a lazy cache instead of an index.** Keeping `dfa` and walking tokens on demand—or populating `index[state]` on the first query for `state`—stalls decoding mid-request and fails the zero-step query requirement.
+- **Walking each token independently.** This produces the right table but blows the step budget (484 steps instead of 310 in the example, and far worse on real vocabularies with longer tokens).
+- **Keying the index only by token.** Recording transitions only from the start state works for the first decoding step and fails for every other state. The index must be keyed by `(state, token)`.
+- **Storing `DEAD` transitions.** Recording `moves[token] = after` before checking `if after == DEAD` inserts dead tokens into the table, causing them to appear in `allowed_from_index` and causing `advance_from_index` to return `DEAD` instead of raising `ValueError`.
+- **Recording tokens only at trie leaves.** Interior trie nodes can also be complete tokens, such as `t` and `tr` on the path to `true`. Recording tokens only at leaves drops short, frequent tokens.
+- **Forgetting to prune dead subtrees.** Continuing to step after `after == DEAD` (which `dfa.step` allows, returning `DEAD` again) walks the entire trie for every state and blows the step budget.
+- **Inserting empty special tokens at the root.** Putting a `b""` token on the root node makes it appear reachable from every state with zero steps. End-of-sequence is handled separately by the decoding loop via `dfa.is_accepting(state)`.
 
 ## Complexity
 
-Let $N$ be the number of trie nodes (distinct prefixes; at most the total number of
-bytes in the vocabulary) and $|Q|$ the number of states. The build makes at most
-$|Q| \cdot N$ steps, and in practice far fewer because of pruning. The index holds one
-entry per (state, allowed token) pair, $O(|Q| \cdot |V|)$ in the worst case; a state
-such as "inside a string", where nearly every token is allowed, costs a full row. A
-query is a dict lookup, plus a sort of the allowed ids unless the sorted list is
-stored at build time. Engines store each row as a bitmask of $|V|$ bits, ready to be
-applied to the logits.
+Let $|Q|$ be the number of automaton states, $|V|$ be the vocabulary size, and $N$ be the number of trie nodes (the number of distinct token prefixes, at most the total number of bytes in the vocabulary). Building the index takes at most $|Q| \cdot N$ steps, and far fewer in practice thanks to dead-subtree pruning.
+
+The index stores one entry per `(state, allowed token)` pair, which is $O(|Q| \cdot |V|)$ in the worst case. Permissive states, such as "inside a JSON string," can fill nearly an entire row of size $|V|$. Each `advance_from_index` call is an $O(1)$ dictionary lookup, and `allowed_from_index` is a lookup plus a sort unless the sorted id list is cached during `build_index`. Production engines typically store each row as a $|V|$-bit mask that can be applied directly to model logits.
 
 ## In the wild
 
-- **Willard and Louf (2023)**, "Efficient Guided Generation for Large Language
-  Models" (arXiv:2307.09702), is the source of the idea. Section 3 frames regex
-  guidance as transitions of a finite-state machine and builds a map $\sigma$ from
-  each FSM state to the set of vocabulary strings the machine can read from that
-  state (their Algorithms 3 and 4: for each vocabulary string, find the states from
-  which it can be walked). With the map in a hash table, a step's mask is a lookup
-  whose cost does not depend on the vocabulary size, where the earlier approach paid
-  $O(|V|)$ per token. The paper's map stores token sets; storing the next state with
-  each token, as here, is what the implementation does.
-- **Outlines** is that implementation. Its Rust core (`outlines-core`) builds
-  `state -> {token id -> next state}` by taking each reachable state in turn and
-  walking every token's bytes through a byte-level DFA, dropping walks that reach a
-  dead state, and it adds an end-of-sequence transition to every final state. It does
-  not use a vocabulary trie: its build is the "each token separately" loop of this
-  problem's naive solution.
-- **llguidance** keeps the vocabulary as a trie laid out flat in memory and walks it
-  against the lexer when a mask is needed, pruning dead subtrees as above; its
-  documentation puts a trie node visit at about 13 CPU cycles and a simple regex mask
-  for a 128k-token vocabulary at about 1.5 ms. It computes masks on the fly instead
-  of precomputing every state, which keeps startup cheap.
-- **XGrammar** (Dong et al., 2024) precomputes, for each grammar position, the tokens
-  whose validity does not depend on the parser stack, and checks only the remaining
-  context-dependent tokens at run time.
-- A context-free grammar has no finite set of states to index, which is why the
-  grammar engines above mix precomputation with run-time checks. The
-  `json-pushdown-validator` problem shows where the finite-state picture ends.
+- **Willard and Louf (2023)**, "Efficient Guided Generation for Large Language Models" (arXiv:2307.09702), introduced this indexing strategy. Section 3 compiles a regex into a finite-state machine and precomputes a map $\sigma$ from each state to the vocabulary strings readable from that state, turning per-step masking from $O(|V|)$ into a constant-time lookup. The paper stores token sets, while implementations also store the next state alongside each token.
+- **Outlines** (`outlines-core` in Rust) implements this as `state -> {token id -> next state}` by walking every token's bytes from each reachable state through a byte-level DFA, discarding dead walks, and adding an end-of-sequence transition on accepting states. It does not use a vocabulary trie, so its build resembles the per-token loop.
+- **llguidance** stores the vocabulary as a flat trie in memory and walks it against the lexer on demand, pruning dead subtrees just as above. Its documentation reports roughly 13 CPU cycles per trie node visit and about 1.5 ms for a simple regex mask over a 128k-token vocabulary, keeping startup cheap by avoiding full precomputation.
+- **XGrammar** (Dong et al., 2024) precomputes, for each grammar position, the tokens whose validity does not depend on the parser stack, leaving only context-dependent tokens to be checked at runtime.
+- Context-free grammars do not have a finite set of states to index completely, which is why grammar engines combine precomputation with runtime checks. The `json-pushdown-validator` problem explores where finite-state indexing stops.

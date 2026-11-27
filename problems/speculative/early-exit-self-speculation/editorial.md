@@ -1,52 +1,18 @@
 ## The idea
 
-A forward pass of an $L$-layer decoder over one position is a chain: embed, layers
-$0..L-1$, norm, head. Early exit cuts the chain after layer $E - 1$ and applies
-the norm and the head there. If the model was trained so that this is a decent
-predictor (LayerSkip trains with layer dropout and an early-exit loss for that
-purpose), then layers $0..E-1$ plus the head are a draft model that is *a prefix
-of the target's own computation*.
+A forward pass of an $L$-layer decoder over a sequence is a chain: embedding, layers $0 \dots L - 1$, final norm, and output head. An early exit cuts this chain after layer $E - 1$ and applies the same norm and head there. When the model is trained so that this exit is a reasonable predictor (as in LayerSkip, which uses layer dropout and an early-exit loss), layers $0 \dots E - 1$ plus the head act as a draft model that is a prefix of the target's own forward pass.
 
-That changes two things compared with a separate draft model.
+This changes two things compared with a separate draft model.
 
-**Verification is a continuation, not a second pass.** To verify drafts, the
-target needs its full-depth output at each drafted position. The first $E$ layers
-of that computation are exactly what the draft loop already ran: the state after
-layer $E - 1$ at a position depends only on the tokens up to that position, and
-those are the same tokens. So verification starts at layer $E$ with the saved exit
-states as input, and costs $L - E$ layers, not $L$. In one call over all
-$k' + 1$ positions, the late layers produce $g_0, \dots, g_{k'}$, the full
-model's greedy tokens, each conditioned on the drafts before it.
+**Verification is a continuation, not a second pass.** To verify $k'$ drafts, the target needs its full-depth output at each drafted position and the position right before them. The first $E$ layers of that pass are identical to what the draft loop just ran, because causal attention at any position depends only on earlier tokens, and those tokens are the same. Verification therefore starts at layer $E$ using the saved exit states as input, paying $L - E$ layers instead of $L$. One call over all $k' + 1$ positions yields $g_0, \dots, g_{k'}$, the full model's greedy tokens conditioned on the preceding drafts.
 
-**There is one cache.** Layers $0..E-1$ append their keys and values while
-drafting; layers $E..L-1$ append theirs for the same positions during
-verification. Between the two phases the early layers are ahead, which is why the
-kit's cache has per-layer lengths; after verification all layers cover the same
-positions again.
+**There is one cache.** Layers $0 \dots E - 1$ append their keys and values while drafting, and layers $E \dots L - 1$ append theirs for those exact same positions during verification. Between the two phases, the early layers are ahead of the late layers, which is why the cache tracks lengths per layer. After verification finishes, all layers cover the same prefix again.
 
-**Correctness** is the argument of `speculative-decode-loop`. $g_0$ is the full
-model's token given $S$; if $d_1 = g_0$, then $g_1$, computed given $S, d_1$, is
-the full model's token given the true continuation, and so on up to the first
-mismatch. Everything after it was computed on top of a token that is not emitted.
-The emitted tokens $d_1..d_n, g_n$ are therefore the full model's greedy tokens,
-whatever the exit predicts. The exit only decides how many rounds it takes.
+**Correctness.** The proof matches `speculative-decode-loop`. Token $g_0$ is the full model's greedy choice given the verified sequence $S$. If $d_1 = g_0$, then $g_1$ was computed on $S, d_1$ and is therefore the full model's true next token. The same holds for every consecutive match up to the first mismatch, where $g_n$ gives the full model's true token. Every token after the mismatch was conditioned on a rejected draft and is discarded. The emitted tokens $d_1 \dots d_n, g_n$ are therefore identical to greedy decoding, regardless of exit quality. The exit only determines how many rounds are needed.
 
-**Rollback.** After a round, every layer has keys and values for the $k'$ drafts,
-and $k' - n$ of them are rejected. All layers must go back to the verified
-tokens they have processed: $|S| - 1$ after the round's tokens are appended,
-since the newest token (the correction or bonus) has not been embedded yet. It is
-the first thing the early layers are fed in the next round. A rejected draft left
-in *any* layer's cache is attended to by every later position.
+**Rollback.** At the end of a round, every layer has cached keys and values for all $k'$ drafts, including the $k' - n$ rejected ones. All layers must be truncated back to the verified tokens they have already processed. After appending the round's $n + 1$ emitted tokens to $S$, that length is $|S| - 1$, because the newest emitted token (the correction or bonus token) has not been embedded yet and will be the first input of the next round. Leaving a rejected draft in any layer's cache allows every later position to attend to it and corrupts the output.
 
-**What is saved.** Count layer evaluations the way latency sees them on a GPU, one
-per layer per call. Greedy decoding pays $L$ per token. A round here pays
-$E (k' + 1)$ for drafting and $L - E$ for verifying, and emits $n + 1$ tokens.
-With everything accepted that is $E + (L - E)/(k + 1)$ per token: the early
-layers still run once per token, the late layers once per round. The token count
-goes the other way: every scored position passes through all $L$ layers whether
-its draft is accepted or not, so `layer_tokens` is never below greedy decoding's.
-Self-speculation trades batched work in the late layers for fewer sequential
-steps.
+**What is saved.** On a GPU, decoding latency tracks sequential layer evaluations (`layer_calls`), where one call over a short batch of tokens costs about the same as one call over a single token. Plain greedy decoding pays $L$ layer calls per token. One round here pays $E(k' + 1)$ calls for drafting plus $L - E$ calls for verification, emitting $n + 1$ tokens. When all $k$ drafts are accepted, the cost drops to $E + (L - E)/(k + 1)$ layer calls per token. The early layers still run once per token, while the late layers run once per round. Total token work (`layer_tokens`) does not decrease, because every scored position passes through all $L$ layers whether accepted or rejected. Self-speculation trades extra batched compute in the late layers for fewer sequential steps.
 
 ## Reference solution (PyTorch)
 
@@ -80,61 +46,25 @@ def self_speculative_greedy(lm, prompt, exit_layer, k, max_new_tokens):
         cache = cache.truncate(len(seq) - 1)
 ```
 
-The draft loop runs `n_draft + 1` early steps: the last one feeds the final draft
-only to obtain its exit state, which the bonus position needs. In the first round
-the first step carries the whole prompt, so the prompt passes through each layer
-exactly once. `cache.truncate` rolls back every layer at once; the invariant at
-the top of the loop is that all layers have processed `seq[:seen]`.
+The draft loop runs `n_draft + 1` early-layer steps. The final step feeds the last draft solely to produce its exit state for the bonus position. In the first round, `seq[seen:]` is the entire prompt, so every prompt token passes through each layer once. Calling `cache.truncate(len(seq) - 1)` rolls back every layer together, preserving the invariant at the top of the loop that all layers have processed `seq[:seen]`.
 
 ## Common mistakes
 
-- **Recomputing the early layers.** Verifying with a full forward pass over the
-  drafts (the natural port of a two-model loop, with one cache for the "draft
-  model" and one for the "target") is correct and pays $E$ extra layers on every
-  scored position: `layer_tokens` grows from $L$ to $L + E$ per position.
-- **Rolling back only the early cache.** With two cache objects it is easy to
-  truncate the one the draft loop uses and forget the other. The late layers then
-  verify the next round against keys and values of rejected tokens: wrong output,
-  no error.
-- **No rollback at all**, the same failure in every layer.
-- **An unnormalized exit.** `lm.head(h)` on the raw exit state. With a learned
-  gain in the final norm this is a different predictor; the full model still
-  corrects it, so the tokens are right and the acceptance rate collapses.
-- **Verifying position by position.** One late-layer call per drafted token gives
-  the right tokens with the layer calls of ordinary decoding.
-- **Dropping the bonus token**, so that a fully accepted round emits $k'$ tokens
-  instead of $k' + 1$ and the next round re-derives a token that was already
-  known.
-- **Drafting past the budget.** With $r$ tokens left, at most $r - 1$ drafts can
-  be emitted; drafting $k$ regardless and cutting the result wastes layer calls in
-  the last round (and all of them when `max_new_tokens` is 1).
-- **Rebuilding the cache every round**, which makes the work quadratic in the
-  sequence length.
+- **Recomputing the early layers.** Verifying with a full forward pass from layer 0 (porting a two-model loop with separate draft and target caches) returns the right tokens but pays $E$ extra layers on every scored position, increasing `layer_tokens` from $L$ to $L + E$ per position.
+- **Rolling back only the early cache.** When keeping two separate cache objects, it is easy to truncate the draft cache and forget the late layers. The late layers then attend to rejected tokens in the next round, producing wrong output with no runtime error.
+- **No rollback at all.** Failing to truncate the cache causes the same silent corruption across every layer.
+- **An unnormalized exit.** Calling `lm.head(h)` directly on the raw exit state skips the learned gain in `lm.norm`. The full model still corrects the mistakes, so the output stays exact while the acceptance rate collapses.
+- **Verifying position by position.** Calling the late layers once per drafted token gives the right output but uses as many layer calls as standard greedy decoding.
+- **Dropping the bonus token.** Emitting only $k'$ tokens when all drafts match forces the next round to re-derive a token the full model already computed.
+- **Drafting past the budget.** With $r$ tokens left to generate, at most $r - 1$ drafts can be emitted (the $r$-th comes from verification). Drafting $k$ tokens anyway and slicing the output wastes layer calls in the final round, and wastes all of them when `max_new_tokens == 1`.
+- **Rebuilding the cache every round.** Clearing the cache instead of truncating makes total compute quadratic in the sequence length.
 
 ## Complexity
 
-With $R$ rounds and $T = \sum_i (k'_i + 1)$ scored positions:
-$E \cdot T + (L - E) \cdot R$ layer calls and $L \cdot (P - 1 + T)$ layer-tokens,
-against $L \cdot g$ and $L \cdot (P + g - 1)$ for cached greedy decoding of $g$
-tokens. Memory: one KV cache for all layers, plus the exit states of at most
-$k + 1$ positions (or of the prompt in the first round).
+Across $R$ rounds and $T = \sum_i (k'_i + 1)$ scored positions, the algorithm uses $E \cdot T + (L - E) \cdot R$ layer calls and $L \cdot (P - 1 + T)$ layer-tokens. By comparison, cached greedy decoding of $g$ tokens uses $L \cdot g$ layer calls and $L \cdot (P + g - 1)$ layer-tokens. Memory is one KV cache across all $L$ layers plus the saved exit states for the current round (at most $k + 1$ positions, or $P + k$ positions in the first round).
 
 ## In the wild
 
-- "LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding"
-  (arXiv:2404.16710) is the method: decode with earlier layers, verify and
-  correct with the remaining layers, with a shared LM head for all layers. The
-  paper states what is reused. Because the first $E$ layers are the same in both
-  stages, a single KV cache serves draft and verification; and the exit layer's
-  query is saved (the *exit query cache*) so that verification can continue from
-  layer $E$ instead of recomputing the early layers. It calls the union of the
-  two the KVQ cache. The exit states this problem stores play the role of
-  that exit query cache.
-- The kit's `residual_scale` plays the role of LayerSkip's training recipe: it
-  makes the late layers refine what the early ones computed, so that an exit has
-  something to agree with. A model trained without early-exit supervision
-  behaves like the low-agreement fixture, and self-speculation makes it slower.
-- The same accounting applies to any scheme that drafts with part of the target
-  (skipping layers, a pruned or quantized copy sharing the cache): the saving is
-  whatever the draft and the verification can share, and it is lost wherever the
-  verification starts from the token ids again.
+- "LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding" (arXiv:2404.16710) introduces this method. It decodes with early layers, verifies and corrects with the remaining layers, and shares one LM head across all layers. Because the first $E$ layers are identical in both stages, a single KV cache serves both, and the exit layer's hidden state is saved (called the *exit query cache*) so verification continues from layer $E$ without recomputing early layers. The paper refers to the combined storage as the KVQ cache. The `exits` list in this problem plays the role of that exit query cache.
+- The kit's `residual_scale` simulates LayerSkip's training recipe by making late layers refine early representations so the exit agrees with the full model. A model trained without early-exit supervision behaves like a low-agreement fixture, where self-speculation adds overhead instead of speed.
+- The same cost accounting applies to any self-speculation scheme (such as layer skipping or a pruned/quantized copy sharing a cache). The speedup comes from whatever work verification can reuse, and disappears whenever verification restarts from token ids.

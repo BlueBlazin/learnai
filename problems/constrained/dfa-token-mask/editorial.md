@@ -1,35 +1,20 @@
 ## The idea
 
-Let $L$ be the language of the regular expression and $w$ the bytes generated so far.
-The decoder may append a token with bytes $b$ exactly when $w\,b$ is still a prefix of
-some string in $L$, because that is the condition under which a valid output remains
-reachable. A deterministic automaton summarizes everything about $w$ that matters in
-one number, its state $q$, and for a trimmed automaton "is still a prefix" is the same
-as "the walk has not died". So the test for a token is a walk of its bytes from $q$:
+Let $L$ be the language of the regular expression and $w$ be the bytes generated so far. The decoder may append a token $t$ with byte string $b_t$ if and only if $w b_t$ is a prefix of at least one string in $L$, because that guarantees a valid completion still exists.
+
+A deterministic automaton summarizes the history $w$ in a single state $q$. Let $\varepsilon$ denote the empty byte string, and let $\delta^*(q, b)$ denote the state reached by feeding the bytes of $b$ into the automaton starting from $q$ (or $\text{DEAD}$ if any transition fails). Because the automaton is trimmed, every non-$\text{DEAD}$ state can still reach an accepting state. Testing whether $w b_t$ remains a valid prefix therefore reduces to walking $b_t$ from $q$:
 
 $$
-t \text{ allowed in } q \iff b_t \ne \varepsilon \ \text{ and } \ \delta^*(q, b_t) \ne \text{DEAD},
+t \text{ allowed in } q \iff b_t \ne \varepsilon \ \text{ and } \ \delta^*(q, b_t) \ne \text{DEAD}.
 $$
 
-and the new state is $\delta^*(q, b_t)$. Three consequences follow from this
-definition, one for each kind of awkward token.
+When $t$ is allowed, the next state is $\delta^*(q, b_t)$. Three properties follow directly from this rule:
 
-- **Multi-byte tokens are jumps.** A token is allowed only if *every* byte survives.
-  It may cross several transitions, start in the middle of one syntactic element and
-  end in the middle of another (`": ` closes a key, adds the colon, and starts the
-  space before the value).
-- **Acceptance is not the criterion.** After `tr` the text is not in the language, but
-  it can become so. Requiring an accepting state after each token would leave only
-  the tokens that complete the entire output in one go.
-- **Fragments of characters need bytes.** The automaton reads bytes precisely so that
-  a token ending inside a UTF-8 character has a state to stop in. Nothing has to
-  decode anything.
+- **Multi-byte tokens span multiple transitions.** Every byte in $b_t$ must survive. A single token can close one syntactic element and begin another, as `": ` closes a JSON key, adds the colon, and starts the space before the value.
+- **Intermediate states do not need to be accepting.** After reading `tr`, the text is not yet in $L$, but later tokens can complete `true`. Requiring an accepting state after each token would allow only tokens that complete the entire string at once.
+- **Partial UTF-8 tokens work automatically at the byte level.** Because the automaton operates on bytes rather than decoded characters, a token ending partway through `€` simply lands in an intermediate byte state without requiring UTF-8 decoding.
 
-Special tokens are the one place where the rule needs an explicit clause. Their byte
-string is empty, a walk of zero bytes ends where it started, and "did not die" would
-let end-of-sequence, padding, and chat markers through in every state. They are
-excluded by the "at least one byte" condition, and the right to end is granted
-separately, by `is_accepting`.
+Special tokens need the explicit $b_t \ne \varepsilon$ clause. Walking zero bytes from $q$ returns $q$ without dying, which would allow end-of-sequence, padding, and chat markers in every state. Excluding empty tokens keeps the mask strictly about text continuation, while `dfa.is_accepting(state)` separately controls whether generation may stop.
 
 ## Reference solution (Python)
 
@@ -52,53 +37,24 @@ def advance(dfa, state, token, vocab):
     return after
 ```
 
-`advance` raises instead of returning `DEAD` because a dead state is silent: every
-later mask would be empty, and the loop would stop with half an output and no error.
+`advance` raises `ValueError` instead of returning `DEAD` so invalid moves fail loudly. Returning `DEAD` would silently cause every subsequent mask to be empty, halting decoding mid-output with no error.
 
 ## Common mistakes
 
-- **Requiring acceptance after each token.** `dfa.is_accepting(end)` instead of
-  `end != DEAD`. In the worked example this leaves `true` and `null` and removes the
-  six tokens that only begin a word.
-- **Checking only the first byte** (or first character). For `{"[a-z]+": ...}` the
-  token `": ` begins with a legal quote in several states where its second byte is
-  illegal. The mask then offers a token that `advance` rejects.
-- **Letting empty tokens through.** `dfa.walk(state, b"")` returns `state`. Without
-  the explicit exclusion, all five special tokens are allowed everywhere, including
-  end-of-sequence in the middle of the structure.
-- **Dropping tokens that are not valid UTF-8 alone.** `piece.decode()` fails for
-  `b'\xe2\x82'`, and treating that as "unusable" makes every character that the
-  tokenizer splits impossible to generate. The same bug appears when the automaton is
-  driven with decoded characters instead of bytes.
-- **Walking from the start state.** The mask depends on the current state; a mask
-  computed from `dfa.start` is right exactly once.
-- **Returning `DEAD` from `advance`** instead of raising.
+- **Requiring acceptance after each token.** Checking `dfa.is_accepting(end)` instead of `end != DEAD` keeps only `true` and `null` in the worked example and drops the six tokens that begin a word.
+- **Checking only the first byte or character.** For `{"[a-z]+": ...}`, the token `": ` starts with a valid quote in states where its second byte is illegal. The mask then permits a token that `advance` rejects.
+- **Allowing empty tokens.** Calling `dfa.walk(state, b"")` returns `state`. Without checking `if not piece`, all special tokens pass in every state, allowing end-of-sequence in the middle of an incomplete output.
+- **Rejecting tokens that are not standalone UTF-8.** Calling `piece.decode()` fails on fragments like `b'\xe2\x82'`. Dropping those tokens—or running the automaton on decoded characters instead of bytes—makes split characters impossible to generate.
+- **Walking from `dfa.start` instead of `state`.** The allowed set depends on the current state, so walking from the start state only works on the first step.
+- **Returning `DEAD` from `advance`.** Disallowed tokens must raise `ValueError`.
 
 ## Complexity
 
-One call walks every token: $O(\sum_t |b_t|)$ automaton steps, which is the total
-number of bytes in the vocabulary, at most. For a real tokenizer with 128,000 tokens
-that is up to several hundred thousand steps **per generated token**, on the CPU,
-while the GPU waits. Since the answer depends only on the state, not on the step, it can be computed
-once per state and stored. That is `dfa-token-index`.
+Let $|b_t|$ be the byte length of token $t$. Each call to `allowed_tokens` walks every token in the vocabulary, taking $O(\sum_t |b_t|)$ automaton steps in the worst case (at most the total number of bytes across all vocabulary tokens). For a 128,000-token vocabulary, that means hundreds of thousands of CPU steps per generated token while the GPU waits. Because the mask depends only on `state`, it can be precomputed once per state and stored in an index, which is the goal of `dfa-token-index`.
 
 ## In the wild
 
-- **Outlines** (Willard and Louf, 2023) introduced exactly this formulation: compile
-  the regex to a finite-state machine, track its state across tokens, and allow the
-  vocabulary strings that the machine can read from the current state. Its current
-  Rust core walks each token's bytes through a byte-level DFA, discards the token when
-  the walk reaches a dead state, and handles end-of-sequence separately by allowing it
-  in final states, as this problem does.
-- **llama.cpp** grammars work on code points: for each candidate token it decodes the
-  token's bytes, carrying an incomplete UTF-8 sequence over from the previous token,
-  and rejects the token if any character cannot be consumed by the grammar. The
-  partial-character state is the code-point equivalent of the intermediate byte states
-  here.
-- **llguidance** and **XGrammar** run the same byte-level test but organize the
-  vocabulary as a prefix tree, so that the walk for `tr` is shared by `tru` and
-  `true`, and precompute or cache masks per automaton state.
-- Hand-built automata can contain *trap* states that are alive but can never reach
-  acceptance. For those "did not die" is too weak a test and the real criterion is
-  "acceptance is still reachable from the end state". Regex compilers remove such
-  states, which is why the simple rule is enough here.
+- **Outlines** (Willard and Louf, 2023) popularized this formulation by compiling a regex to a finite-state machine, tracking its state across generated tokens, and allowing tokens whose bytes can be read from the current state. Its Rust core walks each token's bytes through a byte-level DFA, discards tokens that reach a dead state, and allows end-of-sequence separately in accepting states.
+- **llama.cpp** runs grammars on Unicode code points. For each candidate token, it decodes the token's bytes while carrying any incomplete UTF-8 sequence from the previous token, rejecting the token if any resulting character cannot be consumed. That carried partial-character state plays the same role as intermediate byte states here.
+- **llguidance** and **XGrammar** perform the same byte-level check over a prefix tree of the vocabulary, sharing the walk for `tr` across `tru` and `true`, and cache or precompute masks per automaton state.
+- Hand-built automata can contain trap states that are not `DEAD` yet can never reach an accepting state. In an untrimmed automaton, checking `end != DEAD` is not enough, and you must check whether an accepting state is still reachable. Regex compilers trim unreachable and trap states automatically, so checking against `DEAD` suffices here.

@@ -1,22 +1,18 @@
-Write the simplest loop first: for each request, wait for the gap, then `await
-send(i)`. Now suppose the server takes two seconds to answer and the gaps are a
-quarter of a second. When does request 5 go out? When should it? Which `await` in
-your loop is the reason?
+Start by imagining the simplest loop: for each request, sleep for the gap and then `await send(i)`. Now suppose the server takes 2 seconds per response and the gaps are 0.25 seconds. When is request 5 actually sent, when should it have been sent, and which `await` causes the delay?
 
 ---
 
-The pacing loop must never await a response. It computes the next intended time as
-an absolute time, sleeps until then, starts the request as its own task
-(`loop.create_task(one(i, intended))`), and goes on. Only after the last request has
-been started does it wait for the tasks, and then returns the records.
+The pacing loop must never await a server response. Instead, maintain `intended` as a running sum starting at `loop.time()` when `generate_load` is called:
 
-Keep the intended time as a running sum, `intended += -math.log(1.0 - u) / rate`,
-starting from `loop.time()` at the call, and sleep for `intended - loop.time()`. The
-schedule is then fixed by the uniforms; nothing that happens later can move it.
+```python
+intended += -math.log(1.0 - uniforms[i]) / rate
+```
+
+For each request, sleep for `intended - loop.time()` (if positive), spawn a task with `loop.create_task(one(i, intended))`, and move on to the next request. After spawning all tasks, wait for them to finish and return the collected records.
 
 ---
 
-Inside the task for one request:
+Inside the per-request task:
 
 ```python
 async def one(i, intended):
@@ -41,7 +37,4 @@ async def one(i, intended):
     }
 ```
 
-The wait for a slot happens in the request's own task, after its intended time is
-fixed, so it delays that request and no schedule. The latency subtracts `intended`,
-not `sent`. Wait for the tasks with `asyncio.wait(tasks)` (skip it when there are
-none).
+Acquiring the semaphore inside `one` delays only that request, never the pacing schedule. Compute `"latency_s"` as `done - intended` rather than `done - sent`. Finally, await all tasks with `await asyncio.wait(tasks)` when `tasks` is non-empty.

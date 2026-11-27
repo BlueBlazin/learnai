@@ -1,28 +1,19 @@
-Three small functions, each with one trap. For the confidence: the softmax
-probability of the largest logit depends only on differences between logits. What
-happens to `math.exp(1000.0)`, and how do you avoid ever computing it? For the
-simulation: write the loop for a single round first, and decide, for each of the
-five steps, which counter it touches.
+For `should_stop_drafting`, the softmax probability of the largest logit depends only on differences between logits. Think about what happens when calling `math.exp(1000.0)` and how to avoid overflowing. For `next_k`, pay close attention to which count defines a full acceptance. For `simulate`, write out a single round first and track which counters each of the five steps updates.
 
 ---
 
-`should_stop_drafting`: subtract the largest logit from every logit before
-exponentiating. The largest becomes $e^0 = 1$, so the confidence is
-`1 / sum(exp(x - top))`, and no exponent is positive.
+In `should_stop_drafting`, subtract the largest logit from every entry before exponentiating. The maximum entry becomes $e^0 = 1$, so the confidence is `1.0 / sum(math.exp(x - top) for x in logits)` and no exponent is positive.
 
-`next_k`: compare `n_accepted` with `n_drafted`, never with `k`. A draft that was
-cut to three tokens by the confidence rule and fully accepted is a success.
+In `next_k`, compare `n_accepted` against `n_drafted` rather than `k`. A draft shortened to three tokens by confidence stopping that gets all three accepted is still a full acceptance.
 
-`simulate`: the draft loop is "count the token, then ask whether to stop", in that
-order, so the low-confidence token is paid for and offered to the target. Cap the
-draft at `T - pos - 1`: the last token always comes from the target.
+In `simulate`, count each drafted token *before* checking `should_stop_drafting` so the triggering token is included in `n_drafted`, paid for, and verified. Cap the draft length at `T - pos - 1` because the last token always comes from the target model.
 
 ---
 
-The whole round:
+Here is the structure of one round inside `simulate`:
 
 ```python
-limit = min(k, total - pos - 1)
+limit = min(k, len(trace) - pos - 1)
 n_drafted = 0
 while n_drafted < limit:
     logits = trace[pos + n_drafted][1]
@@ -38,4 +29,4 @@ if schedule == "heuristic" and n_drafted > 0:
     k = next_k(k, n_accepted, n_drafted)
 ```
 
-Record `k` in `ks` at the top of the round, before any of this.
+Append the current `k` to `ks` at the start of the round, before updating `k`.

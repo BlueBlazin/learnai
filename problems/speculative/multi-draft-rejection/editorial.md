@@ -1,74 +1,46 @@
 ## The idea
 
-Recall the single step. A proposal $x \sim q$ is accepted with probability
-$\min(1, r[x]/q[x])$, where $r$ is the distribution we want. The probability of
-emitting token $v$ *by acceptance* is
+Start with the single-draft speculative sampling step. Given a target distribution $r$ and a draft proposal $x \sim q$, we accept $x$ with probability $\min(1, r[x] / q[x])$. The probability of emitting token $v$ by acceptance is
 
 $$
-q_v \cdot \min\!\big(1, r_v / q_v\big) = \min(r_v, q_v),
+q_v \cdot \min\!\big(1, r_v / q_v\big) = \min(r_v, q_v).
 $$
 
-so acceptance happens with probability $\beta = \sum_v \min(r_v, q_v)$, and what
-acceptance fails to deliver is $r_v - \min(r_v, q_v) = \max(0, r_v - q_v)$, of
-total mass $1 - \beta$. In the single step that deficit is paid by sampling from
-its normalized form,
+Summing over all tokens gives the total acceptance probability $\beta = \sum_v \min(r_v, q_v)$. What acceptance fails to cover is the deficit $r_v - \min(r_v, q_v) = \max(0, r_v - q_v)$, which has total mass $1 - \beta$. In the single-draft step, we cover this deficit by sampling directly from the normalized residual:
 
 $$
-r' = \frac{\max(0, r - q)}{1 - \beta},
+r' = \frac{\max(0, r - q)}{1 - \beta}.
 $$
 
-directly. **The observation behind multi-draft sampling is that "produce a sample
-from $r'$" is the problem we started with**, with $r'$ in place of $r$. If another
-independent proposal from $q$ is available, use it to attack that problem, by the
-same rule. Only when the proposals run out is the residual sampled directly.
+The key insight behind multi-draft sampling is that sampling from $r'$ is the exact same problem we started with, just with $r'$ in place of $r$. When another independent draft proposal from $q$ is available, we test it against $r'$ using the same rule. We only sample from the residual directly once all proposals are exhausted.
 
 ## Why it is exact
 
-**Claim.** For every distribution $r$ and every $n \ge 0$, the procedure started
-with residual $r$ and $n$ independent candidates from $q$ emits a token distributed
-as $r$.
+**Claim.** For every distribution $r$ and every $n \ge 0$, starting the procedure with residual $r$ and $n$ independent candidates from $q$ emits a token distributed as $r$.
 
-**Proof** by induction on $n$. For $n = 0$ the token is sampled from $r$ itself.
-For $n \ge 1$, split on the first candidate $x \sim q$ and its uniform:
+**Proof** by induction on $n$. For $n = 0$, the token is sampled directly from $r$. For $n \ge 1$, condition on the first candidate $x \sim q$ and its uniform draw:
 
-- it is accepted and emitted with probability $\min(r_v, q_v)$ for $x = v$;
-- it is rejected with probability $1 - \beta$. Its uniform and the other
-  $n - 1$ candidates are independent of that event, so the procedure continues
-  from residual $r'$ with $n - 1$ fresh candidates, and by the induction hypothesis
-  emits $v$ with probability $r'_v$.
+- Candidate 0 is accepted and emitted as token $v$ with probability $\min(r_v, q_v)$.
+- Candidate 0 is rejected with probability $1 - \beta$. Because the remaining $n - 1$ candidates and all remaining uniforms are independent of this rejection, the procedure continues from residual $r'$ with $n - 1$ fresh candidates. By the induction hypothesis, it emits token $v$ with probability $r'_v$.
 
-Together,
+Adding both cases gives
 
 $$
 P(\text{token} = v) = \min(r_v, q_v) + (1 - \beta) \cdot \frac{\max(0, r_v - q_v)}{1 - \beta}
 = \min(r_v, q_v) + \max(0, r_v - q_v) = r_v .
 $$
 
-Starting from $r = p$ gives the theorem: the output follows $p$ for any $q$ and
-any number of candidates. $\blacksquare$
+Setting $r = p$ proves that the emitted token follows $p$ for any draft distribution $q$ and any number of candidates $n$. $\blacksquare$
 
-Three things in the proof are load-bearing, and each corresponds to a way of
-getting it wrong:
+Three parts of this proof are load-bearing, and breaking any of them introduces bias:
 
-- the continuation targets $r'$, not $r$ and not $p$ (the residual must be
-  **updated**);
-- $r'$ is a distribution (the residual must be **normalized**, because the test
-  $u \cdot q[x] < r'[x]$ compares against a probability);
-- the rejection event must be independent of everything used afterwards (each
-  candidate has its **own uniform**, and the final sample has one more).
+- After a rejection, the next stage must target $r'$, not $r$ and not $p$.
+- The residual $r'$ must be normalized, because the acceptance test $u \cdot q[x] < r'[x]$ compares against a probability distribution.
+- Each rejection must be independent of all later steps, so each candidate needs its own uniform draw and the final resample needs one more.
 
-Note what does *not* change: $q$. The candidates are independent draws from the
-same distribution, so every stage tests against the same `q`. That also explains
-the behavior on duplicates. If $x$ is rejected then $r[x] < q[x]$, so
-$r'[x] = 0$: a second copy of $x$ is rejected with certainty, and it still
-advances the residual, exactly as the proof requires (it is one more independent
-proposal, and it happened to be useless).
+Notice that $q$ never changes. All candidates are independent draws from the same draft distribution, so every stage tests against the original `q`. This also explains duplicate candidates. If token $x$ is rejected, then $r[x] < q[x]$ and therefore $r'[x] = 0$. Any later copy of $x$ is rejected with certainty and still advances the residual, which is exactly what the proof requires since it is another independent draw from $q$.
 
-The acceptance probabilities $\beta_0, \beta_1, \dots$ with
-$\beta_i = \sum_v \min(r^{(i)}_v, q_v)$ form a fixed sequence, and the chance that
-all $n$ candidates fail is $\prod_i (1 - \beta_i)$. The first factor is the total
-variation distance between $p$ and $q$: the same as for a single draft. More
-candidates only help through the later factors.
+The stage acceptance probabilities $\beta_i = \sum_v \min(r^{(i)}_v, q_v)$ form a fixed sequence, and the probability that all $n$ candidates are rejected is $\prod_i (1 - \beta_i)$. The first factor $1 - \beta_0$ is the total variation distance between $p$ and $q$, matching single-draft sampling, while extra candidates reduce rejection probability through the later factors.
 
 ## Reference solution (PyTorch)
 
@@ -86,63 +58,24 @@ def multi_draft_step(p, q, candidates, u_accept, u_resample):
     return int((cdf <= u_resample * cdf[-1]).sum()), n
 ```
 
-The loop is sequential by nature: stage $i$ exists only if stage $i - 1$ rejected.
-(The residuals themselves do not depend on the candidates, so a batched
-implementation can precompute $r^{(0)}, \dots, r^{(n)}$ for every node and gather.)
-The JAX and MLX versions are line-by-line translations.
+The loop is inherently sequential because stage $i$ is only reached if stage $i - 1$ rejected. However, because the residuals $r^{(0)}, \dots, r^{(n)}$ do not depend on which candidates were drawn, a batched implementation can precompute them for every node and gather as needed. The JAX and MLX implementations are line-by-line translations.
 
 ## Common mistakes
 
-- **Independent tests against `p`.** Give every candidate the single-draft test
-  and fall back to sampling from `p`. Every stage then delivers $\min(p, q)$
-  again instead of what is still missing, so a token that the draft overrates
-  ($q_v > p_v$) collects its full probability $p_v$ at each stage that is
-  reached: the output leans toward the draft model.
-- **Updating nothing but the fallback.** Testing every candidate against `p` and
-  sampling the first residual at the end is the same error with a different tail.
-- **Carrying the residual unnormalized.** `max(0, r - q)` has mass $1 - \beta$.
-  Used as it is in the next test, it accepts with probability
-  $\min(1, (1-\beta)\,r'[x]/q[x])$, too rarely, and the deficit ends up in the
-  wrong tokens. (An unnormalized residual is fine if the test carries the total:
-  `u * q[x] * total < residual[x]`.)
-- **Sampling the fallback from `p`.** After $n$ rejections the token must come
-  from $r^{(n)}$; `p` puts mass back on tokens that were just rejected.
-- **Not stopping at the first acceptance.** Later candidates were meant for a
-  residual that only exists after a rejection. Returning the last candidate that
-  passes changes the distribution.
-- **Removing only the rejected token.** Setting `residual[x] = 0` and
-  renormalizing confuses this scheme with the update of the *draft* distribution
-  in sampling without replacement (below). The target side always loses all of
-  `q`.
-- **Reusing a uniform**, or drawing random numbers inside the function.
+- **Testing every candidate against `p`.** Running the single-draft test on each candidate and falling back to `p` delivers $\min(p, q)$ repeatedly instead of the remaining deficit. Any token overrated by the draft ($q_v > p_v$) collects its full mass $p_v$ at every stage reached, skewing the output toward the draft model.
+- **Updating only the fallback.** Testing every candidate against `p` and sampling from $r^{(1)}$ at the end makes the same error with a different tail.
+- **Leaving the residual unnormalized.** Because $\max(0, r - q)$ has total mass $1 - \beta$, using it directly in the next test accepts with probability $\min(1, (1 - \beta)\,r'[x] / q[x])$, which is too low and shifts mass to the wrong tokens. (An unnormalized residual only works if you scale the left-hand side by its sum: `u * q[x] * total < residual[x]`.)
+- **Sampling the fallback from `p`.** After $n$ rejections, the fallback must come from $r^{(n)}$. Sampling from `p` puts probability mass back onto tokens that were already rejected.
+- **Not stopping at the first acceptance.** Later candidates target residuals that only exist after a rejection, so returning the last passing candidate distorts the distribution.
+- **Zeroing only the rejected token.** Setting `residual[x] = 0` and renormalizing confuses this update with updating the *draft* distribution under sampling without replacement (see below). The target residual must subtract all of `q`.
+- **Reusing a uniform or drawing random numbers internally.** Each stage must use its own `u_accept[i]`, and the function must stay deterministic by using only the provided uniforms.
 
 ## Complexity
 
-$O(n V)$ time in the worst case (one residual update per rejection) and $O(V)$
-memory; negligible next to the target's forward pass over the token tree.
+The worst-case time complexity is $O(n V)$ for one residual update per rejection, with $O(V)$ memory. This cost is negligible compared to the target model's forward pass over the token tree.
 
 ## In the wild
 
-- The scheme is the multi-step speculative sampling of "SpecInfer: Accelerating
-  Large Language Model Serving with Tree-based Speculative Inference and
-  Verification" (ASPLOS 2024, arXiv:2305.09781), Algorithm 2: at each node of the
-  token tree, pick one of the remaining children at random, accept it if
-  $r \le P_\text{LLM}(x) / P_\text{SSM}(x)$, otherwise replace the LLM's
-  distribution by $\operatorname{norm}(\max(0, P_\text{LLM} - P_\text{SSM}))$ and
-  remove that child; when no child is left, sample from the adjusted
-  distribution. The paper states the equivalence with the LLM's own sampling as
-  its Theorem 4.2 and shows that the rejection probability is no larger than that
-  of the naive rule. Since the children are exchangeable, taking them in the
-  given order is the same procedure.
-- Drawing the candidates **without replacement** removes the wasted duplicates.
-  "Sequoia: Scalable, Robust, and Hardware-aware Speculative Decoding"
-  (arXiv:2402.12374) does this: after rejecting token $x$ it updates the residual
-  as here, and additionally sets the draft's probability of $x$ to zero and
-  renormalizes the draft distribution, from which the next child is drawn and
-  against which it is tested. The induction above goes through unchanged with the
-  stage's own draft distribution in place of $q$. "Recursive Speculative Decoding:
-  Accelerating LLM Inference via Sampling Without Replacement" (arXiv:2402.14160)
-  builds such trees with the Gumbel-top-k trick and stochastic beam search.
-- Which scheme a verifier implements must match how the drafter sampled: testing
-  without-replacement candidates against an un-updated `q`, or the reverse, is
-  again a silent distribution shift.
+- This algorithm is the multi-step speculative sampling procedure from "SpecInfer: Accelerating Large Language Model Serving with Tree-based Speculative Inference and Verification" (ASPLOS 2024, arXiv:2305.09781), Algorithm 2. At each tree node, SpecInfer picks a remaining child at random, accepts it if $u \le P_\text{LLM}(x) / P_\text{SSM}(x)$ for a uniform draw $u$, and otherwise replaces $P_\text{LLM}$ with $\operatorname{norm}(\max(0, P_\text{LLM} - P_\text{SSM}))$ and removes that child. When no children remain, it samples from the adjusted distribution. Theorem 4.2 proves exact equivalence with the target LLM and shows that the rejection probability is no larger than under the naive rule. Because the independent children are exchangeable, testing them in their given order is identical.
+- Drawing candidates **without replacement** avoids wasted duplicates. "Sequoia: Scalable, Robust, and Hardware-aware Speculative Decoding" (arXiv:2402.12374) updates the residual the same way after rejecting token $x$, and also zeros out $x$ in the draft distribution and renormalizes it before drawing and testing the next child. The induction proof still holds with each stage's updated draft distribution in place of $q$. "Recursive Speculative Decoding: Accelerating LLM Inference via Sampling Without Replacement" (arXiv:2402.14160) builds these trees using the Gumbel-top-k trick and stochastic beam search.
+- The verifier must always match how the drafter sampled. Testing without-replacement candidates against an un-updated `q`, or vice versa, silently shifts the output distribution.

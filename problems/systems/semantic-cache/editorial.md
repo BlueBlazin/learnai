@@ -1,36 +1,14 @@
 ## The idea
 
-An exact cache is a dictionary: the key either matches or it does not. A semantic
-cache replaces the key with an embedding and "matches" with "is similar enough",
-and that one change creates every question this problem asks. Similarity is a
-matter of degree, so several entries can match and one has to be chosen. Similar
-questions under different instructions have different answers, so something
-other than the embedding has to stay an exact key. And a cached answer was true
-when it was generated, so it needs an expiry that popularity cannot postpone.
+An exact cache behaves like a dictionary where keys either match or miss. A semantic cache replaces exact keys with embeddings and equality with a similarity threshold. That single change introduces four design requirements. Multiple entries can pass the threshold, so the cache must pick the highest similarity. Identical questions under different instructions need different answers, so non-question parameters must stay exact keys. Generated answers go stale over time, so expiration must remain fixed regardless of popularity. When the cache is full, expired entries must be purged before evicting the least recently used live entry.
 
-**Scope first, then similarity.** The response to a request is a function of the
-question *and* of the model, the system prompt, and the generation settings.
-Only the question is fuzzy. Everything else goes into a namespace that is
-compared exactly, and a lookup never looks outside its namespace. Two kinds of
-request have no namespace at all: a request with tools (its answer depends on
-what the tools return today) and a sampled request (the caller asked for
-variety; at temperature 0 the remaining settings that change the output are the
-model, the prompt, and the length limit).
+**Scope first, then similarity.** A model's response depends on the question, the model ID, the system prompt, and generation settings. Only the question is matched fuzzily. Everything else belongs in an exact namespace, and lookups never cross namespace boundaries. Requests with tools cannot be cached because their answers depend on live external state. Sampled requests (`temperature != 0`) cannot be cached because callers expect variation. At `temperature == 0`, the remaining parameters that affect the output are the model, system prompt, and `max_tokens`.
 
-**Filter, then choose.** `get` first discards what it may not return: other
-namespaces, expired entries, similarities below the threshold. Among what is left
-it returns the *best*, not the first. The order of the two steps is not a detail:
-choosing the global best and then checking whether it is expired turns a live
-match into a miss whenever a stale entry happens to be closer.
+**Filter, then choose.** `get` first discards entries from other namespaces, expired entries, and entries below `threshold`. Among the remaining candidates, it selects the highest similarity rather than the first match. Filtering before choosing is critical. Picking the globally closest entry first and then checking if it is expired turns a valid live hit into a miss whenever a stale entry happens to be closer.
 
-**Two clocks per entry.** The time an entry was stored decides when it expires,
-and nothing moves it. The time it was last used decides who is evicted when the
-cache is full, and every hit moves it. Mixing them up in one direction gives
-entries that never expire; in the other, a cache that evicts its most useful
-entry.
+**Two clocks per entry.** Each entry's creation timestamp (`stored_at`) governs expiration and never changes. Its recency position governs eviction when the cache is full and updates on every hit. Confusing the two either creates entries that never expire or evicts the most frequently used entries.
 
-**Make room in the right order.** A full cache first drops what is already dead
-and only then evicts something alive.
+**Purge before evicting.** When `put` runs on a full cache, it first removes all expired entries across all namespaces. Only if the cache is still at capacity does it evict the least recently used live entry.
 
 ## Reference solution (Python)
 
@@ -90,62 +68,28 @@ class SemanticCache:
         self.puts += 1
 ```
 
-`eq=False` keeps `list.remove` comparing entries by identity; with the generated
-`__eq__`, two entries with equal fields would be interchangeable and the wrong one
-could be moved.
+Setting `eq=False` makes `list.remove` compare entries by object identity. Without it, the default dataclass `__eq__` would treat two entries with identical fields as equal and could move the wrong one.
 
 ## Common mistakes
 
-- **Returning the first match above the threshold.** With a threshold of 0.8, a
-  neighbor at 0.8 that was stored earlier wins over the identical question at
-  1.0. The loop needs a running maximum, not an early `return`.
-- **Hits across namespaces.** Keying on the embedding alone returns the answer
-  of another model or another system prompt. The embedding of "What is the
-  capital of Peru?" is the same whether the system prompt says "Answer in
-  French" or not.
-- **Caching what must not be cached.** Treating a missing temperature as 0, or
-  ignoring `tools`, gives sampled and tool-using requests a namespace.
-- **Refreshing the TTL on a hit** (sliding expiration). The most popular entry
-  then lives forever. Session caches want that; an answer cache does not.
-- **Choosing before filtering.** Taking the most similar entry and then finding
-  it expired (or in another namespace) reports a miss although a live match
-  exists.
-- **Not updating recency on a hit**, which turns LRU into FIFO and evicts the
-  entry that is saving the most calls.
-- **Evicting before purging.** A full cache with dead entries in it evicts a live
-  one.
-- **A capacity per namespace.** The bound is on memory, and memory does not care
-  how many system prompts there are.
-- **Off by one at the boundaries**: `>` for the threshold (an exact repeat of a
-  stored question has similarity 1.0 and must hit with `threshold=1.0`), `<=` for
-  the lifetime.
-- **Ties to the older entry.** After `put` of an updated answer under the same
-  embedding, the old answer keeps being served until it expires.
-- **A dot product instead of a cosine.** It ranks long vectors first and makes the
-  threshold meaningless unless every embedding is normalized.
+- **Returning the first match above `threshold`.** With `threshold=0.8`, an earlier neighbor at `0.8` beats an exact match at `1.0` stored behind it. Scan all live entries in the namespace and track the maximum.
+- **Matching across namespaces.** Keying only on the embedding returns answers generated for a different model or system prompt. The embedding of "What is the capital of Peru?" is identical whether the system prompt asks for French or English.
+- **Caching non-cacheable requests.** Treating an absent `temperature` as `0`, or ignoring `tools`, incorrectly assigns a namespace to sampled or tool-using requests.
+- **Refreshing TTL on a hit (sliding expiration).** Extending an entry's lifetime whenever it is read lets popular entries live forever. Session caches want sliding expiration, while response caches need fixed lifetimes.
+- **Choosing before filtering.** Selecting the most similar entry first and then discarding it for being expired or in the wrong namespace causes false misses when a valid live match exists.
+- **Not updating recency on a hit.** Leaving hit entries in place turns LRU eviction into FIFO and evicts the cache's most useful entries.
+- **Evicting before purging expired entries.** A full cache that evicts before dropping dead entries throws away a live entry while expired ones still occupy slots.
+- **Enforcing capacity per namespace.** Memory limits apply to the whole cache, regardless of how many distinct system prompts exist.
+- **Off-by-one boundary checks.** Using `>` for the similarity threshold causes an exact repeat (`1.0`) to miss when `threshold=1.0`. Using `<=` for `now - stored_at` keeps expired entries alive at the exact expiry boundary.
+- **Breaking ties in favor of the older entry.** After `put` inserts a fresher answer for the same embedding, the stale answer keeps winning until it expires.
+- **Using dot product instead of cosine similarity.** Unnormalized dot products favor longer vectors and make the similarity threshold meaningless.
 
 ## Complexity
 
-`get` is a linear scan: $O(n \cdot d)$ for $n$ entries of dimension $d$; `put` is
-$O(n)$. That is fine for a few thousand entries. Beyond that the scan becomes a
-vector index (the earlier problems of this track) that returns the top $k$
-candidates, and the filter on namespace and expiry is applied to those, with $k$
-large enough that filtering does not empty the result.
+For $n$ cached entries of dimension $d$, `get` runs a linear scan in $O(n \cdot d)$ time and `put` runs in $O(n)$ time. This is fast enough for a few thousand entries. At larger scales, the linear scan is replaced by a vector index that retrieves the top $k$ candidates, followed by namespace and expiry filtering with $k$ large enough to leave valid matches.
 
 ## In the wild
 
-- GPTCache, the open-source semantic cache for LLM applications, documents this
-  decomposition: an embedding generator, a vector store that "helps find the K
-  most similar requests", a cache storage for the responses, a similarity
-  evaluator that decides whether a candidate really matches, and a cache manager
-  with LRU and FIFO eviction that counts entries (the documentation notes that
-  eviction is by number of rows, not by memory). Its `Config` has a
-  `similarity_threshold`, and its temperature parameter controls how often the
-  cache is skipped for sampled requests.
-- The "completion cache" is one of the cost-reduction strategies listed in
-  *FrugalGPT: How to Use Large Language Models While Reducing Cost and Improving
-  Performance* (arXiv 2305.05176): store responses and reuse them when a similar
-  query arrives.
-- Exact-match response caches and provider-side prompt caches avoid the false-hit
-  problem by construction; a semantic cache trades that safety for hit rate,
-  which is why the threshold and the namespace deserve the care.
+- GPTCache, an open-source semantic cache for LLM applications, splits the system into an embedding generator, a vector store that finds the $K$ most similar requests, a response store, a similarity evaluator, and a cache manager with LRU or FIFO eviction counted by number of rows. Its `Config` exposes a `similarity_threshold` and uses temperature to decide when to skip the cache on sampled requests.
+- *FrugalGPT: How to Use Large Language Models While Reducing Cost and Improving Performance* (arXiv 2305.05176) highlights a completion cache as a core cost-reduction strategy for reusing responses across similar queries.
+- Exact-match response caches and provider-side prompt caches avoid false hits by construction. A semantic cache trades that strict safety for higher hit rates, which is why careful namespace isolation and similarity thresholds are essential.

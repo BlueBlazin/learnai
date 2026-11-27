@@ -1,23 +1,12 @@
-Both response modes report the same generation: the same text, the same finish
-reason, the same usage. What are the three numbers you need at the end of a
-generation, and which of them do you know before the first piece arrives? Compute
-them in one place and let the two modes differ only in packaging.
+Both streaming and non-streaming responses describe the same generation with the same text, finish reason, and token usage. Which of those numbers do you know before the first piece arrives, and which do you know only after the stream ends? Compute the shared state once and let the two modes differ only in how they format the output.
 
 ---
 
-Validate everything before the first byte of the response, with `payload.get(...)`
-so that a missing field becomes a `BadRequest` with its `param` and not a `KeyError`
-(remember that `isinstance(True, int)` is true). Then build what every object of the
-response shares, once per request: `{"id": "chatcmpl-" + uuid.uuid4().hex, "created":
-int(time.time()), "model": request.model}`. The finish reason is a comparison of the
-piece count with the limit: `"length" if count == max_tokens else "stop"`, which is
-`"stop"` whenever the limit is `None`. Not streamed: collect the pieces, then send one
-object. Streamed: send the `200` with `text/event-stream`, then one event per chunk.
+Validate the entire request before sending any response bytes, using `payload.get(...)` so missing fields become a `BadRequest` with the right `param` instead of a `KeyError` (and remember that `isinstance(True, int)` is `True` in Python). Build the shared response fields once per request: `{"id": "chatcmpl-" + uuid.uuid4().hex, "created": int(time.time()), "model": request.model}`. Compute `finish_reason` as `"length" if count == max_tokens else "stop"`, which naturally yields `"stop"` when `max_tokens` is `None`. For non-streaming requests, collect all pieces and send one JSON object. For streaming requests, send the `200` headers with `text/event-stream` and emit one SSE event per chunk.
 
 ---
 
-The stream is five kinds of events, in order, each sent as its own body message
-`data: <json>\n\n`:
+Emit the stream as five event types in order, each sent in its own `http.response.body` message formatted as `data: <json>\n\n`:
 
 ```python
 await send(chunk(choice({"role": "assistant", "content": ""})))
@@ -31,8 +20,4 @@ if request.include_usage:
 await send(sse_message("[DONE]", more_body=False))
 ```
 
-where `choice(delta, reason=None)` builds `[{"index": 0, "delta": delta,
-"finish_reason": reason}]` and `chunk` adds the shared fields, the object type, and,
-when usage was requested, `"usage": None` on every chunk but the last. Run this pump
-next to a task that waits for `http.disconnect` on `receive()`, exactly as in
-`sse-token-stream`, and call `await pieces.aclose()` in the `finally`.
+Here `choice(delta, reason=None)` returns `[{"index": 0, "delta": delta, "finish_reason": reason}]`, and `chunk` attaches the shared fields, `"object": "chat.completion.chunk"`, and `"usage": None` on every non-usage chunk when `include_usage` is enabled. Run this pump alongside a task waiting for `http.disconnect` on `receive()`, just as in `sse-token-stream`, and call `await pieces.aclose()` in a `finally` block.

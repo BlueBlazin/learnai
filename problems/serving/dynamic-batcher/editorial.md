@@ -1,27 +1,17 @@
 ## The idea
 
-The policy is one predicate over three pieces of state:
+The entire policy reduces to one predicate over three pieces of state: the waiting queue $Q$ (ordered oldest first), a boolean flag `busy` indicating whether the model is running, and the current time $\text{now}$. Let $B$ be `max_batch_size`, $W$ be `max_wait_ms`, and $\text{arrival}(Q_0)$ be the arrival time of the oldest request in $Q$. A batch is dispatched if and only if:
 
 $$
 \text{dispatch} \iff \lnot\,\text{busy} \;\land\; |Q| > 0 \;\land\;
-\bigl(|Q| \ge B \;\lor\; \text{now} \ge \text{arrival}(Q_0) + W \bigr),
+\bigl(|Q| \ge B \;\lor\; \text{now} \ge \text{arrival}(Q_0) + W \bigr)
 $$
 
-with $Q$ the queue, $B$ the size limit, and $W$ the wait limit. Three kinds of events
-can make it true: an arrival (the queue grows), a completion (the model becomes idle),
-and the passage of time (the deadline arrives). The first two are delivered to the
-batcher anyway. For the third it must ask to be woken, and the only moment worth
-waking for is the deadline of the oldest request, because that is the only term of the
-predicate that changes with time alone.
+Three events can make this predicate true: an arrival grows the queue, a batch completion makes the model idle, or time advances to the oldest request's deadline. The simulator delivers arrivals and completions automatically. For time advancing, the batcher must request a wake-up. The only timestamp worth waking for is $\text{arrival}(Q_0) + W$, because it is the only term in the predicate that changes with time alone.
 
-So the whole solution is: update the state for the event, evaluate the predicate, and
-report the oldest deadline as the wake-up time whenever requests wait at an idle model.
-Every edge case in the statement is this rule applied to a particular order of events.
-None needs a branch of its own.
+Every handler updates state for its event, evaluates the dispatch predicate, and relies on `next_timer_ms()` to report the oldest deadline whenever requests are waiting at an idle model. Every edge case in the specification falls out of this single rule without special-case branches.
 
-Why the oldest request? The limit is a promise about latency: no request waits more
-than $W$ for a batch to form. The oldest request is the one closest to breaking it, and
-when it leaves, the promise passes to the next oldest, with *its* arrival time.
+Using the oldest request's arrival time enforces the latency guarantee. No request may wait more than $W$ milliseconds at an idle model for a batch to form. The oldest request is always closest to violating that bound, and once it is dispatched, the bound transfers to the next oldest request using its own arrival time.
 
 ## Reference solution (Python)
 
@@ -68,66 +58,29 @@ class DynamicBatcher:
         return batch
 ```
 
-The design choice that matters is that nothing about the timer is stored. A stored
-deadline has to be updated at every transition (first arrival, flush with leftovers,
-flush without, completion), and each of those is a place to forget. A deadline derived
-from `queue[0]` is correct by construction.
+The key design choice is not storing any timer state. A stored deadline must be updated on every transition (first arrival, flush with leftovers, flush without leftovers, and batch completion), and missing any one of them introduces a bug. Deriving the deadline directly from `queue[0]` keeps it consistent automatically.
 
-The same shape works with real time. In an `asyncio` server the queue and the flag are
-the same, `next_timer_ms` becomes a `loop.call_at` handle that is canceled and re-armed
-after each event, and the handlers are the request coroutine, the batch task's
-completion callback, and the timer callback. Keeping the policy free of I/O, as here,
-is what makes it testable to the millisecond.
+The same structure works with real time. In an `asyncio` server, the queue and `busy` flag stay identical, `next_timer_ms()` maps to a `loop.call_at` handle that is canceled and re-armed after each event, and the handlers become the request coroutine, the batch completion callback, and the timer callback. Keeping the policy separate from I/O makes it deterministic and testable to the millisecond.
 
 ## Common mistakes
 
-- **Waiting from the newest request.** Restarting the timer on every arrival (a
-  "debounce") feels natural and is wrong: under a steady trickle with gaps just under
-  $W$, the batch leaves only when it is full, and the first request waits $B$ times
-  longer than promised.
-- **Never flushing a partial batch.** Dispatching only on a full queue works in a load
-  test and strands the last few requests of every burst in production.
-- **Dispatching while busy.** The full-queue check and the timer both fire while a
-  batch is running unless the rule checks the model first. On a real server this
-  either queues a second batch inside the runtime, hiding the latency from the
-  batcher, or runs two batches at once and exhausts GPU memory.
-- **Off by one on the size.** `len(queue) > max_batch_size` leaves a full batch waiting
-  for one more arrival or for the deadline. The batches are never too large, so only a
-  check on dispatch *times* catches it.
-- **Timer not re-armed after a flush.** With a stored deadline that is set "when the
-  queue goes from empty to non-empty" and cleared on dispatch, the requests left behind
-  by a full batch have no deadline at all. The opposite slip, not clearing it, hands
-  them the deadline of a request that already left, and they are flushed early.
-- **Restarting the wait at completion.** Treating the completion as the start of a new
-  collection window makes a request that already queued behind a running batch wait up
-  to $W$ again at an idle model.
-- **Taking the newest requests.** Popping from the wrong end of the queue serves
-  late arrivals first whenever a backlog exceeds one batch.
-- **`>` instead of `>=` at the deadline.** The timer fires at exactly the deadline; a
-  strict comparison declines to dispatch, and the timer is not due again.
+- **Waiting from the newest request.** Restarting the timer on every arrival (a debounce) breaks the latency bound. Under a steady trickle of requests spaced just under $W$ apart, the batch only leaves when full, making the first request wait up to $B$ times longer than promised.
+- **Never flushing a partial batch.** Dispatching only when the queue reaches `max_batch_size` passes high-load tests but strands the trailing requests of every burst in production.
+- **Dispatching while busy.** Both the full-queue check and the timer can fire while a batch is running if you forget to check `self.busy` first. On a real server, this either queues hidden work inside the runtime or launches two concurrent batches and exhausts GPU memory.
+- **Off by one on batch size.** Writing `len(queue) > max_batch_size` leaves a full batch waiting for one extra arrival or for its deadline. Because no batch ever exceeds `max_batch_size`, only checking dispatch timestamps catches this bug.
+- **Timer not re-armed after a flush.** If you store a deadline when the queue becomes non-empty and clear it on dispatch, leftover requests after a full batch have no timer. Conversely, failing to clear a stored deadline applies the old request's deadline to the leftovers and flushes them early.
+- **Restarting the wait at completion.** Starting a fresh collection window when `on_batch_done` fires forces requests that already waited behind a running batch to wait up to another $W$ milliseconds at an idle model.
+- **Taking the newest requests.** Popping from the right end of the queue serves late arrivals before older ones whenever a backlog exceeds one batch.
+- **Using `>` instead of `>=` at the deadline.** The timer fires at `now_ms == deadline`. A strict `>` check declines to dispatch, and the timer will not fire again.
 
 ## Complexity
 
-Each handler does $O(1)$ work plus $O(k)$ to build a batch of $k$ requests, so the total
-over a workload of $n$ requests is $O(n)$, with $O(|Q|)$ memory. A `deque` matters:
-`list.pop(0)` would make draining a long backlog quadratic.
+Each handler performs $O(1)$ work plus $O(k)$ to pop and return a batch of $k$ requests. Over a workload of $n$ requests, total runtime is $O(n)$ and memory is $O(|Q|)$. Using a `deque` avoids the quadratic cost of `list.pop(0)` when draining a long backlog.
 
 ## In the wild
 
-- **Triton Inference Server**: the dynamic batcher forms a batch when a preferred size
-  is reached or when the oldest request has waited `max_queue_delay_microseconds`,
-  the same two triggers as here, and adds priorities and per-request timeouts.
-- **TorchServe** (`batchSize`, `maxBatchDelay`) and **Ray Serve** (`@serve.batch` with
-  `max_batch_size`, `batch_wait_timeout_s`) expose the same two knobs.
-- **LLM servers do it differently.** vLLM, TGI, and llama.cpp's server use *continuous
-  batching*: generation is a loop of decoding steps, so a new request does not wait
-  for the running batch to finish; it joins at the next step, and finished sequences
-  leave at any step. The size limit and FIFO admission survive (as a token or memory
-  budget and a waiting queue), the wait timer mostly disappears. Request-level dynamic
-  batching as in this problem remains the norm for one-shot models: embeddings,
-  rerankers, classifiers, vision encoders.
+- **Triton Inference Server** forms a batch when a preferred size is reached or when the oldest request has waited `max_queue_delay_microseconds`. It uses the same two triggers and adds priority queues and per-request timeouts.
+- **TorchServe** (`batchSize`, `maxBatchDelay`) and **Ray Serve** (`@serve.batch` with `max_batch_size`, `batch_wait_timeout_s`) expose the same two controls.
+- **LLM servers use continuous batching.** Systems like vLLM, TGI, and `llama.cpp` run generation as a loop of decode steps. New requests join at the next step instead of waiting for the current batch to finish, and completed sequences exit immediately. The size limit and FIFO waiting queue remain (often expressed as a token or KV-cache budget), while the wait timer mostly disappears. Request-level dynamic batching as implemented here remains standard for one-shot models such as embeddings, rerankers, classifiers, and vision encoders.
 
-A useful extension is to make the wait limit adaptive: if the model is idle and
-arrivals are rare, waiting only adds latency, so some systems dispatch immediately at
-low load and only build batches while the model is busy, which is what happens here
-naturally with `max_wait_ms = 0`.
+Some systems also use an adaptive wait limit. When the model is idle and traffic is sparse, waiting only adds latency, so they dispatch immediately at low load and form batches only while the model is busy. This policy already behaves that way when `max_wait_ms = 0`.

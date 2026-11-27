@@ -1,32 +1,16 @@
-Start with the bookkeeping, not the models. Keep one list `seq` (prompt plus
-generated tokens) and, for each model, the number of tokens of `seq` its cache
-covers. What does a model have to be fed, in terms of those two things, before its
-last row of logits scores the token after `seq`? And after a round in which only
-`n` of the `k` drafts survive, which of the tokens each cache covers are still part
-of `seq`?
+Start with the cache bookkeeping rather than the models. Keep one list `seq` (the prompt plus verified generated tokens) and, for each model, the number of tokens of `seq` its cache currently covers. Ask two questions: which slice of `seq` must you feed a model so its last logit row scores the token after `seq`, and after a round where only `n` of `k` drafts survive, how many cached tokens are still part of `seq`?
 
 ---
 
-A model's next call always feeds `(seq + drafts)[covered:]`: everything it has not
-seen. For the draft that is one call per proposal (the first call of a round
-catches up on verified tokens, each later call feeds the previous proposal). For
-the target it is a single call per round with the unseen verified tokens and all
-drafts; its last `k' + 1` rows are the ones `verify_greedy` wants: row `j` scores
-the position of draft `j`, and the last row is the bonus position. Compare, extend
-`seq` by the accepted drafts and the target's token, check EOS and the budget.
+Each model call always feeds `(seq + drafts)[covered:]`, where `covered` is that model's cached token count, so each model sees only tokens it has not processed yet. The draft model runs once per proposal. The first call of a round catches up on unseen verified tokens, and each later call feeds the previous proposal. The target model runs once per round on all unseen verified tokens plus all drafts. Its last `k' + 1` logit rows give the target's greedy tokens for `verify_greedy`, where row `j` corresponds to draft `j` and the last row is the bonus position. Compare drafts against target tokens, append the accepted drafts and the target's token to `seq`, and check for `eos_id` and `max_new_tokens`.
 
 ---
 
-Rollback is one rule for both models: after the round, a cache may cover at most
-`len(seq) - 1` tokens, namely verified tokens only, and never the newest one,
-which must be fed next round because its logits start that round.
+Both caches follow one rollback rule at the end of a round. Keep at most `len(seq) - 1` tokens so that only verified tokens remain and the newest emitted token stays uncached, ready to be fed at the start of the next round:
 
 ```
 t_len = len(seq) - 1;               t_cache = t_cache.truncate(t_len)
 d_len = min(d_len, len(seq) - 1);   d_cache = d_cache.truncate(d_len)
 ```
 
-The `min` matters after a fully accepted round: the draft never fed its own last
-proposal, so its cache is already shorter than `len(seq) - 1`, and its next call
-feeds two tokens. To respect the budget, draft only `min(k, remaining - 1)` tokens
-per round, and cut the round's tokens after the first `eos_id`.
+The `min` handles fully accepted rounds, because the draft model never fed its last proposal and its cache is already one token shorter than `len(seq) - 1` (so the next round feeds two tokens). To stay within the token budget, draft `min(k, remaining - 1)` tokens per round, and slice the round's new tokens right after the first `eos_id`.

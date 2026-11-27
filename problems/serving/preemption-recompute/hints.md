@@ -1,19 +1,8 @@
-Keep two structures, a waiting queue and a running list, and decide for each what
-order it is in and where a preempted sequence re-enters. Then plan a step in two
-passes over them: first the sequences that already hold memory, then the ones that
-want some. The engine tells you everything about memory; you only need to count
-what you have promised in the step you are planning.
+Maintain two collections: a waiting queue and a running list. Decide the ordering of each collection and where a preempted sequence should be reinserted. Plan every step in two passes, handling sequences that already hold memory before sequences waiting to be admitted. The engine tracks all committed block counts, so you only need to count the blocks you have promised during the current planning pass.
 
 ---
 
-A decoding sequence needs a new block exactly when `engine.kv_tokens(id)` is a
-multiple of the block size. Walk the running list from the oldest. When a block is
-needed and `engine.free_blocks - promised` is 0, pop the *last* element of the
-running list, `engine.preempt` it, and push it to the *left* of the waiting queue.
-Because `preempt` frees blocks at once, `engine.free_blocks` already reflects it.
-Note that the sequence you are serving can be the one you pop. A preempted request
-is still live in the engine: remember its id, so that later you prefill
-`engine.remaining_prefill(id)` instead of admitting it again.
+A decoding sequence needs a new block exactly when `engine.kv_tokens(id)` is a multiple of `engine.block_tokens`. Walk the running list from oldest to newest. Whenever a sequence needs a block and `engine.free_blocks - promised` is 0, pop the *last* element of the running list, call `engine.preempt` on it, and push it to the *left* of the waiting queue. Because `engine.preempt` frees blocks immediately, `engine.free_blocks` updates right away. Watch out for the case where the sequence you are currently serving is the one you pop. Remember the IDs of preempted requests because they stay live in the engine. When they resume, prefill `engine.remaining_prefill(id)` tokens instead of calling `engine.admit` again.
 
 ---
 
@@ -37,6 +26,4 @@ for request in running[:]:
     decode.append(request.id)
 ```
 
-Admission then loops while `not evicted`, there is a free slot, and the front of
-`waiting` leaves `watermark_blocks` available (or 0, if `decode` and `prefill` are
-both still empty).
+After this pass, loop over the front of `waiting` while `not evicted`, `len(running) < max_running`, and admitting the front request leaves at least `watermark_blocks` available (or `0` if both `decode` and `prefill` are still empty).

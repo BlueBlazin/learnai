@@ -1,23 +1,14 @@
-An HTTP response does not have to be sent in one piece. In ASGI, what marks the end of
-the response, and what happens on the wire each time you `await send(...)` a body
-message that is not the last?
+An HTTP response does not have to be sent all at once. In ASGI, what field marks the final body message, and what does the server write to the socket each time you `await send(...)` a body message with `more_body` set to `True`?
 
 ---
 
-After validating the request, send `http.response.start` with status 200 and the
-`text/event-stream` content type. Then loop over the generator with `async for`: for
-each token, build `data: ` + `json.dumps({"token": token, "index": i})` + two
-newlines, encode it as UTF-8, and send it right away as an `http.response.body` message
-with `"more_body": True`. After the loop, send `data: [DONE]` plus two newlines with
-`"more_body": False`. Do all validation (path, method, body) before the first `send`:
-once the 200 is out you cannot turn it into a 400. Mind that `isinstance(True, int)` is
-true in Python.
+Validate the path, method, and JSON body before calling `send()` for the first time, because once `200` is sent you cannot change it to a `400`. Remember that `isinstance(True, int)` is `True` in Python, so reject booleans explicitly when checking `max_tokens`.
+
+For a valid request, send `http.response.start` with status `200` and content type `text/event-stream`. Then iterate over the generator with `async for`. For each token, format `f"data: {json.dumps({'token': token, 'index': i})}\n\n"`, encode it as UTF-8, and send it immediately as an `http.response.body` message with `"more_body": True`. After the loop ends, send `b"data: [DONE]\n\n"` with `"more_body": False`.
 
 ---
 
-`send` will not tell you the client has left, and the token loop is stuck in
-`async for` while the model thinks, so something else has to listen. Put the token
-loop in one coroutine and a disconnect watcher in another, and race them:
+`send()` will not reliably tell you when the client hangs up, and the token loop stays blocked in `async for` while waiting for the next token. Run the token loop and a disconnect listener as two concurrent tasks, and stop as soon as either finishes:
 
 ```python
 async def disconnected():
@@ -34,6 +25,4 @@ finally:
     await tokens.aclose()
 ```
 
-Whichever finishes first ends the request: the pump after `[DONE]`, or the watcher
-when the client hangs up. Canceling the pump interrupts it even in the middle of
-waiting for the next token.
+Whichever task finishes first ends the stream, whether the pump finishes after `[DONE]` or the listener sees `http.disconnect`. Canceling the pump interrupts it even while it is awaiting the next token, and `await tokens.aclose()` ensures the generator is closed cleanly.

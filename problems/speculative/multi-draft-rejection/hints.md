@@ -1,17 +1,8 @@
-One candidate is the ordinary speculative sampling step: accept $x$ with probability
-$\min(1, p[x]/q[x])$, otherwise the token must come from the normalized residual
-$\max(0, p - q)$. In that step "sample from the residual" means drawing from it
-directly. With a second candidate in hand, could it serve as an attempt to sample
-from the residual? What would it have to be tested against?
+Start from the single-draft speculative sampling step. You accept a proposal $x$ with probability $\min(1, p[x] / q[x])$, and if it is rejected, you sample from the normalized residual $\max(0, p - q)$. When a second candidate from $q$ is already available, think about how you can use it to attempt that sample from the residual instead of drawing directly. What distribution must the second candidate be tested against?
 
 ---
 
-After a rejection the job is the same job with a new target: produce a sample from
-$r' = \operatorname{norm}(\max(0, r - q))$, given a fresh draw from $q$. So the
-rule is recursive. Keep one vector `residual`, starting at `p`. For each candidate:
-accept if `u_accept[i] * q[x] < residual[x]`; otherwise replace `residual` by
-`max(0, residual - q)` divided by its sum. The test always uses the *current*
-residual and the *original* `q` (the candidates are independent draws from it).
+After a rejection, you face the exact same problem with a new target distribution: produce a sample from $r' = \operatorname{norm}(\max(0, r - q))$ given a fresh draw from $q$. Maintain a single vector `residual`, initialized to `p`. For each candidate `x`, accept if `u_accept[i] * q[x] < residual[x]`. Otherwise, replace `residual` with `max(0, residual - q)` divided by its sum. Always test against the *current* residual and the *original* `q`, since every candidate is an independent draw from `q`.
 
 ---
 
@@ -26,6 +17,4 @@ cdf = cumsum(residual)
 return count(cdf <= u_resample * cdf[-1]), n
 ```
 
-Return as soon as a candidate is accepted, and use `u_resample` only at the end.
-Normalizing matters: the acceptance test compares against a probability, and an
-unnormalized residual accepts too rarely.
+Return immediately on the first acceptance, and use `u_resample` only if all candidates are rejected. Normalizing `residual` at every step is essential because the acceptance test compares against a valid probability distribution. An unnormalized residual accepts too rarely.

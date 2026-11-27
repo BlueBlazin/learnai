@@ -1,47 +1,23 @@
 ## The idea
 
-An autoscaler is a feedback controller with a slow actuator. Three decisions make
-it work.
+An autoscaler is a feedback controller driving a slow actuator. Four design choices make it stable and responsive.
 
-**The signal.** Scale on something that keeps growing when the system is
-overloaded. Requests in flight (waiting plus running) does: every request the
-replicas cannot absorb adds one. Utilization does not. A GPU serving one sequence
-and a GPU serving a full batch both report close to 100%, and the number of
-*running* requests is capped by the slots of the replicas that exist, so once users
-start queueing these signals sit at their ceiling and say nothing about how much
-capacity is missing. With a per-replica target $T$ and $L$ requests in flight, the
-replica count that restores the target is
+**Choosing the right signal.** Scale on a metric that continues growing during overload. Total requests in flight (`queue_depth + running`) grows by one for every request the cluster cannot immediately serve. By contrast, GPU utilization and `running` requests both saturate as soon as queues form. A GPU serving one sequence and a GPU serving a full batch both report near 100% utilization, and `running` is capped by the slots of existing replicas. Once users start queueing, those saturated signals cannot tell the autoscaler how much capacity is missing.
+
+With a per-replica target $T$ and $L$ requests in flight across `current` replicas, the replica count that restores the target load is
 
 $$
 \text{desired} = \left\lceil \text{current} \cdot \frac{L / \text{current}}{T} \right\rceil
 = \left\lceil \frac{L}{T} \right\rceil .
 $$
 
-The left form is how the rule is usually written (current replicas times the ratio
-of the measured per-replica value to its target). The right form shows what it
-does: it sizes the cluster for the load, in one step, whatever the current size.
+The left-hand side is the standard proportional formula (current replicas multiplied by the ratio of measured per-replica load to the target). Canceling `current` gives the right-hand side, which sizes the cluster directly for the current load in one step regardless of how many replicas exist today.
 
-**Pending capacity.** The per-replica value must be averaged over every replica
-that has been ordered, not only those that are ready. Suppose 2 replicas are ready,
-4 more are starting, and the backlog is still 52 because nothing has changed yet.
-Averaged over the 2 ready replicas the load is 26 per replica, the ratio to a
-target of 10 is 2.6, and the rule asks for $\lceil 6 \cdot 2.6 \rceil = 16$. One
-evaluation later it asks for more still. The cluster ends up several times too
-large because the policy kept reacting to a problem it had already fixed. Counting
-the starting replicas (as carrying nothing yet) gives 8.7 per replica: no action.
+**Counting pending capacity.** Per-replica load must be averaged across all ordered replicas (`ready + starting`), not only those already `ready`. Suppose 2 replicas are ready, 4 more are starting, and the backlog is still 52 because the new replicas have not booted yet. Averaging over only the 2 ready replicas yields 26 requests per replica, which is 2.6 times a target of 10 and asks for $\lceil 6 \cdot 2.6 \rceil = 16$ replicas. One evaluation later it asks for even more, overshooting by a large factor because it keeps reacting to a backlog it has already addressed. Counting the 4 starting replicas gives $52 / 6 \approx 8.7$ requests per replica, which stays inside the tolerance band and triggers no extra scaling.
 
-**Asymmetric timing.** Being short of capacity costs latency now; having too much
-costs money slowly. So scale-up is applied at once and scale-down is delayed: the
-count may fall only to the highest recommendation of the last `window_s` seconds.
-A lull shorter than the window removes nothing, and a real decline is followed one
-window late. Taking the *maximum* of the window, rather than waiting a fixed time
-or averaging, has a useful property: every recent evaluation has a veto, so a
-single busy second inside a quiet period keeps the capacity it asked for.
+**Asymmetric timing.** Running short of capacity hurts user latency immediately, while holding extra capacity costs money slowly. Scale-up therefore takes effect immediately, while scale-down is damped by a stabilization window. The replica count can drop only to the maximum recommendation recorded over the last `window_s` seconds. Brief lulls shorter than `window_s` remove no replicas, while genuine traffic drops are followed one window later. Taking the *maximum* over the window (rather than an average or a fixed cooldown) gives every recent evaluation a veto, so a single busy second inside a quiet period preserves the capacity it needed.
 
-**The tolerance band** stops the count from following noise. Without it, a load
-that fluctuates by one request around a multiple of the target changes the ceiling
-back and forth; with it, nothing happens until the per-replica load is off by more
-than the tolerance.
+**The tolerance band.** A deadband prevents the replica count from oscillating on noise. Without it, a load fluctuating by a single request across a multiple of `target` flips the ceiling back and forth. With it, the recommendation stays at `current` until per-replica load drifts outside the tolerance band.
 
 ## Reference solution (Python)
 
@@ -67,14 +43,11 @@ def desired_replicas(metrics, state, cfg):
     return n, history
 ```
 
-The state is the window itself. It is rebuilt on every call, so the function is
-pure: the same arguments always give the same result, which also makes it trivial
-to test and to replay from logs.
+The `state` is simply the list of `(time, recommendation)` pairs inside the window. Rebuilding a fresh list on every call keeps `desired_replicas` pure, so identical inputs always produce identical outputs and historical logs can be replayed safely.
 
 ## What each rule is worth
 
-The two simulations of the statement (replicas take 4 s to start, the policy runs
-every second, a request is late if its first token takes more than 1 s):
+The table below compares policy variants on the two simulation workloads from the statement (4 s replica startup, 1 s evaluation period, requests late if time to first token exceeds 1 s):
 
 | policy | late, step | replica-s, step | late, bursts | replica-s, bursts | actions, bursts | peak |
 |---|---|---|---|---|---|---|
@@ -85,56 +58,25 @@ every second, a request is late if its first token takes more than 1 s):
 | running requests only | 295 | 278 | 127 | 320 | 5 | 4 |
 | history never pruned | 111 | 1477 | 127 | 1915 | 4 | 16 |
 
-Without the window, the bursty load costs almost the same replica time and five
-times the late requests: the replicas are removed in each gap and are still
-starting when the next burst is half over. That is flapping, and its signature is
-the action count. Averaging over ready replicas doubles the bill without serving
-anyone sooner. Watching only running requests is the cheapest row and, on the load
-step, leaves the cluster at 4 replicas with a queue it cannot see.
+Without a scale-down window, the bursty workload costs nearly the same replica-seconds while causing five times as many late requests. Replicas are torn down during each 6-second gap and are still booting when the next burst is half over—classic flapping, visible in the 48 scaling actions. Averaging load over only `ready` replicas doubles the bill without serving requests any faster. Scaling on `running` requests alone is the cheapest row, but on the load step it caps the cluster at 4 replicas while an invisible queue builds up.
 
 ## Common mistakes
 
-- **No stabilization**, or the same delay in both directions. The first flaps; the
-  second answers a load step one window late.
-- **Pending replicas ignored**: dividing by `ready`, or computing "how many to add"
-  from the backlog at every evaluation without subtracting what is already
-  starting.
-- **The wrong signal**: utilization or running requests instead of queue plus
-  running.
-- **Rounding down**: $\lfloor L/T \rfloor$ runs every replica above its target and
-  asks for zero replicas under light load.
-- **Float ceilings**: `math.ceil(current * (load / current) / target)` can land a
-  hair above an integer and round up to the next one. Do the division in integers.
-- **A window that never forgets**, or one that keeps an entry exactly `window_s`
-  old: the first never scales down, the second is one evaluation late every time.
-- **Averaging the window** instead of taking its maximum.
-- **Mutating the state** that was passed in. Harmless in a single loop, wrong as
-  soon as the policy is replayed, tested, or evaluated speculatively.
+- **Missing or symmetric stabilization.** Removing the window causes flapping on bursts. Applying the same delay to scale-up leaves the cluster under-provisioned for an entire window during a load step.
+- **Ignoring starting replicas.** Dividing load by `ready` instead of `ready + starting`, or repeatedly adding replicas for the same backlog without subtracting pending capacity, causes severe overshoot.
+- **Using a saturating signal.** Scaling on GPU utilization or `running` requests misses queued demand.
+- **Rounding down.** Using $\lfloor L / T \rfloor$ keeps replicas above their target load and recommends zero replicas under light traffic.
+- **Floating-point ceiling errors.** Computing `math.ceil(current * (load / current) / target)` can drift slightly above an exact integer due to floating-point rounding and jump to the next integer. Compute the ceiling in integers with `-(-load // cfg.target)`.
+- **Off-by-one or missing window expiry.** Never pruning history prevents the cluster from ever scaling down. Using `<=` instead of `<` retains entries that are exactly `window_s` old and delays every scale-down by one evaluation.
+- **Averaging the window.** Averaging recent recommendations instead of taking their maximum drops capacity too early during bursty traffic.
+- **Mutating `state` in place.** Modifying the incoming `state` list looks fine in a single forward loop, but breaks replay, speculative evaluation, and unit tests that reuse an earlier state.
 
 ## Complexity
 
-One evaluation is $O(w)$ for $w$ recommendations in the window, at most
-`window_s / period` of them. A monotonic deque brings the maximum down to amortized
-$O(1)$; with a window of a few hundred entries nobody does.
+Each evaluation scans the $w$ entries currently in the window, taking $O(w)$ time where $w$ is at most `window_s / period`. A monotonic deque could reduce the window maximum to amortized $O(1)$, though with a few hundred entries a plain list scan is simpler and fast enough.
 
 ## In the wild
 
-- The **Kubernetes Horizontal Pod Autoscaler** computes `desiredReplicas =
-  ceil[currentReplicas * (currentMetricValue / desiredMetricValue)]`, skips scaling
-  when the ratio is within a tolerance of 1.0 (0.1 by default), and runs every 15
-  seconds by default. Before scaling down it considers all recommendations of a
-  stabilization window (5 minutes by default) and uses the highest. Pods that are
-  not yet ready are set aside, and when the result would be a scale-up the
-  controller assumes they consume 0% of the target, which dampens the scale-up
-  exactly as counting `starting` replicas does here (Kubernetes documentation,
-  "Horizontal Pod Autoscaling", sections "Algorithm details" and "Stabilization
-  window"). Its `behavior` field can also rate-limit each direction, which this
-  problem leaves out.
-- For LLM servers the usual custom metrics are the engine's own gauges of waiting
-  and running requests (vLLM exports `vllm:num_requests_waiting` and
-  `vllm:num_requests_running`), supplied to the autoscaler through a metrics
-  adapter or an event-driven autoscaler such as KEDA, in place of the CPU or GPU
-  utilization that the default configuration scales on.
-- This problem's `target` is a concurrency set point: the batch size at which one
-  replica still meets its latency objective, less some headroom, which is what
-  `capacity-planner` computes.
+- **Kubernetes Horizontal Pod Autoscaler (HPA)** computes `desiredReplicas = ceil[currentReplicas * (currentMetricValue / desiredMetricValue)]`, skips scaling when the ratio is within a tolerance of 1.0 (0.1 by default), and evaluates every 15 seconds by default. Before scaling down, it takes the highest recommendation across a stabilization window (5 minutes by default). Pods that are not yet ready are set aside, and during scale-up the controller assumes they consume 0% of the target, which dampens scale-up in the same way counting `starting` replicas does here (Kubernetes documentation, "Horizontal Pod Autoscaling", sections "Algorithm details" and "Stabilization window"). HPA's `behavior` field can also rate-limit scaling in each direction, which this problem omits.
+- **LLM serving metrics.** In production, autoscalers typically read engine-level gauges of waiting and running requests (such as vLLM's `vllm:num_requests_waiting` and `vllm:num_requests_running`) via a metrics adapter or KEDA, rather than default CPU or GPU utilization.
+- **Choosing `target`.** The `target` parameter is a concurrency set point—the batch size at which one replica meets its latency SLO with headroom—which is what `capacity-planner` computes.

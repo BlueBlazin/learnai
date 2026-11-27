@@ -1,40 +1,35 @@
-In `constrained-greedy-decode` the permitted set is computed before the model is
-called. Look at a step where that set has one element. What can the argmax over the
-masked logits return, and what did the forward call contribute? And what must be
-true of the model's cache before the *next* step at which it has a real choice?
+In `constrained-greedy-decode`, you compute the permitted token set before calling the model. Consider a step where that set has only one element. What can the argmax over masked logits return, and did the forward pass contribute anything? Then ask what the model's KV cache must contain before the *next* step where it actually has a choice.
 
 ---
 
-Keep a list of tokens the model has not seen yet, starting with the whole prompt. At
-each step build the permitted list (`allowed(state)`, plus `eos_id` if
-`is_accepting(state)`). Empty: stop. One element: that is the next token, no call.
-Two or more: call the model once with everything in the list, empty the list, and
-take the best permitted token from the last row of logits. Either way, advance the
-constraint and append the token to the list of unseen tokens. Count the permitted
-set, not the allowed list: one allowed token plus EOS is a choice, and EOS alone is
-forced.
+Keep a `pending` list of tokens the model has not seen yet, initialized to `list(prompt)`. At each step, build the `permitted` list from `constraint.allowed(state)`, appending `eos_id` if `constraint.is_accepting(state)`.
+
+- If `permitted` is empty, stop.
+- If `permitted` has one element, take it directly without calling the model.
+- If `permitted` has two or more elements, call `lm(pending, cache)` once, clear `pending`, and take the argmax of `logits[-1]` over `permitted`.
+
+In both cases, append the chosen token to the output, stop if it is `eos_id`, advance the constraint, and append the token to `pending`. Always check the size of `permitted`, not `allowed`. One allowed token plus `eos_id` is a free choice, while `eos_id` alone is forced.
 
 ---
 
-```
+```python
 state, cache, pending, out = constraint.start(), None, list(prompt), []
 while len(out) < max_new_tokens:
     permitted = allowed(state) (+ [eos_id] if is_accepting(state))
-    if not permitted: break
+    if not permitted:
+        break
     if len(permitted) == 1:
         token = permitted[0]
     else:
-        logits, cache = lm(pending, cache); pending = []
+        logits, cache = lm(pending, cache)
+        pending = []
         token = argmax of logits[-1] over the permitted ids
     out.append(token)
-    if token == eos_id: break
+    if token == eos_id:
+        break
     state = constraint.advance(state, token)
     pending.append(token)
 return out
 ```
 
-`lm(pending, None)` is `lm(pending)`. The limits follow from this shape: the model is
-called only in the `else` branch (once per free step), `pending` always holds exactly
-the tokens since the last call, and whatever is in it when the loop ends is never
-fed. Checking `len(out) < max_new_tokens` once per token, forced or free, is what
-cuts a forced run at the limit.
+Passing `cache=None` to `lm(pending, cache)` starts a new sequence, just like `lm(pending)`. Both cost limits fall out of this structure automatically. The model is called only in the `else` branch (once per free step), `pending` holds only the tokens since the last call, and anything left in `pending` when the loop exits is never fed. Checking `len(out) < max_new_tokens` once per token ensures a forced run stops at the limit.

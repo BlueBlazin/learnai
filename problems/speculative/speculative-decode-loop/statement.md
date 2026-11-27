@@ -1,9 +1,6 @@
-Implement a complete greedy speculative decoding loop: a small draft model proposes
-`k` tokens through its KV cache, the target model checks all of them in **one**
-call, the agreeing prefix is kept, and both caches are rolled back to the verified
-sequence before the next round. The result must be token for token what the target
-model's own greedy decode produces, and the judge counts the work both models were
-asked to do.
+Implement a complete greedy speculative decoding loop. In each round, a small draft model proposes up to `k` tokens using its KV cache, and a target model verifies all of them in **one** forward call. Your loop keeps the agreeing prefix, appends one token from the target model, and rolls both caches back to the verified sequence before starting the next round.
+
+The output must match the target model's own greedy decode token for token. The judge also checks how many forward calls and tokens each model processes.
 
 ![This problem is the whole loop, with greedy verification and a cache for each model.](assets/map.svg)
 
@@ -13,10 +10,7 @@ asked to do.
 def speculative_greedy(target, draft, prompt, k, max_new_tokens, eos_id): ...
 ```
 
-`target` and `draft` are two [`TinyLM`](../../../python/src/learnai/kit/tinylm.py)
-models over the same vocabulary, built by
-[`draft_target_pair`](../../../python/src/learnai/kit/draft.py). Each is called as
-in `cached-greedy-decode`:
+`target` and `draft` are two [`TinyLM`](../../../python/src/learnai/kit/tinylm.py) models sharing the same vocabulary, created by [`draft_target_pair`](../../../python/src/learnai/kit/draft.py). Both use the same KV-cache interface as in `cached-greedy-decode`:
 
 ```python
 logits, cache = lm(tokens)           # no cache: `tokens` is the whole sequence so far
@@ -24,59 +18,35 @@ logits, cache = lm(tokens, cache)    # with a cache: `tokens` continue the cache
 short = cache.truncate(n)            # a new cache covering only the first n tokens
 ```
 
-`logits` has one row per token passed in that call, shape `(T, vocab_size)`, and row
-`i` scores the token after `tokens[i]`. Caches are immutable: a call or a `truncate`
-returns a new cache (`cache.length` tokens long) and leaves the old one valid. Each
-model counts `forward_calls` and `tokens_processed` in its own `counters`.
+When called with `T` tokens, a model returns `logits` of shape `(T, vocab_size)`, where row `i` scores the token after `tokens[i]`. Caches are immutable. Calling a model or calling `truncate(n)` returns a new cache (with its length exposed as `cache.length`) and leaves the old cache unchanged. Each model tracks `forward_calls` and `tokens_processed` in its `counters` attribute.
 
-**What to return.** The target's greedy continuation of `prompt`: each token is the
-argmax of the target's next-token logits given the prompt and the tokens before it.
-Generation stops after `max_new_tokens` tokens, or right after a generated token
-equal to `eos_id` (that token is the last element of the result; `None` disables
-this; an `eos_id` inside the prompt stops nothing). The draft model never changes
-the result, only how many target calls it takes.
+**Inputs and output.**
+- `prompt` is a non-empty list of $P \ge 1$ token IDs.
+- `k` is the draft block length ($\ge 1$).
+- `max_new_tokens` is the maximum number of tokens to generate ($\ge 1$).
+- `eos_id` is an integer stop token ID, or `None` to disable early stopping.
+- Return the generated continuation (excluding `prompt`) as a list of $g$ Python `int`s, where $1 \le g \le \texttt{max\_new\_tokens}$.
 
-**How to get there.** Write $S$ for the verified sequence (the prompt followed by
-the tokens generated so far) and $r$ for the number of tokens still allowed. One
-*round*:
+Each generated token must equal the argmax of the target model's next-token logits given `prompt` and all previously generated tokens. Generation stops once `max_new_tokens` tokens have been produced, or immediately after generating `eos_id` (including `eos_id` as the last returned token). An `eos_id` inside `prompt` does not trigger stopping. The draft model never changes the output tokens, only the number of target calls needed.
 
-1. **Draft.** The draft model proposes $k' = \min(k,\, r - 1)$ tokens
-   $d_1, \dots, d_{k'}$ greedily and autoregressively: $d_j$ is the argmax of the
-   draft's next-token logits given $S, d_1, \dots, d_{j-1}$.
-2. **Verify.** One target call yields the target's greedy token $g_j$ at each of
-   the $k' + 1$ positions: $g_0$ given $S$, and $g_j$ given $S, d_1, \dots, d_j$.
-3. **Accept.** Let $n$ be the length of the longest prefix with $d_j = g_{j-1}$ for
-   all $j \le n$. The round generates $d_1, \dots, d_n$ followed by $g_n$: the
-   target's correction at the first mismatch, or its bonus token when all $k'$
-   drafts were accepted. That is $n + 1$ tokens, never more than $r$.
-4. **Stop or roll back.** If one of the round's tokens equals `eos_id`, the result
-   ends with the first such token; the round's later tokens are dropped. If
-   `max_new_tokens` is reached, stop. Otherwise bring both caches back to verified
-   tokens only (rejected drafts must not remain in either) and start the next round.
+**Round procedure.** Let $S$ be the verified sequence (`prompt` plus all tokens generated so far) and let $r$ be the number of tokens still remaining in the `max_new_tokens` budget. Each *round* runs four steps:
 
-Because a round always generates $g_n$, a token the target chose itself, the loop
-makes progress even when every draft is wrong, and with $r = 1$ nothing is drafted.
+1. **Draft.** Choose $k' = \min(k,\, r - 1)$. The draft model proposes $k'$ tokens $d_1, \dots, d_{k'}$ greedily and autoregressively, where $d_j$ is the argmax of the draft's next-token logits given $S, d_1, \dots, d_{j-1}$. When $r = 1$, no tokens are drafted ($k' = 0$).
+2. **Verify.** Run one target forward call to obtain the target's greedy tokens $g_0, \dots, g_{k'}$ at all $k' + 1$ positions, where $g_0$ follows $S$ and $g_j$ follows $S, d_1, \dots, d_j$.
+3. **Accept.** Let $n$ be the length of the longest matching prefix where $d_j = g_{j-1}$ for all $1 \le j \le n$. Emit $d_1, \dots, d_n$ followed by $g_n$. When $n < k'$, $g_n$ is the target's correction at the first mismatch. When $n = k'$, $g_n$ is the bonus token. A round always emits $n + 1$ tokens, and because $k' \le r - 1$, it never exceeds $r$.
+4. **Stop or roll back.** If `eos_id` appears in the round's emitted tokens, truncate the emitted tokens right after the first `eos_id` and return. If `max_new_tokens` tokens have been generated, return. Otherwise, truncate both caches so they contain only verified tokens (no rejected drafts) and begin the next round.
 
-- `prompt`: a list of $P \ge 1$ ints.
-- `k`: the draft length, an int $\ge 1$.
-- `max_new_tokens`: an int $\ge 1$.
-- `eos_id`: an int or `None`.
-- Returns the generated tokens (without the prompt) as a list of $g$ Python ints,
-  $1 \le g \le$ `max_new_tokens`.
+Because every round emits $g_n$ directly from the target, the loop always advances by at least one token even if every draft is rejected.
 
-**Cost limits.** Let $R$ be the number of rounds the procedure above takes for the
-given models and arguments.
+**Cost limits.** Let $R$ be the number of rounds the procedure above takes for the given models and arguments.
 
 | counter | limit | why |
 |---|---|---|
-| target `forward_calls` | $R$ | one verification per round |
-| target `tokens_processed` | $P + R\,(k + 1)$ | the prompt once; then, per round, at most $k$ drafts and the one verified token the target has not seen |
-| draft `tokens_processed` | $P + R\,(k + 1)$ | the prompt once; then, per round, at most $k + 1$ tokens |
+| target `forward_calls` | $R$ | one verification call per round |
+| target `tokens_processed` | $P + R\,(k + 1)$ | the prompt once, plus at most $k$ drafts and one unseen verified token per round |
+| draft `tokens_processed` | $P + R\,(k + 1)$ | the prompt once, plus at most $k + 1$ tokens per round |
 
-Any loop that returns the right tokens within these limits is accepted. Feeding a
-model its whole sequence again in every round exceeds the token limits; verifying
-fewer drafts per round than possible, or drafting from a cache that still contains
-rejected tokens, needs more rounds than $R$.
+Any implementation that returns the exact tokens within these limits passes. Re-feeding the full sequence every round exceeds the token limits. Verifying fewer drafts than allowed, or drafting from a cache that still holds rejected tokens, increases the number of rounds above $R$.
 
 ## Shapes
 
@@ -98,7 +68,7 @@ speculative_greedy(target, draft, [0, 17, 42, 5], 4, 12, 40)
 # [42, 62, 33, 33, 40]                                   2 target calls
 ```
 
-The first call, round by round ($P = 4$, $k = 4$):
+Here is the first call round by round ($P = 4$, $k = 4$):
 
 | round | $r$ | drafts | target's tokens $g_0 \dots g_{k'}$ | $n$ | generated |
 |---|---|---|---|---|---|
@@ -107,15 +77,11 @@ The first call, round by round ($P = 4$, $k = 4$):
 | 3 | 6 | `45 37 40 33` | `45 37 40 33 40` | 4 | `45 37 40 33 40` |
 | 4 | 1 | (none) | `55` | 0 | `55` |
 
-In round 1 the draft's first guess is wrong: the target says 42. One token is
-generated, and the three later drafts are void, whatever the target's rows for them
-say. Both caches now cover rejected tokens and are rolled back. Rounds 2 and 3 are
-accepted in full and earn a bonus token each. In round 4 a single token is left, so
-nothing is drafted and the target produces it alone.
+In round 1, the first draft token is wrong because the target predicts 42. One token is emitted, and the three later drafts are discarded regardless of what the target predicted for them. Both caches now include rejected tokens and must be rolled back. Rounds 2 and 3 accept all four drafts and earn a bonus token each. In round 4, only one token remains in the budget, so nothing is drafted and the target generates token 55 directly.
 
 ![Round 1 of the first call, step by step. The target's first token sits under the draft it is compared with.](assets/round-steps.svg)
 
-What the reference loop feeds each model, with the cache length before the call:
+Here is what the reference loop feeds to each model, along with the cache length before each call:
 
 | round | target call (cache) | draft calls (cache before the first) | target cache kept |
 |---|---|---|---|
@@ -124,37 +90,19 @@ What the reference loop feeds each model, with the cache length before the call:
 | 3 | `32 45 37 40 33` (9) | `40 32`, `45`, `37`, `40` (8) | 14 of 14 |
 | 4 | `40` (14) | | |
 
-The target processes $8 + 5 + 5 + 1 = 19$ tokens in 4 calls (limit
-$4 + 4 \times 5 = 24$) and the draft $7 + 4 + 5 = 16$ (limit 24). Plain cached
-greedy decoding needs 12 target calls for the same tokens. Note round 3: the draft
-never fed its own last proposal `40` in round 2, so after a fully accepted round its
-cache is one token further behind than the target's.
+The target processes $8 + 5 + 5 + 1 = 19$ tokens across 4 calls (limit $4 + 4 \times 5 = 24$), and the draft processes $7 + 4 + 5 = 16$ tokens (limit 24). Plain cached greedy decoding would take 12 target calls for the same 12 tokens. In round 3, the draft cache is one token shorter than the target cache because the draft model never fed its own last proposal `40` during round 2.
 
-In the second call, token 40 is the fourth draft of round 2 and is accepted. It
-equals `eos_id`, so the result ends there and the bonus token 32 is not emitted.
+In the second call, token 40 is the fourth draft of round 2 and is accepted. Because it equals `eos_id`, generation stops there and the bonus token 32 is not emitted.
 
 ## Constraints
 
-- $1 \le P$, $1 \le k \le 8$, $1 \le$ `max_new_tokens`, and
-  $P +$ `max_new_tokens` $+\, k \le$ `target.max_context` (128, the same for both
-  models).
-- Tokens are compared exactly with the target's greedy decode. Wherever a model's
-  argmax is used, in the target or in the draft, its two largest logits differ by at
-  least `1e-3`, so the way calls are split (which changes logits by about `1e-5`)
-  affects neither the tokens nor the number of rounds.
-- The three counters are compared with the limits above; $R$ is computed by running
-  the round procedure. A solution over a limit fails even when its tokens are right.
-- Ties in an argmax go to the lower token id (this does not occur in the tests).
+- $1 \le P$, $1 \le k \le 8$, $1 \le \texttt{max\_new\_tokens}$, and $P + \texttt{max\_new\_tokens} + k \le \texttt{target.max\_context}$ (128 for both models).
+- Output tokens are compared exactly against the target model's greedy decode. Wherever either model takes an argmax, its two largest logits differ by at least `1e-3`. Splitting calls differently changes logits by only about `1e-5`, so it cannot alter the tokens or the round count.
+- All three counters are checked against the cost limits above, where $R$ is computed by running the round procedure. Exceeding any limit fails even if the output tokens are exact.
+- Argmax ties break toward the lower token ID (ties do not occur in the tests).
 
 ## Why this matters
 
-This loop is what "speculative decoding" means in an inference server: a draft
-model next to the main model in llama.cpp, the draft-model and n-gram speculators
-in vLLM, assisted generation in `transformers`. The single-step rule is easy; the loop is
-where the engineering is, because two KV caches advance at different speeds and
-both must be rewound after every rejection. A cache that keeps a rejected token does
-not crash. On the target side it yields fluent output that is no longer the target's
-greedy decode; on the draft side the output stays correct while the acceptance rate
-collapses and the "speedup" turns into a slowdown that only a benchmark reveals.
-And recomputing either cache instead of truncating it gives away, in prefill work,
-everything the speculation gained.
+This loop is the core of speculative decoding in inference servers such as llama.cpp, vLLM, and Hugging Face `transformers` assisted generation. The single-step verification rule is straightforward, but the loop is where most engineering bugs happen because two KV caches advance at different rates and both must rewind after every rejection.
+
+A cache that retains a rejected token does not raise an error. On the target side, it silently produces fluent text that diverges from the target's greedy decode. On the draft side, the output stays exact while the acceptance rate collapses, turning a speedup into a slowdown that only benchmarks expose. Recomputing either cache from scratch instead of truncating it wastes prefill work and erases the gains of speculation.

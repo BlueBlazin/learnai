@@ -1,8 +1,4 @@
-Implement the endpoint that almost every LLM client speaks: `POST
-/v1/chat/completions`, in the shape of OpenAI's Chat Completions API, both as a single
-JSON response and as a stream of chunks. Generating text is the model's job; the
-endpoint's job is the protocol, and clients break on its details: the finish reason,
-the token usage, where the role goes in a stream, the usage chunk, and `[DONE]`.
+Implement `POST /v1/chat/completions` following OpenAI's Chat Completions API, supporting both single JSON responses and streamed Server-Sent Events (SSE). The model handles text generation, while your endpoint validates requests, tracks token usage and finish reasons, formats streaming deltas, and closes generation cleanly if a client disconnects.
 
 ![This problem is the Endpoint, which speaks the Chat Completions protocol.](assets/map.svg)
 
@@ -14,71 +10,61 @@ def make_app(lm):
     return app
 ```
 
-`make_app` returns an ASGI application; the tests serve it with uvicorn on a local
-socket and talk to it over HTTP. The starter is written for the raw ASGI interface of
-[`sse-token-stream`](../sse-token-stream/statement.md) and provides `read_body`,
-`send_json`, `render_prompt`, and `error_body`. Starlette may be used instead.
+`make_app` returns an ASGI application. The test suite serves it with uvicorn on a local socket and sends HTTP requests to it. The starter code uses the raw ASGI interface from [`sse-token-stream`](../sse-token-stream/statement.md) and provides `read_body`, `send_json`, `render_prompt`, and `error_body`. You may use Starlette instead if you prefer.
 
-**The model.** `lm` is a [`ScriptedLM`](../../../python/src/learnai/kit/scriptedlm.py):
+**The model.** `lm` is a [`ScriptedLM`](../../../python/src/learnai/kit/scriptedlm.py) instance with two methods:
 
-- `lm.stream(prompt, max_tokens)` returns an async iterator of the generated pieces
-  (`str`, never empty). **One piece is one completion token.** `max_tokens` is an int
-  or `None` (no limit); the model yields at most that many pieces. It does not raise.
-  `await stream.aclose()` stops the generation.
-- `lm.count_tokens(text)` is the number of tokens of a prompt.
+- `lm.stream(prompt, max_tokens)` returns an async iterator of generated text pieces (`str`, never empty). **Each piece counts as one completion token.** `max_tokens` is an `int` or `None` (no limit), and the model yields at most that many pieces without raising. Calling `await stream.aclose()` stops generation early.
+- `lm.count_tokens(text)` returns the integer token count of a prompt string.
 
 Call `lm.stream` exactly once per valid request and never for an invalid one.
 
-**Routing**, in this order: a path other than exactly `/v1/chat/completions` gets
-`404`; a method other than `POST` gets `405` with the header `allow: POST`; an invalid
-body gets `400`; otherwise the response has status `200`. The query string is not part
-of the path.
+**Routing.** Check requests in this order (ignoring any query string):
 
-**The request body** is a JSON object. Fields other than these are ignored.
+1. Any path other than `/v1/chat/completions` returns `404`.
+2. Any method other than `POST` returns `405` with the header `allow: POST`.
+3. An invalid request body returns `400`.
+4. Otherwise, return `200`.
 
-| field | rule |
+**The request body.** The body must be a JSON object. Ignore any fields not listed below.
+
+| Field | Rule |
 |---|---|
-| `model` | required; a non-empty string |
-| `messages` | required; a non-empty array of objects, each with `role` (`"system"`, `"user"`, or `"assistant"`) and `content` (a string, possibly empty) |
-| `max_completion_tokens` | optional; an integer `>= 1` |
-| `max_tokens` | optional; an integer `>= 1`. The deprecated name of the same limit: used only if `max_completion_tokens` is absent |
-| `stream` | optional; a boolean, default `false` |
-| `stream_options` | optional; an object whose `include_usage`, if present, is a boolean. It has an effect only when `stream` is `true` |
+| `model` | Required. A non-empty string. |
+| `messages` | Required. A non-empty array of objects, each with `role` (`"system"`, `"user"`, or `"assistant"`) and `content` (a string, possibly empty). |
+| `max_completion_tokens` | Optional. An integer `>= 1`. |
+| `max_tokens` | Optional. An integer `>= 1`. Deprecated alias for the token limit, used only when `max_completion_tokens` is absent. |
+| `stream` | Optional. A boolean, defaulting to `false`. |
+| `stream_options` | Optional. An object whose `include_usage` field, if present, is a boolean. Applies only when `stream` is `true`. |
 
-For the four optional fields, `null` means absent. `true` and `false` are not integers,
-and `2.5` and `"3"` are not either. With neither limit, the model is called with
-`max_tokens=None`.
+For the four optional fields, `null` counts as absent. Booleans (`true`, `false`), floats (`2.5`), and strings (`"3"`) are not valid integers. If neither token limit is provided, pass `max_tokens=None` to `lm.stream`.
 
-**Errors.** Every `400` has the content type `application/json` and the body
+**Errors.** Every `400` response uses `content-type: application/json` and has this shape:
 
 ```json
 {"error": {"message": "<text>", "type": "invalid_request_error", "param": "<field>", "code": null}}
 ```
 
-`message` is a non-empty string of your choice. `param` is the name of the top-level
-field that is invalid (`"model"`, `"messages"`, `"max_completion_tokens"`,
-`"max_tokens"`, `"stream"`, `"stream_options"`), or `null` when the body is not a JSON
-object at all (not JSON, not UTF-8, empty, an array). `code` is a string or `null`. No
-test request has more than one invalid field. For `404` and `405` only the status and
-an `error` object with a `message` are checked.
+- `message` is a non-empty string describing the problem.
+- `param` is the name of the invalid top-level field (`"model"`, `"messages"`, `"max_completion_tokens"`, `"max_tokens"`, `"stream"`, or `"stream_options"`), or `null` if the body is not a valid JSON object (for example, malformed JSON, invalid UTF-8, empty body, or a JSON array).
+- `code` is a string or `null`.
 
-**The prompt** is the conversation in ChatML, which `render_prompt` in the starter
-produces: for each message `<|im_start|>{role}\n{content}<|im_end|>\n`, then
-`<|im_start|>assistant\n`.
+No test request contains more than one invalid field. For `404` and `405` responses, tests check only the status code (plus the `allow` header for `405`) and an `error` object containing a `message`.
 
-**Numbers.** Let $c$ be the number of pieces the model yielded.
+**The prompt.** Format the conversation in ChatML, which `render_prompt` in the starter code produces. Each message becomes `<|im_start|>{role}\n{content}<|im_end|>\n`, followed by `<|im_start|>assistant\n`.
 
-- `finish_reason` is `"length"` if a limit was given and $c$ equals it, and `"stop"`
-  otherwise. (A generation that produced exactly the limit counts as cut off, as in
-  the kit's model.)
-- `usage` is `{"prompt_tokens": lm.count_tokens(prompt), "completion_tokens": c,
-  "total_tokens": <their sum>}`.
+**Token counts and finish reason.** Let $c$ be the number of pieces yielded by `lm.stream`.
 
-**Common fields.** Every response object carries `"id"`, a string that starts with
-`chatcmpl-` and is different for every request; `"created"`, the Unix time in whole
-seconds; and `"model"`, the request's `model`.
+- `finish_reason` is `"length"` if a token limit was set and $c$ equals that limit, and `"stop"` otherwise. Reaching the limit exactly counts as truncated.
+- `usage` is `{"prompt_tokens": lm.count_tokens(prompt), "completion_tokens": c, "total_tokens": prompt_tokens + c}`.
 
-**Without `stream`** the response is one `application/json` object:
+**Common response fields.** Every response object includes three shared fields:
+
+- `"id"`: a string starting with `chatcmpl-` that is unique per request.
+- `"created"`: the current Unix timestamp in whole seconds.
+- `"model"`: the `model` string from the request.
+
+**Non-streaming responses (`stream` is `false` or absent).** Return a single `application/json` object:
 
 ```json
 {"id": "...", "object": "chat.completion", "created": 1794648729, "model": "...",
@@ -88,40 +74,27 @@ seconds; and `"model"`, the request's `model`.
  "usage": {"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12}}
 ```
 
-**With `"stream": true`** the response has the content type `text/event-stream` and
-consists of server-sent events `data: <payload>\n\n`. All chunks of one response have
-the same `id`, `created`, and `model`, and `"object": "chat.completion.chunk"`. In
-order:
+**Streaming responses (`stream` is `true`).** Return `content-type: text/event-stream` as a sequence of SSE events formatted as `data: <payload>\n\n`. Every JSON chunk in a response shares the same `id`, `created`, and `model`, and sets `"object": "chat.completion.chunk"`. Send events in this order:
 
-1. **The role chunk**: `"choices": [{"index": 0, "delta": {"role": "assistant",
-   "content": ""}, "finish_reason": null}]`.
-2. **One content chunk per piece**: `"delta": {"content": "<piece>"}`,
-   `"finish_reason": null`. The role is not repeated.
-3. **The finish chunk**: `"delta": {}` and `"finish_reason": "stop"` or `"length"`.
-4. **The usage chunk**, only if `stream_options.include_usage` is `true`:
-   `"choices": []` and `"usage": {...}`. In that case every earlier chunk carries
-   `"usage": null`. Otherwise there is no such chunk, and no chunk has a `usage` other
-   than `null`.
-5. **The terminator**: the literal `data: [DONE]`, which is not JSON, and then the end
-   of the response.
+1. **Role chunk.** Set `"choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": null}]`.
+2. **Content chunks.** Send one chunk per yielded piece with `"delta": {"content": "<piece>"}` and `"finish_reason": null`. Do not repeat `role`.
+3. **Finish chunk.** Set `"delta": {}` and `"finish_reason"` to `"stop"` or `"length"`.
+4. **Usage chunk (optional).** If `stream_options.include_usage` is `true`, send a chunk with `"choices": []` and `"usage": {...}`, and include `"usage": null` on every earlier chunk. Otherwise, omit this chunk and never set `usage` to a non-null value.
+5. **Terminator.** Send the literal event `data: [DONE]\n\n` (not JSON) and end the response.
 
-An empty generation ($c = 0$) still has the role chunk and the finish chunk.
+An empty generation ($c = 0$) still emits the role chunk and the finish chunk (plus the usage chunk if requested, and `[DONE]`).
 
-**Flushing.** Each chunk is sent in its own `http.response.body` message as soon as
-its piece is available, before the next piece arrives.
+**Flushing.** Send each chunk in its own `http.response.body` message as soon as its piece arrives, without waiting for the next piece.
 
-**Client disconnect.** If the client closes the connection during a stream, the app
-stops and closes the model's stream (`await stream.aclose()`). As in
-`sse-token-stream`, `send` does not fail on a closed connection with this server; the
-disconnect is announced by `receive()` returning `{"type": "http.disconnect"}`. Requests
-that are not streamed are not disconnected in the tests.
+**Client disconnect.** If the client closes the connection mid-stream, stop streaming and call `await stream.aclose()`. Under uvicorn, `send` does not raise on a closed connection, so detect disconnects by watching `receive()` for `{"type": "http.disconnect"}` (as in `sse-token-stream`). Tests do not disconnect non-streaming requests.
 
-Additional fields in the objects (`"logprobs": null`, `"system_fingerprint"`, and so
-on) are allowed.
+Extra optional fields (such as `"logprobs": null` or `"system_fingerprint"`) are allowed.
 
 ## Example
 
-The model's script is `"Hello"`, `","`, `" world"`, `"!"`.
+Suppose the model is scripted to yield `"Hello"`, `","`, `" world"`, and `"!"`.
+
+Consider this non-streaming request:
 
 ```
 POST /v1/chat/completions
@@ -130,7 +103,7 @@ POST /v1/chat/completions
               {"role": "user", "content": "Say hello"}]}
 ```
 
-The prompt is
+`render_prompt` formats the messages into the following prompt (ending with a newline):
 
 ```
 <|im_start|>system
@@ -140,8 +113,7 @@ Say hello<|im_end|>
 <|im_start|>assistant
 ```
 
-(with a final line feed), which `lm.count_tokens` counts as 8 tokens, and the model is
-called as `lm.stream(prompt, None)`. The response:
+Here `lm.count_tokens(prompt)` returns `8`, and the app calls `lm.stream(prompt, None)`. The model yields all 4 pieces, producing this JSON response:
 
 ```json
 {"id": "chatcmpl-cbcd370268784e72acb31d45202c791a", "created": 1794648729,
@@ -151,9 +123,7 @@ called as `lm.stream(prompt, None)`. The response:
  "usage": {"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12}}
 ```
 
-The same request with `"max_tokens": 2, "stream": true, "stream_options":
-{"include_usage": true}` streams (the common fields `id`, `created`, `model`, and
-`object` are left out of this listing; every chunk has them):
+Now add `"max_tokens": 2, "stream": true, "stream_options": {"include_usage": true}` to the same request. The app calls `lm.stream(prompt, 2)` and streams the events below (omitting the common fields `id`, `created`, `model`, and `object` from each line for readability, though every JSON chunk must include them):
 
 ```
 data: {"choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": null}], "usage": null}
@@ -170,7 +140,7 @@ data: [DONE]
 
 ```
 
-A body without `messages`, `{"model": "tiny-chat"}`, gets status 400 and
+Finally, a request missing `messages`, such as `{"model": "tiny-chat"}`, returns status `400`:
 
 ```json
 {"error": {"message": "'messages' is required and must be a non-empty array",
@@ -179,28 +149,14 @@ A body without `messages`, `{"model": "tiny-chat"}`, gets status 400 and
 
 ## Constraints
 
-- Request bodies are at most 64 KiB; a generation has at most 1000 pieces.
-- Responses are compared after JSON decoding: key order and spacing are free, and each
-  event's JSON is on one line.
-- Incremental delivery is checked by order, not by timing: the model is gated and
-  produces piece `i + 1` only after the test has received the chunk for piece `i`. A
-  server that holds chunks back stalls the model, which gives up after 1.5 s, and the
-  case fails.
-- For the disconnect check the model produces a piece every 5 ms for 200 pieces; the
-  client reads four chunks and closes the connection. The case fails if the model is
-  drained to its end or its stream is not closed within 5 s.
-- Do not block the event loop (no `time.sleep`, no synchronous I/O).
+- Request bodies are at most 64 KiB, and each generation yields at most 1000 pieces.
+- Tests decode JSON before comparing responses, so key order and whitespace do not matter, provided each SSE event's JSON is on a single line.
+- Incremental delivery is tested by gating rather than wall-clock timing. The model produces piece `i + 1` only after the client receives the chunk for piece `i`. If your server buffers chunks, the model times out after 1.5 s and the test fails.
+- In the disconnect test, the model yields one piece every 5 ms for 200 pieces while the client reads four chunks and disconnects. The test fails if the model runs to completion or if its stream is not closed within 5 s.
+- Do not block the event loop (no `time.sleep` or synchronous I/O).
 
 ## Why this matters
 
-The Chat Completions format is the interface of the ecosystem: SDKs, agent
-frameworks, evaluation harnesses, and gateways all speak it, so vLLM, TGI, SGLang,
-llama.cpp, and Ollama each ship a server that imitates it, and a model served any
-other way is a model nobody can call. The imitation has to be exact where clients
-look. A `finish_reason` that always says `stop` hides truncated answers from every
-caller that would have retried with a larger limit. `usage` is what billing, rate
-limits, and benchmarks read, so characters instead of tokens is a wrong invoice. A
-stream without `[DONE]` leaves SDKs waiting or raising on a clean ending, a role
-repeated in every delta is concatenated into the message by some clients, and a
-missing field answered with a 500 is counted against the server's availability
-instead of being reported to the caller who made the mistake.
+OpenAI's Chat Completions format is the standard interface across LLM SDKs, agent frameworks, evaluation harnesses, and gateways. Inference servers like vLLM, SGLang, TGI, llama.cpp, and Ollama all implement it so existing clients can talk to any model without code changes.
+
+Small protocol mistakes cause silent failures in real clients. Always returning `"finish_reason": "stop"` hides truncated outputs from callers that retry with a larger token budget. Reporting character counts instead of token counts corrupts billing, rate limiting, and benchmarks. Omitting `[DONE]` leaves SDKs hanging or raising stream-interruption errors, repeating `role` in every delta breaks clients that concatenate delta fields, and returning `500` instead of `400` on invalid input counts caller bugs against server availability.

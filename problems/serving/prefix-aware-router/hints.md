@@ -1,15 +1,8 @@
-The router needs one data structure: per replica id, the last few prompts it sent
-there. Everything else is a comparison of numbers you can compute from that record
-and from `queue_len`. Start with the function that measures how many leading tokens
-two prompts share.
+The router only needs one piece of state: for each replica `id`, store the last `index_size` prompts routed to it. Every routing decision follows from comparing match lengths computed from that history against `queue_len`. Start by writing a helper that returns the longest common prefix length of two token sequences.
 
 ---
 
-Compute `least` first, then filter the replicas to the eligible ones before looking
-for a match: a replica that is too busy must not win however well it matches. The
-fallback, in contrast, looks at all replicas. Do not forget the last step: the
-chosen replica is about to hold this prompt, so the record must say so, whichever
-branch chose it.
+Compute `least` first, then filter `replicas` to the eligible candidates before searching for the best match. A replica that exceeds the imbalance limit must not win on affinity no matter how long its prefix match is. By contrast, the low-match fallback considers all replicas in `replicas`. Finally, always append `tokens` to the chosen replica's record regardless of whether affinity or the fallback chose it.
 
 ---
 
@@ -25,6 +18,4 @@ self.index.setdefault(chosen.id, deque(maxlen=self.index_size)).append(tuple(tok
 return chosen.id
 ```
 
-`match` is the maximum over the replica's remembered prompts of the common prefix
-length, 0 if there are none. A `collections.deque(maxlen=n)` drops its oldest entry
-by itself.
+`match` returns the maximum common prefix length across the replica's remembered prompts, or `0` if the record is empty. Using `collections.deque(maxlen=self.index_size)` automatically drops the oldest prompt when full.

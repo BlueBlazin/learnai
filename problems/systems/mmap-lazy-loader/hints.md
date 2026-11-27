@@ -1,26 +1,15 @@
-There are three moments at which bytes could be read: when the checkpoint is opened,
-when a tensor is first asked for, and when it is asked for again. Which bytes does
-each moment need, and what do you have to remember so that the third moment needs
-none?
+Consider the three moments when bytes might be read: when opening the checkpoint, when requesting a tensor for the first time, and when requesting the same tensor again. Which bytes does each moment require, and what should you store so the third moment reads nothing?
 
 ---
 
-In the constructor, slice `file[0:8]` for the length $n$ and `file[8 : 8 + n]` for
-the JSON, and keep the parsed table and `data_start = 8 + n`. Keep a dict of arrays
-already built. `get` looks there first; only on a miss does it slice
-`file[data_start + begin : data_start + end]`, which is the one read the tensor
-costs. `np.frombuffer` on that slice gives a view without copying. `load_subset`
-should check every name against the table before it calls `get` for any of them.
+In `__init__`, slice `file[0:8]` to read the header length $n$ and `file[8 : 8 + n]` to parse the JSON metadata, then store the parsed entries and `data_start = 8 + n`. Keep a dict caching materialized arrays. Have `get` check the cache first. On a cache miss, slice `file[data_start + begin : data_start + end]` and wrap it with `np.frombuffer` to get a zero-copy view. In `load_subset`, validate every name against the header table before calling `get` on any of them.
 
 ---
 
-Two cases need more than the view. For `BF16`, read the bytes as `"<u2"` and decode:
+Two cases require more than a direct view. For `BF16`, read the raw bytes into an array `bits` with dtype `"<u2"` and decode them to `float32`:
 
 ```python
 flat = (bits.astype(np.uint32) << 16).view(np.float32)
 ```
 
-For any other dtype, the view is only usable if the tensor's offset in the file,
-`data_start + begin`, is a multiple of `dtype.itemsize`. If it is not, `flat.copy()`
-moves the elements into memory numpy allocated, which is aligned. Reshape last, and
-store the result in the cache before returning it.
+For any other dtype, a view is aligned only when the tensor's file offset `data_start + begin` is a multiple of `dtype.itemsize`. If it is not, call `.copy()` on the view to move the data into aligned NumPy memory. Reshape at the end, cache the array, and return it.

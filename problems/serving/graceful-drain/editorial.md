@@ -1,6 +1,6 @@
 ## The idea
 
-A drain is a small state machine laid over the serving loop:
+Graceful drain adds a three-state lifecycle on top of the serving loop:
 
 | state | `ready` | `submit` | pending requests | ends when |
 |---|---|---|---|---|
@@ -8,25 +8,13 @@ A drain is a small state machine laid over the serving loop:
 | draining | `False` | raises `Unavailable` | served as before | nothing is pending and the engine is idle |
 | closed | `False` | raises `Unavailable` | none | never |
 
-Two events move it. `drain()` is the first, and because it is a plain method the
-transition is atomic: no request can slip in between "readiness is false" and "new
-work is refused". The second is "idle", and the design question is who detects it.
-The answer is the loop itself. It is the only caller of `engine.step`, so at the top
-of an iteration the engine is not busy, and its own two lists say whether anything
-is pending. The existing idle branch (`not waiting and not running`) is exactly the
-condition, so the drain adds three lines there: resolve, mark closed, return.
+Two events drive the state transitions. First, `drain()` switches from `serving` to `draining`. Because `drain()` is a synchronous method, the transition is atomic: no request can sneak in between setting `ready = False` and refusing new calls to `submit()`.
 
-The grace deadline is a third event that only shortens the draining state. It ends
-every pending request at once, the running ones with `engine.release`, and then the
-normal path takes over: if a step is in flight it still runs to its end (a forward
-pass cannot be taken back), the loop resumes, finds both lists empty, and resolves.
-That is why the future can resolve *after* the deadline, and why resolving inside
-the deadline callback would be wrong: the engine would still be computing.
+Second, the serving loop itself detects the transition to `closed`. Because `run()` is the only caller of `engine.step()`, the engine is guaranteed to be idle at the top of each loop iteration. The existing idle check (`not self._waiting and not self._running`) already identifies when nothing is pending, so completing the drain only requires canceling any active timer, setting `closed = True`, resolving the future, and returning.
 
-Nothing about serving changes during the drain. Waiting requests were accepted; the
-client holds a handle and was promised an answer, so they keep being admitted. Only
-the deadline may break that promise, and it does so explicitly, with `Terminated`
-and the count of tokens the client already has.
+The grace deadline is a third event that shortens the draining phase when work takes too long. Its callback terminates every pending request at once and releases all running sequences from the engine. Normal execution then finishes the job. If a step is in flight, it runs to completion (an active forward pass cannot be undone), and the loop resumes on the next iteration, sees both lists empty, and resolves the drain future. That is why the future can resolve after the deadline, and why resolving inside the deadline callback would wrongly declare the server idle while the engine is still busy.
+
+Nothing about scheduling changes during a drain. Waiting requests were already accepted and their clients hold valid handles, so they continue to be admitted as slots open. Only the grace deadline breaks that promise, signaling the cut explicitly with `Terminated(tokens)`.
 
 ## Reference solution (Python)
 
@@ -89,71 +77,27 @@ class Server:
             ...  # admit, step, and account for the result as in the starter
 ```
 
-`Handle.result()` awaits the future and raises the value if it is an exception.
+`Handle.result()` awaits `self._future` and raises the value if it is an exception.
 
 ## Common mistakes
 
-- **Dropping the waiting requests when the drain starts.** "In flight" is read as
-  "running on the GPU". A request in the waiting list was accepted too; its client
-  cannot tell the difference and sees a failure although the grace period had room.
-- **Still admitting.** Flipping the readiness flag does not stop traffic: load
-  balancers react late, and clients with open connections do not look at probes. If
-  `submit` keeps accepting, the server never becomes idle under load, and every late
-  request is cut off at the deadline instead of being sent elsewhere at once.
-- **Resolving while streams are open.** A `drain` that sets a flag and returns a
-  finished future tells the supervisor it may exit; the process dies with requests
-  in the engine.
-- **Resolving at the deadline while the engine is busy.** After the releases, the
-  step in flight still occupies the GPU. Report "idle" from the loop, when the step
-  has ended.
-- **Telling the clients without releasing the sequences.** The handles raise
-  `Terminated`, but the sequences stay in the engine and generate to the end: tokens
-  after the cut-off, and a drain that lasts as long as the longest request.
-- **Sleeping out the grace period.** `await asyncio.sleep(grace)` then cancel
-  everything is correct only at the deadline. On an idle server, or when the last
-  request finishes after two seconds of a thirty-second grace period, it wastes the
-  rest, and rollouts take the sum of all grace periods.
-- **The deadline as a sleeping task, or as a timer for "now".** Both run after the
-  engine has completed a step that ends at the same instant, so a token due at the
-  deadline is produced, and a request finishing there counts as finished. A plain
-  `call_at` timer fires before the step completes; for `grace_ms = 0` nothing is
-  early enough except doing the work inside `drain`.
-- **A loop that never returns.** If `run()` goes back to waiting after resolving the
-  future, the process has no reason to exit and is killed at the end of the
-  supervisor's own grace period.
-- **Counting only what was released.** The value of the future is the number of
-  clients that received `Terminated`, waiting ones included.
+- **Dropping waiting requests when the drain starts.** Treating "in flight" as only "running on the GPU" fails queued requests that were already accepted and could have finished within the grace period.
+- **Continuing to admit requests.** Flipping `ready = False` alone does not stop traffic because load balancers lag and clients reuse open connections. If `submit` keeps accepting, the server never drains under load and late requests get cut off instead of failing over immediately.
+- **Resolving while streams are open.** Returning an already-resolved future from `drain()` tells the supervisor it can exit immediately, killing active engine work.
+- **Resolving at the deadline while a step is in flight.** Releasing sequences mid-step does not end the GPU step early. Wait for `run()` to regain control after `engine.step()` returns before resolving the drain future.
+- **Terminating handles without releasing sequences.** Failing client futures without calling `engine.release()` leaves sequences running in the engine until completion, wasting compute and delaying shutdown.
+- **Sleeping for the full grace period.** Using `await asyncio.sleep(grace_ms)` before checking idle state wastes the entire grace period on idle servers or fast-finishing requests, slowing fleet rollouts.
+- **Using a sleeping task or a zero-delay timer for the deadline.** Both execute after a step that completes at the same instant, letting a token due at the deadline slip through. Use `loop.call_at(deadline, callback)` for `grace_ms > 0`, and call `_terminate_pending()` synchronously inside `drain()` for `grace_ms == 0`.
+- **Never returning from `run()`.** If the loop goes back to awaiting `self._wake` after resolving the drain future, the server task never exits.
+- **Counting only released sequences.** The drain future must resolve to the total number of clients that received `Terminated`, including requests that were still waiting.
 
 ## Complexity
 
-`drain` is $O(1)$ and `_terminate_pending` is linear in the number of pending
-requests. The loop is unchanged; the drain adds one comparison per idle check.
+`drain` runs in $O(1)$ time, and `_terminate_pending` runs in $O(n)$ time for $n$ pending requests. The serving loop itself is unchanged except for one extra check in the idle branch.
 
 ## In the wild
 
-- **Kubernetes** (Pod Lifecycle, "Termination of Pods") defines the outer protocol.
-  The kubelet runs the container's `preStop` hook, then sends `TERM` to process 1,
-  and sends `KILL` when the grace period (`terminationGracePeriodSeconds`, 30 seconds
-  by default) expires; the `preStop` hook runs inside that same period. "At the same
-  time as the kubelet is starting graceful shutdown", the control plane takes the pod
-  out of the Service's EndpointSlices: terminating endpoints are reported with
-  `ready: false`. These two things race, so a server can receive requests for a
-  short while after `SIGTERM`. That is why real servers either sleep a few seconds
-  in `preStop` before anything else, or keep accepting for a short "lame duck"
-  interval after failing readiness; this problem's `drain` is what runs after that
-  interval, and `grace_ms` must be chosen below what is left of the pod's grace
-  period, or `SIGKILL` does the termination without the `Terminated` events.
-- **HTTP.** The refusal is a `503 Service Unavailable`, usually with a `Retry-After`
-  header or `Connection: close`, so that the client (see `retry-backoff-client`)
-  retries and the load balancer sends the retry to another replica. For a stream
-  that has started, the status line is long gone; the cut-off has to be an error
-  event inside the stream, which is what `Terminated.tokens` stands for: the client
-  learns that the output is incomplete and how much of it is valid.
-- **uvicorn** implements the same shape for connections: on `SIGTERM` it stops
-  accepting, waits for running requests, and `--timeout-graceful-shutdown` is the
-  deadline after which the remaining tasks are canceled. An inference server needs
-  the engine-side half on top (releasing sequences and their KV blocks), because a
-  canceled HTTP task does not by itself stop a forward pass.
-- The kit's `SimCluster.drain(replica)` is the cluster-side counterpart used by
-  `autoscaler-policy`: a draining replica gets no new work and stops when what it
-  holds has finished.
+- **Kubernetes** defines the outer shutdown protocol in its Pod Lifecycle ("Termination of Pods"). The kubelet runs the `preStop` hook, sends `SIGTERM` to PID 1, and sends `SIGKILL` once `terminationGracePeriodSeconds` (default 30 s) expires. In parallel, the control plane marks the pod `ready: false` in EndpointSlices. Because endpoint propagation races with `SIGTERM`, production servers often sleep briefly in `preStop` or allow a short lame-duck window before rejecting traffic. This problem models the `drain` phase after that window, where `grace_ms` must leave margin before `SIGKILL` arrives.
+- **HTTP inference servers** reject post-drain requests with `503 Service Unavailable` (often with `Retry-After` or `Connection: close`) so clients (as in `retry-backoff-client`) retry on another replica. Once a streaming response has started, the HTTP status line has already been sent, so cutoffs are reported via an in-stream error event analogous to `Terminated.tokens`.
+- **uvicorn** uses the same connection-level lifecycle on `SIGTERM`: it stops accepting new connections, waits for active requests, and cancels remaining tasks after `--timeout-graceful-shutdown`. An inference server adds engine-side sequence release so canceling an HTTP task also frees GPU work and KV cache blocks.
+- In this track's simulation kit, `SimCluster.drain(replica)` provides the cluster-side counterpart used by `autoscaler-policy`, stopping new routing to a replica until its accepted work completes.

@@ -1,32 +1,18 @@
-Suppose you have read `[{"a": [1` and the next character is `}`. What do you need to
-remember about the text so far to know that this is wrong, while `]` would be right?
-How much of that memory do you need for a text that nests a thousand levels deep, and
-which part of it do you ever look at?
+Suppose you have read `[{"a": [1` and the next character is `}`. What do you need to remember about the text so far to know that `}` is invalid while `]` is valid? How much memory does that take for a text nested a thousand levels deep, and which part of it do you inspect at each step?
 
 ---
 
-Split the state in two. A **stack** of the open containers (`{` or `[`), of which only
-the top matters at any moment. And a small **mode** that says what may come next:
-a value, a value or `]` (right after `[`), a key or `}` (right after `{`), a key
-(after a comma in an object), a colon, "after a value" (comma or closer, chosen by
-the top of the stack), or the inside of a token: a string, an escape, the hex digits
-of `\u`, a literal with some letters still to come, and the stages of a number
-(after `-`, after a leading `0`, in the integer digits, after `.`, in the fraction,
-after `e`, after the exponent's sign, in the exponent). `json_step` is one big
-dispatch on the mode. Keep the stack immutable, a string or a tuple, and build a new
-one on push and pop, so that old states stay valid.
+Split the state into two parts:
+
+- A **stack** of open containers (`{` or `[`), where only the top entry matters at any step.
+- A small **mode** describing what may come next. Structural modes cover expecting a value, a value or `]` (right after `[`), a key or `}` (right after `{`), a key (after a comma in an object), a colon, or "after a value" (where the top of the stack picks the comma target and closer). Token-interior modes cover strings, escapes, `\u` hex digits, remaining literal characters, and the stages of a number (after `-`, after a leading `0`, integer digits, after `.`, fraction digits, after `e`/`E`, after an exponent sign, and exponent digits).
+
+`json_step` dispatches on the current mode. Store the stack in an immutable value such as a string or tuple, creating a new stack on push and pop so earlier states remain unchanged.
 
 ---
 
-Three details finish it.
+Three final details tie everything together:
 
-A number ends without a closing character. If the mode is one in which the number is
-already complete (`0`, integer digits, fraction digits, exponent digits) and the
-character does not continue it, switch the mode to "after a value" and process the
-same character again under that mode.
-
-`json_complete` is: the stack is empty, and the mode is "after a value" or one of
-those four complete-number modes. Nothing else, in particular not the start state.
-
-After a comma go to "key" or "value", not back to the mode that follows the opening
-bracket, since that one also accepts the closer and would let `[1,]` through.
+1. **Number termination.** A number has no closing delimiter. When the mode is one where the number is already complete (`0`, integer digits, fraction digits, or exponent digits) and the next character cannot continue the number, switch the mode to "after a value" and process that same character under the new mode.
+2. **Completion.** `json_complete` is `True` if and only if the stack is empty and the mode is either "after a value" or one of the four complete-number modes. The initial start state must not be complete.
+3. **Commas.** After a comma, transition to "key" or "value" rather than back to the post-opening-bracket mode, because the opening-bracket mode also accepts a closing bracket and would allow trailing commas like `[1,]`.

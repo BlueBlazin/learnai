@@ -1,31 +1,12 @@
 ## The idea
 
-The centroids cut the space into cells: each point belongs to the cell of its
-nearest centroid (a Voronoi partition). The index stores, for every cell, the list
-of corpus vectors inside it. A query's nearest neighbors are probably in the cell
-the query falls in, or in a cell next to it, so the search ranks the cells by the
-distance from the query to their centroids and scans the first `nprobe`.
+The centroids partition the vector space into Voronoi cells, where each cell contains all points closest to its centroid. The index stores one inverted list per cell holding the corpus vectors inside it. Because a query's nearest neighbors usually lie in the query's own cell or an adjacent one, a search ranks the centroids by distance to the query and scans only the top `nprobe` lists.
 
-**Cost.** The coarse step costs $C$ distances and the scan costs the sizes of the
-probed lists, about $\texttt{nprobe} \cdot N / C$ when the lists are balanced. With
-$C \approx \sqrt{N}$ and a few probes, that is a few times $\sqrt{N}$ instead of
-$N$.
+**Cost.** The coarse step evaluates $C$ centroid distances, and the scan evaluates the vectors in the probed lists, roughly $\texttt{nprobe} \cdot N / C$ when lists are balanced. Choosing $C \approx \sqrt{N}$ with a small `nprobe` reduces the work from $N$ distances to a small multiple of $\sqrt{N}$.
 
-**Why it can miss, and why more probes never hurt.** A cell boundary can pass
-between the query and its true neighbor, as in the worked example, where the
-neighbor was assigned to the other side of a tie. Raising `nprobe` adds lists to
-the scan and never removes one, because the probe order does not depend on
-`nprobe`. So the candidate set only grows. A true top-$k$ neighbor that is among
-the candidates is always returned (at most $k - 1$ vectors anywhere are closer to
-the query than it is), so every neighbor found with fewer probes is still found
-with more: recall is monotone. At `nprobe = C` every vector is a candidate and the
-search is exact.
+**Why it can miss, and why more probes never hurt.** A cell boundary can separate a query from its true nearest neighbor, as in the worked example where vector 3 fell on the other side of a tie. Increasing `nprobe` only appends lists to the scan and never removes any, because the probe order does not depend on `nprobe`. As a result, the candidate set only grows. Once a true top-$k$ neighbor enters the candidate set, at most $k - 1$ vectors in the entire corpus are closer to the query than it is, so it is guaranteed to appear in the returned top $k$. Recall is therefore monotone in `nprobe`, and at `nprobe = C` every vector is scanned so the search is exact.
 
-**Layout.** Lists of Python objects would work and would be slow to scan. Storing
-the vectors grouped by list (a stable sort by list number) makes each list a
-contiguous block that one slice, or one gather, reads; `offsets` is the cumulative
-sum of the list sizes, and `ids` remembers where each stored vector came from. It
-is the same idea as the CSR layout of a sparse matrix.
+**Layout.** Storing each list as a Python list of vectors would be slow to scan. Grouping all vectors by list via a stable sort makes every list a single contiguous block that can be read with one slice or gather. The `offsets` array holds the cumulative sum of list sizes, and `ids` maps each storage position back to its original corpus index. This is the same layout as Compressed Sparse Row (CSR) format for sparse matrices.
 
 ## Reference solution (PyTorch)
 
@@ -52,57 +33,26 @@ def search(q, index, k, nprobe, distance):
     return ids[positions[best]], distances[best]
 ```
 
-Three stable sorts carry the three tie rules: ascending ids within a list, lower
-centroid id among equally near centroids, scan order among equally near
-candidates. JAX is a direct translation (`jnp.bincount(..., minlength=C)`;
-`jnp.argsort` is stable). MLX has no `bincount`, so the sizes are counted with a
-comparison against `arange(C)`, and the assignment takes the first column of a
-stable row sort so that the tie rule does not rest on what `argmin` does with
-equal values.
+Three stable sorts enforce the three tie-breaking rules: ascending corpus ids within each list, lower centroid id among equally near centroids, and scan order among equally near candidates. JAX translates directly with `jnp.bincount(..., minlength=C)` and `jnp.argsort` (which is stable). MLX has no `bincount`, so you can count list sizes by comparing `assigned` against `arange(C)` and take the first column of a stable row sort instead of relying on `argmin` tie behavior.
 
-The `(N, C, D)` intermediate of the build is fine at these sizes; for a real corpus
-compute the table in blocks, or as
-$\lVert x \rVert^2 - 2\, x \cdot c + \lVert c \rVert^2$ with one matrix product.
+Materializing the `(N, C, D)` difference tensor during `build_ivf` is fine at these sizes. For a production corpus, compute the squared distance between each vector $x$ and centroid $c$ in blocks or via $\lVert x \rVert^2 - 2\, x \cdot c + \lVert c \rVert^2$ using matrix multiplication.
 
 ## Common mistakes
 
-- **Probing lists by id.** Scanning lists `0 .. nprobe - 1` returns well-formed
-  results from the wrong part of the space. Recall is that of a random sample.
-- **Losing empty lists.** `bincount` without `minlength` (or a `unique`-based
-  count) is one entry short for every trailing list without members, so `offsets`
-  has the wrong length and the probe of such a list raises. Empty lists are normal:
-  centroids trained on a sample, or on last month's data, attract nothing.
-- **Padding short results.** When the probed lists hold fewer than `k` vectors,
-  the answer is shorter than `k`. Filling it up by repeating entries hands the
-  caller duplicate documents. (Faiss fills the missing slots with the label $-1$
-  instead; here the result is simply shorter.)
-- **Scanning everything, then filtering.** Computing all $N$ distances and masking
-  to the probed lists gives the same answer at the cost of the exact scan.
-- **Returning storage positions.** `positions[best]` indexes the grouped storage;
-  the caller needs corpus indices, `ids[positions[best]]`. On a corpus that happens
-  to be sorted by cluster the two coincide.
-- **Assigning by inner product.** The nearest centroid in L2 is not the centroid
-  with the largest inner product unless every vector has the same length.
-- **Unsorted lists.** An unstable sort by list number groups correctly and leaves
-  each list in arbitrary order, which changes the tie order of every search.
+- **Probing lists by id.** Scanning lists `0` through `nprobe - 1` produces well-formed outputs from the wrong region of space, giving recall no better than a random sample.
+- **Losing empty lists.** Calling `bincount` without `minlength`, or counting via `unique`, omits trailing empty lists. That makes `offsets` too short and causes out-of-bounds errors when probing those lists. Empty lists happen routinely when centroids are trained on a sample or on stale data.
+- **Padding short results.** When the probed lists hold fewer than `k` vectors, return fewer than `k` results rather than repeating entries to pad the output. (Faiss pads missing slots with the sentinel label $-1$, whereas this specification returns a shorter tensor.)
+- **Scanning everything, then filtering.** Computing all $N$ distances and masking to the probed lists returns the right answer at the cost of a full scan, failing the cost check.
+- **Returning storage positions.** `positions[best]` indexes into the reordered `vectors` array rather than the original corpus. You must map back through `ids[positions[best]]`. If a test corpus happens to be pre-sorted by cluster, this bug hides until an unsorted corpus is tested.
+- **Assigning by inner product.** The centroid with the largest inner product is not the nearest centroid in L2 distance unless all vectors share the same norm.
+- **Unsorted lists.** An unstable sort by list number groups vectors into the right lists but scrambles their order within each list, breaking tie order during search.
 
 ## Complexity
 
-Build: $O(NCD)$ for the assignment and $O(N \log N)$ for the sort. Search:
-$O(CD)$ for the coarse step, $O(MD)$ for a scan of $M$ candidates, and
-$O(M \log M)$ for the final sort (a partial selection of the $k$ smallest brings
-that to $O(M)$).
+Building the index takes $O(NCD)$ time for centroid assignment and $O(N \log N)$ time for sorting. Searching takes $O(CD)$ time for the coarse step, $O(MD)$ time to scan $M$ candidates, and $O(M \log M)$ time to sort them (which drops to $O(M)$ with partial top-$k$ selection).
 
 ## In the wild
 
-- Faiss's `IndexIVFFlat` is this index: its documentation describes the space as
-  partitioned into `nlist` cells, the vectors stored in `nlist` inverted lists, a
-  *quantizer* (usually a flat index over the centroids) that picks the lists to
-  visit, and `nprobe`, set at query time, as the number of lists searched. It
-  notes that `nprobe / nlist` underestimates the fraction of the corpus scanned,
-  because the lists are not equally long.
-- The inverted file comes from text retrieval; "Video Google: A Text Retrieval
-  Approach to Object Matching in Videos" (ICCV 2003) carried it over to quantized
-  descriptors, with the centroids playing the role of words.
-- IVF-PQ keeps the same lists and stores compressed codes in them; the search
-  logic of this problem is unchanged, only the scan computes approximate distances.
+- Faiss's `IndexIVFFlat` implements this exact index. It partitions the space into `nlist` cells with `nlist` inverted lists, uses a *quantizer* (typically a flat index over the centroids) to pick which lists to visit, and exposes `nprobe` as a query-time parameter. The Faiss documentation also notes that `nprobe / nlist` underestimates the actual fraction of the corpus scanned when list sizes are unbalanced.
+- The inverted-file structure originated in text retrieval. "Video Google: A Text Retrieval Approach to Object Matching in Videos" (ICCV 2003) adapted it to quantized image descriptors, using centroids as visual words.
+- IVF-PQ keeps the same inverted lists and search flow, replacing raw vectors in the lists with compressed product-quantization codes so that the scan computes approximate distances.

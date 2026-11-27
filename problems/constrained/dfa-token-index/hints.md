@@ -1,20 +1,12 @@
-In `dfa-token-mask`, what did the answer depend on besides the automaton and the
-vocabulary? If the only other input is the state, and there are finitely many states,
-when can all the answers be computed? And if `b't'`, `b'tr'`, `b'tru'`, and `b'true'`
-are all walked from the same state, how many of those steps are really different?
+In `dfa-token-mask`, besides the automaton and vocabulary, what else did the allowed tokens depend on? Since there are finitely many states, when can you compute all of those answers? Also, when `b't'`, `b'tr'`, `b'tru'`, and `b'true'` are all walked from the same state, how many of their automaton steps are actually distinct?
 
 ---
 
-Two structures. First, a trie over the byte strings of the tokens (skip tokens with no
-bytes): each node is one distinct prefix, its children are indexed by the next byte,
-and a node remembers the token, if any, whose bytes end exactly there. An interior
-node can hold a token too. Second, the index itself: for every state in `dfa.states`,
-a dict from token to next state. Fill the second by walking the first.
+Use two data structures. First, build a prefix tree (trie) over the non-empty byte strings in `vocab`. Each node represents a distinct prefix, maps each next byte to a child node, and stores any token ids whose byte strings end at that node (including interior nodes). Second, build the index itself as a dictionary mapping every state in `dfa.states` to a dictionary of `{token: next_state}` pairs, filled by walking the trie from each state.
 
 ---
 
-For one state `q`, walk the trie and the automaton together, carrying the automaton
-state that belongs to each trie node:
+For each state `q`, walk the trie and the automaton together while carrying the current automaton state for each trie node:
 
 ```python
 stack = [(root, q)]
@@ -27,6 +19,4 @@ while stack:
         ...record child's token -> after, then push (child, after)
 ```
 
-Each trie edge is stepped at most once per state, and never below a dead edge, which
-is exactly the budget. The queries are then `sorted(index[state])` and a dict lookup
-that turns a missing key into `ValueError`.
+Each trie edge is stepped at most once per state and never below a `DEAD` edge, which matches the step budget exactly. `allowed_from_index` then returns `sorted(index[state])`, and `advance_from_index` looks up `index[state][token]` and raises `ValueError` on a missing key.

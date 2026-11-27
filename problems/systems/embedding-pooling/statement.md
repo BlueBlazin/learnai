@@ -1,8 +1,4 @@
-An embedding model returns one state per token; a search index wants one vector per
-text. Implement the step in between: pool the token states of each row into a single
-vector (mean, first token, or last token), normalize it to unit length, and shorten a
-finished embedding to its first dimensions. Each of the three poolings is one line.
-All of them go wrong in the same place, the padding, and each in its own way.
+Implement two functions that turn token-level encoder outputs into fixed-size embeddings for vector search. The first pools token states into one unit-length vector per sequence using mean, first-token, or last-token pooling while ignoring padding. The second truncates embeddings to a shorter prefix and renormalizes them.
 
 ## Specification
 
@@ -11,45 +7,43 @@ def pool(states, mask, mode): ...
 def truncate_matryoshka(e, dim): ...
 ```
 
-**The batch.** `states[b, t]` is the encoder's state for position `t` of row `b`.
-`mask[b, t]` is `1` if that position holds a real token and `0` if it is padding.
-The real tokens of a row are contiguous and touch one end of the row: its start
-(**right** padding) or its end (**left** padding). Every row has at least one real
-token. The states at padded positions are arbitrary numbers and must not influence
-the result.
+### Batch layout
 
-**`pool(states, mask, mode)`** computes one vector $p_b$ per row, then normalizes it.
-With $R_b = \{t : \texttt{mask}[b, t] = 1\}$, the real positions of row $b$:
+`states` holds token representations for a batch of $B$ sequences of length $T$ with embedding dimension $D$. Specifically, `states[b, t]` is the vector at position `t` of sequence `b`. `mask[b, t]` is `1` when that position holds a real token and `0` when it is padding.
 
-| `mode` | pooled vector $p_b$ |
+The real tokens in each sequence are contiguous and flush against one end, either the start (**right padding**) or the end (**left padding**). Every sequence has at least one real token. Values at padded positions are arbitrary and must not affect the output.
+
+### `pool(states, mask, mode)`
+
+For each sequence $b$, let $R_b = \{t : \texttt{mask}[b, t] = 1\}$ be the set of real token positions. Compute one pooled vector $p_b$ per sequence according to `mode`:
+
+| `mode` | Pooled vector $p_b$ |
 |---|---|
 | `"mean"` | $\dfrac{1}{\lvert R_b \rvert} \sum_{t \in R_b} \texttt{states}[b, t]$ |
-| `"cls"` | $\texttt{states}[b, \min R_b]$: the state of the **first** real token |
-| `"last"` | $\texttt{states}[b, \max R_b]$: the state of the **last** real token |
+| `"cls"` | $\texttt{states}[b, \min R_b]$, the state of the **first** real token |
+| `"last"` | $\texttt{states}[b, \max R_b]$, the state of the **last** real token |
 
-No other mode is passed. The result is the L2-normalized vector, with a floor on the
-divisor:
+No other value of `mode` is passed. After pooling, L2-normalize each vector with a floor of $10^{-12}$ on the norm:
 
 $$
 \operatorname{normalize}(p) = \frac{p}{\max(\lVert p \rVert_2,\ 10^{-12})} .
 $$
 
-A vector that is exactly zero therefore stays zero; every other vector comes out
-with length 1.
+With this floor, an all-zero vector stays zero instead of producing NaN. Every other vector is scaled to unit length.
 
-**`truncate_matryoshka(e, dim)`** shortens embeddings that were trained so that
-their prefixes are embeddings too. It keeps the first `dim` coordinates along the
-last axis and normalizes again with the same rule:
+### `truncate_matryoshka(e, dim)`
+
+Matryoshka embeddings are trained so that prefixes of the full vector remain valid embeddings on their own. Given a tensor `e` whose last axis has size $D$ and whose leading axes are arbitrary batch axes (one or more axes total), keep the first `dim` coordinates along the last axis and renormalize them with the same rule:
 
 $$
-\operatorname{truncate}(e, d) = \operatorname{normalize}(e_{1..d}) .
+\operatorname{truncate}(e, \texttt{dim}) = \operatorname{normalize}(e_{1..\texttt{dim}}) .
 $$
 
-`e` has one or more axes; all but the last are batch axes. $1 \le$ `dim` $\le D$.
+Here $1 \le \texttt{dim} \le D$.
 
 ## Shapes
 
-| name | shape | dtype |
+| Name | Shape | Dtype |
 |---|---|---|
 | `states` | `(B, T, D)` | float32 |
 | `mask` | `(B, T)` | integer, values 0 and 1 |
@@ -59,8 +53,7 @@ $$
 
 ## Example
 
-Two rows, `T = 3`, `D = 2`. Row 0 has two real tokens and is padded on the right
-with a state of `[9, 0]`:
+Consider a batch of two sequences with `T = 3` and `D = 2`. Sequence 0 has two real tokens and is right-padded with `[9, 0]`.
 
 ```python
 states = [[[1, 0], [3, 4], [9, 0]], [[0, 2], [4, 0], [2, 1]]]
@@ -71,49 +64,36 @@ pool(states, mask, "cls")  # [[1.0, 0.0],       [0.0, 1.0]]
 pool(states, mask, "last")  # [[0.6, 0.8],       [0.8944, 0.4472]]
 ```
 
-- `"mean"`, row 0: $([1, 0] + [3, 4]) / 2 = [2, 2]$, normalized to
-  $[0.7071, 0.7071]$. Averaging all three positions would give $[13, 4] / 3$,
-  a different direction.
-- `"last"`, row 0: the last real token is at position 1, state $[3, 4]$, length 5.
-  Position 2 is padding.
+- In `"mean"` mode, sequence 0 averages only its two real tokens, giving $([1, 0] + [3, 4]) / 2 = [2, 2]$, which normalizes to $[0.7071, 0.7071]$. Including the padded token `[9, 0]` would produce $[13, 4] / 3$, pointing in a different direction.
+- In `"last"` mode, the last real token of sequence 0 is at position 1 with state `[3, 4]` and length 5, so the normalized output is `[0.6, 0.8]`. Position 2 is ignored because it is padding.
 
-The same text padded on the left gives the same embeddings:
+Left-padding the same sequence produces the exact same embeddings:
 
 ```python
 states = [[[9, 0], [1, 0], [3, 4]]]
 mask = [[0, 1, 1]]
-pool(states, mask, "cls")  # [[1.0, 0.0]]: the first real token is at position 1
+pool(states, mask, "cls")  # [[1.0, 0.0]] (first real token is at position 1)
 pool(states, mask, "last")  # [[0.6, 0.8]]
 ```
+
+Truncating a 4-dimensional unit vector to its first 2 coordinates requires renormalization:
 
 ```python
 truncate_matryoshka([0.5, 0.5, 0.5, 0.5], 2)  # [0.7071, 0.7071]
 ```
 
-The prefix `[0.5, 0.5]` has length $0.7071$, not 1; dividing by it restores unit
-length.
+The prefix `[0.5, 0.5]` has length $0.7071$ rather than 1, so dividing by its norm restores unit length.
 
 ## Constraints
 
-- $1 \le B \le 64$, $1 \le T \le 64$, $1 \le D \le 64$. All rows of a batch are
-  padded on the same side. A row may have no padding at all.
-- Results are compared with the reference to a relative tolerance of `1e-4` and an
-  absolute tolerance of `1e-6`.
-- **Padding never changes the embedding.** The same texts, encoded by the kit's
-  `TinyEncoder` (whose states for real tokens do not depend on the padding) and
-  padded on the left, on the right, or to a greater length, must give the same
-  embeddings in every mode, to an absolute tolerance of `1e-4`.
-- No Python loop over rows or positions is needed.
+- $1 \le B \le 64$, $1 \le T \le 64$, and $1 \le D \le 64$.
+- All sequences in a batch are padded on the same side. A sequence may contain no padding at all.
+- Outputs are compared against the reference with a relative tolerance of `1e-4` and an absolute tolerance of `1e-6`.
+- **Padding invariance.** The same texts encoded by the kit's `TinyEncoder` (whose real-token states do not depend on padding) and padded on the left, on the right, or to a greater length must produce the same embeddings in every mode within an absolute tolerance of `1e-4`.
+- No Python loop over sequences or token positions is needed.
 
 ## Why this matters
 
-This function sits between the embedding model and the vector index in every
-retrieval system, and it is model-specific: BERT-style encoders are trained for
-mean or `[CLS]` pooling, decoder-based embedding models for last-token pooling,
-and using the wrong one gives vectors that look fine and retrieve badly. The
-padding bugs are worse because they depend on the batch: a text embedded alone and
-the same text embedded next to a longer one get different vectors, so the index
-built by a batch job does not match the queries embedded one at a time. Matryoshka
-truncation is how one model serves a 1024-dimensional index and a 256-dimensional
-one; forgetting to renormalize turns every cosine similarity into an inner product
-of vectors of different lengths.
+Pooling sits between the encoder and the vector index in every dense retrieval pipeline. The choice of pooling is tied to how the model was trained. BERT-style encoders typically use mean or `[CLS]` pooling, whereas decoder-based embedding models use last-token pooling. Using the wrong mode produces valid-looking vectors with poor retrieval quality.
+
+Padding bugs are even harder to catch because they depend on batch composition. When padded tokens leak into the pooled vector, a document embedded in a batch with longer texts receives a different vector than the same text embedded alone. Offline batch indexing then silently disagrees with online single-query serving. Similarly, Matryoshka truncation lets a single model serve both full-size and compact indexes, but forgetting to renormalize leaves vectors with unequal lengths, which breaks cosine similarity under inner-product search.

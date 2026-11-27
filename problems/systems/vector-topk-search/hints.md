@@ -1,22 +1,14 @@
-The score of every query against every corpus vector is a `(Q, N)` table. Which
-single tensor operation produces the whole table, and what has to be done to the
-two inputs first so that the same operation gives cosine similarity?
+Every query-corpus pair produces one entry in a `(Q, N)` score table. Think about which single tensor operation computes that entire table at once, and what preprocessing turns that same operation into cosine similarity.
 
 ---
 
-Normalize the rows of both matrices for `"cosine"` (divide by the L2 norm with the
-reduced axis kept), then `scores = queries @ corpus.T`. Cap `k` at `N`. For the
-selection, look at what your framework offers and read what it says about equal
-elements: a top-k routine that returns indices may return *any* of several tied
-entries, while a stable sort of the negated scores always puts the lower index
-first.
+For `"cosine"`, divide each row of `queries` and `corpus` by its L2 norm (keeping the reduced dimension), then compute `scores = queries @ corpus.T`. Cap `k` at `N`.
+
+For selecting the top `k`, check whether your framework's selection routine is stable on ties. An unstable top-k may return any index among tied entries, whereas a stable sort of `-scores` always places lower indices first.
 
 ---
 
-A full stable sort is correct: `argsort(-scores, stable)[:, :k]`, then gather the
-scores. To avoid sorting the $N - k$ entries you discard, take only the $k$-th best
-*value* of each row from the top-k routine (values are unambiguous even when
-indices are not) and select by value:
+A full stable sort gives the exact answer: `argsort(-scores, stable)[:, :k]`, followed by gathering the corresponding scores. To avoid sorting all $N - k$ discarded entries, take only the $k$-th best *value* per row from `topk` (values are unambiguous even when indices are not) and select by value:
 
 ```python
 kth = topk(scores, k).values[:, -1:]
@@ -25,6 +17,4 @@ room = k - above.sum(1, keepdim=True)  # places left for tied entries
 keep = above | (tied & (tied.cumsum(1) <= room))  # the lowest-index ties get them
 ```
 
-`keep` has exactly `k` true entries per row. Their column indices, in ascending
-order, followed by a stable descending sort of those `k` scores, give the answer.
-JAX's `jax.lax.top_k` is documented as stable and needs none of this.
+`keep` has exactly `k` true entries per row. Extracting their column indices in ascending order and running a stable descending sort on those `k` scores completes the search. In JAX, `jax.lax.top_k` is already stable and needs no extra tie-breaking step.

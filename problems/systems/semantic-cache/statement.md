@@ -1,10 +1,4 @@
-A semantic cache answers a request without calling the model when a *similar*
-request was answered before: it stores each response under the embedding of its
-question and looks new questions up by cosine similarity. A hit saves a model
-call. A **false hit** returns somebody else's answer, so the lookup has to be
-strict about four things: which entries it may consider at all, which of several
-matches it returns, how long an entry lives, and which entry goes when the cache is
-full.
+A semantic cache answers a request without calling an LLM when a similar request was answered recently. It stores each response under the embedding of its question and looks up new questions by cosine similarity. Implement `namespace_of` and `SemanticCache` to scope lookups strictly, return the best live match, enforce fixed lifetimes, and evict least recently used entries when full.
 
 ## Specification
 
@@ -20,83 +14,67 @@ class SemanticCache:
 
 ### The namespace of a request
 
-Two requests may share a cached response only if everything that shapes the
-response, other than the question, is the same. `namespace_of` reduces a chat
-request to that part, or says that the request must not be cached at all.
+Two requests may share a cached response only if every setting that shapes the output, other than the user question, is identical. `namespace_of(request)` extracts that exact scope or signals that the request must not be cached.
 
-`request` is a dict with the keys
+`request` is a dict containing:
 
-- `"model"`: a string;
-- `"messages"`: a list of `{"role": ..., "content": ...}` dicts with string contents;
-- optionally `"temperature"` (a number $\ge 0$; **absent means 1.0**, the API's
-  default), `"max_tokens"` (an int; absent means `None`), and `"tools"` (a list;
-  absent or empty means no tools). Other keys may be present and are ignored.
+- `"model"`: a string naming the model.
+- `"messages"`: a list of `{"role": ..., "content": ...}` dicts with string contents.
+- `"temperature"` (optional): a number $\ge 0$. If absent, it defaults to `1.0`.
+- `"max_tokens"` (optional): an int. If absent, it defaults to `None`.
+- `"tools"` (optional): a list of tool definitions. If absent or empty, the request uses no tools.
 
-`namespace_of(request)` returns
+Ignore any other keys in `request`.
 
-- `None` if the request has at least one tool, or if its temperature is not 0: a
-  tool-using response depends on the state of the world, and a sampled response
-  is supposed to differ from call to call;
-- otherwise the tuple `(model, system, max_tokens)`, where `system` is the contents
-  of all messages with role `"system"`, in order, joined with `"\n"` (the empty
-  string if there are none).
+`namespace_of(request)` returns:
+
+- `None` if the request has at least one tool or if its temperature is not `0`. Tool-using responses depend on live external state, and sampled responses are meant to vary across calls.
+- Otherwise, the tuple `(model, system, max_tokens)`, where `system` is the `"content"` of every message with role `"system"`, in order, joined with `"\n"` (or `""` if there are no system messages).
 
 ### The cache
 
-An **entry** is a stored `(namespace, embedding, response)` together with the time
-it was stored. The cache holds at most `capacity` entries, over all namespaces.
+An **entry** stores a `(namespace, embedding, response)` triple along with the timestamp $t_0$ when it was stored. The cache holds at most `capacity` entries across all namespaces combined.
 
-- **Similarity** of two embeddings is their cosine,
-  $\operatorname{sim}(a, b) = \dfrac{a \cdot b}{\lVert a \rVert_2 \, \lVert b \rVert_2}$,
-  computed in Python floats. Embeddings are lists of floats of one common length,
-  never zero, and not necessarily of unit length.
-- **Expiry.** An entry stored at time $t_0$ is *live* at time `now` while
-  `now - t0 < ttl_s`, and *expired* from then on. Nothing ever extends an entry's
-  life: its expiry is fixed when it is stored.
-- **Recency.** An entry is *used* when it is stored and each time `get` returns its
-  response. The least recently used entry is the one whose last use lies furthest
-  back in the sequence of calls.
+- **Similarity.** For two embeddings $a$ and $b$, similarity is their cosine similarity computed in Python floats:
+  $$\operatorname{sim}(a, b) = \frac{a \cdot b}{\lVert a \rVert_2 \, \lVert b \rVert_2}$$
+  All embeddings are non-zero lists of floats of the same length, and they are not necessarily unit-normalized.
+- **Expiry.** An entry stored at time $t_0$ is *live* at time `now` while `now - t0 < ttl_s`, and *expired* once `now - t0 >= ttl_s`. An entry's expiration time is fixed when it is stored and is never extended by hits.
+- **Recency.** An entry is *used* when it is stored by `put` and whenever `get` returns its response. The least recently used entry is the one whose last use occurred earliest in the call sequence.
 
-**`get(embedding, now, namespace)`** considers the entries that
+**`get(embedding, now, namespace)`** considers only entries that satisfy all three conditions:
 
-1. have exactly this `namespace` (compared with `==`),
-2. are live at `now`, and
-3. have $\operatorname{sim}(\text{embedding}, \text{entry}) \ge$ `threshold`.
+1. Their namespace equals `namespace` (using `==`).
+2. They are live at `now`.
+3. $\operatorname{sim}(\text{embedding}, \text{entry embedding}) \ge \texttt{threshold}$.
 
-If there is none, it returns `None` and changes nothing. Otherwise it returns the
-response of the entry with the **highest similarity**; among entries with equal
-similarity, the one **stored most recently**. That entry becomes the most recently
-used.
+If no entry qualifies, return `None` without modifying the cache. Otherwise, return the response of the qualifying entry with the **highest similarity**. Break ties in favor of the entry **stored most recently**. Mark the returned entry as the most recently used.
 
-**`put(embedding, response, now, namespace)`**, in this order:
+**`put(embedding, response, now, namespace)`** performs three steps in order:
 
-1. removes every entry that is expired at `now`, in every namespace;
-2. if the cache still holds `capacity` entries, removes the least recently used one;
-3. stores the new entry, which becomes the most recently used.
+1. Remove every entry across all namespaces that is expired at `now`.
+2. If the cache still holds `capacity` entries, remove the least recently used entry.
+3. Store the new entry and mark it as the most recently used.
 
-`put` always adds an entry, also when an equal embedding is already stored; the
-tie rule of `get` then prefers the newer response. `now` never decreases from one
-call to the next.
+`put` always inserts a new entry, even if an identical embedding is already stored. The tie-breaking rule in `get` ensures the newer response is preferred. Timestamps passed as `now` never decrease from one call to the next.
 
 ## Example
 
-`cache = SemanticCache(threshold=0.8, ttl_s=60, capacity=2)`, with `ns` and `other`
-two different namespaces:
+Let `cache = SemanticCache(threshold=0.8, ttl_s=60, capacity=2)`, with two distinct namespaces `ns` and `other`:
 
 | call | result | why |
 |---|---|---|
-| `put([1, 0], "A", 0, ns)` | | |
-| `put([3, 4], "B", 10, ns)` | | |
-| `get([4, 3], 20, ns)` | `"B"` | similarities `0.8` (A) and `0.96` (B): both reach the threshold, the higher one wins, not the first one |
-| `get([4, 3], 20, other)` | `None` | no entry in that namespace |
-| `get([1, 0], 59, ns)` | `"A"` | similarity `1.0`; B has `0.6` |
-| `get([1, 0], 60, ns)` | `None` | A is expired (`60 - 0 < 60` is false), although it was used at 59; B is below the threshold |
-| `put([0, 1], "C", 65, ns)` | | A is expired and removed; B and C are stored |
-| `get([3, 4], 65, ns)` | `"B"` | similarity `1.0`; C has `0.8` |
-| `put([-1, 0], "D", 66, ns)` | | nothing has expired and the cache is full: C is the least recently used (B was used at 65) and is removed |
-| `get([0, 1], 67, ns)` | `"B"` | similarity `0.8` with B; C is gone |
+| `put([1, 0], "A", 0, ns)` | | stores A at $t_0 = 0$ |
+| `put([3, 4], "B", 10, ns)` | | stores B at $t_0 = 10$ |
+| `get([4, 3], 20, ns)` | `"B"` | similarities are `0.8` (A) and `0.96` (B), so both pass `0.8` and the higher similarity wins |
+| `get([4, 3], 20, other)` | `None` | no entries exist in namespace `other` |
+| `get([1, 0], 59, ns)` | `"A"` | A has similarity `1.0` and B has `0.6` |
+| `get([1, 0], 60, ns)` | `None` | A expired at `60` (`60 - 0 < 60` is false) even though it was hit at `59`, and B is below `0.8` |
+| `put([0, 1], "C", 65, ns)` | | expired entry A is purged, leaving room for B and C |
+| `get([3, 4], 65, ns)` | `"B"` | B has similarity `1.0` and C has `0.8`, making B most recently used |
+| `put([-1, 0], "D", 66, ns)` | | neither B nor C is expired and capacity is full, so C (least recently used) is evicted |
+| `get([0, 1], 67, ns)` | `"B"` | C was evicted, and B matches with similarity `0.8` |
 
-And the namespace:
+Example calls to `namespace_of`:
 
 ```python
 request = {
@@ -108,34 +86,21 @@ request = {
     ],
 }
 namespace_of(request)  # ("small", "Answer in French.", None)
-namespace_of({**request, "temperature": 0.7})  # None: sampled
-namespace_of({**request, "tools": [{"type": "function", ...}]})  # None: uses tools
+namespace_of({**request, "temperature": 0.7})  # None (sampled)
+namespace_of({**request, "tools": [{"type": "function", ...}]})  # None (uses tools)
 ```
 
 ## Constraints
 
-- `capacity` $\ge 1$, `ttl_s` $> 0$, $-1 \le$ `threshold` $\le 1$. At most a few
-  hundred entries and a few thousand calls; a linear scan per `get` is expected.
-- Responses are compared exactly. Where the tests rely on a similarity being equal
-  to the threshold or to another similarity, it is exact in floating point: the two
-  entries have the same embedding, or the numbers are those of the example
-  (`0.6`, `0.8`, `1.0` from vectors such as `[3, 4]` and `[1, 0]`). All other
-  similarities are at least `1e-9` apart from each other and from the threshold.
-- Times are multiples of 1/64 s, so `now - t0` is exact.
-- One case drives the cache from a simulated clock: requests arrive over time,
-  a miss calls a model that takes 2 s and stores its answer when it arrives, and
-  requests whose namespace is `None` bypass the cache. The sequence of hits and
-  misses must equal the reference's, and no request may receive an answer that was
-  generated for a different question, model, or system prompt.
+- `capacity` $\ge 1$, `ttl_s` $> 0$, and $-1 \le \texttt{threshold} \le 1$.
+- Tests use at most a few hundred entries and a few thousand calls, so a linear scan in `get` is expected.
+- Responses are compared for exact string equality.
+- Whenever a test relies on a similarity equaling `threshold` or another similarity, the comparison is exact in floating point (identical embeddings, or exact values such as `0.6`, `0.8`, `1.0` from vectors like `[3, 4]` and `[1, 0]`). All other similarities differ from each other and from `threshold` by at least `1e-9`.
+- Timestamps are multiples of `1/64` s, so `now - t0` is exact in floating point.
+- One test drives the cache with a simulated clock. Requests arrive over time, misses invoke a simulated model that takes `2` s before storing the response, and requests whose namespace is `None` bypass the cache. Your hit/miss sequence must match the reference exactly, and no request may receive a response generated for a different question, model, or system prompt.
 
 ## Why this matters
 
-Semantic caches sit in front of LLM APIs in gateways and support bots, where a
-large share of the traffic is the same few questions in different words, and a hit
-replaces seconds of generation with a vector lookup. The savings are real and so
-are the failures. A cache keyed on the question alone serves the answer of one
-model, system prompt, or tenant to another. "First match above the threshold"
-returns a neighbor when the exact question is stored right behind it. An entry
-whose life is extended by every hit never expires as long as it is popular, which
-is exactly when a stale answer does the most damage. And caching a tool-using
-request freezes yesterday's weather.
+Semantic caches sit in front of LLM gateways and support bots where users frequently ask the same questions in slightly different wording. A cache hit replaces seconds of generation with a millisecond vector lookup.
+
+However, false hits are far worse than misses. Keying on the question alone leaks responses across models, system prompts, or tenants. Returning the first match above the threshold can serve a nearby question when an exact match sits right behind it. Extending an entry's lifetime on every hit keeps popular stale answers alive forever, and caching tool-using calls freezes outdated real-world data.

@@ -1,38 +1,26 @@
 ## The idea
 
-**Scoring.** The inner products of all queries with all corpus vectors are the
-entries of one matrix product, `queries @ corpus.T`, of shape `(Q, N)`. Cosine
-similarity is the inner product of the normalized vectors,
+Let `queries` have shape `(Q, D)` and `corpus` have shape `(N, D)`.
+
+**Scoring.** All $Q \times N$ inner products between queries and corpus vectors are computed in a single matrix multiplication, `queries @ corpus.T`, producing a score table of shape `(Q, N)`. Cosine similarity is the inner product of unit-normalized vectors:
 
 $$
 \frac{q \cdot c}{\lVert q \rVert \lVert c \rVert}
-= \frac{q}{\lVert q \rVert} \cdot \frac{c}{\lVert c \rVert},
+= \frac{q}{\lVert q \rVert} \cdot \frac{c}{\lVert c \rVert} .
 $$
 
-so normalizing the rows of both matrices first turns the same product into the
-cosine table. A matrix product is the operation every backend has spent the most
-effort on (blocked, vectorized, threaded, or on the GPU), which is why "a loop that
-computes one inner product at a time" loses by two orders of magnitude on the same
-arithmetic.
+Normalizing the rows of both matrices before multiplying therefore reuses the same matrix multiplication for cosine similarity. Matrix multiplication is heavily optimized on every backend (blocked, vectorized, multithreaded, or GPU-accelerated), which is why a Python loop computing one dot product at a time is orders of magnitude slower for the same arithmetic.
 
-**Selecting.** Sorting a row costs $O(N \log N)$ and orders all the entries nobody
-asked for. Selection finds the $k$ largest in $O(N)$ (quickselect, or a heap of
-size $k$ in $O(N \log k)$), and only those $k$ are then sorted.
+**Selecting.** Sorting an entire row costs $O(N \log N)$ and orders the $N - k$ entries that are immediately discarded. Top-k selection finds the $k$ largest values in $O(N)$ time (via quickselect) or $O(N \log k)$ time (via a size-$k$ heap), leaving only $k$ winners to sort.
 
-**Ties.** The catch is that selection routines are not stable. `torch.topk`
-documents that the indices of tied elements "are not guaranteed to be stable", and
-`mx.argpartition` leaves the order within each side of the partition undefined.
-What *is* well defined is the set of the $k$ largest **values**. So ask the
-selection for one number per row, the $k$-th best score $t$, and build the answer
-from it:
+**Handling ties.** Most selection primitives are not stable. For example, `torch.topk` does not guarantee index order among tied elements, and `mx.argpartition` leaves order within each partition unspecified. However, the *values* of the top $k$ scores are always well-defined.
 
-- every entry with score $> t$ is in (there are fewer than $k$ of them);
-- the remaining places go to entries with score $= t$, in index order. A running
-  count (`cumsum`) of the tied entries along the row numbers them 1, 2, 3, ... from
-  the left, so "the first `room` of them" is one comparison.
+To break ties deterministically in PyTorch, read only the $k$-th largest score $t$ for each row and build a boolean selection mask from it:
 
-That mask has exactly $k$ true entries per row; listing them gives the right set in
-ascending index order, and a stable descending sort of $k$ scores finishes.
+- Every entry with score $> t$ is included (there are strictly fewer than $k$ such entries).
+- The remaining slots (`room = k - count(score > t)`) go to entries with score $= t$ in ascending index order. Taking a cumulative sum (`cumsum`) of the `score == t` mask along each row numbers tied entries 1, 2, 3, ... from left to right, so keeping those with count $\le \texttt{room}$ selects the lowest-index ties.
+
+This mask has exactly $k$ true entries per row. Extracting their column indices produces the winning set in ascending index order, and a stable descending sort over those $k$ scores finishes the ranking.
 
 ## Reference solution (PyTorch)
 
@@ -56,54 +44,29 @@ def search(queries, corpus, k, metric="cosine"):
     return index.gather(1, order), picked.gather(1, order)
 ```
 
-`keep.nonzero()` lists the true positions in row-major order, so its column
-coordinates, reshaped to `(Q, k)`, are each row's kept indices in ascending order.
+`keep.nonzero()` returns coordinates in row-major order, so taking its column indices and reshaping to `(Q, k)` yields each row's selected indices in ascending order.
 
-The other two references differ, because the frameworks do:
+The JAX and MLX references differ slightly because of framework primitives:
 
-- **JAX**: `jax.lax.top_k(scores, k)` returns values and indices, best first, and
-  is stable by default (`is_stable=True`: equal elements keep their input order).
-  It is the whole selection.
-- **MLX**: `mx.topk` returns values only, and `mx.argpartition` has the tie problem.
-  `mx.argsort` is stable and runs on the GPU, where a full sort of a 20,000-entry
-  row costs about what a partition does, so the reference is
-  `mx.argsort(-scores, axis=1)[:, :k]`. Negating instead of reversing matters: a
-  reversed ascending sort would put the *higher* index first among equals.
+- **JAX:** `jax.lax.top_k(scores, k)` returns both values and indices in descending order and is stable by default (`is_stable=True`), preserving lower indices first on ties. No extra tie-breaking step is needed.
+- **MLX:** `mx.topk` returns values only, and `mx.argpartition` is unstable on ties. Because `mx.argsort` is stable and runs on the GPU (where sorting 20,000 entries per row costs roughly the same as partitioning), the reference uses `mx.argsort(-scores, axis=1)[:, :k]`. Negating `scores` rather than reversing an ascending sort is essential, because reversing an ascending sort would place higher indices first among ties.
 
 ## Common mistakes
 
-- **A plain inner product for cosine.** Without normalization long vectors win
-  every query. On a corpus of unit vectors the bug is invisible, which is how it
-  ships: the embedding model is swapped for one that does not normalize.
-- **Normalizing one side.** Normalizing only the corpus gives the right ranking,
-  because each row of the table is scaled by one positive number, and wrong scores.
-  A similarity threshold tuned against true cosines then cuts in the wrong place.
-- **Ignoring `metric`.** Models trained for inner-product search put information in
-  the length of the vector; normalizing it away changes the ranking.
-- **Trusting the indices of a top-k.** The values are right and the scores match;
-  the indices among equal scores are arbitrary, and can differ between runs, devices,
-  and library versions.
-- **An unstable full sort**, the default of `torch.sort` and `torch.argsort`. Same
-  symptom; pass `stable=True`.
-- **Not capping `k`.** `topk` raises when `k > N`. A small corpus (a new tenant, a
-  filtered subset) is where this happens in production.
-- **A loop over the corpus.** The same arithmetic as one product, issued as $N$
-  framework calls.
+- **Using raw dot products for `"cosine"`.** Without normalization, long vectors dominate every query. This bug hides when testing on already-normalized embeddings and surfaces later when a model returns unnormalized vectors.
+- **Normalizing only one side.** Normalizing only `corpus` preserves the ranking (each query row is scaled by a constant positive factor), but returns incorrect similarity scores. Any downstream similarity threshold calibrated to true cosine scores will cut off in the wrong place.
+- **Ignoring `metric`.** Models trained for inner-product search encode useful signal in vector magnitude, so normalizing when `metric == "dot"` changes the ranking.
+- **Trusting the indices from an unstable `topk`.** The returned scores are correct, but the indices chosen among ties are arbitrary and can change across runs, devices, or library versions.
+- **Using an unstable full sort.** `torch.sort` and `torch.argsort` are unstable by default. Pass `stable=True` to guarantee lower-index-first tie-breaking.
+- **Forgetting to cap `k` at `N`.** `topk` raises an error when `k > N`, which happens in production on small or heavily filtered corpora.
+- **Looping over the corpus in Python.** Performing the same dot products inside a Python loop issues $N$ separate framework calls and is roughly two orders of magnitude slower.
 
 ## Complexity
 
-The product is $O(QND)$ and the selection $O(QN)$, plus $O(Qk \log k)$ to order the
-winners; the score table takes $O(QN)$ memory. For a large corpus, score it in
-blocks and merge each block's top $k$ with the running best, which bounds the table
-at `Q * block` entries.
+The matrix multiplication takes $O(QND)$ time, selection takes $O(QN)$ time, and sorting the top $k$ winners takes $O(Qk \log k)$ time. The full score table uses $O(QN)$ memory. For very large corpora, score the corpus in blocks and merge each block's top $k$ with the running best so memory stays bounded at $Q$ times the block size.
 
 ## In the wild
 
-- Faiss calls this index `IndexFlatIP` (inner product) and `IndexFlatL2`; it is the
-  baseline its documentation measures every other index against, and the usual
-  choice for a quantizer over centroids.
-- Sentence Transformers' `semantic_search` does exactly this in chunks of queries
-  and corpus rows, with `torch.topk` on each chunk.
-- Normalizing once at indexing time and storing unit vectors makes cosine search an
-  inner-product search, which is why vector databases ask whether your embeddings
-  are normalized.
+- Faiss implements exact brute-force search as `IndexFlatIP` (inner product) and `IndexFlatL2` (Euclidean distance). It serves as the recall baseline for evaluating approximate indexes and as the coarse quantizer over cluster centroids.
+- Sentence Transformers' `semantic_search` computes exact search in chunks of queries and corpus vectors, calling `torch.topk` on each chunk.
+- Vector databases often ask whether embeddings are pre-normalized because normalizing once at indexing time reduces cosine search to inner-product search.
