@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150">
+  <title>Shapes aligned from the right for scale_rows</title>
+  <desc>Three shapes aligned at the right edge. (B,) sits under the D of (B, T, D), and (B, 1, 1) sits under B, T, D.</desc>
+  <!-- Columns: x = 250, 320, 390 (box width 56). Rows: y = 22, 66, 110 (box height 22). -->
+  <!-- Row names -->
+  <g font-size="13" text-anchor="end" style="font-family: var(--figure-mono)">
+    <text x="226" y="37.5">x</text>
+    <text x="226" y="81.5">s</text>
+    <text x="226" y="125.5">s[:, None, None]</text>
+  </g>
+  <!-- Guides: one per column, behind the boxes -->
+  <g fill="none" stroke-width="1" stroke-dasharray="2 4" style="stroke: var(--figure-faint)">
+    <line x1="278" y1="12" x2="278" y2="142"/>
+    <line x1="348" y1="12" x2="348" y2="142"/>
+    <line x1="418" y1="12" x2="418" y2="142"/>
+  </g>
+  <!-- x: (B, T, D) -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="250" y="22" width="56" height="22" rx="5"/>
+    <rect x="320" y="22" width="56" height="22" rx="5"/>
+    <rect x="390" y="22" width="56" height="22" rx="5"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="278" y="37.5">B</text>
+    <text x="348" y="37.5">T</text>
+    <text x="418" y="37.5">D</text>
+  </g>
+  <!-- s: (B,), which lands under D -->
+  <rect x="390" y="66" width="56" height="22" rx="5" fill="none" stroke-width="1.5" style="stroke: var(--figure-straw)"/>
+  <text x="418" y="81.5" font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">B</text>
+  <!-- s[:, None, None]: (B, 1, 1) -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <rect x="250" y="110" width="56" height="22" rx="5"/>
+    <rect x="320" y="110" width="56" height="22" rx="5" stroke-dasharray="4 3"/>
+    <rect x="390" y="110" width="56" height="22" rx="5" stroke-dasharray="4 3"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="278" y="125.5">B</text>
+    <text x="348" y="125.5">1</text>
+    <text x="418" y="125.5">1</text>
+  </g>
+</svg>

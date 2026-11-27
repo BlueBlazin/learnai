@@ -1,0 +1,13 @@
+id = "broadcast-align"
+title = "Broadcasting on Purpose"
+track = "tensors"
+order = 10
+difficulty = "easy"
+level = 1
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["broadcasting", "shapes", "indexing"]
+prerequisites = []
+requires = "cpu"
+entry = ["relative_positions", "scale_rows", "pairwise_sq_dist"]
+time_limit_s = 10

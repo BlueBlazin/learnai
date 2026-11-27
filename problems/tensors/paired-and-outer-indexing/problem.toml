@@ -1,0 +1,13 @@
+id = "paired-and-outer-indexing"
+title = "Paired and Outer Indexing"
+track = "tensors"
+order = 40
+difficulty = "easy"
+level = 2
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["indexing", "advanced-indexing", "broadcasting"]
+prerequisites = []
+requires = "cpu"
+entry = ["pick_pairs", "pick_block", "pick_per_row"]
+time_limit_s = 10

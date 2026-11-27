@@ -1,0 +1,13 @@
+id = "reshape-and-memory-order"
+title = "Reshape, Transpose, and Memory Order"
+track = "tensors"
+order = 30
+difficulty = "easy"
+level = 2
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "property"]
+tags = ["reshape", "transpose", "shapes", "memory-layout"]
+prerequisites = []
+requires = "cpu"
+entry = ["group_columns", "interleave", "patchify"]
+time_limit_s = 10

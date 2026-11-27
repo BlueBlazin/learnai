@@ -1,0 +1,13 @@
+id = "size-one-axes"
+title = "Axes of Size One"
+track = "tensors"
+order = 20
+difficulty = "easy"
+level = 1
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["shapes", "keepdim", "squeeze", "indexing"]
+prerequisites = ["broadcast-align"]
+requires = "cpu"
+entry = ["normalize_over", "last_step", "column"]
+time_limit_s = 10

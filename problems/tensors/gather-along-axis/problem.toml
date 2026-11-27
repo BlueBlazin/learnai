@@ -1,0 +1,13 @@
+id = "gather-along-axis"
+title = "Gathering Along an Axis"
+track = "tensors"
+order = 50
+difficulty = "easy"
+level = 2
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["gather", "take-along-axis", "indexing"]
+prerequisites = ["paired-and-outer-indexing"]
+requires = "cpu"
+entry = ["token_scores", "take_columns", "reorder_steps"]
+time_limit_s = 10

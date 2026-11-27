@@ -2,6 +2,7 @@ id = "inference-and-serving"
 title = "Inference and serving"
 description = "Everything between trained weights and a served answer: tokenizing, the forward pass, sampling, caching, quantization, and serving."
 modules = [
+    "tensors",
     "foundations",
     "tokenization",
     "transformer",

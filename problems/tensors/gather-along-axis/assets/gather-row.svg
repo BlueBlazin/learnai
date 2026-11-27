@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 196">
+  <title>take_columns on one row</title>
+  <desc>A row of four values, a row of three indices 1, 2, 2, and the output row. Output entry k is read from the value at position idx[k].</desc>
+  <!-- Columns of values: x = 170, 236, 302, 368 (width 56). Rows: values y = 14, out y = 112, idx y = 160. -->
+  <!-- Row names -->
+  <g font-size="13" text-anchor="end" style="font-family: var(--figure-mono)">
+    <text x="150" y="29.5">values[1]</text>
+    <text x="150" y="127.5">out[1]</text>
+    <text x="150" y="175.5">idx[1]</text>
+  </g>
+  <!-- Positions above the values -->
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono); fill: var(--figure-muted)">
+    <text x="198" y="56">0</text>
+    <text x="264" y="56">1</text>
+    <text x="330" y="56">2</text>
+    <text x="396" y="56">3</text>
+  </g>
+  <!-- values[1] = 10 11 12 13 -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="170" y="14" width="56" height="22" rx="5"/>
+    <rect x="236" y="14" width="56" height="22" rx="5"/>
+    <rect x="302" y="14" width="56" height="22" rx="5"/>
+    <rect x="368" y="14" width="56" height="22" rx="5"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="198" y="29.5">10</text>
+    <text x="264" y="29.5">11</text>
+    <text x="330" y="29.5">12</text>
+    <text x="396" y="29.5">13</text>
+  </g>
+  <!-- Reads: from position idx[k] of the values to entry k of the output -->
+  <g fill="none" stroke-width="1.5" style="stroke: var(--figure-accent)">
+    <line x1="264" y1="64" x2="200" y2="103"/>
+    <line x1="326" y1="64" x2="268" y2="103"/>
+    <line x1="330" y1="64" x2="330" y2="102"/>
+  </g>
+  <g style="fill: var(--figure-accent)">
+    <polygon points="198,110 200.3,100 205.1,107.8"/>
+    <polygon points="264,110 266.3,100 271.1,107.8"/>
+    <polygon points="330,110 326.8,102 333.2,102"/>
+  </g>
+  <!-- out[1] = 11 12 12 -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="170" y="112" width="56" height="22" rx="5"/>
+    <rect x="236" y="112" width="56" height="22" rx="5"/>
+    <rect x="302" y="112" width="56" height="22" rx="5"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="198" y="127.5">11</text>
+    <text x="264" y="127.5">12</text>
+    <text x="330" y="127.5">12</text>
+  </g>
+  <!-- idx[1] = 1 2 2, aligned with the output -->
+  <g fill="none" stroke-width="1.5" stroke-dasharray="4 3" style="stroke: var(--figure-accent)">
+    <rect x="170" y="160" width="56" height="22" rx="5"/>
+    <rect x="236" y="160" width="56" height="22" rx="5"/>
+    <rect x="302" y="160" width="56" height="22" rx="5"/>
+  </g>
+  <g font-size="13" text-anchor="middle" style="font-family: var(--figure-mono)">
+    <text x="198" y="175.5">1</text>
+    <text x="264" y="175.5">2</text>
+    <text x="330" y="175.5">2</text>
+  </g>
+</svg>
