@@ -3,7 +3,8 @@
 The complete catalog plan: every problem Learn AI will ship, with the milestone in which
 each is authored. Sections 1 to 8 are the fifteen tracks of the "Inference and serving"
 area (213 problems); section 9 is the five tracks of the "Model architectures" area (24
-problems), added on 2026-11-21. The catalog has 237 problems in 20 tracks. Authors write problems from this document, five at
+problems), added on 2026-11-21; section 10 is the `tensors` module (15 problems), added in
+front of the first area on 2026-11-27. The catalog has 252 problems in 21 tracks. Authors write problems from this document, five at
 a time, without further coordination; if a spec here is ambiguous, fix the spec here
 first, then write the problem.
 
@@ -68,7 +69,8 @@ Rules that apply to every spec, so they are not repeated:
 The table covers the fifteen tracks of sections 4 to 7. The five tracks of section 9
 (milestone M6) add 24 problems, 11 easy, 11 medium, and 2 hard: `recurrent-mixers` 6,
 `sparse-attention` 5, `block-components` 7, `drafts-and-diffusion` 3, `real-hybrid-model`
-3. With them the catalog has 237 problems: 102 easy, 93 medium, 42 hard.
+3. With them the catalog has 237 problems: 102 easy, 93 medium, 42 hard. The `tensors`
+module of section 10 adds 15 (14 easy, 1 medium), for 252: 116 easy, 94 medium, 42 hard.
 
 Difficulty split: 43% easy, 39% medium, 18% hard. Each difficulty has three levels (`level` in `problem.toml`); how a problem is placed is in `docs/PROBLEM_AUTHORING.md` section 2. At the end of M2 the catalog has 81 problems. M3 is the 18 MLX problems plus 10 real-model problems in other tracks (two more real-model problems are inside the MLX track).
 
@@ -1435,6 +1437,17 @@ Rules for this module, in addition to section 1:
 **`dtypes-and-promotion`** — Implement `dequantize(q, scale, zero_point)` mapping int8 `q` to float32 `(q - zero_point) * scale` for `zero_point` in `[-128, 127]`; `saturating_add_u8(a, b)` adding two uint8 tensors with results above 255 clamped, returned as uint8; and `block_and_offset(pos, size)` mapping integer positions that may be negative to `(pos // size, pos % size)` with floor rounding. Goal: integer arithmetic wraps in the narrow type, so widen before the operation that can overflow, and know which division a framework performs. Numeric, exact. Mutants: the subtraction in int8; the uint8 addition that wraps; the clamp after the wrap; truncating division; a remainder with the sign of the dividend.
 
 **`loops-to-tensors`** — Implement, without a Python loop over rows or elements, `segment_means(x, seg, S)` mapping `(N, D)` and segment ids `(N,)` in `[0, S)` to the `(S, D)` mean of each segment (zero for an empty one); `common_prefix_len(a, b)` mapping two `(B, T)` id tensors to the `(B,)` length of each row pair's common prefix; and `repeated_bigram_ban(ids, V)` mapping `(B, T)` to the boolean `(B, V)` mask of tokens `v` such that the pair (last token of the row, `v`) already occurs in the row. Goal: put the earlier drills together (adding scatter, running product, comparison and scatter). Numeric; speed relative to the reference at a size where the row loop is at least 5x slower in every framework, measured by the author (if it is not, the problem keeps the numeric judge alone and says so). Mutants: the mean over all `N`; NaN for an empty segment; a prefix length that counts matches after the first mismatch; the ban that includes the final position's own successor slot (reads past the row) or bans the last token itself; the row loop (correct, too slow).
+
+**Corrections from authoring and review (2026-11-27).** The statements are the record; the main changes to the specs above:
+
+- `size-one-axes`: `sum(dim).unsqueeze(dim)` is right for a negative `dim`, so the positive-only mutant rebuilds the axis by position. `column` takes `0 <= j < V`.
+- `gather-along-axis`, and every later problem with a result that could lose an axis: a bare `squeeze()` mutant and a public batch-of-one case.
+- `scatter-writes`: MLX has no `one_hot`, so only the torch and JAX built-ins are forbidden. "Counts over the flattened batch" is the version that gives every row the batch totals.
+- `masks-and-where`: `fill_masked` takes `scores` and `keep` of shape `(B, V)`. `x * mask` gives NaN in PyTorch and MLX, and in JAX only when the mask is broadcast.
+- `sort-and-unsort`: "the inverse taken as `argsort` of the values" cannot be written (no values argument); replaced by the inverse by gather and the inverse on the batch axis. Added an epsilon tie-break mutant, with ties at magnitude 100 and distinct values 1e-5 apart, after a reviewer's epsilon solution passed.
+- `cumsum-tricks`: `exclusive_cumsum` inputs lie in `[-10, 10]`, tolerance 1e-4, so `cumsum(x) - x` passes.
+- `dtypes-and-promotion`: `saturating_add_u8` must return uint8 (checked by a local helper, since the judge ignores integer width); `dequantize` tolerance 1e-4.
+- `loops-to-tensors`: speed limits are 20x for all three functions (honest loop-free solutions measured up to 12x; row loops 85x or more). The `segment_means` speed case does not run for MLX, where a row loop was only 3x to 10x the reference. A loop over a short axis may pass. In `repeated_bigram_ban` the pair that ends at the last position counts, and `T = 1` bans nothing.
 
 **Batches.** A: orders 10 to 50. B: orders 60 to 100. C: orders 110 to 150. Each batch is
 authored, then reviewed (process step 6), then committed.

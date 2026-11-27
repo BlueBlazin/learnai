@@ -1,6 +1,6 @@
 # Figures: the plan for the catalog
 
-Which of the 237 problems get which figure. The rules are in `PROBLEM_AUTHORING.md`
+Which of the first 237 problems get which figure (the 15 problems of the `tensors` module, added on 2026-11-27, are not in this plan; two of them have a mechanism figure). The rules are in `PROBLEM_AUTHORING.md`
 under "Figures". "Mechanism" here also covers a static layout, timeline, or plot.
 
 Status on 2026-11-22: every batch below is drawn and placed.

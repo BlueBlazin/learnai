@@ -318,7 +318,7 @@ fn the_shipped_content_loads_without_issues_and_every_area_module_is_dressed() {
     assert!(issues.is_empty(), "{issues:?}");
     let first = areas.first().expect("the shipped content has an area");
     assert_eq!(first.id, "inference-and-serving");
-    assert_eq!(first.modules.len(), 15);
+    assert_eq!(first.modules.len(), 16);
 
     // Counts of the first area are fixed; later areas grow batch by batch, so for them
     // only the rule is checked: a module listed in an area has a scene and a color.
@@ -328,7 +328,7 @@ fn the_shipped_content_loads_without_issues_and_every_area_module_is_dressed() {
         .filter(|track| first.modules.contains(&track.id))
         .map(|track| track.core.len())
         .sum();
-    assert_eq!(core_of_first, 84);
+    assert_eq!(core_of_first, 92);
     for area in &areas {
         for module in &area.modules {
             let track = catalog

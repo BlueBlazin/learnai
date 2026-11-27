@@ -4,4 +4,13 @@ description = "The tensor mechanics every later module assumes: broadcasting, in
 order = 5
 scene = "camp"
 color = "#f16c57"
-core = []
+core = [
+    "broadcast-align",
+    "size-one-axes",
+    "paired-and-outer-indexing",
+    "gather-along-axis",
+    "scatter-writes",
+    "masks-and-where",
+    "sort-and-unsort",
+    "cumsum-tricks",
+]
