@@ -1,0 +1,13 @@
+id = "expand-and-repeat"
+title = "Expand, Repeat, and Interleave"
+track = "tensors"
+order = 120
+difficulty = "easy"
+level = 2
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["repeat", "repeat-interleave", "tile", "expand", "broadcast"]
+prerequisites = ["broadcast-align"]
+requires = "cpu"
+entry = ["repeat_kv_heads", "expand_for_beams", "tile_positions"]
+time_limit_s = 10

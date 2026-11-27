@@ -1,0 +1,13 @@
+id = "loops-to-tensors"
+title = "From Loops to Tensors"
+track = "tensors"
+order = 150
+difficulty = "medium"
+level = 1
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric", "speed"]
+tags = ["vectorization", "scatter", "cumprod", "segment-mean", "speed"]
+prerequisites = ["scatter-writes", "cumsum-tricks"]
+requires = "cpu"
+entry = ["segment_means", "common_prefix_len", "repeated_bigram_ban"]
+time_limit_s = 10

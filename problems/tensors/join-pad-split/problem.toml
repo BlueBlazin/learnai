@@ -1,0 +1,13 @@
+id = "join-pad-split"
+title = "Joining, Padding, and Shifting"
+track = "tensors"
+order = 130
+difficulty = "easy"
+level = 3
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["cat", "stack", "pad", "shift", "batching"]
+prerequisites = []
+requires = "cpu"
+entry = ["pad_rows", "shift_right", "stack_steps"]
+time_limit_s = 10

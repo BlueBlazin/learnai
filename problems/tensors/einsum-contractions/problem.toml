@@ -1,0 +1,13 @@
+id = "einsum-contractions"
+title = "Contractions with `einsum`"
+track = "tensors"
+order = 110
+difficulty = "easy"
+level = 2
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["einsum", "matmul", "contraction", "attention"]
+prerequisites = []
+requires = "cpu"
+entry = ["attention_scores", "bilinear", "per_head_project"]
+time_limit_s = 10

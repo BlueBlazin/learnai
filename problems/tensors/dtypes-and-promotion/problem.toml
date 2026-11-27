@@ -1,0 +1,13 @@
+id = "dtypes-and-promotion"
+title = "Dtypes and Promotion"
+track = "tensors"
+order = 140
+difficulty = "easy"
+level = 3
+frameworks = ["torch", "jax", "mlx"]
+judges = ["numeric"]
+tags = ["dtype", "promotion", "overflow", "int8", "integer-division"]
+prerequisites = []
+requires = "cpu"
+entry = ["dequantize", "saturating_add_u8", "block_and_offset"]
+time_limit_s = 10
