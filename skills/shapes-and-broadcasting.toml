@@ -1,0 +1,16 @@
+id = "shapes-and-broadcasting"
+title = "Pitch Camp"
+name = "Shapes and Broadcasting"
+summary = "Axes lined up on purpose: broadcasting, size-1 axes, reshapes, repeats, and einsum."
+art = "stake"
+color = "#f16c57"
+requires = []
+problems = [
+    "broadcast-align",
+    "size-one-axes",
+    "reshape-and-memory-order",
+    "expand-and-repeat",
+    "einsum-contractions",
+]
+row = 0
+x = 150

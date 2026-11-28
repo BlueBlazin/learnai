@@ -489,7 +489,7 @@ fn the_shipped_skills_load_without_issues_and_build_downward() {
     let catalog = CatalogLoader::new(&root).load();
     let (skills, issues) = load_skills(&root, &catalog);
     assert!(issues.is_empty(), "{issues:?}");
-    assert_eq!(skills.len(), 16);
+    assert_eq!(skills.len(), 18);
 
     for skill in &skills {
         for required in &skill.requires {

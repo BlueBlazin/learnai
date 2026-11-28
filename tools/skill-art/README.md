@@ -1,6 +1,6 @@
 # Skill art
 
-Sixteen graphics, one per skill of the Accomplishments screen, drawn as flat
+Eighteen graphics, one per skill of the Accomplishments screen, drawn as flat
 screenprints in the style of the scenes (`tools/scene-art/`). Each shows the
 same traveler performing one action: setting out on a trail, looking through a
 spyglass, crossing a rope bridge. The action loosely echoes the skill and does
@@ -81,12 +81,15 @@ it before cropping.
 
 ## The shipped set
 
-Three of the sixteen are second takes: `spyglass`, `uphill`, and `campfire`.
+Three of the first sixteen are second takes: `spyglass`, `uphill`, and `campfire`.
 They were made after `style.txt` gained the "never white" wording for the
 face, and after the `uphill` and `campfire` scene texts were tightened. The
 other thirteen were made just before those changes, so regenerating one of
 them now uses a slightly different style text than the one that produced the
 shipped file.
+
+`stake` and `foraging` were added on 2026-11-28 for the two Tensor Foundations
+skills: `stake` chosen from three takes and `foraging` from two.
 
 ## Adding a graphic
 

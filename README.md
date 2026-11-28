@@ -14,7 +14,7 @@ problems in each module. Catalog and cores: `docs/CURRICULUM.md`. Writing proble
 `docs/PROBLEM_AUTHORING.md`. Producing and verifying a batch of problems:
 `docs/PROBLEM_PROCESS.md`.
 
-The Accomplishments screen shows 16 skills as a tree. A skill is a group of problems, and
+The Accomplishments screen shows 18 skills as a tree. A skill is a group of problems, and
 it is earned once each of them is solved and every skill it builds on is earned.
 
 Architecture and contracts: `docs/ARCHITECTURE.md`. Dependency versions: `docs/VERSIONS.md`.

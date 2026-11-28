@@ -1,0 +1,17 @@
+id = "indexing-and-selection"
+title = "Pick and Choose"
+name = "Indexing and Selection"
+summary = "The entries you want and no others: index pairs, gather, scatter, masks, sorting, and running sums."
+art = "foraging"
+color = "#5b9435"
+requires = ["shapes-and-broadcasting"]
+problems = [
+    "paired-and-outer-indexing",
+    "gather-along-axis",
+    "scatter-writes",
+    "masks-and-where",
+    "sort-and-unsort",
+    "cumsum-tricks",
+]
+row = 1
+x = 150

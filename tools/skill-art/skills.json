@@ -168,5 +168,25 @@
     },
     "scene": "the traveler skis fast down a snowy slope that falls from the upper left to the lower right of the picture, seen in three-quarter view from the side, crouched low with knees bent, both ski poles tucked back under the arms, a flat spray of snow kicking up behind the skis. Two or three pine trees stand on the slope behind.",
     "inks": "The sky is full emerald green. The far mountains are the light emerald tint. The snow slope is off-white with one steel blue shadow band. The pines, the skis, and the poles are blue-black."
+  },
+  {
+    "slug": "stake",
+    "label": "Pitch Camp (Shapes and Broadcasting)",
+    "accent": {
+      "name": "salmon",
+      "hex": "#f16c57"
+    },
+    "scene": "the traveler drives a single wooden stake into the ground to mark where camp will be, seen in three-quarter view from the side, kneeling on one knee, one hand steadying the stake and the other raising a short wooden mallet above it. Nothing else stands on the ground. A low line of distant hills behind.",
+    "inks": "The sky is full salmon. A flat band of the light salmon tint lies along the horizon. The distant hills are steel blue. The ground is blue-black. The stake and the mallet are off-white."
+  },
+  {
+    "slug": "foraging",
+    "label": "Pick and Choose (Indexing and Selection)",
+    "accent": {
+      "name": "moss green",
+      "hex": "#5b9435"
+    },
+    "scene": "the traveler forages at a tall berry bush, seen in three-quarter view from the side, standing and reaching up with one hand to pick a single berry while the other hand holds a small open pouch at the waist. The bush carries a scatter of round berries among plain leaf shapes. Rolling hills behind.",
+    "inks": "The sky is the light moss green tint. The rolling hills are full moss green. The bush is blue-black with a few steel blue leaf shapes. The berries are off-white. The nearest ground is blue-black."
   }
 ]
