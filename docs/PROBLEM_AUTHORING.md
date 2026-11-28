@@ -2916,35 +2916,47 @@ builds it with `object.__new__(type(self))`, so that a guarded object stays guar
 comes from `problem.toml`; do not repeat it as a heading. Use these sections, in this
 order:
 
-1. **Opening paragraph** (no heading). One or two sentences: the task, and the one
-   thing that makes it non-trivial.
-2. **`## Specification`**. The signature in a `python` code fence, exactly as in the
-   starter. The definition, with math. Each parameter and the return value: meaning,
-   and anything the function must handle (masked entries, empty input, ties). Tie
-   breaking and every other choice that affects the output must be specified; if two
+1. **Opening paragraph** (no heading). One or two plain sentences stating what to implement.
+2. **`## Background`** *(optional)*. Include only when a concept, alignment, or mechanism
+   needs brief framing before the specification; omit for self-contained problems.
+3. **`## Specification`**. The signature in a `python` code fence, exactly as in the
+   starter. Define every input, symbol, and axis before using it in a formula. Cover every
+   behavior that affects the output (masked entries, empty input, ties, rounding); if two
    reasonable implementations could disagree, the statement is not finished.
-3. **`## Shapes`**. A table of name, shape, dtype for every tensor in and out. Omit for
-   framework-free problems.
-4. **`## Example`**. A worked example with concrete numbers, small enough to verify by
-   hand, and the reasoning for the interesting part. The first public case must be this
+4. **`## Shapes`**. A table of name, shape, dtype for every tensor in and out. Omit for
+   framework-free problems. Do not repeat the same shape and dtype list verbatim in bullets
+   above the table.
+5. **`## Example`**. A worked example with concrete numbers, small enough to verify by
+   hand, with the interesting steps traced clearly. The first public case must be this
    example.
-5. **`## Constraints`**. Input ranges and sizes, the tolerance or exactness of the
+6. **`## Constraints`**. Input ranges and sizes, the tolerance or exactness of the
    comparison, cost or speed limits with their reasoning, and what is not allowed.
-6. **`## Why this matters`**. One short paragraph that connects the problem to real
-   inference systems: where this code runs, and what goes wrong in production when it
-   is wrong.
+7. **`## Why this matters`**. One or two short, concrete paragraphs connecting the problem
+   to real inference systems: where this code runs and what breaks when it is wrong.
 
-Style:
+Style (applies to `statement.md`, `hints.md`, and `editorial.md`):
 
-- Precise and plain. Say "returns a float32 tensor of shape `(B, V)`", not "returns the
-  result".
-- American English. Present tense. Address the reader as "you" only in instructions.
-- State the rule of the exercise when a built-in would trivialize it ("do not call your
-  framework's built-in `softmax`"), and make the harness enforce it with `forbidden`
-  in `problem.toml` (section 4.1).
-- Framework-neutral: describe tensors, not `torch.Tensor`s. Framework specifics belong
-  in the starter's type hints.
-- No hints in the statement. The statement specifies; `hints.md` helps.
+- **Top-to-bottom reader model.** Read the file from line 1 downward as a learner seeing it
+  for the first time. Define every symbol, variable, tensor axis (`B`, `T`, `V`, `D`, `H`),
+  and domain term *before* using it in a formula or sentence. Give a one-sentence intuition
+  before introducing a formula.
+- **Plain, direct prose.** American English, present tense, short sentences with one idea
+  per sentence. Address the reader as "you" only in instructions.
+- **No AI-slop tics.** Avoid colon splices that glue clauses together (`Score X under Y:
+  the A, and the B.`), semicolon chains (`X does A; Y does B; and Z does C.`), pretentious
+  framing (`The arithmetic is X. The exercise is Y.`), throat-clearing, and sentence
+  fragments. Break compound thoughts into short sentences or a compact list.
+- **Concise, no bloat.** Keep prose tight and never pad a statement into a textbook
+  chapter. State each fact once (do not duplicate shapes, constraints, or rules across
+  sections).
+- **Exact and framework-neutral.** Say "returns a float32 tensor of shape `(B, V)`", not
+  "returns the result". Describe tensors rather than `torch.Tensor`s unless the problem is
+  framework-specific (`mlx`, `cuda`, or `python`); framework specifics belong in the
+  starter's type hints.
+- **Explicit rules, no leaked hints.** State the rule when a built-in would trivialize the
+  exercise ("do not call your framework's built-in `softmax`") and enforce it with
+  `forbidden` in `problem.toml` (section 4.1). Never leak implementation hints into
+  `statement.md`: the statement specifies, `hints.md` helps.
 
 ### Markdown the app renders
 
@@ -4458,6 +4470,9 @@ in the app.
 - The first public case is the statement's worked example.
 - The statement specifies every choice that affects the output, and its Constraints
   section states the tolerance and any cost or speed limit.
+- A cold top-to-bottom pass over `statement.md`, `hints.md`, and `editorial.md` confirms
+  every symbol and term is defined before first use, prose is plain and concise (no colon
+  splices, semicolon chains, or repetition), and no hints leak into `statement.md`.
 
 ## 17. Contract additions of milestone 3 (to mirror in ARCHITECTURE.md)
 

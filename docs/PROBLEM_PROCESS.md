@@ -206,7 +206,7 @@ where they differ. Assets are pinned by a full 40-character revision.
 | 9 | Fairness: at least one alternative correct solution per problem is accepted | `learnai submit <id> -f <fw> --solution <path>` | [Judgment] |
 | 10 | Each mutant fails for the reason on its `# BUG:` line | `learnai submit <id> --mutant <name>` | [Judgment] |
 | 11 | The starter's failure is one a beginner can act on | `learnai run <id> -f <fw> --starter` | [Judgment] |
-| 12 | Statement complete and unambiguous; editorial teaches and cites; figures readable in light and dark | reading; the app | [Judgment] |
+| 12 | Statement, hints, and editorial read cleanly top to bottom (symbols defined before use, plain concise prose, no leaked hints); editorial teaches and cites; figures readable in light and dark | reading; the app | [Judgment] |
 | 13 | Sources: every formula and system behavior checked against the named source | web search, reading code | [Judgment] |
 
 What the terms mean here. A **mutant** is a wrong solution in the oracle framework with
@@ -432,7 +432,9 @@ docs/PROBLEM_AUTHORING.md sections 3, 8, 9, 11, and the checklist in section 16;
 exemplar problems/foundations/stable-softmax/.
 
 For each problem:
-1. Read statement.md first, alone. List every place where two careful readers could
+1. Read statement.md first, alone, top to bottom. Flag any symbol, axis name, or concept
+   used before it is defined, any leaked hint, any clunky or bloated prose (colon splices,
+   semicolon chains, repeated shape lists), and every place where two careful readers could
    implement different things and both be right (ties, empty input, dtype, rounding,
    ordering, units). Then read tests.py: is every tested behavior stated?
 2. Sources. For each formula, constant, and claim about a real model or system in the
@@ -448,7 +450,8 @@ For each problem:
    most important finding.
 5. Run learnai run <id> -f <fw> --starter: is the first failure actionable?
 6. Hints and editorial: do the hints progress without giving the answer; does the
-   editorial explain why, cover each mutant, and state cost?
+   editorial explain why, cover each mutant, and state cost; do both follow the section 8
+   prose rules (symbols defined before use, plain concise wording)?
 7. Run learnai validate <id> -v three times; report any warning or difference between
    runs. Run ruff check problems/<track>/<id>.
 
