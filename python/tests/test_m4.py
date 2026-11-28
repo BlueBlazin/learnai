@@ -2,6 +2,7 @@
 the JAX compilation cache, and the small kit helpers."""
 
 import json
+import runpy
 import shutil
 import subprocess
 import sys
@@ -17,7 +18,7 @@ from learnai import validate as gate
 from learnai.judge import frameworks
 from learnai.kit import RealConfig, logit_kl
 from learnai.problem import load_problem
-from learnai.tracebacks import exception_line
+from learnai.tracebacks import exception_line, raise_of_non_exception
 
 M3 = FIXTURES / "m3"
 CUDA_SCALE = M3 / "problems" / "gpu" / "cuda-scale"
@@ -68,6 +69,21 @@ def test_exception_line_survives_a_broken_str_and_notes():
     noted = ValueError("first")
     noted.add_note("a note that is not the message")
     assert exception_line(noted) == "ValueError: first"
+
+
+def test_raising_a_value_is_explained_and_other_type_errors_are_left_alone(tmp_path):
+    solution = tmp_path / "solution.py"
+    solution.write_text("def f(x):\n    raise x * 2\n\ndef g(x):\n    return x + 'a'\n")
+    scope = runpy.run_path(str(solution))
+    with pytest.raises(TypeError) as failure:
+        scope["f"](3)
+    assert raise_of_non_exception(failure.value, str(solution)) == (
+        "line 2 uses `raise` on a value that is not an exception: `raise x * 2`. "
+        "Did you mean `return`?"
+    )
+    with pytest.raises(TypeError) as failure:
+        scope["g"](3)
+    assert raise_of_non_exception(failure.value, str(solution)) is None
 
 
 def test_a_multi_line_exception_gives_an_informative_one_line_case_message(tmp_path):

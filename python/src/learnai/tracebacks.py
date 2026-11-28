@@ -49,6 +49,28 @@ def exception_line(exc: BaseException) -> str:
     return f"{kind}: {first}"
 
 
+def raise_of_non_exception(exc: BaseException, user_path: str) -> str | None:
+    """A plain message when the learner's code used ``raise`` on a value.
+
+    ``raise x * 2`` (usually a typo for ``return``) makes Python report "exceptions must
+    derive from BaseException", which does not say what went wrong. Returns None for
+    every other error.
+    """
+    if not isinstance(exc, TypeError) or "must derive from BaseException" not in str(exc):
+        return None
+    frames = traceback.extract_tb(exc.__traceback__)
+    if not frames or not _same_file(frames[-1].filename, user_path):
+        return None
+    frame = frames[-1]
+    source = (frame.line or "").strip()
+    if not source.startswith("raise"):
+        return None
+    return (
+        f"line {frame.lineno} uses `raise` on a value that is not an exception: "
+        f"`{source}`. Did you mean `return`?"
+    )
+
+
 def raised_in(exc: BaseException, path: str) -> bool:
     """True when the innermost frame of the traceback is in ``path``."""
     frames = traceback.extract_tb(exc.__traceback__)

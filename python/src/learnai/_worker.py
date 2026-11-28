@@ -28,6 +28,7 @@ from learnai.problem import Problem, ProblemError, load_problem
 from learnai.tracebacks import (
     exception_line,
     format_user_traceback,
+    raise_of_non_exception,
     raised_in,
 )
 
@@ -522,7 +523,8 @@ class Worker:
         The message is the exception line; the detail is a traceback of the learner's
         frames (or the test's, when the learner's file is not involved).
         """
-        return "error", exception_line(exc), format_user_traceback(exc, user_file, also_show)
+        message = raise_of_non_exception(exc, user_file) or exception_line(exc)
+        return "error", message, format_user_traceback(exc, user_file, also_show)
 
     def case_end(
         self,
