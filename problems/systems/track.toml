@@ -1,6 +1,6 @@
 id = "systems"
 title = "Distributed and LLM Application Systems"
-description = "Models that do not fit on one device, and the systems built around a model: placing and splitting layers across devices, embeddings and vector search, reranking, caching, routing, and tool loops."
+description = "Real AI products rarely stop at a single GPU or a single model call. Large weights have to be partitioned across devices, and answers often depend on retrieval, reranking, caching, routing, and external tools. Build tensor and pipeline parallelism schedules alongside vector search, semantic caches, model cascades, and tool-call loops."
 order = 130
 scene = "pass"
 color = "#c94db5"

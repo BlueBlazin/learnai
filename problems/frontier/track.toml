@@ -1,6 +1,6 @@
 id = "frontier"
 title = "Frontier"
-description = "Techniques that reached production engines in 2025 and 2026: thinking-token budgets, KV shared across layers, masked-diffusion decoding, tiered KV offload, state checkpoints for recurrent layers, latent attention caches, speculative tool calls, and expert parallelism for mixture-of-experts models."
+description = "Production inference engines evolve quickly, turning fresh research ideas into standard infrastructure within months. This track brings together the techniques that landed in frontier serving stacks in 2025 and 2026. Implement thinking-token budgets, cross-layer KV sharing, tiered KV offload, recurrent state checkpoints, latent attention caches, speculative tool calls, and expert parallelism."
 order = 140
 scene = "cape"
 color = "#5a5fc0"

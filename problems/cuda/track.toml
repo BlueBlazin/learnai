@@ -1,6 +1,6 @@
 id = "cuda"
 title = "CUDA GPU Programming"
-description = "Using PyTorch on NVIDIA GPUs correctly for inference: device placement and asynchronous timing, mixed precision, memory and out-of-memory recovery, static caches, compilation, CUDA graphs, and custom kernels, with the logic judged on the CPU and the device behavior on a CUDA machine."
+description = "In 2006, NVIDIA bet that graphics chips could run general-purpose math, and that bet built the hardware foundation of modern AI. Moving a model onto a GPU changes the rules of execution, timing, and memory. Here you learn to work with NVIDIA silicon directly through asynchronous execution, mixed precision, memory recovery, static KV caches, compilation, CUDA graphs, and custom kernels."
 order = 110
 scene = "trailblazer"
 color = "#a85c21"

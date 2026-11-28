@@ -1,6 +1,6 @@
 id = "speculative"
 title = "Speculative and Accelerated Decoding"
-description = "Getting several tokens out of one pass of the big model without changing its output distribution: draft-and-verify schemes and the probability arguments that make them exact."
+description = "Modern CPUs stay fast by guessing which branch a program will take and verifying the guess in parallel. Speculative decoding brings the same idea to language models, using a small draft model to propose several tokens that the large model checks in a single forward pass. You will implement the draft-and-verify loops and exact rejection sampling rules that multiply speed without changing the output distribution."
 order = 80
 scene = "ridge"
 color = "#f4c60a"

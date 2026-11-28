@@ -1,6 +1,6 @@
 id = "foundations"
 title = "Foundations"
-description = "The numerical building blocks every inference stack is made of: stable normalization, attention, positional encoding. Small functions, exact specifications."
+description = "Deep neural networks fail quietly when a single exponent overflows or a normalization layer drifts out of range. Every inference engine rests on a small set of numerically solid building blocks that keep math stable across half-precision hardware. Build softmax, RMSNorm, activations, attention masks, log-likelihood, and safetensors parsing from exact specifications."
 order = 10
 scene = "trailhead"
 color = "#ed9b11"

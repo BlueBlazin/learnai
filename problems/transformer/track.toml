@@ -1,6 +1,6 @@
 id = "transformer"
 title = "Transformer Forward Pass"
-description = "The pieces of a decoder-only transformer's forward pass, written from the formulas: attention, masking, and positional encoding, each with the bugs that silently corrupt generation."
+description = "In 2017, a single paper replaced recurrent networks with self-attention and set the blueprint for nearly every frontier model since. Implementing that blueprint from scratch is the fastest way to see how text becomes next-token predictions. You will build causal attention, RoPE, SwiGLU, grouped-query attention, and mixture-of-experts routing, then verify your decoder against real model weights."
 order = 30
 scene = "forest"
 color = "#2a71cc"

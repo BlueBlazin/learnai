@@ -1,6 +1,6 @@
 id = "quantization"
 title = "Quantization and Compression"
-description = "Making weights and activations smaller without changing what the model says: integer quantization schemes, their rounding rules, and the error they introduce."
+description = "A 70-billion-parameter model in 16-bit floats barely fits on a single server, yet many of its weights do not need that much precision. Quantization shrinks models into 8-bit and 4-bit integers so they run faster and fit on far smaller hardware. Here you implement affine, per-channel, and groupwise quantization, quantized matrix multiplication, LoRA merging, and GPTQ error compensation."
 order = 70
 scene = "canyon"
 color = "#834ccd"

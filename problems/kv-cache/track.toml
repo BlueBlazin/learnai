@@ -1,6 +1,6 @@
 id = "kv-cache"
 title = "KV Cache and Attention Memory"
-description = "Reusing attention keys and values so that each token is computed once: cached decoding loops and the bookkeeping that keeps generation linear instead of quadratic."
+description = "Without caching, generating each new token forces a transformer to recompute the entire conversation from scratch. Storing past keys and values turns generation from quadratic to linear, but it also makes memory the primary bottleneck of LLM inference. You will build decoding caches from a simple append buffer up to paged allocators and radix prefix trees."
 order = 50
 scene = "lake"
 color = "#18978e"

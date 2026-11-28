@@ -1,6 +1,6 @@
 id = "sampling"
 title = "Sampling and Decoding"
-description = "Turning logits into tokens: the filters, penalties, and samplers that sit between the model's output and the text, written the way inference engines vectorize them."
+description = "A language model does not pick the next word. It outputs a raw score for every token in its vocabulary, and the decoding pipeline decides what the user actually reads. Implement temperature scaling, top-k, top-p, min-p, repetition penalties, beam search, and stop sequences the way modern inference engines vectorize them."
 order = 40
 scene = "meadow"
 color = "#db5881"

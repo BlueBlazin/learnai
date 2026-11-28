@@ -1,6 +1,6 @@
 id = "real-hybrid-model"
 title = "A Real Hybrid Model"
-description = "Read a real hybrid model's configuration, then match one of its recurrent blocks and its logits from the raw weights."
+description = "Everything in the hybrid architecture track comes together here on real checkpoint weights. You will parse a live hybrid model configuration to build its layer plan, match one of its gated delta-net blocks against the real implementation, and reproduce the full model's logits end to end."
 order = 250
 scene = "ship"
 color = "#ebae23"

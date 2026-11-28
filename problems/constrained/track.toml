@@ -1,6 +1,6 @@
 id = "constrained"
 title = "Constrained Generation"
-description = "Forcing output to follow a format: token masks, choice tries, regular-expression automata over a real vocabulary, and grammar-driven decoding, the machinery behind JSON mode and tool calls."
+description = "Free-form text is useful for chat, yet production software needs valid JSON, exact tool calls, and strict schemas every single time. Instead of hoping a model follows formatting instructions, modern engines mask out invalid tokens before sampling. Build choice tries, regex-to-DFA compilers, pushdown JSON validators, and streaming tool-call parsers."
 order = 60
 scene = "terraces"
 color = "#8fc30b"

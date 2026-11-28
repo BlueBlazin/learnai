@@ -1,6 +1,6 @@
 id = "block-components"
 title = "Positions, Experts, and Streams"
-description = "The parts of a block that changed since 2024: partial and scaled rotary positions, sigmoid-routed experts with a shared expert, per-layer embeddings, and multi-stream residuals."
+description = "Beneath the familiar transformer outline, modern model blocks have quietly changed since 2024. Context windows stretch further with scaled rotary frequencies, mixture-of-experts layers pair sigmoid routers with shared experts, and residual paths split into multiple streams. Build partial RoPE, YaRN scaling, per-layer embeddings, and hyper-connections from scratch."
 order = 230
 scene = "causeway"
 color = "#209d6e"

@@ -1,6 +1,6 @@
 id = "sparse-attention"
 title = "Indexed and Compressed Attention"
-description = "Attend to a chosen few: score the past with a cheap indexer, attend over the top-k only, and keep the indexer's own cache correct while decoding."
+description = "Even in a massive prompt, a token rarely needs to attend to every single word that came before it. Sparse attention scores the past with a lightweight indexer first, then runs full attention over only the top-k positions. Build the indexer selection, gathered sparse attention, compressed KV streams, and decoding caches that keep long-context inference fast."
 order = 220
 scene = "arch"
 color = "#188adc"

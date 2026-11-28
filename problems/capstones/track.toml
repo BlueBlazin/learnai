@@ -1,6 +1,6 @@
 id = "capstones"
 title = "Capstones"
-description = "Multi-part builds that put the earlier tracks together: each is one problem graded in stages, from a first component to a complete engine, runtime, or gateway."
+description = "Knowing individual algorithms is one thing, and wiring them into a working system is another. Each capstone combines the pieces from earlier tracks into a single multi-stage build, graded step by step from the first component to a finished engine, runtime, or gateway. Put your foundations to the test on real end-to-end architecture."
 order = 150
 scene = "summit"
 color = "#e6b125"

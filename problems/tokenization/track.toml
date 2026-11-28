@@ -1,6 +1,6 @@
 id = "tokenization"
 title = "Tokenization"
-description = "How text becomes the integer ids a model actually sees: byte-level BPE encoding and decoding, specified exactly enough to match a production tokenizer id for id."
+description = "Language models never read characters or words directly. In 2016, researchers adapted a data compression algorithm from 1994 called Byte Pair Encoding to split any text into integer IDs without running out of vocabulary. Here you implement BPE, UTF-8 boundary handling, streaming detokenizers, and chat templates to match production tokenizers ID for ID."
 order = 20
 scene = "crossing"
 color = "#e5691d"

@@ -1,6 +1,6 @@
 id = "sizing"
 title = "Sizing and Benchmarking"
-description = "Predicting memory and speed on paper before anything runs, then measuring the right thing: parameter counts, KV cache bytes, FLOPs, bandwidth bounds, and latency percentiles, with every convention stated."
+description = "Before renting a cluster or shipping a model, systems engineers calculate whether it will even fit and where the hardware will bottleneck. Back-of-the-envelope math saves days of blind tuning, and disciplined benchmarking makes sure you measure the right thing. Compute parameter counts, KV cache footprints, FLOPs, memory bandwidth limits, latency percentiles, and goodput SLOs."
 order = 90
 scene = "tower"
 color = "#c2332f"

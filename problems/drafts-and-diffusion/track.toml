@@ -1,6 +1,6 @@
 id = "drafts-and-diffusion"
 title = "Built-in Drafts and Text Diffusion"
-description = "Output paths beyond one token per pass: the chained multi-token-prediction module that ships inside checkpoints, and block text diffusion over a cached prefix."
+description = "Generating strictly one token per forward pass is no longer the only way a language model can produce text. New checkpoints ship with chained multi-token prediction heads built right into the model, while text diffusion decodes whole blocks in parallel over a cached prefix. Implement both paradigms and see how decoding moves beyond single-token steps."
 order = 240
 scene = "archipelago"
 color = "#8652ce"

@@ -1,6 +1,6 @@
 id = "mlx"
 title = "MLX GPU Programming"
-description = "Programming Apple's MLX well for LLM inference: where a lazy graph is evaluated, indexing without boolean masks, staying in half precision, accounting for unified memory, and the fused Metal kernels, all judged on the Apple GPU."
+description = "Apple Silicon changed local inference by giving the CPU and GPU one shared pool of unified memory. MLX was designed around that architecture with lazy evaluation, which rewards clean graph boundaries and punishes unnecessary synchronization. Write half-precision inference loops, mask-free indexing, compiled decode steps, and custom Metal kernels judged directly on Apple GPUs."
 order = 100
 scene = "glacier"
 color = "#22964c"

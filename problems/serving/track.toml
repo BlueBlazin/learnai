@@ -1,6 +1,6 @@
 id = "serving"
 title = "Serving Systems"
-description = "The machinery around the model that turns it into a service: batching policies, token streaming, and the edge cases that decide latency and correctness under real traffic."
+description = "Running a model for one prompt in a notebook is a completely different problem from serving thousands of live requests at once. Real users arrive unpredictably, stream tokens at different speeds, and expect low latency even under heavy load. In this module you build the engine around the model, including continuous batching, chunked prefill, preemption, rate limiting, prefix-aware routing, and OpenAI-compatible streaming endpoints."
 order = 120
 scene = "village"
 color = "#27add9"

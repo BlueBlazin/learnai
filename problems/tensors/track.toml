@@ -1,6 +1,6 @@
 id = "tensors"
 title = "Tensor Foundations"
-description = "The tensor mechanics every later module assumes: broadcasting, indexing, gather and scatter, masks, sorting, and running sums, in PyTorch, JAX, and MLX."
+description = "Every modern AI model is built from a handful of array operations chained together at scale. Before you can build attention layers or inference engines, those primitives have to feel second nature. Start here by mastering broadcasting, indexing, gather and scatter, masking, sorting, and running sums across PyTorch, JAX, and MLX."
 order = 5
 scene = "threshold"
 color = "#f16c57"
