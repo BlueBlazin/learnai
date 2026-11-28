@@ -2,7 +2,7 @@ id = "tensors"
 title = "Tensor Foundations"
 description = "The tensor mechanics every later module assumes: broadcasting, indexing, gather and scatter, masks, sorting, and running sums, in PyTorch, JAX, and MLX."
 order = 5
-scene = "camp"
+scene = "threshold"
 color = "#f16c57"
 core = [
     "broadcast-align",
