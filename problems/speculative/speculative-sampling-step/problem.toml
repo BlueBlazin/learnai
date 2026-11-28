@@ -10,7 +10,9 @@ tags = ["speculative-decoding", "rejection-sampling", "sampling", "inverse-cdf"]
 prerequisites = []
 requires = "cpu"
 entry = ["speculative_step"]
-time_limit_s = 10
+# The statistical cases make 1,500 to 2,000 calls each. MLX on a virtualized GPU (the macOS
+# CI runner) takes 2 to 5 ms per call, which put one case over the default 10 s.
+time_limit_s = 30
 # The statement's rule, enforced by the harness: randomness is an input, never drawn here.
 forbidden = [
     "torch.rand",
