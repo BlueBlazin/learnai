@@ -59,7 +59,7 @@ Runtime is similar, but peak memory differs dramatically. The hand-written versi
 - **Omitting `scale` or passing `1.0`.** No error is raised, but the softmax becomes sharper by a factor of $\sqrt{D}$ in the exponent.
 - **Passing an additive mask with a wider dtype.** Calling `mx.where(visible, 0.0, -inf)` produces `float32` because Python floats default to `float32`. With `float16` inputs, the kernel raises `Mask type must promote to output type float16`. Cast the additive mask to `q.dtype` or use a boolean mask.
 - **Expanding key/value heads with `mx.tile`.** Tiling assigns query head $h$ to key/value head $h \bmod N_{kv}$ instead of $\lfloor h / (N_q / N_{kv}) \rfloor$. Expanding heads manually is unnecessary and copies the cache once per group.
-- **Using `<` instead of `<=`.** Every token must attend to itself. With `<`, the first token of a sequence sees no valid slots. An additive `-inf` mask then produces `NaN`, while a boolean mask causes this kernel to return the unweighted average of all values—a silent error.
+- **Using `<` instead of `<=`.** Every token must attend to itself. With `<`, the first token of a sequence sees no valid slots. An additive `-inf` mask then produces `NaN`, while a boolean mask causes this kernel to return the unweighted average of all values, which is a silent error.
 - **Forgetting `n_cached` in the mask.** Writing `j <= i` instead of `j <= n_cached + i` reuses a square prefill mask for a cached continuation.
 - **Passing `mask=None` when `causal=False`.** Disabling causality removes the causal triangle, not the boundary between valid tokens and unused buffer slots.
 - **Writing manual attention.** Computing `matmul` and `softmax` by hand fails the kernel-call check and uses 30× more memory at prefill sizes.

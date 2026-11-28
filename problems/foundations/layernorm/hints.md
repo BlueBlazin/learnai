@@ -1,4 +1,4 @@
-RMSNorm divides a vector by a single statistic, the root mean square. LayerNorm uses two statistics—where the vector is centered, and how spread out it is around that center. Which of the two must be computed first, and from what?
+RMSNorm divides a vector by a single statistic, the root mean square. LayerNorm uses two statistics: where the vector is centered, and how spread out it is around that center. Which of the two must be computed first, and from what?
 
 ---
 

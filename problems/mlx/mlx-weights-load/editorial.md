@@ -63,7 +63,7 @@ MLX loads `bfloat16` tensors natively, but Apple GPUs execute `bfloat16` slower 
 - **Using `key.lstrip(prefix)`.** `str.lstrip` strips a *set of characters*, not a literal prefix. With `prefix="model."`, it strips leading `m`, `o`, `d`, `e`, `l`, and `.`, turning `model.embed.weight` into `bed.weight` and `model.layers.0...` into `ayers.0...`. Check `key.startswith(prefix)` and slice, or use `str.removeprefix`.
 - **Transposing every 2D matrix.** Embedding tables are 2D matrices and are not stored transposed. If vocabulary size happens to equal embedding width, the shapes even match silently.
 - **Ignoring `transpose_linear`.** Rectangular linear weights fail the shape check, while square weights (`q_proj`, `o_proj`) load transposed without raising an error.
-- **Calling `mx.eval(tensors)` right after `mx.load`.** This forces MLX to read the entire file, including unused tensors—costing 32 MiB instead of 0.1 MiB in the memory test.
+- **Calling `mx.eval(tensors)` right after `mx.load`.** This forces MLX to read the entire file, including unused tensors. In the memory test, that costs 32 MiB instead of 0.1 MiB.
 - **Omitting the final `mx.eval`.** Leaving pending `Load`, `Transpose`, and `AsType` nodes in the module keeps the file handle open and delays disk reads until the first forward pass.
 - **Updating while validating.** Mutating `module` inside the validation loop leaves a half-loaded model behind if a later tensor raises `ValueError`.
 - **Casting through NumPy.** Calling `mx.array(np.array(x))` evaluates the array, copies it to host memory, and copies it back. NumPy also has no `bfloat16` dtype.

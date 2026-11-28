@@ -53,7 +53,7 @@ Let `max_running = 2` with six requests given as `(arrival ms, prompt tokens, ou
 
 ![The worked example, one row per request. Request 2 takes the slot of request 1 at 24 ms while request 0 keeps decoding.](assets/timeline.svg)
 
-Request 2 arrives at 5 ms during step 0, but both slots are occupied until request 1 finishes at 24 ms. At that point, request 2 joins step 2 alongside the decode of request 0, demonstrating continuous batching. Request 3 arrives at 45 ms—the exact instant step 3 frees request 0's slot—and enters step 4 immediately. Request 4 has only one output token, so it finishes at the end of its prefill step. Request 5 arrives at 60 ms while both slots are full, and then runs alone at 67 ms once both slots free up.
+Request 2 arrives at 5 ms during step 0, but both slots are occupied until request 1 finishes at 24 ms. At that point, request 2 joins step 2 alongside the decode of request 0, demonstrating continuous batching. Request 3 arrives at 45 ms, the exact instant step 3 frees request 0's slot, and enters step 4 immediately. Request 4 has only one output token, so it finishes at the end of its prefill step. Request 5 arrives at 60 ms while both slots are full, and then runs alone at 67 ms once both slots free up.
 
 The end-to-end latencies (from arrival to last token) are 45, 24, 50, 22, 17, and 25 ms.
 
@@ -66,6 +66,6 @@ The end-to-end latencies (from arrival to last token) are 45, 24, 50, 22, 17, an
 
 ## Why this matters
 
-Autoregressive generation is a loop of forward passes, and requests require very different numbers of passes—one answer might be 5 tokens long while the next is 500. A static-batching server that runs each batch to completion forces short requests to wait behind long ones, wastes slots on padding, and queues new arrivals behind the entire batch.
+Autoregressive generation is a loop of forward passes, and requests require very different numbers of passes. One answer might be 5 tokens long while the next is 500. A static-batching server that runs each batch to completion forces short requests to wait behind long ones, wastes slots on padding, and queues new arrivals behind the entire batch.
 
-Scheduling per iteration instead of per request—introduced by Orca and adopted by vLLM, TGI, SGLang, TensorRT-LLM, and llama.cpp's server—is the largest throughput and latency improvement in LLM serving. Refilling slots the moment they free up keeps the GPU busy and decouples time to first token from other requests' output lengths. Every other scheduling feature in this track (priorities, deadlines, chunked prefill, and fairness) modifies step 2 or step 3 of this loop.
+Scheduling per iteration instead of per request (introduced by Orca and adopted by vLLM, TGI, SGLang, TensorRT-LLM, and llama.cpp's server) is the largest throughput and latency improvement in LLM serving. Refilling slots the moment they free up keeps the GPU busy and decouples time to first token from other requests' output lengths. Every other scheduling feature in this track (priorities, deadlines, chunked prefill, and fairness) modifies step 2 or step 3 of this loop.

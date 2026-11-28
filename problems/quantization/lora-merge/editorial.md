@@ -43,7 +43,7 @@ The JAX and MLX versions are identical apart from type hints.
 
 ## Common mistakes
 
-- **Computing `a @ b` instead of `b @ a`.** The alphabetical order is tempting, and on a square layer the transposed product `a.T @ b.T` even matches the shape of `w` while producing the transposed update. Checking shapes—`(out, r) @ (r, in)`—always gives `b @ a`.
+- **Computing `a @ b` instead of `b @ a`.** The alphabetical order is tempting, and on a square layer the transposed product `a.T @ b.T` even matches the shape of `w` while producing the transposed update. Checking shapes (`(out, r) @ (r, in)`) always gives `b @ a`.
 - **Scaling by `alpha` alone.** Omitting the division by `r` makes the update $r$ times too large. Under the common setting $\alpha = 2r$, the intended scale is 2, whereas scaling by `alpha` alone applies 32 at rank 16.
 - **Applying the scale twice.** In a two-step forward pass, it is easy to scale the output of `a` and then scale the output of `b` again. This bug passes tests whenever $\alpha = r$ (a common default) because the scale is 1.
 - **Using the wrong sign in `unmerge`.** Adding the update instead of subtracting doubles the adapter contribution. Forward-only tests miss this bug, while round-trip tests catch it immediately.

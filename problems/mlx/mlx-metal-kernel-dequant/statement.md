@@ -80,6 +80,6 @@ Row 0 repeats the 4-bit codes `0, 1, ..., 15` four times. Row 1 alternates eight
 
 ## Why this matters
 
-Quantized checkpoints store weights as packed integer words. Every operation that touches those weights—`mx.dequantize`, the unpacking stage inside `mx.quantized_matmul`, merging a LoRA adapter into a base layer, or converting between quantization formats—relies on this unpacking logic. When you need a custom format that MLX does not ship, such as a different packing layout, a codebook, or per-channel scales, you write this kernel yourself.
+Quantized checkpoints store weights as packed integer words. Every operation that touches those weights (`mx.dequantize`, the unpacking stage inside `mx.quantized_matmul`, merging a LoRA adapter into a base layer, or converting between quantization formats) relies on this unpacking logic. When you need a custom format that MLX does not ship, such as a different packing layout, a codebook, or per-channel scales, you write this kernel yourself.
 
 Bit-indexing bugs fail silently. Reversed bit order, a group index that drops the row offset, or a signed right shift still produce finite, plausible-looking floats that cause a model to generate fluent nonsense. Launch-geometry bugs hurt performance instead. Launching one thread per row rather than one thread per weight produces correct values but runs several times slower on a `4096 x 4096` layer, and looping over rows in Python is another order of magnitude slower.

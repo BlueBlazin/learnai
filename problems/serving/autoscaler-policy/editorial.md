@@ -58,7 +58,7 @@ The table below compares policy variants on the two simulation workloads from th
 | running requests only | 295 | 278 | 127 | 320 | 5 | 4 |
 | history never pruned | 111 | 1477 | 127 | 1915 | 4 | 16 |
 
-Without a scale-down window, the bursty workload costs nearly the same replica-seconds while causing five times as many late requests. Replicas are torn down during each 6-second gap and are still booting when the next burst is half over—classic flapping, visible in the 48 scaling actions. Averaging load over only `ready` replicas doubles the bill without serving requests any faster. Scaling on `running` requests alone is the cheapest row, but on the load step it caps the cluster at 4 replicas while an invisible queue builds up.
+Without a scale-down window, the bursty workload costs nearly the same replica-seconds while causing five times as many late requests. Replicas are torn down during each 6-second gap and are still booting when the next burst is half over. This is classic flapping, visible in the 48 scaling actions. Averaging load over only `ready` replicas doubles the bill without serving requests any faster. Scaling on `running` requests alone is the cheapest row, but on the load step it caps the cluster at 4 replicas while an invisible queue builds up.
 
 ## Common mistakes
 
@@ -79,4 +79,4 @@ Each evaluation scans the $w$ entries currently in the window, taking $O(w)$ tim
 
 - **Kubernetes Horizontal Pod Autoscaler (HPA)** computes `desiredReplicas = ceil[currentReplicas * (currentMetricValue / desiredMetricValue)]`, skips scaling when the ratio is within a tolerance of 1.0 (0.1 by default), and evaluates every 15 seconds by default. Before scaling down, it takes the highest recommendation across a stabilization window (5 minutes by default). Pods that are not yet ready are set aside, and during scale-up the controller assumes they consume 0% of the target, which dampens scale-up in the same way counting `starting` replicas does here (Kubernetes documentation, "Horizontal Pod Autoscaling", sections "Algorithm details" and "Stabilization window"). HPA's `behavior` field can also rate-limit scaling in each direction, which this problem omits.
 - **LLM serving metrics.** In production, autoscalers typically read engine-level gauges of waiting and running requests (such as vLLM's `vllm:num_requests_waiting` and `vllm:num_requests_running`) via a metrics adapter or KEDA, rather than default CPU or GPU utilization.
-- **Choosing `target`.** The `target` parameter is a concurrency set point—the batch size at which one replica meets its latency SLO with headroom—which is what `capacity-planner` computes.
+- **Choosing `target`.** The `target` parameter is a concurrency set point (the batch size at which one replica meets its latency SLO with headroom), which is what `capacity-planner` computes.

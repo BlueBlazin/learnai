@@ -2,7 +2,7 @@ The balance changes continuously with time, but nothing needs to run continuousl
 
 ---
 
-Track three pieces of state: the current balance, the timestamp when it was last updated, and a FIFO queue of waiting calls storing each call's `n` and an `asyncio.Future`. Write one helper that credits elapsed time with `min(burst, balance + elapsed * rate_per_s)` and call it at the start of every method. Write a second helper that drains the queue from the front. While the head's `n` is covered, deduct `n`, pop the head, and resolve its future. Checking only the head—and having `try_acquire` return `False` whenever the queue is non-empty—enforces the entire fairness rule.
+Track three pieces of state: the current balance, the timestamp when it was last updated, and a FIFO queue of waiting calls storing each call's `n` and an `asyncio.Future`. Write one helper that credits elapsed time with `min(burst, balance + elapsed * rate_per_s)` and call it at the start of every method. Write a second helper that drains the queue from the front. While the head's `n` is covered, deduct `n`, pop the head, and resolve its future. Checking only the head, and having `try_acquire` return `False` whenever the queue is non-empty, enforces the entire fairness rule.
 
 ---
 

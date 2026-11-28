@@ -30,7 +30,7 @@ Every query has at least one visible key across all blocks, but no other guarant
 - **Delayed first visible key:** A query's first visible key may appear in any block. Earlier blocks contribute nothing to that query and must not produce `NaN` in its running state.
 - **Large scores:** $|s_{t,j}|$ can reach several hundred, well outside the range where $e^s$ is representable in `float32`. Different queries can also have very different score scales.
 
-**Single-pass streaming.** `kv_blocks` can be iterated only once. Your function may use $O(T \cdot D_v)$ running state plus one block of working memory. Do not collect the blocks, or concatenate data proportional to all blocks, to compute attention at the end. The test iterator tracks how many yielded blocks are still referenced. Whenever the next block is requested (and when iteration ends), at most one earlier block may still be alive—the block just processed, which a `for` loop holds in its loop variables until rebound. The judge reports this count as `peak_blocks_held`, with a limit of 1.
+**Single-pass streaming.** `kv_blocks` can be iterated only once. Your function may use $O(T \cdot D_v)$ running state plus one block of working memory. Do not collect the blocks, or concatenate data proportional to all blocks, to compute attention at the end. The test iterator tracks how many yielded blocks are still referenced. Whenever the next block is requested (and when iteration ends), at most one earlier block may still be alive. That allowance covers the block just processed, which a `for` loop holds in its loop variables until rebound. The judge reports this count as `peak_blocks_held`, with a limit of 1.
 
 ## Shapes
 

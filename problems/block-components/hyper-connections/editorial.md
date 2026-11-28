@@ -22,7 +22,7 @@ Row sums behave differently. A row sum measures how much of old stream $j$ survi
 
 Double stochasticity is therefore exact for columns and only approximate for rows. For sharp matrices, 20 iterations are still far from converged. This has two practical consequences:
 
-- Changes to the starting point—such as normalizing rows first, taking the softmax over columns, or running an extra round—converge to the same matrix up to `eps` terms, because all of them are diagonal rescalings of the same positive matrix and the doubly stochastic limit is unique. Even so, they are wrong here. At 1 or 2 iterations, and at 20 iterations for sharp inputs, their outputs differ in the first or second digit. The tests use 1, 2, and 3 iterations to catch these order bugs.
+- Changes to the starting point (such as normalizing rows first, taking the softmax over columns, or running an extra round) converge to the same matrix up to `eps` terms, because all of them are diagonal rescalings of the same positive matrix and the doubly stochastic limit is unique. Even so, they are wrong here. At 1 or 2 iterations, and at 20 iterations for sharp inputs, their outputs differ in the first or second digit. The tests use 1, 2, and 3 iterations to catch these order bugs.
 - Ending on a row step instead of a column step moves the exact sum-to-1 guarantee to the wrong axis. After the transpose in `hc_merge`, the new streams are no longer convex combinations of the old ones.
 
 ## Reference solution (PyTorch)

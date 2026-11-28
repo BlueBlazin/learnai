@@ -433,10 +433,10 @@ exemplar problems/foundations/stable-softmax/.
 
 For each problem:
 1. Read statement.md first, alone, top to bottom. Flag any symbol, axis name, or concept
-   used before it is defined, any leaked hint, any clunky or bloated prose (colon splices,
-   semicolon chains, repeated shape lists), and every place where two careful readers could
-   implement different things and both be right (ties, empty input, dtype, rounding,
-   ordering, units). Then read tests.py: is every tested behavior stated?
+   used before it is defined, any leaked hint, any clunky or bloated prose (em-dashes,
+   colon splices, semicolon chains, repeated shape lists), and every place where two
+   careful readers could implement different things and both be right (ties, empty input,
+   dtype, rounding, ordering, units). Then read tests.py: is every tested behavior stated?
 2. Sources. For each formula, constant, and claim about a real model or system in the
    statement and editorial, open the named primary source and compare. Report mismatches,
    claims with no source, and citations you could not find. Do not trust the author.

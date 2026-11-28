@@ -45,7 +45,7 @@ log_p = shifted - mx.logsumexp(shifted, axis=-1, keepdims=True)
 - **Working on probabilities.** `log(softmax(q))` produces `-inf` for a confident model's unlikely tokens, turning a finite divergence such as 99.3 nats into `+inf`.
 - **Testing $P_i = 0$ on the underflowed probability.** This handles masked tokens but fails when $P$ has a small finite logit that $Q$ masks, where the divergence must be `+inf`.
 - **Skipping tokens masked in $Q$.** Ignoring `-inf` in `q_logits` looks like defensive masking, but it silently reports a low divergence for a model that forbids a token $P$ predicts.
-- **Using `x - logsumexp(x)` without shifting first.** This works for logits near 1, but loses up to $10^{-3}$ nats per row for logits near $10^4$—an error larger than the divergence between a model and its 8-bit quantization.
+- **Using `x - logsumexp(x)` without shifting first.** This works for logits near 1, but loses up to $10^{-3}$ nats per row for logits near $10^4$. That error is larger than the divergence between a model and its 8-bit quantization.
 - **Returning the unclamped sum.** Rounding error produces slightly negative values for nearly identical distributions.
 - **Reducing over the batch.** Following `reduction="batchmean"` returns a single scalar. Here the caller wants one value per row so it can average over non-padding positions itself.
 

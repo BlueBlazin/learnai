@@ -1,4 +1,4 @@
-Implement one position of multi-draft speculative sampling. A draft model has proposed `n` candidate tokens for the same position (the children of one node in a token tree), and you must choose which candidate—if any—becomes the next token so that the output follows the target model's distribution `p` **exactly**. Testing every candidate with the single-draft rule breaks exactness. Instead, use *recursive rejection sampling*, where each rejection updates the distribution that the next candidate is tested against.
+Implement one position of multi-draft speculative sampling. A draft model has proposed `n` candidate tokens for the same position (the children of one node in a token tree), and you must choose which candidate, if any, becomes the next token so that the output follows the target model's distribution `p` **exactly**. Testing every candidate with the single-draft rule breaks exactness. Instead, use *recursive rejection sampling*, where each rejection updates the distribution that the next candidate is tested against.
 
 ![This problem is Verify, for several candidate tokens at one position.](assets/map.svg)
 
@@ -86,4 +86,4 @@ multi_draft_step(p, q, [2, 0], [0.99, 0.1], 0.5)  # (2, 0)
 
 A single chain of draft tokens stops at its first rejection. Tree-based speculative decoding hedges by proposing multiple candidates at each position, scoring the entire tree in one forward pass with a tree attention mask, and walking down from the root. Under greedy decoding, each step is a simple token comparison. Under sampling, each step along the accepted path runs this function, whose exactness guarantees that enabling tree speculation does not alter the model's output distribution.
 
-The tempting shortcut—running the single-draft test against `p` for every child—accepts more often but corrupts the distribution. It shifts the output toward tokens the draft model favors, a subtle bias that standard fluency checks will not catch.
+The tempting shortcut, running the single-draft test against `p` for every child, accepts more often but corrupts the distribution. It shifts the output toward tokens the draft model favors, a subtle bias that standard fluency checks will not catch.

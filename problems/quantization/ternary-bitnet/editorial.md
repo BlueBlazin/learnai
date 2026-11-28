@@ -2,7 +2,7 @@
 
 Let $s$ be the scale of the ternary grid. The three representable values $-s$, $0$, and $s$ divide the real line at $\pm s / 2$. A weight is closer to $0$ than to $\pm s$ whenever its magnitude is less than $s / 2$. Rounding $w / s$ to the nearest integer and clamping to $[-1, 1]$ expresses this rule in one line, where the clamp handles weights beyond $1.5\,s$ that would otherwise round to $\pm 2$ or further.
 
-The choice of $s$ determines how weights split across the three codes. BitNet b1.58 sets $s$ to the mean absolute value of the matrix, $\gamma = \operatorname{mean}|w|$. For weights that are roughly normal with standard deviation $\sigma$, we have $\gamma \approx 0.8\,\sigma$, which places the threshold at $0.4\,\sigma$. About 31% of the weights map to $0$ and about 69% map to $\pm 1$. By contrast, using the maximum magnitude—as in symmetric 8-bit quantization—would set $s$ to several $\sigma$, causing nearly every weight to round to $0$. With only three codes, you cannot afford to scale the grid around outliers.
+The choice of $s$ determines how weights split across the three codes. BitNet b1.58 sets $s$ to the mean absolute value of the matrix, $\gamma = \operatorname{mean}|w|$. For weights that are roughly normal with standard deviation $\sigma$, we have $\gamma \approx 0.8\,\sigma$, which places the threshold at $0.4\,\sigma$. About 31% of the weights map to $0$ and about 69% map to $\pm 1$. By contrast, using the maximum magnitude, as in symmetric 8-bit quantization, would set $s$ to several $\sigma$, causing nearly every weight to round to $0$. With only three codes, you cannot afford to scale the grid around outliers.
 
 The linear layer follows directly from $\hat W = s \cdot t$:
 

@@ -2,7 +2,7 @@
 
 A loop that scans a row maintains a running variable and branches on its value. A cumulative sum records the entire history of that variable as a tensor, turning the branch into an elementwise comparison.
 
-**`exclusive_cumsum`.** `cumsum` is inclusive, so entry `i` is the total after adding `x[i]`. The total before adding `x[i]` is the previous inclusive sum. Shifting the inclusive sums one position to the right — prepending a zero and dropping the last entry — gives the exclusive sum.
+**`exclusive_cumsum`.** `cumsum` is inclusive, so entry `i` is the total after adding `x[i]`. The total before adding `x[i]` is the previous inclusive sum. Shifting the inclusive sums one position to the right (prepending a zero and dropping the last entry) gives the exclusive sum.
 
 **`first_true`.** Consider the running count of `True` entries for `[False, True, False, True, False]`:
 

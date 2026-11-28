@@ -1,4 +1,4 @@
-Implement the two ends of a decoder forward pass—token embedding lookup and the final logit projection—along with three model-specific scaling constants. These constants are an embedding multiplier, a logit divisor, and an optional logit soft cap.
+Implement the two ends of a decoder forward pass (token embedding lookup and the final logit projection) along with three model-specific scaling constants. These constants are an embedding multiplier, a logit divisor, and an optional logit soft cap.
 
 ![This problem is the token embedding and the final linear layer, each with a constant from the config.](assets/map.svg)
 

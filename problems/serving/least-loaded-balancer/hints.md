@@ -1,4 +1,4 @@
-Two questions settle `pick`. First, how can you draw a second replica that is guaranteed to differ from the first using one uniform number and no retry loop? Second, when two replicas have equal load, which tie-breaking rule treats them symmetrically—comparing their IDs, or using the random order in which they were drawn?
+Two questions settle `pick`. First, how can you draw a second replica that is guaranteed to differ from the first using one uniform number and no retry loop? Second, when two replicas have equal load, which tie-breaking rule treats them symmetrically: comparing their IDs, or using the random order in which they were drawn?
 
 ---
 

@@ -4,7 +4,7 @@ A request can end in three ways, and two of them happen outside the scheduling l
 
 Two design principles keep the state consistent:
 
-**One exit path.** Route every ending—normal completion, cancellation, and expiration—through a single `_end(handle, outcome)` method:
+**One exit path.** Route every ending (normal completion, cancellation, and expiration) through a single `_end(handle, outcome)` method:
 
 1. If the handle has already ended, return `False` immediately. This makes every race harmless (a cancel after completion, a duplicate cancel, or a deadline after a cancel).
 2. Cancel the handle's deadline timer if one is active.

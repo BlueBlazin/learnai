@@ -32,7 +32,7 @@ def load_into(module, path, *, prefix="", transpose_linear=False, strict=True): 
 |---|---|---|
 | parameter of `module` | any | `float32` or `float16` |
 | tensor in file | target parameter's shape, or `(in, out)` for an `nn.Linear` weight when `transpose_linear=True` | `float32`, `float16`, or `bfloat16` |
-| `missing`, `unexpected` (result) | lists of `str` | — |
+| `missing`, `unexpected` (result) | lists of `str` | - |
 
 ## Example
 

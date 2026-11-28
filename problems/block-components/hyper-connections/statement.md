@@ -111,4 +111,4 @@ hc_merge(streams, [[10.0, 20.0]], post, comb)
 
 In DeepSeek-V4, the token embedding is copied into all $N = 4$ streams. Each layer wraps its attention and MLP sublayers with `collapsed, post, comb = hc_weights(...)`, `y = sublayer(norm(collapsed))`, and `streams = hc_merge(streams, y, post, comb)`, using 20 Sinkhorn iterations.
 
-Because `comb` is applied at every sublayer, a deep model multiplies well over a hundred mixing matrices in sequence. If a matrix's columns do not sum to 1, the residual stream rescales exponentially with depth. Reading `comb` untransposed or ending Sinkhorn on a row step still produces tensors of the right shape, so the bug does not crash—it quietly degrades quality as depth grows.
+Because `comb` is applied at every sublayer, a deep model multiplies well over a hundred mixing matrices in sequence. If a matrix's columns do not sum to 1, the residual stream rescales exponentially with depth. Reading `comb` untransposed or ending Sinkhorn on a row step still produces tensors of the right shape, so the bug does not crash. Instead, it quietly degrades quality as depth grows.

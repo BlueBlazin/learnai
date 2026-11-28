@@ -132,5 +132,5 @@ within a few tokens.
 
 DRY ships in text-generation-webui, koboldcpp, and llama.cpp, where it runs on every
 decoding step over thousands of context tokens. A quadratic implementation looks fine
-on short chats, but once a long generation starts to loop—the exact moment DRY is
-needed—it can become slower than the model's forward pass.
+on short chats, but once a long generation starts to loop (the exact moment DRY is
+needed), it can become slower than the model's forward pass.

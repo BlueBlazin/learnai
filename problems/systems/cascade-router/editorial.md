@@ -6,7 +6,7 @@ How you aggregate token log-probabilities is critical. For a reply with $T$ toke
 
 The budget check belongs before the model call, not after. Because each model's cost is known up front, checking `spent + model.cost > budget` before calling prevents overspending. Checking after the call only detects an overrun that already happened.
 
-When the budget stops the cascade early, returning the reply from the last model that was called is the safest choice. Confidence scores are not calibrated across different models—a small model can be confidently wrong—so ordering by model strength is more reliable than picking the highest raw confidence.
+When the budget stops the cascade early, returning the reply from the last model that was called is the safest choice. Confidence scores are not calibrated across different models (a small model can be confidently wrong), so ordering by model strength is more reliable than picking the highest raw confidence.
 
 ## Reference solution (Python)
 

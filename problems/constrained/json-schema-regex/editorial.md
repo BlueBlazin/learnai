@@ -31,7 +31,7 @@ $$
 
 The full object pattern is `\{` followed by $\text{first}(0)$ and `\}`. By induction on $i$, $\text{rest}(i)$ matches every valid continuation after an emitted member, and $\text{first}(i)$ matches every valid member list starting at $i$ with no preceding member. Because $\text{first}$ stops branching at the first required property, the pattern only grows with the run of leading optional properties. It is linear when the first property is required, and quadratic in the length of that leading optional run otherwise (twelve leading optional properties produce twelve nested alternatives, not $2^{12}$).
 
-This two-state recursion is a small automaton encoded directly as a regex, where the state is whether a member has been written yet. Formats that require more context—such as arbitrary property order or recursive schemas—cannot be expressed as compact regular expressions, which is where context-free grammar constraints take over.
+This two-state recursion is a small automaton encoded directly as a regex, where the state is whether a member has been written yet. Formats that require more context, such as arbitrary property order or recursive schemas, cannot be expressed as compact regular expressions, which is where context-free grammar constraints take over.
 
 Two output rules are just as important as the language itself. First, **escape all data**: pass property names and enum values through a helper that backslashes every regex metacharacter. Second, **write for a byte DFA**: avoid anchors, lookarounds, and `\d` (which matches Unicode digits in Python `str` patterns without `re.ASCII`).
 

@@ -77,6 +77,6 @@ Consider `Admission(max_queued_requests=3, max_queued_tokens=1000, drain_tokens_
 
 ## Why this matters
 
-An inference server's throughput is capped by its hardware. When requests arrive faster than the server can finish them, the only thing that can grow is the queue. An unbounded queue turns overload into runaway latency, where every request finishes minutes late—long after clients have timed out and retried, compounding the load.
+An inference server's throughput is capped by its hardware. When requests arrive faster than the server can finish them, the only thing that can grow is the queue. An unbounded queue turns overload into runaway latency, where every request finishes minutes late. By then clients have already timed out and retried, compounding the load.
 
 A bounded queue turns overload into fast, explicit rejections (HTTP 429 or 503 with a `Retry-After` header) that a load balancer can route to another replica, while keeping the latency of admitted requests within a predictable bound. Bounding prompt tokens is just as critical as bounding request count, because ten queued requests can represent ten seconds of prefill or ten minutes depending on prompt length. Conversely, counting running requests against the queue bound causes the opposite failure, rejecting incoming traffic even when the queue is empty.

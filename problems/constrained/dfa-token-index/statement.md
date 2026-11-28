@@ -80,4 +80,4 @@ This vocabulary has 59 non-empty tokens containing 60 distinct prefixes, 38 of w
 
 Constrained decoding computes a token mask on the CPU between forward passes, once per generated token for every sequence in the batch. Looping over a 128,000-token vocabulary at every step can take longer than the forward pass of a small model and leave the GPU idle.
 
-Moving this work to compile time—once per regex or JSON schema—is what made regex-guided generation fast enough for production (Willard and Louf, 2023, in Outlines). Because users still wait on compile time for the first request with a new schema, sharing prefix work across the vocabulary keeps that startup cost low.
+Moving this work to compile time, once per regex or JSON schema, is what made regex-guided generation fast enough for production (Willard and Louf, 2023, in Outlines). Because users still wait on compile time for the first request with a new schema, sharing prefix work across the vocabulary keeps that startup cost low.

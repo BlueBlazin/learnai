@@ -1,6 +1,6 @@
 ## The idea
 
-An inference gateway reacts to three events: request arrival (`submit`), request completion (done callback), and autoscaling evaluation (`evaluate`). Each event ends by calling a single `_dispatch` routine that moves queued requests onto ready replicas as long as a free slot exists. Inside `_dispatch`, there are two policy decisions—which queued request to pick next, and which replica should run it—surrounded by admission control at entry and replica scaling at the fleet boundary.
+An inference gateway reacts to three events: request arrival (`submit`), request completion (done callback), and autoscaling evaluation (`evaluate`). Each event ends by calling a single `_dispatch` routine that moves queued requests onto ready replicas as long as a free slot exists. Inside `_dispatch`, there are two policy decisions (which queued request to pick next and which replica should run it), surrounded by admission control at entry and replica scaling at the fleet boundary.
 
 ![A request passes admission or is rejected at once. The dispatcher pairs a queued request with a ready replica that has a free slot.](assets/architecture.svg)
 

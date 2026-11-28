@@ -2942,10 +2942,12 @@ Style (applies to `statement.md`, `hints.md`, and `editorial.md`):
   before introducing a formula.
 - **Plain, direct prose.** American English, present tense, short sentences with one idea
   per sentence. Address the reader as "you" only in instructions.
-- **No AI-slop tics.** Avoid colon splices that glue clauses together (`Score X under Y:
-  the A, and the B.`), semicolon chains (`X does A; Y does B; and Z does C.`), pretentious
-  framing (`The arithmetic is X. The exercise is Y.`), throat-clearing, and sentence
-  fragments. Break compound thoughts into short sentences or a compact list.
+- **No AI-slop tics.** Never use em-dashes (`—`). Use a period and write two sentences,
+  use a comma, or use a colon only when genuinely warranted. Avoid colon splices that glue
+  clauses together (`Score X under Y: the A, and the B.`), semicolon chains (`X does A;
+  Y does B; and Z does C.`), pretentious framing (`The arithmetic is X. The exercise is
+  Y.`), throat-clearing, and sentence fragments. Break compound thoughts into short
+  sentences or a compact list.
 - **Concise, no bloat.** Keep prose tight and never pad a statement into a textbook
   chapter. State each fact once (do not duplicate shapes, constraints, or rules across
   sections).
@@ -4471,8 +4473,9 @@ in the app.
 - The statement specifies every choice that affects the output, and its Constraints
   section states the tolerance and any cost or speed limit.
 - A cold top-to-bottom pass over `statement.md`, `hints.md`, and `editorial.md` confirms
-  every symbol and term is defined before first use, prose is plain and concise (no colon
-  splices, semicolon chains, or repetition), and no hints leak into `statement.md`.
+  every symbol and term is defined before first use, prose is plain and concise (no
+  em-dashes, colon splices, semicolon chains, or repetition), and no hints leak into
+  `statement.md`.
 
 ## 17. Contract additions of milestone 3 (to mirror in ARCHITECTURE.md)
 

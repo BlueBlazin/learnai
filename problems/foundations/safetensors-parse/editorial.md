@@ -128,5 +128,5 @@ prevent aliased or hidden data.
 Security is the format's other main motivation. Unlike pickle-based `.bin` or `.pt`
 checkpoints, parsing a safetensors file executes no code and can only produce arrays.
 Notice also that tied weights are stored only once, so the Granite checkpoint has no
-`lm_head.weight` entry—a detail that returns in `real-model-sizing` and
+`lm_head.weight` entry. That detail returns in `real-model-sizing` and
 `real-model-logits`.

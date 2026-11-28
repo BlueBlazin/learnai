@@ -51,4 +51,4 @@ $O(B \cdot T)$ time and memory, where $B$ is the number of sequences and $T$ is 
 
 Hugging Face tokenizers expose a `padding_side` attribute that defaults to `"right"`. Calling `generate()` on a decoder-only model logs a warning if it detects right-padded input and tells you to set `padding_side='left'`.
 
-Serving engines with a paged KV cache, such as vLLM, avoid padding during decoding by tracking each sequence's cache blocks independently. Still, any code that runs multiple prompts through a model as one dense tensor—including batched scoring and reranking—uses this exact padding logic. Because a batch is always as wide as its longest row, batching layers typically group prompts of similar length to minimize wasted compute.
+Serving engines with a paged KV cache, such as vLLM, avoid padding during decoding by tracking each sequence's cache blocks independently. Still, any code that runs multiple prompts through a model as one dense tensor (including batched scoring and reranking) uses this exact padding logic. Because a batch is always as wide as its longest row, batching layers typically group prompts of similar length to minimize wasted compute.

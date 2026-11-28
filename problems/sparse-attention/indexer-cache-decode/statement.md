@@ -1,4 +1,4 @@
-Run one sparse-attention layer on a chunk of new tokens that continue a cached sequence. The layer maintains two caches—one for the indexer's keys and one for attention's keys and values—and updates both before scoring any new query.
+Run one sparse-attention layer on a chunk of new tokens that continue a cached sequence. The layer maintains two caches (one for the indexer's keys and one for attention's keys and values) and updates both before scoring any new query.
 
 ![This problem is the two caches, the indexer's keys and the attention's keys and values, which grow with each call.](assets/map.svg)
 

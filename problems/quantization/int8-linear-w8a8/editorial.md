@@ -58,7 +58,7 @@ The JAX version is a direct translation. MLX differs in one line because `mx.mat
 - **Dropping the zero-point correction.** Computing `scale * acc + bias` assumes symmetric activations. With an affine grid, the output is off by $s_r c_i z_r \sum_j w_{ij}$, which is small for centered tokens but huge for non-negative tokens where $z_r = -128$.
 - **Subtracting the zero-point in int8.** Computing $q - z$ before the matmul is mathematically valid, but $q - z$ spans $[-255, 255]$ and wraps in int8 whenever a token is not centered on zero.
 - **Adding the bias before rescaling.** The bias is in real units, while the accumulator is in units of $s_r c_i$. Static integer engines can add a quantized bias $\operatorname{round}(b_i / (s_r c_i))$ to the accumulator offline, but a dynamic scheme cannot because $s_r$ is unknown until run time.
-- **Misaligning scale axes.** `x_scale` indexes tokens and `w_scale` indexes outputs. If `x_scale` has shape `(n,)` instead of `(n, 1)`, broadcasting fails—except when `n == out`, where it silently pairs token scales with output channels.
+- **Misaligning scale axes.** `x_scale` indexes tokens and `w_scale` indexes outputs. If `x_scale` has shape `(n,)` instead of `(n, 1)`, broadcasting fails except when `n == out`, where it silently pairs token scales with output channels.
 
 ## Complexity
 
@@ -68,4 +68,4 @@ Step 1 takes $O(n \cdot \text{in})$ time, step 2 performs $O(n \cdot \text{out} 
 
 The `llm-compressor` presets are defined in `compressed-tensors` (`quantization/quant_scheme.py`). Its `W8A8` preset pairs static per-channel symmetric int8 weights with dynamic per-token int8 activations (`dynamic=True`), matching the per-token structure here. That preset also uses symmetric activations (`symmetric=True`), which sets every zero-point to 0 and skips step 3. This problem uses affine activations because post-nonlinearity activations are often skewed, making the zero-point correction essential whenever the grid is asymmetric.
 
-The core integer pipeline—an int32 accumulator, a precomputed weight row-sum correction, and a final rescale—comes from *Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference* (arXiv:1712.05877). That paper goes one step further by replacing the final float multiplication with a fixed-point multiplier and bit shift, and uses static calibration ranges so the bias can be folded into the accumulator ahead of time.
+The core integer pipeline (an int32 accumulator, a precomputed weight row-sum correction, and a final rescale) comes from *Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference* (arXiv:1712.05877). That paper goes one step further by replacing the final float multiplication with a fixed-point multiplier and bit shift, and uses static calibration ranges so the bias can be folded into the accumulator ahead of time.

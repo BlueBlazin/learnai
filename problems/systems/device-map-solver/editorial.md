@@ -89,4 +89,4 @@ This problem simplifies several details of Accelerate's implementation:
 - `"auto"` and `"balanced"` first shrink each GPU's memory limit via `get_balanced_memory` to spread layers evenly across GPUs before running the scan, whereas `"sequential"` uses the limits as given.
 - Accelerate also supports a `fallback_allocation` mode that lets an empty device accept a later module when the next one does not fit, and cleans the final map by collapsing parents whose children all share one device.
 
-At runtime, Accelerate attaches forward hooks that move each module's inputs to its assigned device and temporarily copy `"cpu"` or `"disk"` weights onto the execution device for the duration of the call—the exact staging the reserve accounts for.
+At runtime, Accelerate attaches forward hooks that move each module's inputs to its assigned device and temporarily copy `"cpu"` or `"disk"` weights onto the execution device for the duration of the call. This is the exact staging the reserve accounts for.

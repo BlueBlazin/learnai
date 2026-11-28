@@ -15,7 +15,7 @@ Because the output error of row $i$ is $\sum_j x_j (W_{ij} - \hat W_{ij})$, each
 - $\alpha = 1$ scales fully by activation magnitude, which often stretches group ranges so far that low-activation weights collapse onto one or two grid points (as in the last row of the worked example).
 - Values between $0$ and $1$ balance protecting loud channels against distorting quiet ones.
 
-Because the optimal $\alpha$ varies by layer, AWQ evaluates the actual quantized output error on calibration inputs across a small grid of exponents. No gradients are needed—only $G$ forward passes of the layer.
+Because the optimal $\alpha$ varies by layer, AWQ evaluates the actual quantized output error on calibration inputs across a small grid of exponents. No gradients are needed, only $G$ forward passes of the layer.
 
 **Normalization.** Multiplying the entire vector $s$ by any positive constant leaves quantization unchanged. Every group's minimum, maximum, and step scale by the same constant, so the integer codes stay identical and the constant cancels in $Q(W s) / s$. Dividing by $\sqrt{\max s \cdot \min s}$ removes this scale ambiguity by centering $s$ around $1$ in log space ($\max s \cdot \min s = 1$), keeping both scaled weights and rescaled activations in a well-conditioned numeric range. It changes the returned `scales` tensor without changing the loss.
 
@@ -66,7 +66,7 @@ def awq_scales(w, x_calib, bits, group_size, grid):
 
 ## Complexity
 
-For $G$ grid values, each step runs one group-wise quantization in $O(\text{out} \cdot \text{in})$ time and one matrix multiplication in $O(N \cdot \text{out} \cdot \text{in})$ time. With a typical grid of 20 exponents and a few hundred calibration rows, calibrating an entire model takes a few thousand layer forward passes—a few minutes on GPU, with no backward pass and only one block in memory at a time.
+For $G$ grid values, each step runs one group-wise quantization in $O(\text{out} \cdot \text{in})$ time and one matrix multiplication in $O(N \cdot \text{out} \cdot \text{in})$ time. With a typical grid of 20 exponents and a few hundred calibration rows, calibrating an entire model takes a few thousand layer forward passes. That runs in a few minutes on GPU, with no backward pass and only one block in memory at a time.
 
 ## In the wild
 

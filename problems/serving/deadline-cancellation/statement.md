@@ -1,4 +1,4 @@
-Add client cancellation and per-request deadlines to a continuous-batching scheduler. When a client cancels a request or virtual time reaches its deadline, the scheduler must stop serving that request immediately—whether it is waiting or mid-step—and notify the client.
+Add client cancellation and per-request deadlines to a continuous-batching scheduler. When a client cancels a request or virtual time reaches its deadline, the scheduler must stop serving that request immediately, whether it is waiting or mid-step, and notify the client.
 
 ![This problem is the Waiting queue and the Engine loop, where a canceled or late request has to stop.](assets/map.svg)
 

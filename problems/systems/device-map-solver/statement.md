@@ -1,4 +1,4 @@
-Implement `solve_device_map`, which assigns each part of a model to a device when the model does not fit on a single GPU. It walks the model's modules in forward order and fills devices sequentially—typically GPUs first, then CPU memory, and finally disk—while respecting indivisible blocks, a memory reserve on the first device, and tied weights.
+Implement `solve_device_map`, which assigns each part of a model to a device when the model does not fit on a single GPU. It walks the model's modules in forward order and fills devices sequentially (typically GPUs first, then CPU memory, and finally disk) while respecting indivisible blocks, a memory reserve on the first device, and tied weights.
 
 ## Specification
 

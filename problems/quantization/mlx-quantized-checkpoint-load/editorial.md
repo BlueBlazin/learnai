@@ -2,7 +2,7 @@
 
 This problem stacks two formats, each built around a single clean design choice.
 
-**safetensors puts the index at the front.** The first 8 bytes give the header length $n$, and the JSON header maps every tensor name to its byte range relative to byte $8 + n$. Reading $8 + n$ bytes tells you where everything lives, so unrequested tensors on a memory-mapped file cost zero I/O and trigger no page faults. Because a layer's three tensors are not adjacent in the file—in the real checkpoint, layer 0's `k_proj` scales sit 245 MB before its codes—reading a contiguous chunk around the layer will not work. Taking three exact slices does.
+**safetensors puts the index at the front.** The first 8 bytes give the header length $n$, and the JSON header maps every tensor name to its byte range relative to byte $8 + n$. Reading $8 + n$ bytes tells you where everything lives, so unrequested tensors on a memory-mapped file cost zero I/O and trigger no page faults. A layer's three tensors are not adjacent in the file. In the real checkpoint, layer 0's `k_proj` scales sit 245 MB before its codes, so reading a contiguous chunk around the layer will not work. Taking three exact slices does.
 
 **MLX packs codes into 32-bit words, lowest bits first.** A `U32` tensor of shape `(out, in * bits / 32)` stores `out` rows of codes with `32 / bits` codes per word. At 8 bits in little-endian order, each byte is already one code in column order. At 4 bits or 2 bits, however, code 0 occupies the lowest bits of each word rather than the highest. Shifting by a small array of bit offsets and masking handles every bit width uniformly.
 
@@ -51,7 +51,7 @@ def load_quantized(buf, name, bits, group_size):
     return (codes * scale + bias).reshape(out_dim, in_dim)
 ```
 
-For the real checkpoint's `k_proj` layer, this solution slices 105,456 bytes for the header and 1,392,640 bytes for the three tensors—1.5 MB out of 3.9 GB—in a few tens of milliseconds.
+For the real checkpoint's `k_proj` layer, this solution slices 105,456 bytes for the header and 1,392,640 bytes for the three tensors (1.5 MB out of 3.9 GB) in a few tens of milliseconds.
 
 ## Common mistakes
 
@@ -74,4 +74,4 @@ Parsing the header takes $O(n)$ time and memory, and dequantizing one layer take
 
 ## In the wild
 
-`mx.load` uses this same header-driven slicing lazily across all tensors. During inference, `nn.QuantizedLinear` avoids full dequantization altogether. It keeps the packed weights, scales, and biases in memory and calls `mx.quantized_matmul`, which unpacks codes on the fly inside the kernel so the 3B model uses 3.9 GB instead of 14.6 GB. Dequantizing one layer at a time, as done here, is how inspection and analysis tools work. `llama.cpp`'s GGUF format makes the same two architectural choices—an upfront tensor index and block-wise packed codes with per-block scales—with different binary details.
+`mx.load` uses this same header-driven slicing lazily across all tensors. During inference, `nn.QuantizedLinear` avoids full dequantization altogether. It keeps the packed weights, scales, and biases in memory and calls `mx.quantized_matmul`, which unpacks codes on the fly inside the kernel so the 3B model uses 3.9 GB instead of 14.6 GB. Dequantizing one layer at a time, as done here, is how inspection and analysis tools work. `llama.cpp`'s GGUF format makes the same two architectural choices (an upfront tensor index and block-wise packed codes with per-block scales) with different binary details.

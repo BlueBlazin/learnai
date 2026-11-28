@@ -20,7 +20,7 @@ class RadixCache:
 
 **The clock.** The cache uses a logical clock that starts at 0. Every call to `match_prefix` or `insert` increments the clock by 1 at the start of the call. No other method advances the clock.
 
-**The walk.** Both `match_prefix` and `insert` begin with the same tree walk. Starting at the root, follow `tokens` down the tree for as long as they match. The **matched length** $L$ is the length of the longest prefix of `tokens` that is a prefix of some node's prefix in the tree. If the walk ends partway through an edge—meaning the first $c \ge 1$ tokens of the edge matched, and more tokens remain on that edge—**split** the edge after $c$ tokens:
+**The walk.** Both `match_prefix` and `insert` begin with the same tree walk. Starting at the root, follow `tokens` down the tree for as long as they match. The **matched length** $L$ is the length of the longest prefix of `tokens` that is a prefix of some node's prefix in the tree. If the walk ends partway through an edge (meaning the first $c \ge 1$ tokens of the edge matched, and more tokens remain on that edge), **split** the edge after $c$ tokens:
 
 - Create a new *upper* node carrying the first $c$ tokens and attach it under the old parent. The existing node keeps the remaining tokens, its children, its lock count, its last access time, and its object identity, and becomes the upper node's only child.
 - The upper node **inherits** the lock count and the last access time of the existing node.

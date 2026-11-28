@@ -92,6 +92,6 @@ For `visible_entries(t, 2)`, the results for $t = 0, 1, 2, 3$ are `0, 1, 1, 2`. 
 
 ## Why this matters
 
-DeepSeek-V4 maintains two kinds of key-value memory per layer. It keeps recent tokens uncompressed, and it compresses the distant past in fixed windows—128 tokens into a single cache entry in its heavily compressed layers. Because the compressed cache grows by only one entry per 128 tokens, a million-token context fits in memory.
+DeepSeek-V4 maintains two kinds of key-value memory per layer. It keeps recent tokens uncompressed and compresses the distant past in fixed windows, collapsing 128 tokens into a single cache entry in its heavily compressed layers. Because the compressed cache grows by only one entry per 128 tokens, a million-token context fits in memory.
 
 In inference serving, a prompt never arrives all at once. It is processed in prefill chunks followed by one token per decode step. If a compressor restarts windows at call boundaries, emits partial windows early, or lets a query attend to an unfinished window, the same prompt produces different cache entries depending on how the server chunked or batched the request.

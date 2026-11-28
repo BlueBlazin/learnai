@@ -147,8 +147,8 @@ The first two rows stay identical because positions 0 and 1 cannot attend to pos
 
 ## Why this matters
 
-This forward pass defines the model's exact behavior. Every inference optimization—such
-as KV caching, batching, quantization, and speculative decoding—aims to compute these
+This forward pass defines the model's exact behavior. Every inference optimization (such
+as KV caching, batching, quantization, and speculative decoding) aims to compute these
 same logits faster or cheaper and is validated by comparing against this plain pass.
 
 It is also the exact code you write when porting a model to a new runtime, where subtle

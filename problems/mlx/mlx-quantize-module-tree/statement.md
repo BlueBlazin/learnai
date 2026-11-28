@@ -79,7 +79,7 @@ quantize_model(model, recipe)
 bits_per_weight(model)  # 11.4568   (the float model: 32.0)
 ```
 
-`recipe` is called six times—once each for `embed`, `blocks.0.attn`, `blocks.0.mlp`, `blocks.1.attn`, `blocks.1.mlp`, and `head`—and never for a norm.
+`recipe` is called six times (once each for `embed`, `blocks.0.attn`, `blocks.0.mlp`, `blocks.1.attn`, `blocks.1.mlp`, and `head`) and never for a norm.
 
 | layer | weights | bytes after quantization |
 |---|---|---|

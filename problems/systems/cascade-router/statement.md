@@ -83,6 +83,6 @@ Notice why the mean matters instead of the sum. The sum of log-probabilities is 
 
 ## Why this matters
 
-A frontier model can cost ten to a hundred times more per request than a small model. For a large share of production traffic—such as classification, extraction, and short factual lookups—the small model produces the same answer. A cascade captures that savings by sending every request to the cheap model first and escalating only uncertain replies.
+A frontier model can cost ten to a hundred times more per request than a small model. For a large share of production traffic, such as classification, extraction, and short factual lookups, the small model produces the same answer. A cascade captures that savings by sending every request to the cheap model first and escalating only uncertain replies.
 
 The three failure modes tested here show up regularly in production routers. Using an unnormalized log-probability sum systematically escalates long answers, which are the most expensive ones to re-run. Calling the large model speculatively "to compare" pays the large model's bill on every request. Checking the budget after a call instead of before it allows requests to exceed their spending cap.

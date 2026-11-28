@@ -44,7 +44,7 @@ def advance(dfa, state, token, vocab):
 - **Requiring acceptance after each token.** Checking `dfa.is_accepting(end)` instead of `end != DEAD` keeps only `true` and `null` in the worked example and drops the six tokens that begin a word.
 - **Checking only the first byte or character.** For `{"[a-z]+": ...}`, the token `": ` starts with a valid quote in states where its second byte is illegal. The mask then permits a token that `advance` rejects.
 - **Allowing empty tokens.** Calling `dfa.walk(state, b"")` returns `state`. Without checking `if not piece`, all special tokens pass in every state, allowing end-of-sequence in the middle of an incomplete output.
-- **Rejecting tokens that are not standalone UTF-8.** Calling `piece.decode()` fails on fragments like `b'\xe2\x82'`. Dropping those tokens—or running the automaton on decoded characters instead of bytes—makes split characters impossible to generate.
+- **Rejecting tokens that are not standalone UTF-8.** Calling `piece.decode()` fails on fragments like `b'\xe2\x82'`. Dropping those tokens, or running the automaton on decoded characters instead of bytes, makes split characters impossible to generate.
 - **Walking from `dfa.start` instead of `state`.** The allowed set depends on the current state, so walking from the start state only works on the first step.
 - **Returning `DEAD` from `advance`.** Disallowed tokens must raise `ValueError`.
 

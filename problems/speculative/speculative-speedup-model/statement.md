@@ -67,4 +67,4 @@ With a cheap draft (`c = 0.05`), the optimal length is `k = 8`. With a slower dr
 
 Speculative decoding trades draft-model compute for fewer target passes. Whether that trade pays off depends on two measurable quantities: the acceptance rate `alpha` and the cost ratio `c`. Engineers use this model to pick a draft model and lookahead `k`, and adaptive inference engines evaluate it online to shorten drafts when acceptance drops.
 
-Each edge case in this problem reflects a real bug. Omitting the target call from the cost predicts unbounded speedups from long drafts, omitting the bonus token underestimates short drafts, and dividing blindly by $1 - \alpha$ crashes on the first prompt with perfect acceptance—typically a copy-heavy task where speculation shines most.
+Each edge case in this problem reflects a real bug. Omitting the target call from the cost predicts unbounded speedups from long drafts, omitting the bonus token underestimates short drafts, and dividing blindly by $1 - \alpha$ crashes on the first prompt with perfect acceptance. That case is typically a copy-heavy task where speculation shines most.

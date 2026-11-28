@@ -1,4 +1,4 @@
-A three-value grid with points $-s$, $0$, and $s$ is controlled by one number: the border between values small enough to become $0$ and values large enough to become $\pm 1$. Which weights are closer to $0$ than to $\pm s$? And which matrix statistic puts a useful fraction of weights on both sides of that border—the maximum magnitude, or the mean magnitude?
+A three-value grid with points $-s$, $0$, and $s$ is controlled by one number: the border between values small enough to become $0$ and values large enough to become $\pm 1$. Which weights are closer to $0$ than to $\pm s$? And which matrix statistic puts a useful fraction of weights on both sides of that border: the maximum magnitude, or the mean magnitude?
 
 ---
 

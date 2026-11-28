@@ -48,7 +48,7 @@ Measured on an M1 Max (MLX 0.32.4), generating 200 tokens from a 4-token prompt 
 
 Every extra evaluation pays a fixed overhead for scheduling a graph, dispatching to the GPU, and synchronizing. In this table, that overhead is 0.2 to 0.5 ms per token, which is comparable to the tiny model's entire step (0.7 ms) and nearly a tenth of the larger model's step (2.3 ms).
 
-Deferring all evaluation until the end is faster in total because it pays that fixed overhead once. However, it produces an unusable generation loop. No token exists until the last one finishes, so you cannot stream output, check stop conditions, or inspect sampled values, and the graph (along with every intermediate array it retains) grows linearly with generation length. The MLX documentation recommends evaluating once per outer-loop iteration — neither per operation nor only at the end. In token generation, that outer iteration is the token.
+Deferring all evaluation until the end is faster in total because it pays that fixed overhead once. However, it produces an unusable generation loop. No token exists until the last one finishes, so you cannot stream output, check stop conditions, or inspect sampled values, and the graph (along with every intermediate array it retains) grows linearly with generation length. The MLX documentation recommends evaluating once per outer-loop iteration, neither per operation nor only at the end. In token generation, that outer iteration is the token.
 
 ## Common mistakes
 
@@ -68,4 +68,4 @@ $n$ evaluations, $n$ forward calls, and $P + n - 1$ tokens processed by the mode
 
 `mlx_lm.generate_step` uses this exact loop with one refinement covered in `mlx-streaming-generate`. It calls `mx.async_eval` on step $t + 1$ before reading the token from step $t$, keeping the GPU busy while Python processes the previous token. The cut stays in the same place, with one evaluation per token covering both the token and the log-probabilities.
 
-When an MLX loop is unexpectedly slow, `mx.export_to_dot(file, x)` — the same tool the judge uses to count pending operations — lets you inspect the unevaluated graph behind an array and check whether something is leaking across steps.
+When an MLX loop is unexpectedly slow, `mx.export_to_dot(file, x)` (the same tool the judge uses to count pending operations) lets you inspect the unevaluated graph behind an array and check whether something is leaking across steps.

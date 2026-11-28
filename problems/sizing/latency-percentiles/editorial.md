@@ -6,7 +6,7 @@ Start by sorting the samples. Once the data is sorted, a percentile is simply a 
 
 **Linear interpolation.** Positions are continuous on the 0-based interval $[0, n - 1]$. Percentile $q$ maps to $h = (n - 1) \cdot q / 100$, and the result is read from the line segment connecting the two neighboring sorted samples. This is method 7 of Hyndman and Fan (1996) and the default in `numpy.percentile` and `pandas` `quantile`. The scale factor is $n - 1$ rather than $n$ because there are $n - 1$ gaps between $n$ samples, ensuring that $q = 100$ lands on the last element.
 
-**Merging.** A percentile is an order statistic of the entire dataset. A shard's percentile tells you where a rank falls inside that shard alone, not how its values interleave with other shards. No function of per-shard percentiles (mean, weighted mean, or maximum) can recover the pooled percentile in general. In the worked example, the pooled p90 is the ninth of ten samples, which is 100.0—the smaller sample of the slow shard—and cannot be recovered from the shard p90s of 17.0 and 900.0. Computing the exact global percentile requires pooling the raw samples first.
+**Merging.** A percentile is an order statistic of the entire dataset. A shard's percentile tells you where a rank falls inside that shard alone, not how its values interleave with other shards. No function of per-shard percentiles (mean, weighted mean, or maximum) can recover the pooled percentile in general. In the worked example, the pooled p90 is the ninth of ten samples, which is 100.0 (the smaller sample of the slow shard), and cannot be recovered from the shard p90s of 17.0 and 900.0. Computing the exact global percentile requires pooling the raw samples first.
 
 ## Reference solution (Python)
 
@@ -65,6 +65,6 @@ Each call takes $O(n \log n)$ time for sorting and $O(n)$ memory for the sorted 
 
 ## In the wild
 
-- **Tool definitions vary.** `numpy.percentile` uses linear interpolation by default and exposes nearest-rank as `method="inverted_cdf"`. Different benchmark harnesses choose different defaults, so two tools reporting "p99" on the same run can disagree—especially on small samples, where nearest-rank p99 of fewer than 100 samples is simply the maximum.
+- **Tool definitions vary.** `numpy.percentile` uses linear interpolation by default and exposes nearest-rank as `method="inverted_cdf"`. Different benchmark harnesses choose different defaults, so two tools reporting "p99" on the same run can disagree, especially on small samples where nearest-rank p99 of fewer than 100 samples is simply the maximum.
 - **Mergeable summaries.** Storing every raw latency sample across a fleet is often impractical. Histograms with fixed bucket boundaries merge cleanly by summing bucket counts, which is why Prometheus computes quantiles with `histogram_quantile` over summed counters and warns against averaging per-instance quantile gauges. HdrHistogram, t-digest, and DDSketch apply the same mergeable design with bounded relative error determined by their bucket width.
 - **Sample size matters.** A p99 computed from 200 requests is determined by the top three observations, and a p99.9 from fewer than 1,000 requests is just the maximum. Always report the sample count alongside tail percentiles.

@@ -20,4 +20,4 @@ y_{ri} = \underbrace{s_r \cdot \text{w\_scale}_i}_{\text{float, once per output}
 + \text{bias}_i .
 $$
 
-Return `acc` before subtracting the zero-point term. Because `bias` is in real units, add it after multiplying by the scales—adding it to the integer sum would wrongly scale it by $s_r \cdot \text{w\_scale}_i$.
+Return `acc` before subtracting the zero-point term. Because `bias` is in real units, add it after multiplying by the scales. Adding it to the integer sum would wrongly scale it by $s_r \cdot \text{w\_scale}_i$.

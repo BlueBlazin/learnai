@@ -1,6 +1,6 @@
 ## The idea
 
-Model each draft token as accepted independently with probability $\alpha$. Because verification keeps only the prefix before the first rejection, the number of accepted draft tokens $n$ follows a geometric distribution capped at $k$, with $P(n \ge i) = \alpha^i$ for $0 \le i \le k$. The target's single pass always yields one valid token of its own—either the correction at the first rejection or a bonus token after $k$ acceptances—so the round emits $n + 1$ tokens. Applying the tail-sum formula gives
+Model each draft token as accepted independently with probability $\alpha$. Because verification keeps only the prefix before the first rejection, the number of accepted draft tokens $n$ follows a geometric distribution capped at $k$, with $P(n \ge i) = \alpha^i$ for $0 \le i \le k$. The target's single pass always yields one valid token of its own (either the correction at the first rejection or a bonus token after $k$ acceptances), so the round emits $n + 1$ tokens. Applying the tail-sum formula gives
 
 $$
 E(\alpha, k) = \mathbb{E}[n + 1] = 1 + \sum_{i=1}^{k} P(n \ge i)

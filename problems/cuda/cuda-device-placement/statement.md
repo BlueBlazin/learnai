@@ -95,6 +95,6 @@ Calling `to_device` on `inputs` returns a new outer dict containing a new `"head
 
 ## Why this matters
 
-In production serving, tokenizers and data loaders produce nested dicts of CPU tensors while model weights stay on the GPU. Any helper tensor created inside the forward pass—such as position IDs, causal or padding masks, or token buffers—comes from a factory call. Omitting `device=` allocates it on the CPU.
+In production serving, tokenizers and data loaders produce nested dicts of CPU tensors while model weights stay on the GPU. Any helper tensor created inside the forward pass (such as position IDs, causal or padding masks, or token buffers) comes from a factory call. Omitting `device=` allocates it on the CPU.
 
 At best, that triggers an immediate device-mismatch error. At worst, it fails silently. PyTorch allows indexing a CUDA tensor with a CPU index tensor, and working around errors with `.cpu()` forces host-device copies on every request while stalling the CPU until the GPU queue drains. Hard-coded dtypes cause similar silent regressions. Calling `.float()` on a mask promotes a `float16` forward pass to `float32` for every downstream layer, doubling activation memory.

@@ -66,7 +66,7 @@ Each returned `values` array is ten times the corresponding `keys` array. After 
 - $1 \le B \le 3$, $1 \le H \le 4$, `D_k` and `D_v` up to 64, `step` from 1 to 256, and up to 1,000 tokens per cache.
 - Returned keys and values, as well as the first `offset` slots of the buffers, must match the written values **exactly**.
 - After every update, `offset` must be a Python `int` with the exact token count, and both buffers must have the exact capacity specified by rule 1. The test suite tracks `reallocations`, the number of updates that change the buffer shape. Appending $n$ tokens one at a time to a new cache must produce $\lceil n / \text{step} \rceil$ reallocations.
-- **Memory limit (Apple GPU).** The test runs 600 single-token updates with `B = 1`, `H = 4`, `D_k = D_v = 64`, and float32 (1 KiB per token per buffer), calling `mx.eval` on the result after each update. Afterward, total allocator memory — active (`mx.get_active_memory`) plus cached (`mx.get_cache_memory`) — must exceed the starting memory by at most **24 MiB**. A step-allocated cache uses about 9 MiB (1.5 MiB active), whereas a cache that changes shape on every update uses 70 MiB.
+- **Memory limit (Apple GPU).** The test runs 600 single-token updates with `B = 1`, `H = 4`, `D_k = D_v = 64`, and float32 (1 KiB per token per buffer), calling `mx.eval` on the result after each update. Afterward, total allocator memory, meaning active (`mx.get_active_memory`) plus cached (`mx.get_cache_memory`), must exceed the starting memory by at most **24 MiB**. A step-allocated cache uses about 9 MiB (1.5 MiB active), whereas a cache that changes shape on every update uses 70 MiB.
 
 ## Why this matters
 

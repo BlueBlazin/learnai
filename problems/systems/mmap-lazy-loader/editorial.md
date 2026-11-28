@@ -1,6 +1,6 @@
 ## The idea
 
-A safetensors file consists of a JSON table of contents followed by raw tensor bytes. Memory-mapping that file turns a byte range `a:b` into a virtual address range without reading from disk—the operating system faults pages in only when code touches them. A lazy loader built on these two properties has three distinct phases, each touching only what it needs:
+A safetensors file consists of a JSON table of contents followed by raw tensor bytes. Memory-mapping that file turns a byte range `a:b` into a virtual address range without reading from disk. The operating system faults pages in only when code touches them. A lazy loader built on these two properties has three distinct phases, each touching only what it needs:
 
 1. **Open.** Read the 8-byte header length and the $n$ bytes of JSON. From that point on, the loader knows every tensor's name, dtype, shape, and byte range, which is enough to answer `keys()`, plan a device map, or count parameters without reading any tensor data.
 2. **First use of a tensor.** Slice only that tensor's byte range and wrap it with `np.frombuffer`. This produces an array backed directly by the mapped pages, with no copy and no reads outside the tensor.

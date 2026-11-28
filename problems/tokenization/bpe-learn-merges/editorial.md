@@ -57,7 +57,7 @@ def _merge(symbols, pair):
 - **Using stale counts.** Taking the top $n$ pairs from the initial character counts without recounting only ever merges single characters.
 - **Using string replacement to apply a merge.** `" ".join(symbols).replace("a b", "ab")` mistakenly matches the end of `xa` followed by `b`. `subword-nmt` wraps its regex with `(?<!\S)` and `(?!\S)` to avoid this bug.
 - **Merging only the first occurrence in a word.** Stopping after one replacement per word leaves inputs like `ba ba` half merged.
-- **Omitting `</w>` or attaching it to the last character.** Gluing `</w>` onto the final character is a valid alternative (used by `subword-nmt`), but it changes the merge sequence—for example, producing `(s, t</w>)` instead of `(s, t)` followed by `(st, </w>)`.
+- **Omitting `</w>` or attaching it to the last character.** Gluing `</w>` onto the final character is a valid alternative (used by `subword-nmt`), but it changes the merge sequence. For example, it produces `(s, t</w>)` instead of `(s, t)` followed by `(st, </w>)`.
 - **Stopping at count 1.** `subword-nmt` stops when the best pair appears fewer than `--min-frequency` times (default 2). This specification stops only when no pairs remain.
 
 ## Complexity

@@ -70,7 +70,7 @@ When two newly merged tokens end up adjacent (such as `[ab] [ab]`), the pair bet
 
 ## Complexity
 
-Let $n$ be the number of input bytes and $m$ be the number of merges in the table. Building the rank map, linked list, and initial heap takes $O(n + m)$ time. Each applied merge reduces the token count by 1, so fewer than $n$ merges can occur. Each merge pushes at most two heap entries, and every entry is popped once, so the heap processes at most $3n$ entries in total. Total time is $O(n \log n + m)$—or $O(n \log n)$ for a fixed table—with $O(n + m)$ memory.
+Let $n$ be the number of input bytes and $m$ be the number of merges in the table. Building the rank map, linked list, and initial heap takes $O(n + m)$ time. Each applied merge reduces the token count by 1, so fewer than $n$ merges can occur. Each merge pushes at most two heap entries, and every entry is popped once, so the heap processes at most $3n$ entries in total. Total time is $O(n \log n + m)$ (or $O(n \log n)$ for a fixed table), with $O(n + m)$ memory.
 
 By contrast, the naive scan costs $O(n)$ per applied merge, or $O(n \cdot \min(n, m))$ overall. On the 2,000-byte benchmark, that is already 200x slower than the reference, and the gap grows linearly with input length.
 

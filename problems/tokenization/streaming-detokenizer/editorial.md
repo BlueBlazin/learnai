@@ -76,7 +76,7 @@ earlier state.
 Python's standard library can also track the state for you via
 `codecs.getincrementaldecoder("utf-8")("replace")` with `getstate()` and `setstate()`.
 It produces the same outputs except for the surrogate corner noted in the statement. The
-decoder instance itself is mutable, so do not return the decoder as `state`—store and
+decoder instance itself is mutable, so do not return the decoder as `state`. Store and
 return its `getstate()` tuple instead.
 
 ## Common mistakes

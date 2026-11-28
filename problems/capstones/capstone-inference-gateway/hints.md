@@ -1,4 +1,4 @@
-The gateway reacts to three events: a request arrives (`submit`), a request completes (done callback), and the autoscaler runs (`evaluate`). Write one `_dispatch` method and call it at the end of all three. Inside `_dispatch`, there are two decisions—which queued request to pick and which replica to send it to—and stages 2 through 4 each customize one of those decisions. Start by identifying the exact condition under which `_dispatch` should stop looping.
+The gateway reacts to three events: a request arrives (`submit`), a request completes (done callback), and the autoscaler runs (`evaluate`). Write one `_dispatch` method and call it at the end of all three. Inside `_dispatch`, there are two decisions: which queued request to pick, and which replica to send it to. Stages 2 through 4 each customize one of those decisions. Start by identifying the exact condition under which `_dispatch` should stop looping.
 
 ---
 
@@ -35,4 +35,4 @@ def evaluate(self):
     return n
 ```
 
-Perform the VTC counter lift in `submit` right after admission and before appending to the queue. If the tenant has no request currently in the queue, raise its counter to the minimum counter among queued tenants, or—when the queue is empty—to the counter of the tenant whose request most recently left the queue.
+Perform the VTC counter lift in `submit` right after admission and before appending to the queue. If the tenant has no request currently in the queue, raise its counter to the minimum counter among queued tenants, or (when the queue is empty) to the counter of the tenant whose request most recently left the queue.

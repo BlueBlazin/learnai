@@ -65,7 +65,7 @@ Two effects show up in the numbers. Even with zero Python work, the async loop i
 
 ## Complexity
 
-The loop performs $n$ scheduled evaluations, $n$ reads, $n$ forward passes, and processes $P + n - 1$ tokens in total. At most two steps exist in flight at any moment—the step being read and the next step computing on the GPU.
+The loop performs $n$ scheduled evaluations, $n$ reads, $n$ forward passes, and processes $P + n - 1$ tokens in total. At most two steps exist in flight at any moment: the step being read and the next step computing on the GPU.
 
 ## In the wild
 

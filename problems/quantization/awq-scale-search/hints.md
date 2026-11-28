@@ -1,4 +1,4 @@
-Consider two questions. First, if you multiply column $j$ of $W$ by $s_j$ and divide activation channel $j$ by $s_j$, the unquantized product $x W^\top$ does not change—only quantization in between changes the result. Second, because the quantizer preserves each group's minimum and maximum and spaces the grid evenly between them, think about what happens to a column's effective rounding error when you scale it up inside its group, and what happens to its neighbors in the same group.
+Consider two questions. First, if you multiply column $j$ of $W$ by $s_j$ and divide activation channel $j$ by $s_j$, the unquantized product $x W^\top$ does not change. Only quantization in between changes the result. Second, because the quantizer preserves each group's minimum and maximum and spaces the grid evenly between them, think about what happens to a column's effective rounding error when you scale it up inside its group, and what happens to its neighbors in the same group.
 
 ---
 

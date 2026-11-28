@@ -1,6 +1,6 @@
 ## The idea
 
-A speculative draft only needs to be cheap and frequently right. When generation repeats material already in the context—such as quoting a document, editing code, or continuing a structured list—the context itself is a strong predictor. Searching for an earlier occurrence of the current tail and copying what followed replaces a draft-model forward pass with a fast sequence search. The target model's verification step guarantees exact output no matter how often the guess misses.
+A speculative draft only needs to be cheap and frequently right. When generation repeats material already in the context (such as quoting a document, editing code, or continuing a structured list), the context itself is a strong predictor. Searching for an earlier occurrence of the current tail and copying what followed replaces a draft-model forward pass with a fast sequence search. The target model's verification step guarantees exact output no matter how often the guess misses.
 
 Three rules govern the search:
 
@@ -41,7 +41,7 @@ Called once per decoding step, a direct search is quadratic in total sequence le
 
 ## In the wild
 
-Apoorv Saxena introduced prompt lookup decoding in November 2023 (`github.com/apoorvumang/prompt-lookup-decoding`) with defaults `max_ngram_size = 3` and `num_pred_tokens = 10`, searching n-gram lengths down to 1. Hugging Face `transformers` adopted it as `generate(..., prompt_lookup_num_tokens=10)`, and vLLM implements it as the `ngram` speculative method with parameters `prompt_lookup_max`, `prompt_lookup_min`, and `num_speculative_tokens`—the exact three parameters of this problem.
+Apoorv Saxena introduced prompt lookup decoding in November 2023 (`github.com/apoorvumang/prompt-lookup-decoding`) with defaults `max_ngram_size = 3` and `num_pred_tokens = 10`, searching n-gram lengths down to 1. Hugging Face `transformers` adopted it as `generate(..., prompt_lookup_num_tokens=10)`, and vLLM implements it as the `ngram` speculative method with parameters `prompt_lookup_max`, `prompt_lookup_min`, and `num_speculative_tokens`, which are the exact three parameters of this problem.
 
 All three implementations share the core rule used here: try the longest n-gram first, and pick the **earliest** occurrence among ties. The original code and `transformers` scan left to right and stop at the first usable match (a comment in `transformers` notes that other policies could be explored). vLLM's proposer runs the KMP failure function over the reversed sequence and explicitly retains the earliest position among the longest matches. They differ only on edge cases:
 

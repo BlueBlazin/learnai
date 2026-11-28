@@ -1,6 +1,6 @@
 ## The idea
 
-A linear layer in `(out, in)` layout computes $y = x\,W^\top$, so output feature $y_i$ is the dot product of $x$ with row $i$ of $W$. Because rows correspond to output features, two projections of the same input — $W_0$ with $n_0$ rows and $W_1$ with $n_1$ rows — can be combined into one matrix with $n_0 + n_1$ rows:
+A linear layer in `(out, in)` layout computes $y = x\,W^\top$, so output feature $y_i$ is the dot product of $x$ with row $i$ of $W$. Because rows correspond to output features, two projections of the same input ($W_0$ with $n_0$ rows and $W_1$ with $n_1$ rows) can be combined into one matrix with $n_0 + n_1$ rows:
 
 $$
 x \begin{bmatrix} W_0 \\ W_1 \end{bmatrix}^{\!\top} = \big[\, x\,W_0^\top \;\big|\; x\,W_1^\top \,\big].
@@ -39,7 +39,7 @@ for size in parts:
 
 ## Common mistakes
 
-- **Cutting the input axis.** Calling `split(w, parts, dim=1)` cuts columns (input features) instead of rows. On a rectangular weight this raises a size error, but on a square weight — such as a fused matrix whose total output width equals the model width — it runs silently and returns pieces with transposed dimensions, like `(8, 4)` instead of `(4, 8)`. Fusing along axis 1 fails in the same way.
+- **Cutting the input axis.** Calling `split(w, parts, dim=1)` cuts columns (input features) instead of rows. On a rectangular weight this raises a size error, but on a square weight, such as a fused matrix whose total output width equals the model width, it runs silently and returns pieces with transposed dimensions, like `(8, 4)` instead of `(4, 8)`. Fusing along axis 1 fails in the same way.
 - **Confusing sizes with offsets.** `torch.tensor_split`, `np.split`, `jnp.split`, and `mx.split` interpret a list as split indices rather than sizes. Passing `[8, 4, 4]` cuts at positions 8, 4, and 4, yielding four pieces (two empty or mis-sliced) instead of three.
 - **Splitting into equal chunks.** Calling `chunk(w, 3)` works for a QKV weight only when queries, keys, and values have equal width. Under grouped-query attention, the query projection is wider than the key and value projections.
 - **Swapping gate and up.** Because $\operatorname{silu}(a) \cdot b$ is asymmetric, treating the first half as `up` changes the function. Where the gate is large and positive, $\operatorname{silu}(a)\,b \approx a\,b$, so the two readings nearly agree (and in the worked example, one output component even matches). Testing with negative gate values exposes the bug clearly.

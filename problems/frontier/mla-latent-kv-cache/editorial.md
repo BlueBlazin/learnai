@@ -78,7 +78,7 @@ Adding the singleton axis in `c.transpose(1, 2)[:, None]` gives shape `(B, 1, d_
 - **Applying RoPE before splitting heads.** The rotary query consists of $H$ vectors of width $d_r$. Rotating it as a single vector of width $H d_r$ uses frequencies $10000^{-2i/(H d_r)}$, which do not match the shared key's frequencies.
 - **Resetting positions to zero.** On a cached step, new tokens start at position $S$, not 0. Using `0..T-1` passes prefill tests but breaks incremental decoding.
 - **Caching unrotated RoPE keys.** If `k_rope` is cached before rotation, the current step looks correct when using the rotated local copy, while every later step attends to unrotated keys.
-- **Using the wrong scale factor.** Dividing by $\sqrt{d_h}$ ignores the RoPE dimensions. Dividing by $\sqrt{d_c + d_r}$—which happens if you feed `[c; k_rope]` into a generic attention kernel—distorts the softmax temperature of every head.
+- **Using the wrong scale factor.** Dividing by $\sqrt{d_h}$ ignores the RoPE dimensions. Dividing by $\sqrt{d_c + d_r}$ (which happens if you feed `[c; k_rope]` into a generic attention kernel) distorts the softmax temperature of every head.
 - **Caching more than the latent.** Caching the raw input $x_t$ or replicating $k^R_t$ across all $H$ heads yields the right outputs while inflating the cache to $d$ or $d_c + H d_r$ floats per token.
 - **Using a square causal mask.** Just as in `kv-cache-append`, the attention score matrix has shape `(T, S + T)`, and multi-token chunks still need causal masking among the new tokens.
 

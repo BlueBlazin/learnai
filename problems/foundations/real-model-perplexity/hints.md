@@ -1,4 +1,4 @@
-A window of `T` tokens produces `T` rows of logits, but most of them predict tokens that an earlier window already scored with more context. If you track one integer between windows—the first position not yet scored—which rows of the next window correspond to new tokens?
+A window of `T` tokens produces `T` rows of logits, but most of them predict tokens that an earlier window already scored with more context. If you track one integer between windows (the first position not yet scored), which rows of the next window correspond to new tokens?
 
 ---
 

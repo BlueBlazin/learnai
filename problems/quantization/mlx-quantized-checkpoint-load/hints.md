@@ -1,4 +1,4 @@
-You need three byte ranges out of a 3.9 GB file, and only the header at the start of the file knows where they live. How many bytes must you read before you know all three ranges, and what is the smallest set of slices that fetches the layer? Also, a `U32` weight tensor of shape `(512, 640)` represents a matrix with 2560 columns—where did the factor of four go?
+You need three byte ranges out of a 3.9 GB file, and only the header at the start of the file knows where they live. How many bytes must you read before you know all three ranges, and what is the smallest set of slices that fetches the layer? Also, a `U32` weight tensor of shape `(512, 640)` represents a matrix with 2560 columns. Where did the factor of four go?
 
 ---
 

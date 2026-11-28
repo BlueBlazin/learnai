@@ -54,8 +54,8 @@ and `-inf` stays `-inf` under multiplication.
   half the time, always dividing rewards repeated tokens with negative logits. Swapping
   the two branches rewards every repeated token.
 - **Penalizing padding.** Scattering `True` for every entry marks the `pad_id` column in
-  every row that contains padding. Because `pad_id` is a real vocabulary entry—often the
-  end-of-sequence token—short sequences in a batch get a suppressed EOS token.
+  every row that contains padding. Because `pad_id` is a real vocabulary entry (often the
+  end-of-sequence token), short sequences in a batch get a suppressed EOS token.
 - **Penalizing per occurrence.** Counting occurrences with `scatter_add`, or updating
   logits in place inside a loop over history positions, applies $\theta^{\text{count}}$.
   The specification depends only on set membership. In-place loops trigger this bug by

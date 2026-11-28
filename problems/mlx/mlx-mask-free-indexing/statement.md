@@ -1,4 +1,4 @@
-Implement two logit processors in MLX — top-k filtering and a presence penalty on previously generated tokens — **without leaving the lazy graph**. Common NumPy and PyTorch idioms (`x[x < t] = -inf` and `x[ids] -= v`) rely on boolean-mask indexing and in-place updates that MLX only partially supports, which often tempts developers into a NumPy round trip that forces evaluation mid-step.
+Implement two logit processors in MLX (top-k filtering and a presence penalty on previously generated tokens) **without leaving the lazy graph**. Common NumPy and PyTorch idioms (`x[x < t] = -inf` and `x[ids] -= v`) rely on boolean-mask indexing and in-place updates that MLX only partially supports, which often tempts developers into a NumPy round trip that forces evaluation mid-step.
 
 ## Specification
 

@@ -10,7 +10,7 @@ $$
 
 Storing each token's next state makes both `allowed_from_index` and `advance_from_index` pure lookups, so the byte-level automaton is never called again after `build_index`. In effect, the byte-level DFA has been compiled into a token-level DFA over the same states, with one transition per allowed token.
 
-The main cost is now building that table across all $|Q|$ states. Walking each token from scratch repeats work whenever tokens share a prefix, such as `t`, `tr`, `tru`, and `true`. From any state $q$, the walk for `true` visits the exact same states where `t`, `tr`, and `tru` end. Organizing the vocabulary into a prefix tree (trie) makes that sharing explicit. Each trie node represents a distinct prefix, so a depth-first walk of the trie paired with the current DFA state steps each prefix at most once per state. Whenever a transition reaches `DEAD`, every token in that subtree is also dead, so the entire subtree is pruned immediately. In restrictive states—the common case in structured outputs—almost the entire vocabulary is pruned at the first byte.
+The main cost is now building that table across all $|Q|$ states. Walking each token from scratch repeats work whenever tokens share a prefix, such as `t`, `tr`, `tru`, and `true`. From any state $q$, the walk for `true` visits the exact same states where `t`, `tr`, and `tru` end. Organizing the vocabulary into a prefix tree (trie) makes that sharing explicit. Each trie node represents a distinct prefix, so a depth-first walk of the trie paired with the current DFA state steps each prefix at most once per state. Whenever a transition reaches `DEAD`, every token in that subtree is also dead, so the entire subtree is pruned immediately. In restrictive states (the common case in structured outputs), almost the entire vocabulary is pruned at the first byte.
 
 ## Reference solution (Python)
 
@@ -70,7 +70,7 @@ Two alternative approaches also satisfy the step budget. First, sorting tokens l
 
 ## Common mistakes
 
-- **Building a lazy cache instead of an index.** Keeping `dfa` and walking tokens on demand—or populating `index[state]` on the first query for `state`—stalls decoding mid-request and fails the zero-step query requirement.
+- **Building a lazy cache instead of an index.** Keeping `dfa` and walking tokens on demand, or populating `index[state]` on the first query for `state`, stalls decoding mid-request and fails the zero-step query requirement.
 - **Walking each token independently.** This produces the right table but blows the step budget (484 steps instead of 310 in the example, and far worse on real vocabularies with longer tokens).
 - **Keying the index only by token.** Recording transitions only from the start state works for the first decoding step and fails for every other state. The index must be keyed by `(state, token)`.
 - **Storing `DEAD` transitions.** Recording `moves[token] = after` before checking `if after == DEAD` inserts dead tokens into the table, causing them to appear in `allowed_from_index` and causing `advance_from_index` to return `DEAD` instead of raising `ValueError`.

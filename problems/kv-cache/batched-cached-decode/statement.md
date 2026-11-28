@@ -90,6 +90,6 @@ With `max_new_tokens = 7`, rows 0 and 1 are unchanged, and row 2 stops after 7 c
 
 ## Why this matters
 
-GPU throughput depends on batching, because one forward pass over 32 sequences costs little more than one over a single sequence. However, a batch is rectangular while generated answers vary widely in length. Static batching—the loop you implement here and the one used by Hugging Face `generate`—keeps finished rows riding along as padding until the longest row completes.
+GPU throughput depends on batching, because one forward pass over 32 sequences costs little more than one over a single sequence. However, a batch is rectangular while generated answers vary widely in length. Static batching (the loop you implement here and the one used by Hugging Face `generate`) keeps finished rows riding along as padding until the longest row completes.
 
 Its two classic bugs both come from mishandling per-row state. Stopping when *any* row emits EOS truncates every other row's answer. Forgetting that a row has already finished lets the model's continuation past EOS leak into the response. The example table also exposes the main drawback of static batching, since rows 0 and 1 occupy batch slots for steps that produce no useful tokens. Continuous batching, covered later in the curriculum, reclaims those slots for waiting requests.
